@@ -398,7 +398,9 @@ class OwnCapabilityTest(unittest.TestCase):
                 (Path(tmp) / rel).parent.mkdir(parents=True, exist_ok=True)
                 (Path(tmp) / rel).write_text(text, encoding="utf-8", newline="\n")
             dockerfile = (Path(tmp) / "Dockerfile").read_text(encoding="utf-8")
-            self.assertTrue(is_entry_point("app/server.py", entry_points(dockerfile)))
+            # The image starts through the pack guard, which starts the server (FR-PT5).
+            points = entry_points(dockerfile)
+            self.assertTrue(is_entry_point("app/server.py", points) or is_entry_point("factory/pack_guard.py", points))
             report = scan(Path(tmp))
         # The template binds all interfaces only in its container entry point and reduces static file
         # names with basename: neither is reported. A Dockerfile with no USER runs as root, and is.

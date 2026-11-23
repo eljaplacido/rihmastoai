@@ -75,7 +75,8 @@ class ProfileConfidenceTest(FactoryTestCase):
         proposal = propose_profile(f"Rihmasto\n{DOGFOOD}")
         q = profile_question(proposal)
         assert q is not None
-        self.assertEqual((q["text"], q["perspective"], q["blocking"]), (PROFILE_QUESTION, "business", False))
+        # Blocking since FR-DF4-AC-3: the spec waits for the answer in every mode.
+        self.assertEqual((q["text"], q["perspective"], q["blocking"]), (PROFILE_QUESTION, "business", True))
         self.assertEqual(q["options"], ["ML or data pipeline (ml_pipeline)", "Agent or assistant (agentic_workflow)",
                                         "Mobile app prototype (mobile_prototype)"])
         self.assertIn("a tie", q["rationale"])

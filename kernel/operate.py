@@ -22,6 +22,7 @@ import json
 import math
 import re
 
+from kernel import holdouts
 from kernel.canon import Canon
 from kernel.filelock import locked
 from kernel.roads import (PavedRoads, RoadError, http_request, road_for_slot, slot_state)
@@ -141,8 +142,10 @@ def _check(step: dict, r: dict) -> str | None:
     return None
 
 
-def run_scenario(base_url: str, scenario: dict, *, timeout: float = 10.0) -> dict:
-    """Run one scenario's steps in order. Stops at the first failing step and keeps what it saw."""
+def run_scenario(base_url: str, scenario: dict, *, timeout: float = 10.0, secrets: dict | None = None) -> dict:
+    """Run one scenario's steps in order. Stops at the first failing step and keeps what it saw. A
+    step that asks to be signed is signed with the environment's ``secrets`` (kernel/holdouts.py);
+    one that cannot be leaves the scenario not measured."""
     steps = scenario.get("steps") or []
     out = {"criterion": scenario.get("criterion"), "kind": scenario.get("kind", "holdout"), "steps": len(steps),
            "trail": []}
@@ -156,7 +159,13 @@ def run_scenario(base_url: str, scenario: dict, *, timeout: float = 10.0) -> dic
                     "reason": f"the previous step's JSON has no {exc.args[0]!r}"}
         request = {"method": str(step.get("method", "GET")).upper(), "path": str(step.get("path", "/")),
                    "body": step.get("body")}
-        r = http_request(request["method"], base_url + request["path"], request["body"], timeout=timeout)
+        try:
+            body, headers, signed = holdouts.prepare(step, secrets)
+        except holdouts.NotSigned as exc:
+            return {**out, "verdict": "not measured", "failed_step": i, "request": request, "observed": None,
+                    "reason": str(exc)}
+        request |= {"signed": signed} if signed else {}
+        r = http_request(request["method"], base_url + request["path"], body, timeout=timeout, headers=headers)
         reason = _check(step, r)
         if reason:
             return {**out, "verdict": "failed", "failed_step": i, "request": request,
@@ -168,14 +177,15 @@ def run_scenario(base_url: str, scenario: dict, *, timeout: float = 10.0) -> dic
     return out
 
 
-def run_holdouts(project, base_url: str, *, kinds=("holdout", "probe")) -> dict:
+def run_holdouts(project, base_url: str, *, kinds=("holdout", "probe"), secrets: dict | None = None) -> dict:
     """Every holdout scenario against one deployment. Passed only when every scenario the check
-    plan expects exists and passes."""
+    plan expects exists and passes. ``secrets`` are the environment's, for signed steps."""
     scenarios = load_scenarios(project, kinds)
     plan = project.read("checkplan.json") or {}
     expected = sorted({r["criterion"] for r in plan.get("checks", []) if r.get("kind") in kinds})
     missing = [c for c in expected if c not in {s["criterion"] for s in scenarios}]
-    results = [run_scenario(base_url, s) for s in scenarios]
+    signing: dict = {"secrets": secrets} if secrets else {}
+    results = [holdouts.run_guarded(run_scenario, base_url, s, **signing) for s in scenarios]
     failed = [r for r in results if r["verdict"] == "failed"]
     if failed:
         verdict = "failed"

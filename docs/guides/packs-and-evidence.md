@@ -9,7 +9,11 @@ Neither claims more than was done.
 One manifest per release, pinned by hash ([kernel/packs.py](../../kernel/packs.py)). It holds:
 
 - the contract revision and the product revision;
-- the artifacts (the image, or the process reference on the local road);
+- the artifacts: an image by the digest the registry gave it (`repository@sha256:...`) once it was
+  pushed and pinned, never by its tag; otherwise by its local image id, with
+  `pinned.not_by_digest` saying a site cannot pull it; or the process reference on the local road;
+- the product's file trees, `app_files_sha256` and `runtime_files_sha256`, which pack_guard
+  recomputes inside the container, and the public smoke set it runs (`smoke`);
 - the models that built and judged the release, by role, and the harness surfaces they ran under;
 - the autonomy cap the project had;
 - its **acceptance**: every criterion with its evidence state, and the holdouts' results as scores
@@ -53,6 +57,7 @@ An exportable zip for compliance and audit: an AI Act, GDPR or NIS2 review, or a
 | `gnomon-runs.json` | each Gnomon run: role, model, surface hash, audit-chain head and whether it was intact |
 | `ledger.jsonl`, `ledger-check.json` | the full project ledger, and the result of verifying its hash chain at export |
 | `attestation.json` | the verdict and the control table |
+| `governance-map.json` | each of the five guarantees held, partial or lost where the latest release runs, the same map as its deploy gate card |
 | `README.md`, `MANIFEST.json` | a summary, and the sha256 of every file |
 
 **The attestation is never "compliant".** It is one of:
@@ -118,8 +123,109 @@ gives fingerprints of its own (semgrep, CodeQL, gitleaks), the fingerprint now i
 the file, so an acceptance recorded against such a scan from before holds until the tool's next
 scan, and is then given again if it still applies.
 
+## Taking a release to a site
+
+Phase 1 of [portability](../portability.md) is built: a delivered release travels as its image,
+pinned by digest, with its pack beside it, never inside it (the pack pins the image).
+
+**Pinned by digest once IT pushed it.** Name a registry on a docker road in `paved_roads.json`
+(`"registry": "registry.example:5000/team"`). At build, the kernel tags the image for that registry
+on the deploying host (`image_tagged` in the ledger) and pushes nothing: every write to an external
+system goes through Gnomon's integration lane
+([D-0015](../../decisions/D-0015-integrations-through-gnomon.md)), which is planned. IT pushes the
+tag with its own tools (`docker push <tag>`; the release records the tag), then pins the release:
+
+```bash
+rihmasto --home var/demo pack pin <project id> --person "<your name>" --persona it
+```
+
+It reads the digest the registry gave the image from the deploying host's docker (`RepoDigests`),
+records `image_pinned` with the person, and from then on the release, its pack and the site's
+deploy package name the image by that digest. A tag not pushed yet is said, not pinned; only the
+it persona may pin. Until then, or without a registry, the pack pins the local image id and says
+why a site cannot pull it.
+
+**The offline bundle** ([kernel/bundle.py](../../kernel/bundle.py), from Python for now) is the
+deploy kit. Besides the pack, the contract and the source it holds:
+
+| File | What it is |
+|---|---|
+| `deploy-package.json` | the site's deploy package (`gnomonfactory.deploy_package/2`): the image by digest, the pack by version and hash, secrets by name only |
+| `compose.yaml` | for any Docker or Podman host, only when the image is pinned by digest: `/data` on a named volume, the bundle's folder (the pack and its status) mounted read-only at `/pack`, each secret as the environment variable of its name, its value from the deployer's environment |
+| `evidence.zip` | an evidence pack, exported and recorded as any other |
+| `rihmasto_verify.py` | the offline verifier |
+| `BUNDLE.json`, `README.md` | what is in it and what is not, and its governance map |
+| `SHA256SUMS` | the sha256 of every file above |
+| `signature.json`, `SHA256SUMS.sigstore.json`, `trusted_root.json` | how SHA256SUMS is signed: a Sigstore bundle, only when cosign really signed |
+| `cosign.pub` | the key that signed, for reference only: verify against the key the factory published |
+| `pack-status.json` (and its `.sigstore.json`) | the pack's status (`rihma.pack-status/1`): valid, suspended or withdrawn, and when it expires; signed whenever the bundle is |
+
+**Signing.** cosign 3.1 and later sign a blob only into a Sigstore bundle. When cosign is on PATH
+and `RIHMA_COSIGN_KEY` names a key (a file or a KMS reference; Rihmasto never reads the key), the
+bundle and its status are signed offline, with no transparency-log upload, and carry what an
+offline check needs. Without cosign it says "not signed: cosign not installed". Never a placeholder
+signature. The factory's owner publishes the public key apart from any bundle, for example
+`cosign public-key --key "$RIHMA_COSIGN_KEY" --outfile factory-cosign.pub`, and hands it to each
+site's IT once: the `cosign.pub` inside a bundle proves nothing, since whoever changes a bundle can
+sign it again and replace that file.
+
+**Checking a bundle where it lands**, with nothing installed but Python, against the key the factory
+published:
+
+```bash
+python tools/rihmasto_verify.py <bundle folder or zip> --key factory-cosign.pub
+cosign verify-blob --key factory-cosign.pub --bundle SHA256SUMS.sigstore.json --trusted-root trusted_root.json --insecure-ignore-tlog=true SHA256SUMS
+```
+
+The verifier ([tools/rihmasto_verify.py](../../tools/rihmasto_verify.py)) imports nothing from
+Rihmasto. It checks SHA256SUMS (a changed byte is named by its file), the pack's hash, that the
+bundle, the deploy package and the status name that pack, the status's expiry, the app files against
+the source, the evidence pack's manifest and ledger chain, and the published
+[schemas](../../schemas/). With cosign on PATH it verifies the signatures against `--key` only
+("verified"). In a signed bundle the status must be signed and present too, and with `--key` a
+bundle without a signature fails. The verdict:
+
+| Verdict | Exit | When |
+|---|---|---|
+| passed | 0 | every check passed and every signature was verified against `--key` |
+| failed | 2 | a check failed, or a signature did not verify or is missing where one is required |
+| not verified: no verifier | 3 | every other check passed; cosign is not installed |
+| not verified: no trusted key | 3 | every other check passed; no `--key` was given |
+| not signed | 3 | every other check passed; nothing is signed (an evidence pack never is) |
+| not measured | 4 | nothing readable was given |
+
+**pack_guard.** Every product built on the paved road carries `factory/pack_guard.py`, and its image
+starts through it (the Dockerfile's CMD), so a change to `app/` cannot take the guard out. Where a
+site sets `RIHMA_PACK` (the compose file does), `/health` answers 503, with the reasons, until the
+pack's hash, the app and runtime files, the status (valid, unexpired, this pack) and the smoke set
+pass. An edited file keeps the product from ever becoming ready. The guard keeps the newest status
+it has seen in `DATA_DIR`: an older status is not taken, a withdrawal is final, and a missing or
+half-written status file falls back to the newest seen, also after a restart. Replace
+`pack-status.json` in the bundle's folder however you like (the folder is mounted, not the file).
+It cooperates with the operator: it is not DRM. Without `RIHMA_PACK` it hands over to the product's
+server, and the factory's own roads start the product directly.
+
+**Withdrawing a pack version.** A person with the it, compliance or product owner persona:
+
+```bash
+rihmasto --home var/demo pack withdraw <project id> "why" --person "<your name>" --persona it
+```
+
+It is recorded in the ledger (`pack_withdrawn`) and issues a withdrawn status document in the
+project's `pack-status/` folder, signed when cosign can sign. Placed beside the pack at a site, it
+turns that site's `/health` to 503 at the guard's next read, naming the reason and the person.
+
+**The governance map.** Every gate card (the demo's acceptance, staging's validation, production's
+deploy gate), the evidence pack and the bundle mark each of the five guarantees (pinning, evals,
+revocation, evidence, telemetry) *held*, *partial* or *lost* where the release runs, and why. A guarantee resting on a platform feature nobody has verified (the Azure
+road, never deployed) is never held.
+
 ## What is not there yet
 
-- Packs are not signed, and no SBOM is generated. Each pack says so.
+- Packs are not signed on their own, and no SBOM is generated. Each pack says so; a bundle's
+  SHA256SUMS is signed when cosign can sign it.
 - Product templates do not declare the runtime models an agentic product uses
-  (`runtime: not declared`).
+  (`runtime: not declared`), and agents do not serve MCP or an OpenAI-compatible model yet.
+- No command or cockpit screen exports a bundle; Rihmasto does not push to a registry (IT does,
+  until Gnomon's integration lane can); pack_guard reads the status from a file only; the base image
+  is a tag, not a digest. See [portability](../portability.md) for the rest of the plan.

@@ -11,10 +11,12 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import test_ui_drive as ui  # noqa: E402  (headless Chrome over the DevTools protocol)
 from factory_fakes import FactoryTestCase, model  # noqa: E402
 
 from embed.server import make_server  # noqa: E402
@@ -23,10 +25,12 @@ from kernel.embeds import (  # noqa: E402
     EMBED_BASE_ENV,
     LOCAL_EMBED_BASE,
     LOCAL_EMBED_PORT,
+    THANKS,
     RateLimit,
     create,
     embed_base,
     embeds,
+    revoke,
     snippet,
 )
 from kernel.intake import intake  # noqa: E402
@@ -200,6 +204,120 @@ class EmbedServerTest(FactoryTestCase):
         caught.exception.close()
         self.assertEqual(caught.exception.code, 403)
         self.assertFalse((fresh.projects_dir / FACTORY_PID).exists())
+
+    def website(self) -> tuple[str, dict]:
+        """A website on 127.0.0.1 that serves the pages put in the returned dict (path -> HTML)."""
+        pages: dict = {}
+
+        class Site(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                body = pages.get(self.path.split("?")[0])
+                self.send_response(200 if body is not None else 204)
+                if body is not None:
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body.encode("utf-8"))))
+                self.end_headers()
+                if body is not None:
+                    self.wfile.write(body.encode("utf-8"))
+
+            def log_message(self, fmt, *args) -> None:
+                pass
+
+        site = ThreadingHTTPServer(("127.0.0.1", 0), Site)
+        threading.Thread(target=site.serve_forever, daemon=True).start()
+        self.addCleanup(site.server_close)
+        self.addCleanup(site.shutdown)
+        return f"http://127.0.0.1:{site.server_address[1]}", pages
+
+    def test_FR_I1_AC_3_the_widget_speaks_its_kind_and_language_keeps_a_refused_message_and_shows_no_card_number(self):
+        chrome = ui.find_chrome()
+        if chrome is None:
+            self.skipTest("Chrome is not installed (RIHMA_CHROME names another browser binary)")
+        origin, pages = self.website()
+        fb = create(self.factory, kind="feedback", origins=[origin], person="Aino", persona="product_owner",
+                    project_id=self.p.pid)
+        need = create(self.factory, kind="need", origins=[origin], person="Ilkka", persona="it", label="Needs")
+        base = f"http://127.0.0.1:{self.serve(rate=RateLimit(self.clock, per_minute=2))}"
+
+        def page(e: dict, lang: str, *, kind: str = "", key: str = "") -> str:
+            attrs = f' data-kind="{kind}"' if kind else ""
+            return (f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><title>Shop</title></head><body>'
+                    f'<p>A shop.</p><script src="{base}/e/{e["id"]}/widget.js" data-rihma-embed="{e["id"]}" '
+                    f'data-key="{key or e["key"]}" data-endpoint="{base}" data-lang="{lang}"{attrs} defer></script>'
+                    f'</body></html>')
+
+        pages.update({"/en.html": page(fb, "en"), "/fi.html": page(fb, "fi"), "/need.html": page(need, "en", kind="need"),
+                      "/wrong-key.html": page(fb, "en", key="rk_not_this_one")})
+        b = ui.Browser(chrome, (self.tmp / "chrome").resolve())
+        self.addCleanup(b.close)
+        shadow = "(() => {{ const r = document.querySelector('[data-rihma-embed-host]').shadowRoot; return {}; }})()"
+        look = shadow.format(
+            "({btn: r.querySelector('.btn').textContent, title: r.querySelector('#rihma-title').textContent,"
+            " labelled: r.querySelector('label').control === r.querySelector('textarea'),"
+            " input: r.querySelector('textarea').value, focused: r.activeElement === r.querySelector('textarea'),"
+            " log: Array.from(r.querySelectorAll('.log > *'), (m) => [m.className, m.textContent]),"
+            " bubble: (() => { const p = r.querySelector('.person'); return p && getComputedStyle(p).backgroundColor; })(),"
+            " panel: getComputedStyle(r.querySelector('.panel')).backgroundColor})")
+
+        def visit(path: str, theme: str = "light") -> dict:
+            b.step = path
+            b.cmd("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-color-scheme", "value": theme}]})
+            b.cmd("Page.navigate", {"url": origin + path})
+            b.wait("!!document.querySelector('[data-rihma-embed-host]') && document.readyState === 'complete'",
+                   "the widget")
+            b.eval(shadow.format("(r.querySelector('.btn').click(), true)"))
+            return b.eval(look)
+
+        def say(text: str) -> dict:
+            b.eval(shadow.format("(r.querySelector('textarea').focus(), true)"))
+            b.cmd("Input.insertText", {"text": text})
+            for kind in ("keyDown", "keyUp"):
+                b.cmd("Input.dispatchKeyEvent", {"type": kind, "key": "Enter", "code": "Enter",
+                                                 "windowsVirtualKeyCode": 13, **({"text": "\r"} if kind == "keyDown" else {})})
+            b.wait(shadow.format("r.querySelector('.send').getAttribute('aria-disabled') === 'false'"
+                                 " && !!r.querySelector('.log > .note')"), "the answer to " + text)
+            return b.eval(look)
+
+        en = visit("/en.html")
+        self.assertEqual((en["btn"], en["title"], en["labelled"]), ("Give feedback", "Tell us what you saw", True))
+        out = say("The return button does nothing.")
+        self.assertEqual(out["log"][:2], [["m person", "The return button does nothing."], ["m assistant", THANKS]])
+        self.assertEqual(out["log"][2][0], "m note")
+        filed = [c["id"] for c in Canon(self.p).cards(state=None) if "The return button does nothing." in json.dumps(c)]
+        self.assertEqual(len(filed), 1)
+        self.assertNotIn(filed[0], json.dumps(out["log"]))                    # the project's own number stays inside
+        fi = visit("/fi.html")
+        self.assertEqual((fi["btn"], fi["title"]), ("Anna palautetta", "Kerro, mitä huomasit"))
+        out = say("Palautusnappi ei toimi.")
+        self.assertEqual(out["log"][1], ["m assistant", "Kiitos. Viestisi on välitetty tiimille."])  # not THANKS in English
+        dark = visit("/need.html", theme="dark")
+        self.assertEqual((dark["btn"], dark["title"]), ("Share a need", "Tell us what you need"))
+        out = say("We type invoice numbers by hand.")
+        self.assertEqual(out["log"][1], ["m assistant", THANKS])
+        self.assertNotEqual(out["bubble"], out["panel"])                      # the person's bubble shows in dark mode
+        visit("/en.html")                                                     # the third message this minute
+        out = say("A third one.")
+        self.assertEqual((out["input"], out["focused"]), ("A third one.", True))   # kept, in the box, to send again
+        self.assertEqual([m[0] for m in out["log"]], ["m note err"])          # no bubble says it was sent
+        self.assertIn("Wait a minute", out["log"][0][1])
+        visit("/wrong-key.html")
+        out = say("This is not filed.")
+        self.assertEqual(out["input"], "This is not filed.")
+        self.assertIn("not set up correctly", out["log"][0][1])
+        visit("/en.html")                                                     # open when the chat is revoked
+        revoke(self.factory, fb["id"], person="Aino", persona="product_owner")
+        b.step = "revoked"
+        out = say("Is anyone there?")
+        self.assertEqual((out["input"], out["focused"]), ("Is anyone there?", True))
+        self.assertEqual([m[0] for m in out["log"]], ["m note err"])          # no bubble says it was sent
+        self.assertIn("may be closed", out["log"][0][1])
+        b.eval("1")
+        refused = re.compile(r"status of (403|429)\b")
+        closed = re.compile(r"blocked by CORS policy|net::ERR_FAILED")         # the revoked chat answers no CORS
+        unexpected = [p for p in b.problems
+                      if not (refused.search(str(p[2])) or (p[0] == "revoked" and closed.search(str(p[2]))))]
+        self.assertEqual(unexpected, [])                                      # only the refusals the test asked for
+        self.assertEqual(b.violations(), [])
 
 
 if __name__ == "__main__":

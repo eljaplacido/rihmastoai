@@ -40,6 +40,14 @@ Each pack also **declares** (FR-Q6-AC-3), apart from what was measured:
 The declarations decide where the capability may run when something fails, so they are part of
 its behaviour: they are hashed, and when they change the version changes. Where the site mode
 came from (the default or a person's policy) is not behaviour and is not hashed.
+
+What travels (docs/portability.md, phase 1): an image is pinned by the digest the registry gave it
+once IT pushed it and it was pinned (`kernel.deliver.pin_image`), never by its tag (`pin_of`); an
+image not pushed and pinned is pinned by its local image id, and `pinned.not_by_digest` says why a
+site cannot pull it. The pack also pins the product's file trees
+(`app_files_sha256`, `runtime_files_sha256`, from `kernel.bundle.product_trees`) and carries the
+public smoke set, so `pack_guard` in the image can check both at start. The pack travels beside the
+image, never inside it: it pins the image's digest.
 """
 
 from __future__ import annotations
@@ -67,6 +75,32 @@ LADDER = (
 # Not part of the content hash: when the pack was built, evidence about the release (the latest
 # security scan), and the version and hash themselves.
 _UNHASHED = ("acceptance", "provenance", "security", "version", "content_sha256")
+# The public smoke set pack_guard runs in-process before the product reports ready: read-only checks
+# the paved-road template answers. Holdouts never travel; a smoke kind of the product's own is planned.
+SMOKE = {"source": "the paved-road template", "checks": [
+    {"method": "GET", "path": "/static/product.css", "expect_status": 200},
+    {"method": "GET", "path": "/rihmasto-smoke-no-such-path", "expect_status": 404}]}
+
+
+def pin_of(artifact: Any) -> tuple[Any, str]:
+    """How a release's artifact is pinned, and by what: an image by its registry digest, else its
+    local image id; a process by its source revision. A movable tag is kept only when nothing else is
+    known, and then it says `tag`."""
+    if not isinstance(artifact, dict):
+        return artifact, "as recorded"
+    ref, digest = artifact.get("ref"), artifact.get("digest")
+    if artifact.get("type") != "image":
+        return artifact.get("image") or ref or artifact.get("id"), "source revision"
+    if digest:
+        return (ref if str(ref).endswith(f"@{digest}") else f"{str(ref).rsplit(':', 1)[0]}@{digest}"), "digest"
+    if artifact.get("id"):
+        return artifact["id"], "local image id"
+    return ref, "tag"
+
+
+NOT_BY_DIGEST = {"local image id": "pinned by the local image id: it was not pushed and pinned (IT pushes it with its "
+                                   "own tools, then `rihmasto pack pin`), so a site cannot pull it by digest",
+                 "tag": "pinned by a movable tag: the road reported no digest"}
 
 
 def _sha(value: Any) -> str:
@@ -346,6 +380,7 @@ def build_pack(project, release_no: int | None = None) -> dict:
     that ran up to its start, the autonomy cap it started under, the criteria it kept when it
     ended, and holdout evidence from it and earlier releases only (see `acceptance`)."""
     from kernel.autonomy import cap_of
+    from kernel.bundle import product_trees
     from kernel.profiles import profile_of
     from kernel.security import summary as security_summary
 
@@ -358,6 +393,8 @@ def build_pack(project, release_no: int | None = None) -> dict:
     models = _models(project, rel["release"])
     # The cap the release started under; a release recorded before it was kept takes today's cap.
     cap = rel.get("autonomy_cap") if isinstance(rel.get("autonomy_cap"), int) else cap_of(project)
+    pins = {k: pin_of(v) for k, v in sorted((rel.get("artifacts") or {}).items())}
+    unpinned = {k: NOT_BY_DIGEST[how] for k, (_, how) in pins.items() if how in NOT_BY_DIGEST}
     body = {
         "format": PACK_FORMAT, "pack": project.pid, "title": project.meta.get("title"),
         "profile": profile["id"], "deliverable": profile.get("deliverable", "product"),
@@ -365,10 +402,12 @@ def build_pack(project, release_no: int | None = None) -> dict:
         "pinned": {
             "contract_revision": rel.get("contract_revision") or contract.get("revision"),
             "product_revision": rel.get("revision"),
-            "artifacts": {k: (v.get("image") or v.get("ref") or v.get("id")) if isinstance(v, dict) else v
-                          for k, v in sorted((rel.get("artifacts") or {}).items())},
+            "artifacts": {k: ref for k, (ref, _) in pins.items()},
+            **({"not_by_digest": unpinned} if unpinned else {}),
             "built_and_judged_by": models,
+            **product_trees(project, rel.get("revision")),
         },
+        "smoke": SMOKE,
         "runtime": {"declared": False, "note": "the product template does not declare runtime models yet"},
         "declared": declarations(project, models),
         "acceptance": acceptance(project, rel),

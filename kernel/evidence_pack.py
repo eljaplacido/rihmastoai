@@ -13,6 +13,8 @@ The bundle holds:
 - the latest security scan per tool, with its counts and the accepted risks, or "not measured: no
   security scan";
 - the full project ledger, with the result of verifying its hash chain at export;
+- the governance map where the latest release runs (`governance-map.json`): each of the five
+  guarantees of docs/portability.md held, partial or lost, as the release's deploy gate card shows it;
 - `MANIFEST.json`, holding the sha256 of every file.
 
 The export itself is recorded in the ledger, with the person who asked for it.
@@ -161,8 +163,102 @@ def _gather(project) -> tuple[dict, bytes]:
         "gnomon-runs.json": runs,
         "ledger-check.json": _ledger_check(records, kept),
         "security.json": security_summary(project),
+        "governance-map.json": _governance(project),
     }
     return files, raw
+
+
+# -- the governance map (docs/portability.md): which guarantee holds where a release runs --------------
+
+GUARANTEES = ("pinning", "evals", "revocation", "evidence", "telemetry")
+GOVERNANCE_STATES = ("held", "partial", "lost")
+# Where the factory runs the release itself, by road kind; anything else is an export a site runs.
+FACTORY_RUN = ("local-process", "docker", "azure-containerapps")
+# A target resting on a platform feature nobody has verified: no guarantee there is ever "held".
+UNVERIFIED = {"azure-containerapps": "it rests on Azure Container Apps, rendered and validated but never deployed "
+                                     "(UNVERIFIED)"}
+
+
+def _pinning(target: Any, artifacts: dict, guarded: bool) -> tuple[str, str]:
+    from kernel.packs import pin_of
+
+    hows = {road: pin_of(a)[1] for road, a in sorted(artifacts.items())}
+    tags = [road for road, how in hows.items() if how == "tag"]
+    if not hows or tags:
+        return "lost", f"pinned by a movable tag on {', '.join(tags)}" if tags else "the release has no artifact"
+    if target in FACTORY_RUN:
+        return "held", f"the factory runs what it pinned, by {', '.join(sorted(set(hows.values())))}"
+    loose = [f"{road} ({how})" for road, how in hows.items() if how != "digest"]
+    if loose:
+        return "partial", f"not pinned by a registry digest, so a site cannot pull it by one: {', '.join(loose)}"
+    if not guarded:
+        return "partial", "image by digest and pack by hash, but nothing at the site checks them at start"
+    return "held", "image by digest and pack by hash; pack_guard checks the pack and the file trees at start"
+
+
+def _guarantees(target: Any, artifacts: dict, signed: bool, guarded: bool) -> dict:
+    pinning = _pinning(target, artifacts, guarded)
+    if target in FACTORY_RUN:
+        return {
+            "pinning": pinning,
+            "evals": ("held", "the gate and the holdouts ran here; the pack is valid only while its acceptance holds"),
+            "revocation": ("partial", "a withdrawal is recorded and its status issued, but the factory's own roads "
+                                      "do not stop on it yet"),
+            "evidence": ("partial", "the ledger and the evidence pack stay in the factory; no SBOM yet"),
+            "telemetry": ("partial", "probes and recorded traffic stay in the factory; no content-free telemetry yet"),
+        }
+    gaps = "; ".join(g for g, ok in (("the acceptance scores travel unsigned", signed),
+                                     ("nothing re-runs the smoke set at start", guarded)) if not ok)
+    return {
+        "pinning": pinning,
+        "evals": ("partial", gaps) if gaps
+        else ("held", "signed acceptance scores, and pack_guard re-runs the public smoke set at start"),
+        "revocation": ("partial", "pack_guard reads the expiring status document beside the pack; polling the "
+                                  "site's URL is planned") if guarded
+        else ("lost", "nothing at the site reads the status document"),
+        "evidence": ("partial", f"SHA256SUMS and the evidence pack check offline "
+                                f"({'signed' if signed else 'not signed'}); no SBOM yet"),
+        "telemetry": ("lost", "no telemetry channel: the site reads not measured, never healthy"),
+    }
+
+
+def governance_map(target: Any, artifacts: dict, *, signed: bool = False, guarded: bool = False) -> list:
+    """Each of the five guarantees (pinning, evals, revocation, evidence, telemetry) held, partial or
+    lost where the release runs: ``target`` is a road kind the factory runs it on, or an export a site
+    runs (`compose`, `offline-bundle`). ``signed``: the export's SHA256SUMS is signed; ``guarded``: the
+    site runs pack_guard. A guarantee resting on an UNVERIFIED platform feature is never held."""
+    rules = _guarantees(target, artifacts if isinstance(artifacts, dict) else {}, signed, guarded)
+    out = []
+    for name in GUARANTEES:
+        state, why = rules[name]
+        if state == "held" and target in UNVERIFIED:
+            state, why = "partial", f"{why}; {UNVERIFIED[target]}"
+        out.append({"guarantee": name, "state": state, "why": why})
+    return out
+
+
+def governance_line(gmap: list) -> str:
+    return ", ".join(f"{g['guarantee']} {g['state']}" for g in gmap) or "no governance map"
+
+
+def governance_lines(gmap: list) -> list:
+    return [f"- **{g['guarantee']}**: {g['state']}: {g['why']}." for g in gmap] or ["- no governance map"]
+
+
+def _governance(project: Any) -> dict:
+    """The map where the latest release runs: its landing environment's road, as its deploy gate card had it."""
+    from kernel.deliver import LANDING, latest_release
+
+    try:
+        rel = latest_release(project)
+        if not isinstance(rel, dict):
+            return {"target": None, "map": [], "note": "no release yet, so no governance map"}
+        env = LANDING.get(str(rel.get("maturity")))
+        target = ((rel.get("roads") or {}).get(env) or {}).get("kind")
+        return {"target": target, "environment": env, "release": rel.get("release"),
+                "map": governance_map(target, rel.get("artifacts") or {})}
+    except _UNREADABLE:
+        return {"target": None, "map": [], "note": "no governance map: the release records could not be read"}
 
 
 def _chain_intact(run: Any) -> Any:
@@ -273,6 +369,9 @@ def _readme(project, files: dict) -> str:
     lc = files["ledger-check.json"]
     title = _CONTROL.sub(" ", str(project.meta.get("title")))
     broken_runs = sum(1 for r in files["gnomon-runs.json"] if not _chain_intact(r))
+    gov = files["governance-map.json"]
+    where = (f"Where release {gov.get('release')} runs ({gov.get('target') or 'no road named'}), from "
+             "`governance-map.json`:") if gov.get("map") else f"{gov.get('note')}."
     lines = [f"# Evidence pack: {title}", "",
              f"Project `{project.pid}`, profile {project.meta.get('profile', 'web_service')}, "
              f"maturity {project.meta.get('maturity')}.", "",
@@ -283,6 +382,7 @@ def _readme(project, files: dict) -> str:
              f"- Gnomon runs: {len(files['gnomon-runs.json'])}, of which audit chain not intact: {broken_runs}.",
              _ledger_line(lc),
              f"- Security: {_security_line(files.get('security.json') or {})}.",
+             "", "## Governance map", "", where, "", *governance_lines(gov.get("map") or []),
              "", "## Not in this bundle", "",
              "- Holdout scenarios: they stay in their own custody. Only their scores are here.",
              "- Secrets and credentials: never recorded by the factory.",

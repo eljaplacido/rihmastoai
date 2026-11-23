@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:rihmasto:schema:capability-pack:v1",
+  "title": "Rihmasto capability pack (rihma.capability-pack.v1)",
+  "description": "One manifest per release, pinned by hash (kernel/packs.py). The same content keeps its version; new content is a new version. The pack travels beside the image, never inside it: it pins the image's digest.",
+  "$comment": "content_sha256 is the sha256 of the canonical JSON of the pack without its unhashed fields (x-rihmasto-unhashed). Canonical JSON: object keys sorted, the separators ',' and ':' with no whitespace, UTF-8 with no ASCII escaping, no NaN or Infinity. It is not RFC 8785 (JCS): numbers are written as Python writes them, so the hashed content holds no floats, only strings, integers, booleans, null, arrays and objects. The app and runtime tree hashes are sha256 over one line per file, '<sha256 of its bytes, CRLF read as LF>  <path>', sorted by path, with __pycache__ and .pyc files left out.",
+  "x-rihmasto-unhashed": {
+    "acceptance": "all of it but acceptance.criteria and acceptance.holdout_scores: whether it is valid, and why not, is read again",
+    "provenance.ledger_head": "when the pack was built, not what it holds",
+    "security": "the latest scan is evidence about the release, not its behaviour",
+    "declared.site_mode.source": "where the site mode came from (the default or a person's policy)",
+    "version": "the version rests on the hash",
+    "content_sha256": "the hash itself"
+  },
+  "type": "object",
+  "required": ["format", "pack", "title", "profile", "deliverable", "release", "maturity", "autonomy_cap", "pinned",
+               "runtime", "declared", "acceptance", "security", "provenance", "version", "content_sha256"],
+  "properties": {
+    "format": {"const": "rihma.capability-pack.v1"},
+    "pack": {"type": "string", "description": "the project id"},
+    "title": {"type": ["string", "null"]},
+    "profile": {"type": "string"},
+    "deliverable": {"type": "string"},
+    "release": {"type": "integer"},
+    "maturity": {"enum": ["explore", "demo", "pilot", "production"]},
+    "autonomy_cap": {"type": "integer"},
+    "pinned": {"$ref": "#/$defs/pinned"},
+    "smoke": {"$ref": "#/$defs/smoke"},
+    "runtime": {"type": "object", "required": ["declared"]},
+    "declared": {"type": "object", "required": ["workload_classes", "site_mode", "fallback_ladder"]},
+    "acceptance": {"type": "object", "required": ["criteria", "holdout_scores", "valid", "not_valid_because"]},
+    "security": {"type": "object"},
+    "provenance": {"type": "object", "required": ["sbom", "signature"]},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "content_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "pinned": {
+      "type": "object",
+      "required": ["contract_revision", "product_revision", "artifacts", "built_and_judged_by"],
+      "properties": {
+        "contract_revision": {"type": ["string", "null"]},
+        "product_revision": {"type": ["string", "null"]},
+        "artifacts": {
+          "type": "object",
+          "description": "by road: an image by its registry digest (repository@sha256:...), else its local image id (sha256:...); a process by its source revision. A movable tag appears only when nothing else is known, and not_by_digest names it.",
+          "additionalProperties": {"type": ["string", "null"]}
+        },
+        "not_by_digest": {"type": "object", "additionalProperties": {"type": "string"}},
+        "built_and_judged_by": {"type": "object"},
+        "app_files_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "runtime_files": {"type": "array", "items": {"type": "string"}},
+        "runtime_files_sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "trees_note": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "smoke": {
+      "type": "object",
+      "description": "the public smoke set pack_guard runs in-process before the product reports ready; holdouts never travel",
+      "required": ["source", "checks"],
+      "properties": {
+        "source": {"type": "string"},
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["method", "path", "expect_status"],
+            "properties": {
+              "method": {"const": "GET"},
+              "path": {"type": "string", "pattern": "^/"},
+              "expect_status": {"type": "integer"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

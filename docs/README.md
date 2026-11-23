@@ -47,6 +47,9 @@ built and what is not.
 
 ## IT and operations
 
+- [Access](guides/access.md): who may decide as which persona. Single-operator and enforced modes,
+  the access file, and setting up an identity-aware proxy (oauth2-proxy with Entra ID, Okta, Google
+  or Keycloak; Google IAP; an AWS load balancer).
 - [Deploying on paved roads](guides/deploying.md): the short version of how a product lands.
 - [Paved roads](paved-roads.md): the full reference: configuring a road, what each maturity does,
   and what is real and what is not.
@@ -56,7 +59,10 @@ built and what is not.
   protected.
 - [Integrations](integrations.md) (*design*): connecting other systems through Gnomon as governed
   tool calls.
-- [Portability](portability.md) (*design*): running a release anywhere, with its pins and evidence.
+- [Events, doorbells and connectors](guides/integrations.md): signed events and notices out,
+  verified webhooks in, and the connector model, as far as they are built.
+- [Portability](portability.md) (*design, phase 1 built*): running a release anywhere, with its pins
+  and evidence.
 - [Security](../SECURITY.md): how to report a vulnerability, and the threat model in short.
 
 ## Compliance
@@ -64,14 +70,16 @@ built and what is not.
 - [Capability packs and evidence packs](guides/packs-and-evidence.md): what a release is, and the
   bundle a reviewer checks.
 - [The autonomy ladder](guides/autonomy.md): the cap, who may set it, and how it is recorded.
+- [Access](guides/access.md): how a decision is bound to a verified identity, and how each change
+  to who may decide is recorded.
 - [Security findings from any scanner](brownfield.md#security-findings-from-any-scanner): the
   security gate and accepted risks.
 - [Decisions](../decisions/): every decision, who made it and why.
 
 ## Background and research
 
-- [Knowledge graphs and ontologies](knowledge-graph.md) (*design*): a read model over Rihmasto's
-  own records.
+- [Knowledge graphs and ontologies](knowledge-graph.md) (*phase 1 built*): a read model over Rihmasto's
+  own records, and the read-only `rihmasto graph` command.
 - [Ideas for the road ahead](roadmap-ideas.md): ideas from research, and which are done.
 - [Gnomon upstream issues](../upstream/gnomon-issues.md): what Rihmasto asked of Gnomon.
 - [The first working spec](../specs/001-initial/spec.md): an early draft of the factory's own
@@ -81,6 +89,9 @@ built and what is not.
 
 - [Contributing](../CONTRIBUTING.md), [code of conduct](../CODE_OF_CONDUCT.md),
   [governance](../GOVERNANCE.md) and [security](../SECURITY.md).
+- [The changelog](../CHANGELOG.md): what changed in each release.
+- [Maintainers: releases and the two-way sync](maintainers.md): how a snapshot of the maintainers'
+  development repository reaches `main`, and how merged contributions are brought back.
 - [Licence](../LICENSE) (Apache-2.0) and [notice](../NOTICE).
 - [The contract](../contract/contract.json): Rihmasto's own requirements, criteria and tasks.
 - [Decisions](../decisions/), [amendments](../decisions/amendments/) and

@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Ask a question
+    url: https://github.com/eljaplacido/rihmastoai/discussions
+    about: Questions and ideas go to GitHub Discussions. Issues are for bugs and proposals.
   - name: Report a security vulnerability
-    url: https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability
-    about: Report it privately. Open this repository's Security tab and choose "Report a vulnerability". Do not open a public issue.
+    url: https://github.com/eljaplacido/rihmastoai/security/advisories/new
+    about: Report it privately, through private vulnerability reporting. Never in a public issue, pull request or discussion.

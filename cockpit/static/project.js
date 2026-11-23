@@ -13,7 +13,7 @@ import {
   profileOf,
 } from "./core.js";
 import { waterfall, dataTable, tipBox, bars } from "./charts.js";
-import { ATTEST, exportButton, liveState } from "./widgets.js";
+import { ATTEST, liveState } from "./widgets.js";
 
 // -- shims the views were written against: a state is a chip with an icon and a word ---------------
 
@@ -36,17 +36,120 @@ function verdictKind(v) {
   return "nm";
 }
 function oldHead(kicker, title, sub) { return pageHead(title, sub); }
-function loading(main) { fill(main); }
+// A page's loading placeholder (after a second) is cleared on every way out of its render: drawn,
+// superseded by a newer page or failed. A placeholder left behind would cover a newer page or an error.
+async function placeheld(main, what, draw) {
+  const done = skeleton(main, what);
+  try {
+    return await draw(done);
+  } finally {
+    done();
+  }
+}
 function actorLegend() {
   return h("p", { class: "legend-row muted small" }, h("span", null, glyph("human"), " a person: owns the decision"),
     h("span", null, glyph("model"), " an agent: a model in a role, its delegate"),
     h("span", null, glyph("kernel"), " the kernel: a deterministic rule"));
 }
+// -- the focus after a write ---------------------------------------------------------------------------
+// act() disables a block's buttons while its write is in flight, which takes the focus off the one that
+// was pressed. run() puts it back on that button when the write fails; settle() re-renders after a
+// write that succeeded and gives the focus to the first of `to` (selectors, in order) that is on the
+// page, so it never drops to the page's body.
+function run(btn, container, fn) {
+  return act(container, fn).then((v) => {
+    const a = document.activeElement;
+    if (btn && btn.isConnected && !btn.disabled && (!a || a === document.body)) btn.focus();
+    return v;
+  });
+}
+const FOCUSABLE = "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]";
+function focusFirst(to) {
+  for (const sel of to) {
+    const el = sel ? $(sel) : null;
+    if (!el || !el.getClientRects().length) continue;
+    if (!el.matches(FOCUSABLE)) el.setAttribute("tabindex", "-1");
+    el.focus();
+    return true;
+  }
+  return false;
+}
+async function settle(to) {
+  await nav.rerender();
+  const a = document.activeElement;
+  if (!a || a === document.body) focusFirst((to || []).concat([".view-body h2#view-title", "#view-title"]));
+}
+// The headings of the cards beside one: those after it first, then those before it, nearest first.
+// After a write that settles a card, the focus goes to the next card's heading.
+function nextCards(el) {
+  const art = el && el.closest("article[aria-labelledby]");
+  const list = art && art.parentElement && art.closest(".cards");
+  if (!art || !list) return [];
+  const all = $$("article[aria-labelledby]", list).filter((x) => x.closest(".cards") === list);
+  const i = all.indexOf(art);
+  return all.slice(i + 1).concat(all.slice(0, Math.max(0, i)).reverse())
+    .map((x) => "#" + CSS.escape(x.getAttribute("aria-labelledby")));
+}
+function typingNow() {
+  const a = document.activeElement;
+  return !!a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+}
+// A re-render nobody asked for (a watched job ended) keeps the focus where the person left it. nav.rerender
+// finds a control again only by its data-key; a tab, a link or a heading has none. focusMark() says what
+// has the focus: its tag, id, address, name and words, which of the page's elements like it it was, and
+// the headings of the regions around it. refocus() finds the same element on the new page (by its id,
+// address or name alone when its words changed), else the nearest of those headings, else the view's
+// heading, and never moves the page while it does.
+function looseSig(el) {
+  return [el.id || "", el.getAttribute("href") || "", el.getAttribute("aria-label") || ""].join("|");
+}
+function words(el) { return (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120); }
+function focusMark() {
+  const a = document.activeElement;
+  if (!a || a === document.body || a === document.documentElement || !a.isConnected) return null;
+  const tag = a.tagName.toLowerCase();
+  const loose = looseSig(a);
+  const text = words(a);
+  const alike = $$(tag).filter((x) => looseSig(x) === loose);   // words are compared only among these
+  const near = [];
+  for (let el = a.parentElement; el && el !== document.body; el = el.parentElement) {
+    const by = el.getAttribute("aria-labelledby");
+    if (by) near.push("#" + CSS.escape(by.split(/\s+/)[0]));
+  }
+  return { tag, loose, text, at: Math.max(0, alike.filter((x) => words(x) === text).indexOf(a)), looseAt: Math.max(0, alike.indexOf(a)),
+    // without its words, an element is still itself when it has an id, an address or a name
+    named: loose !== "||", near };
+}
+function refocus(m) {
+  if (!m) return;
+  const a = document.activeElement;
+  if (a && a !== document.body && a.isConnected) return;   // the re-render found it, or the person moved on
+  const alike = $$(m.tag).filter((x) => looseSig(x) === m.loose);
+  const same = alike.filter((x) => words(x) === m.text);
+  const el = same[m.at] || same[0] || (m.named ? alike[m.looseAt] || alike[0] : null) || null;
+  const shown = (x) => x && x.isConnected && !x.disabled && x.getClientRects().length;
+  const go = (x) => {
+    if (!x.matches(FOCUSABLE)) x.setAttribute("tabindex", "-1");
+    x.focus({ preventScroll: true });
+  };
+  if (shown(el)) { go(el); return; }
+  for (const sel of m.near.concat([".view-body h2#view-title", "#view-title"])) {
+    const x = $(sel);
+    if (shown(x)) { go(x); return; }
+  }
+}
+// Whether the project's intake has run: it leaves a brief.
+function intakeRan(p) { return !!String(p.brief || "").trim(); }
+
 function isPlanCard(c) { return !!c && c.kind === "approval" && (c.refs || {}).scope === "plan"; }
 function acceptsRelease(c) {
   return !!c && (c.kind === "validation" || (c.kind === "approval" && /^Accept the demo/.test(String(c.title || ""))));
 }
 function mayPause() { return ((S.meta && S.meta.may_pause) || []).includes(S.persona); }
+// Advance is how a project carries on, so it is offered to the personas who may pause and resume one
+// (or those the kernel names as its advancers, where /api/meta names them); anyone else is told who does.
+function advancers() { const m = S.meta || {}; return m.may_advance || m.may_pause || []; }
+function mayAdvance() { return advancers().includes(S.persona); }
 function nowLine(n, pid, p) {
   if (!n) return h("p", { class: "nowline" }, nowChip(null), h("span", { class: "muted" }, "What it is doing could not be read."));
   const st = p ? liveState({ live: { running: p.running }, now: n, last_cell: p.last_cell }) : null;
@@ -92,7 +195,9 @@ function healthCard(p) {
     ? h("ul", { class: "reasons", "aria-label": "Why" }, hl.reasons.map((r) => h("li", null, icon("alert"), h("span", null, linkIds(pid, r)))))
     : h("p", { class: "muted small" }, "Nothing holds it back: no escalation, no stopped task, nothing overdue or stale."),
   h("dl", { class: "forecast" },
-    row("Tasks left", String(f.tasks_left === undefined ? "?" : f.tasks_left)),
+    // Before the contract is compiled there are no tasks to count: not known yet, never 0.
+    row("Tasks left", !p.contract ? h("span", { class: "nm-text" }, "no contract yet")
+      : f.tasks_left === undefined || f.tasks_left === null ? nm() : String(f.tasks_left)),
     row("Median per task", measured ? fmtMinutes(f.median_task_minutes) : nm()),
     row("ETA", measured && f.eta_minutes !== null && f.eta_minutes !== undefined ? fmtMinutes(f.eta_minutes) : nm())),
   h("p", { class: "basis muted small" }, "Forecast basis: ", f.basis || ""));
@@ -163,9 +268,12 @@ function evidenceBody(row, pid) {
 
 async function renderProjects(seq) {
   const main = $("#main");
-  loading(main, "projects");
+  return placeheld(main, "projects", (done) => drawProjects(main, seq, done));
+}
+async function drawProjects(main, seq, done) {
   const [projects, jobs] = await Promise.all([api("GET", "/api/projects"), api("GET", "/api/jobs")]);
   if (seq !== S.seq) return;
+  done();
   S.projects = projects;
   document.title = "Projects · " + BRAND;
   const waits = (p) => !!p.now && p.now.state === "waiting_on_you";
@@ -281,9 +389,12 @@ function tile(name, value, sub, kind) {
 
 async function renderFloor(seq) {
   const main = $("#main");
-  loading(main, "the floor");
+  return placeheld(main, "the floor", (done) => drawFloor(main, seq, done));
+}
+async function drawFloor(main, seq, done) {
   const f = await api("GET", "/api/floor");
   if (seq !== S.seq) return;
+  done();
   document.title = "Floor · " + BRAND;
   const g = f.gates || {};
   const o = f.overall;
@@ -315,12 +426,16 @@ async function renderFloor(seq) {
     tile("Not measured", num(o.not_measured), "left out of the rate, never counted as failed"),
     tile("Apparatus failures", num(o.apparatus_failures), "the harness broke, not the work; left out too"),
   ]);
+  // Spend is priced from Gnomon runs. With no run recorded nothing was priced: not measured, never 0.
+  const noRuns = !o.runs;
   const spendTiles = listed("Spend", [
-    tile("Cloud spend", fmtMoney(sp.cloud, f.currency),
-      sp.unmeasured_runs ? plural(sp.unmeasured_runs, "run") + " without a price"
-        + (sp.cloud_measured_part ? "; the priced part is " + fmtMoney(sp.cloud_measured_part, f.currency) : "")
-        : "every run priced", sp.cloud === null ? "nm" : null),
-    tile("Local spend", num(sp.local_tokens) + " tokens", "local models cost no API money"),
+    noRuns ? tile("Cloud spend", "not measured", "no Gnomon run is recorded, so no run was priced", "nm")
+      : tile("Cloud spend", fmtMoney(sp.cloud, f.currency),
+        sp.unmeasured_runs ? plural(sp.unmeasured_runs, "run") + " without a price"
+          + (sp.cloud_measured_part ? "; the priced part is " + fmtMoney(sp.cloud_measured_part, f.currency) : "")
+          : "every run priced", sp.cloud === null ? "nm" : null),
+    noRuns ? tile("Local spend", "not measured", "no Gnomon run is recorded, so no token was counted", "nm")
+      : tile("Local spend", num(sp.local_tokens) + " tokens", "local models cost no API money"),
   ]);
   const VERDICT_HEAD = { passed: ["ok", "✓"], failed: ["crit", "✕"], violation: ["crit", "✕"], "not measured": ["nm", "?"] };
   const phaseTable = phases.length ? h("div", { class: "tbl" }, h("table", null,
@@ -354,7 +469,9 @@ async function renderFloor(seq) {
     : null;
   const modelTable = models.length ? h("div", { class: "tbl" }, h("table", null,
     h("caption", { class: "vh" }, "Each builder model's record"),
-    h("thead", null, h("tr", null, ["Builder model", "Cells run", "First round warranted", "Escalated",
+    // A builder model's escalations are its cells that handed the work on to another model, not the
+    // tasks the gate escalated to a person (the tile above).
+    h("thead", null, h("tr", null, ["Builder model", "Cells run", "First round warranted", "Escalated to another model",
       "Mean rounds to pass"].map((t, i) => h("th", { scope: "col", class: i ? "num" : null }, t)))),
     h("tbody", null, models.map(([name, m]) => h("tr", null,
       h("td", { class: "mono" }, name), h("td", { class: "num" }, String(m.cells)),
@@ -367,30 +484,43 @@ async function renderFloor(seq) {
     oldHead("Rihma · factory", "Floor", "The gate's judgement first: how many tasks passed their gate on the first "
       + "round, merged or escalated. Below it, each Gnomon run's harness outcome, where a run that was not measured "
       + "is counted apart, never as a failure."),
-    h("section", { "aria-labelledby": "fl-gt" }, h("h2", { id: "fl-gt", class: "label-h" }, "The gate's judgement (each task)"),
+    h("section", { class: "fl", "aria-labelledby": "fl-gt" }, h("h2", { id: "fl-gt", class: "label-h" }, "The gate's judgement (each task)"),
       gateTiles,
       f.projects.length ? card({ title: "First-round pass per project", icon: "gate", cls: "floor-chart",
         info: "Each project's tasks that passed their gate on the first round, of its tasks gated. A project with no gated task is not measured, never 0." },
       floorBars(f.projects)) : null),
-    h("section", { class: "section harness", "aria-labelledby": "fl-hn" },
+    h("section", { class: "section fl harness", "aria-labelledby": "fl-hn" },
       h("h2", { id: "fl-hn", class: "label-h" }, "Harness outcomes (each Gnomon run)"),
       h("p", { class: "hnote" }, f.harness_note || ""),
       harnessTiles,
       h("h3", { class: "label-h sub-h" }, "By phase and verdict"),
       h("p", { class: "muted small" }, "A run's phase is its project's stage now. Not measured is not failed."), phaseTable),
-    projectTable ? h("section", { class: "section", "aria-labelledby": "fl-pr" },
+    projectTable ? h("section", { class: "section fl", "aria-labelledby": "fl-pr" },
       h("h2", { id: "fl-pr", class: "label-h" }, "Per project"), projectTable) : null,
-    h("section", { class: "section", "aria-labelledby": "fl-sp" }, h("h2", { id: "fl-sp", class: "label-h" }, "Spend"), spendTiles),
-    h("section", { class: "section", "aria-labelledby": "fl-md" }, h("h2", { id: "fl-md", class: "label-h" }, "Builder models"),
+    h("section", { class: "section fl", "aria-labelledby": "fl-sp" }, h("h2", { id: "fl-sp", class: "label-h" }, "Spend"), spendTiles),
+    h("section", { class: "section fl", "aria-labelledby": "fl-md" }, h("h2", { id: "fl-md", class: "label-h" }, "Builder models"),
       h("p", { class: "muted small" }, "The evidence a routing change must rest on. Rihma proposes a routing experiment; "
         + "it never re-routes silently."), modelTable),
-    h("section", { class: "section", "aria-labelledby": "fl-im" }, h("h2", { id: "fl-im", class: "label-h" }, "Lessons across projects"),
-      memory.length ? h("ul", { class: "plain lessons" }, memory.map((m) => h("li", null,
-        h("span", { class: "mono" }, m.class || "(unclassified)"), " · seen in ", plural(m.projects.length, "project"),
-        ": ", m.projects.join(", "),
-        m.examples && m.examples[0] ? h("div", { class: "muted" }, "then " + m.examples[0].then) : null)))
+    h("section", { class: "section fl", "aria-labelledby": "fl-im" }, h("h2", { id: "fl-im", class: "label-h" }, "Lessons across projects"),
+      memory.length ? h("ul", { class: "plain lessons" }, memory.map(lessonItem))
         : h("p", { class: "muted" }, "No lessons yet. A lesson is left by every defect; one seen in two projects becomes a "
           + "proposal in ", h("a", { href: "#/p/" + FACTORY_PID + "/inbox" }, "Rihma itself"), ".")));
+}
+
+// A lesson reads as the check it left behind (given, when, then), never as the word signature the
+// kernel groups lessons by; a lesson without a criterion is its own sentence, said once.
+function lessonItem(m) {
+  const ex = (m.examples || [])[0] || {};
+  const given = ex.given && ex.given !== "-" ? ex.given : null;
+  const when = ex.when && ex.when !== "-" ? ex.when : null;
+  const check = given || when
+    ? [given ? "Given " + given + ", " : "", (given ? "when " : "When ") + (when || "-") + ", then " + (ex.then || "-")].join("")
+    : String(ex.then || "(no text recorded)");
+  return h("li", { class: "lesson" }, h("p", { class: "lesson-t" }, check),
+    h("p", { class: "muted small" }, "Seen in " + plural(m.projects.length, "project") + ": ", sepList(m.projects.map((pid) =>
+      h("a", { href: link(pid, "changes") }, pid))),
+    ex.criterion ? h("span", null, " · regression check ", h("span", { class: "mono" }, ex.criterion),
+      m.projects.length > 1 && ex.project ? " in " + ex.project : "") : null));
 }
 
 function floorBars(projects) {
@@ -422,9 +552,12 @@ function jobsSection(jobs, title) {
 
 async function renderJobs(seq) {
   const main = $("#main");
-  loading(main, "jobs");
+  return placeheld(main, "jobs", (done) => drawJobs(main, seq, done));
+}
+async function drawJobs(main, seq, done) {
   const jobs = await api("GET", "/api/jobs");
   if (seq !== S.seq) return;
+  done();
   document.title = "Jobs · " + BRAND;
   main.replaceChildren(
     oldHead("Rihma · cockpit", "Jobs", "Background runs of the kernel's command line, started from this cockpit."),
@@ -453,11 +586,11 @@ function pauseControls(p) {
       h("span", { class: "ic", "aria-hidden": "true" }, "▶"), " Resume");
     b.addEventListener("click", () => {
       if (!needPerson()) return;
-      act(box, async () => {
+      run(b, box, async () => {
         const out = await api("POST", url + "/resume", signed());
         say(meta.title + " is resumed, signed by " + S.person.trim() + " as " + personaLabel(S.persona) + ". "
           + (out.now ? out.now.line : ""), "ok");
-        await nav.rerender();
+        await settle(['[data-key="pause"]', '[data-key="advance"]']);
       });
     });
     box.append(h("div", { class: "btns" }, b, h("span", { class: "muted small" },
@@ -488,10 +621,10 @@ function pauseControls(p) {
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     if (!needPerson()) return;
-    act(form, async () => {
+    run(go, form, async () => {
       const out = await api("POST", url + "/pause", Object.assign({ reason: reason.value.trim() }, signed()));
       say((out.now ? out.now.line + " " : "") + "Signed by " + S.person.trim() + " as " + personaLabel(S.persona) + ".", "ok");
-      await nav.rerender();
+      await settle(['[data-key="resume"]', ".pausebar.paused"]);
     });
   });
   return h("div", { class: "pausebar" }, open, form);
@@ -500,6 +633,20 @@ function pauseControls(p) {
 function countText(c) {
   if (!c) return "";
   return (c.total === null || c.total === undefined ? String(c.value) : c.value + "/" + c.total) + " " + c.label;
+}
+// A stage's count, said only where its records exist: before the intake, the spec or the contract there
+// is nothing to count, and the stage says so rather than showing a 0 that was never measured.
+function stageCount(p, s) {
+  if (p.meta.factory) return countText(s.count);
+  if ((s.stage === 1 || s.stage === 2) && !intakeRan(p) && !(p.questions || []).length) return "no intake yet";
+  if ((s.stage === 3 || s.stage === 4) && !p.spec && !p.contract) return "no spec yet";
+  if (s.stage === 5 && !p.contract) return "no contract yet";
+  return countText(s.count);
+}
+// Stage 5's verified and claimed criteria exist only once a contract names criteria: before it there is
+// nothing to count, so nothing is shown rather than "0 verified · 0 claimed".
+function stageEvidence(p, s) {
+  return s.evidence && (p.meta.factory || p.contract) ? s.evidence : null;
 }
 
 function stageRail(p) {
@@ -524,8 +671,8 @@ function stageRail(p) {
             h("span", { class: "st-n", "aria-hidden": "true" }, s.state === "done" ? "✓" : String(s.stage)),
             h("span", { class: "st-b" },
               h("span", { class: "st-name" }, h("span", { class: "vh" }, "Stage " + s.stage + ": "), cap(s.name)),
-              h("span", { class: "st-c" }, countText(s.count)),
-              s.evidence ? h("span", { class: "st-e" },
+              h("span", { class: "st-c" }, stageCount(p, s)),
+              stageEvidence(p, s) ? h("span", { class: "st-e" },
                 h("span", { class: "ok" }, h("span", { "aria-hidden": "true" }, "✓ "), s.evidence.verified + " verified"),
                 h("span", { class: "sep", "aria-hidden": "true" }, " · "), h("span", { class: "vh" }, ", "),
                 h("span", { class: "claimed" }, h("span", { "aria-hidden": "true" }, "○ "), s.evidence.claimed + " claimed"),
@@ -698,16 +845,18 @@ function advancePanel(p) {
       + "It never decides for anyone."));
   const running = p.jobs.some((j) => j.state === "running");
   const paused = !!p.meta.pause;
-  const button = h("button", { type: "button", class: "btn primary", "data-key": "advance", disabled: running || paused },
+  if (!mayAdvance()) {
+    box.append(h("p", { class: "muted small" }, glyph("human"), " A " + orList(advancers()) + " persona advances the project. "
+      + (running ? "A job is running for it now." : paused ? "It is paused." : "")),
+    jobsSection(p.jobs.slice(0, 3), "Jobs for this project"));
+    return box;
+  }
+  const button = h("button", { type: "button", class: "btn primary", "data-key": "advance-panel", disabled: running || paused },
     running ? "A job is running" : paused ? "Paused: resume it first" : "Advance the project");
   if (paused) {
     box.append(h("p", { class: "muted small" }, "The project is paused. Advance stays off until a person resumes it from the header."));
   }
-  button.addEventListener("click", () => act(box, async () => {
-    const out = await api("POST", "/api/projects/" + enc(p.meta.id) + "/advance", signed());
-    say("Job " + out.job.id + " started: python " + out.job.args.join(" "), "ok");
-    await nav.rerender();
-  }));
+  button.addEventListener("click", () => advanceWrite(p, button, box, ["#adv-h"]));
   box.append(h("div", { class: "btns" }, button), jobsSection(p.jobs.slice(0, 3), "Jobs for this project"));
   return box;
 }
@@ -801,7 +950,7 @@ VIEW_FN.inbox = function viewInbox(p, inbox, ctx) {
     + "may decide, with only that kind's verdicts.")];
   if (!inbox.cards.length) {
     out.push(h("div", { class: "empty teach" }, h("p", { class: "empty-t" }, "Nothing needs you right now."),
-      nowLine(p.now, null),
+      nowLine(p.now, null, p),
       h("p", { class: "muted small" }, "A card comes here when a decision is the " + persona + " persona's to make: "
         + "a question, an approval, an escalation. Each one shows what deciding it would touch before you decide.")));
     return h("div", null, out);
@@ -880,12 +1029,13 @@ function decideForm(pid, c) {
       const b = h("button", { type: "button", class: "btn human", "data-key": c.id + ":" + v, "data-control": "decide" }, VERDICT_LABEL[v] || v);
       b.addEventListener("click", () => {
         if (!needPerson()) return;
-        act(form, async () => {
+        const to = nextCards(form).concat(["#" + CSS.escape("chg-" + c.id)]);   // the next card; in Changes, this one stays
+        run(b, form, async () => {
           await api("POST", "/api/projects/" + enc(pid) + "/cards/" + enc(c.id) + "/decide",
             Object.assign({ verdict: v, reason: $("#" + CSS.escape(reasonId)).value }, signed()));
           say(c.id + ": " + (VERDICT_LABEL[v] || v) + ", signed by " + S.person.trim() + " as "
             + personaLabel(S.persona) + ".", "ok");
-          await nav.rerender();
+          await settle(to);
         });
       });
       return b;
@@ -997,7 +1147,8 @@ function questionBody(p, q, where, title, extra) {
   // An Inbox card already carries the question as its title; it is not said twice.
   if (String(title || "").trim() !== String(q.text || "").trim()) box.append(h("p", { class: "qtext" }, q.text));
   if (q.status !== "open") {
-    box.append(why, opinionsGrid(q, false), answerLine(pid, q));
+    // a question without a rationale has no "Why" line (the native append would write "null")
+    box.append(...[why, opinionsGrid(q, false), answerLine(pid, q)].filter(Boolean));
     return box;
   }
   const id = "ans-" + where + "-" + q.id;
@@ -1030,30 +1181,35 @@ function questionBody(p, q, where, title, extra) {
     form.append(h("div", { class: "field" }, h("label", { for: id }, "Your answer to " + q.id), own));
     pick = () => ({ text: own.value.trim(), own: true });
   }
-  form.append(why, opinionsGrid(q, true));
+  form.append(...[why, opinionsGrid(q, true)].filter(Boolean));
   const answer = h("button", { type: "button", class: "btn human primary", "data-key": id + ":answer", "data-control": "answer" }, "Answer");
   const assume = h("button", {
     type: "button", class: "btn quiet secondary", "data-key": id + ":assume", "data-control": "assume", disabled: !q.proposed,
     "aria-describedby": id + "-assume",
   }, "Let Rihma assume");
+  // Once it is settled, the focus goes on to the next question: in One at a time its heading, else the
+  // next card's heading (or the one before it), never the page's body.
+  const onward = () => (where === "one" ? ["#one-h"] : nextCards(box));
   answer.addEventListener("click", () => {
     const chosen = pick();
     if (!chosen.text) { say("Write your own answer first, or pick an option.", "warn"); own.focus(); return; }
     if (!needPerson()) return;
-    act(form, async () => {
+    const to = onward();
+    run(answer, form, async () => {
       await api("POST", "/api/projects/" + enc(pid) + "/questions/" + enc(q.id) + "/answer",
         Object.assign({ text: chosen.text }, signed()));
       say(q.id + " is answered by " + S.person.trim() + " (“" + chosen.text + "”); the brief was regenerated.", "ok");
-      await nav.rerender();
+      await settle(to);
     });
   });
   assume.addEventListener("click", () => {
     if (!needPerson()) return;
-    act(form, async () => {
+    const to = onward();
+    run(assume, form, async () => {
       const out = await api("POST", "/api/projects/" + enc(pid) + "/questions/" + enc(q.id) + "/assume", signed());
       say(q.id + " is assumed as " + out.assumption.id + ", due " + out.assumption.due
         + "; the brief was regenerated.", "ok");
-      await nav.rerender();
+      await settle(to);
     });
   });
   form.append(h("div", { class: "btns answer-btns" }, answer, h("span", { class: "or muted small" }, "or"), assume, extra || null),
@@ -1081,8 +1237,9 @@ function oneAtATime(p, open) {
   const skipped = (S.skipped[pid] || []).filter((id) => open.some((q) => q.id === id));
   const queue = open.filter((q) => !skipped.includes(q.id)).concat(skipped.map((id) => open.find((q) => q.id === id)));
   if (!queue.length) {
-    return h("div", { class: "empty teach" }, h("p", { class: "empty-t" }, "No open questions."),
-      h("p", null, "Everything the panel asked is answered or assumed."), nowLine(p.now, null));
+    // "Answered or assumed" only when the panel asked something; the state is the header's own.
+    return h("div", { class: "empty teach" }, h("p", { class: "empty-t" }, p.questions.length ? "No open questions." : noQuestions(p)),
+      p.questions.length ? h("p", null, "Everything the panel asked is answered or assumed.") : null, nowLine(p.now, null, p));
   }
   const q = queue[0];
   const skip = h("button", { type: "button", class: "btn quiet", "data-key": "one:skip" }, "Skip for now");
@@ -1120,12 +1277,15 @@ VIEW_FN.questions = function viewQuestions(p, inbox, ctx) {
     return h("div", null, out);
   }
   if (!qs.length) {
-    out.push(h("p", { class: "empty" }, p.questions.length ? "No open questions." : "No questions yet: the intake has not run."));
+    out.push(h("p", { class: "empty" }, p.questions.length ? "No open questions." : noQuestions(p)));
     return h("div", null, out);
   }
   out.push(h("div", { class: "cards" }, qs.map((q) => questionCard(p, q, "q"))));
   return h("div", null, out);
 };
+function noQuestions(p) {
+  return intakeRan(p) ? "The panel asked no questions." : "No questions yet: the intake has not run.";
+}
 
 // -- assumptions
 
@@ -1136,6 +1296,7 @@ VIEW_FN.assumptions = function viewAssumptions(p) {
     out.push(h("p", { class: "empty" }, "No assumptions."));
     return h("div", null, out);
   }
+  const open = p.assumptions.filter((a) => a.status === "open");
   const rows = p.assumptions.map((a) => {
     let action = h("span", { class: "muted" }, a.settled ? "by " + a.settled.by + " (" + personaLabel(a.settled.persona) + ")"
       + (a.settled.correction ? ": " + a.settled.correction : "") : "");
@@ -1145,19 +1306,23 @@ VIEW_FN.assumptions = function viewAssumptions(p) {
       const confirm = h("button", { type: "button", class: "btn human", "data-key": a.id + ":confirm" }, "Confirm");
       const input = h("input", { id: cid, "data-key": cid, placeholder: "what is true instead" });
       const refute = h("button", { type: "button", class: "btn", "data-key": a.id + ":refute" }, "Refute");
-      const settle = (confirmed) => {
+      // Once settled, the focus goes to the next open assumption's Confirm (or the one before it).
+      const i = open.findIndex((x) => x.id === a.id);
+      const onward = open.slice(i + 1).concat(open.slice(0, Math.max(0, i)).reverse())
+        .map((x) => '[data-key="' + CSS.escape(x.id + ":confirm") + '"]');
+      const decide = (confirmed, btn) => {
         const correction = input.value.trim();
         if (!confirmed && !correction) { say("A refutation needs the correction.", "warn"); input.focus(); return; }
         if (!needPerson()) return;
-        act(cell, async () => {
+        run(btn, cell, async () => {
           await api("POST", "/api/projects/" + enc(pid) + "/assumptions/" + enc(a.id) + "/settle",
             Object.assign({ confirmed, correction }, signed()));
           say(a.id + (confirmed ? " is confirmed." : " is refuted; a change card was opened for it."), "ok");
-          await nav.rerender();
+          await settle(onward.concat(['tr[data-id="' + CSS.escape(a.id) + '"] td']));
         });
       };
-      confirm.addEventListener("click", () => settle(true));
-      refute.addEventListener("click", () => settle(false));
+      confirm.addEventListener("click", () => decide(true, confirm));
+      refute.addEventListener("click", () => decide(false, refute));
       cell.append(confirm, h("label", { for: cid, class: "vh" }, "Correction for " + a.id), input, refute);
       action = cell;
     }
@@ -1214,7 +1379,8 @@ function criteriaTable(criteria, evidenceOf, pid) {
   return h("div", { class: "tbl" }, h("table", { class: "crit" + (evidenceOf ? " with-ev" : "") },
     h("thead", null, h("tr", null, cols.map((t) => h("th", { scope: "col" }, t)))),
     h("tbody", null, criteria.map((c) => {
-      const more = evidenceOf ? h("tr", { class: "ev-row", id: "evd-" + c.id, hidden: true },
+      // "crit-ev", not "ev-row": that is the Evidence packs widget's grid row, and a grid <tr> squeezes its cell.
+      const more = evidenceOf ? h("tr", { class: "crit-ev", id: "evd-" + c.id, hidden: true },
         h("td", { colspan: String(cols.length) }, label("Evidence for " + c.id), " ", evidenceBody(evidenceOf[c.id], pid))) : null;
       return [h("tr", { "data-id": c.id }, h("td", { class: "mono" }, c.id),
         evidenceOf ? h("td", { class: "ev-cell" }, evidenceChip(evidenceOf[c.id], pid, more)) : null,
@@ -1401,8 +1567,16 @@ function reqEditor(pid, r, fid) {
       $('[data-f="then"]', all[missing]).focus();
       return;
     }
+    // The kernel keeps at least one test per requirement (the gate builds against tests): it would turn
+    // the first criterion into a test without a word. The form says so instead and changes nothing.
+    if (!acceptance.some((a) => a.kind === "test")) {
+      say(r.id + " needs at least one criterion checked by a test: the gate builds against tests. "
+        + "Set one criterion's check to test, then save.", "warn");
+      $('[data-f="kind"]', all[0]).focus();
+      return;
+    }
     if (!needPerson()) return;
-    act(form, async () => {
+    run(save, form, async () => {
       const out = await api("POST", "/api/projects/" + enc(pid) + "/plan/requirements/" + enc(r.id),
         Object.assign({ statement, acceptance }, signed()));
       const card = out.plan && out.plan.card;
@@ -1425,20 +1599,21 @@ function planDecide(pid, card, where) {
   const approve = h("button", { type: "button", class: "btn human primary", "data-key": card.id + ":approve" }, "Approve the plan");
   const reason = h("textarea", { id: rid, rows: "2", "data-key": rid });
   const reject = h("button", { type: "button", class: "btn human", "data-key": card.id + ":reject" }, "Reject and redraw");
-  const decide = (verdict, why) => act(box, async () => {
+  // After the decision the focus goes to the plan's state line, which now says who decided it.
+  const decide = (verdict, why, btn) => run(btn, box, async () => {
     await api("POST", "/api/projects/" + enc(pid) + "/cards/" + enc(card.id) + "/decide",
       Object.assign({ verdict, reason: why }, signed()));
     say(verdict === "approve"
       ? "The plan is approved, signed by " + S.person.trim() + ". Advance compiles the contract and starts the build."
       : "The plan is rejected, signed by " + S.person.trim() + ". The next Advance redraws it with your reason in front "
         + "of the analyst.", "ok");
-    await nav.rerender();
+    await settle(where === "pv" ? ["#plan-st"] : nextCards(box));
   });
-  approve.addEventListener("click", () => { if (needPerson()) decide("approve", ""); });
+  approve.addEventListener("click", () => { if (needPerson()) decide("approve", "", approve); });
   reject.addEventListener("click", () => {
     const why = reason.value.trim();
     if (!why) { say("Rejecting the plan needs a reason: the plan is redrawn with it.", "warn"); reason.focus(); return; }
-    if (needPerson()) decide("reject", why);
+    if (needPerson()) decide("reject", why, reject);
   });
   box.append(h("div", { class: "pd-row" },
     h("div", { class: "pd-a" }, label("Approve"), h("p", { class: "small" }, "The contract is compiled and the build starts "
@@ -1450,27 +1625,38 @@ function planDecide(pid, card, where) {
 
 function planStatus(p, plan) {
   const pid = p.meta.id;
+  const st = (cls, ...kids) => h("p", { class: "plan-st" + (cls ? " " + cls : ""), id: "plan-st" }, kids);
   const a = plan.approved;
   if (a) {
-    return h("p", { class: "plan-st" }, badge("ok", "approved"), " by ", personBadge(a.by), " on ",
+    return st(null, badge("ok", "approved"), " by ", personBadge(a.by), " on ",
       h("a", { href: link(pid, "ledger"), class: "mono" }, a.card), ", plan version " + a.spec_version + ". ",
       plan.compiled ? ["The contract is compiled: a change now goes through ", h("a", { href: link(pid, "changes") }, "Changes"), "."]
         : "Advance compiles the contract and starts the build.");
   }
   if (plan.card) {
-    return h("p", { class: "plan-st" }, h("span", { class: "s warn" }, glyph("human"), "waiting on approval"), " ",
+    return st(null, h("span", { class: "s warn" }, glyph("human"), "waiting on approval"), " ",
       h("span", { class: "mono" }, plan.card.id), " · plan version " + plan.spec.version + " · nothing is built until a person approves it.");
   }
   const last = (plan.history || []).slice(-1)[0];
+  // Approved, and the next Advance has not run yet: the kernel records plan_approved only then, but the
+  // decision stands now and says so (never "no approval card is open").
+  if (last && last.verdict === "approve" && (last.spec_version === undefined || last.spec_version === null
+    || last.spec_version === plan.spec.version)) {
+    return st(null, badge("ok", "approved"), " by ", personBadge(last.person, last.persona), " on ",
+      h("a", { href: link(pid, "ledger"), class: "mono" }, last.card), ", plan version " + (last.spec_version || plan.spec.version) + ". ",
+      "The next Advance compiles the contract and starts the build.");
+  }
   if (last && last.verdict === "reject" && !last.redone) {
-    return h("p", { class: "plan-st" }, badge("warn", "rejected"), " by ", personBadge(last.person, last.persona),
-      last.reason ? ": “" + last.reason + "”. " : ". ", "The next Advance redraws the plan with this reason in front of the analyst.");
+    // A rejection recorded without a reason (through the API) says so: the redraw has nothing to go on.
+    return st(null, badge("warn", "rejected"), " by ", personBadge(last.person, last.persona),
+      last.reason ? [": “" + last.reason + "”. ", "The next Advance redraws the plan with this reason in front of the analyst."]
+        : [" with no reason given. ", "The next Advance redraws the plan without a reason to go on."]);
   }
   if (!plan.required) {
-    return h("p", { class: "plan-st muted" }, "At " + p.meta.maturity + " maturity the plan is not held for approval: "
+    return st("muted", "At " + p.meta.maturity + " maturity the plan is not held for approval: "
       + "the contract is compiled when the project advances.");
   }
-  return h("p", { class: "plan-st muted" }, "No approval card is open. The next Advance opens one for this plan.");
+  return st("muted", "No approval card is open. The next Advance opens one for this plan.");
 }
 
 function planHistory(plan) {
@@ -1479,7 +1665,8 @@ function planHistory(plan) {
   return h("section", { class: "section", "aria-labelledby": "ph-h" }, h("h3", { id: "ph-h", class: "label-h" }, "Earlier plan cards"),
     h("ul", { class: "plain plan-hist" }, rows.map((x) => h("li", null, h("span", { class: "mono" }, x.card),
       " · version " + (x.spec_version || "?") + " · ",
-      x.verdict ? [VERDICT_LABEL[x.verdict] || x.verdict, " by ", personBadge(x.person, x.persona), x.reason ? ": “" + x.reason + "”" : ""]
+      x.verdict ? [VERDICT_LABEL[x.verdict] || x.verdict, " by ", personBadge(x.person, x.persona),
+        x.reason ? ": “" + x.reason + "”" : x.verdict === "reject" ? ", with no reason given" : ""]
         : [x.state, x.closed && x.closed.why ? ": " + x.closed.why : ""]))));
 }
 
@@ -1504,7 +1691,11 @@ function tryPanel(pid, tr, opts) {
   const where = o.where || "tv";
   if (!tr) return h("p", { class: "muted small" }, "The checklist could not be read.");
   // Only an http(s) address becomes a link; anything else is not offered.
-  const url = [o.url, tr.url].find((u) => typeof u === "string" && /^https?:\/\/[^\s]+$/i.test(u)) || null;
+  const found = [o.url, tr.url].find((u) => typeof u === "string" && /^https?:\/\/[^\s]+$/i.test(u)) || null;
+  // Where the kernel says the release's environment no longer runs (running: false), its address is said,
+  // never offered as a link to a page that would not answer.
+  const stopped = !!found && found === tr.url && tr.running === false;
+  const url = stopped ? null : found;
   const items = tr.items || [];
   // Kept per person, project, release and criterion: one person's ticks are not another's.
   const key = (cid) => ["gf.try", S.person.trim() || "-", pid, tr.release || "none", cid].join("|");
@@ -1519,7 +1710,10 @@ function tryPanel(pid, tr, opts) {
         "Open release " + (tr.release || "") + (tr.env ? " (" + tr.env + ")" : ""), h("span", { "aria-hidden": "true" }, " ↗"),
         h("span", { class: "vh" }, ", opens in a new tab")),
       h("code", { class: "try-url" }, url))
-    : h("p", { class: "muted" }, "No release runs at a reachable address yet. The checklist is ready for when one does.");
+    : stopped ? h("p", { class: "muted" }, "Release " + (tr.release || "") + (tr.env ? " (" + tr.env + ")" : "") + " ran at ",
+      h("code", { class: "try-url" }, found), ", but nothing runs there now: its environment was stopped. "
+      + "The checklist is ready for when it runs again.")
+      : h("p", { class: "muted" }, "No release runs at a reachable address yet. The checklist is ready for when one does.");
   if (!items.length) {
     return h("div", { class: "trypanel" }, head, h("p", { class: "muted" }, "No criteria yet: they come with the contract, at stage 4."));
   }
@@ -1559,16 +1753,16 @@ function reportForm(pid, it, id) {
     if (!said) { say("Describe what you saw first.", "warn"); text.focus(); return; }
     if (!needPerson()) return;
     const hint = options[Number(kind.value)][0] || null;
-    act(form, async () => {
+    run(send, form, async () => {
       const out = await api("POST", "/api/projects/" + enc(pid) + "/changes",
         Object.assign({ text: "[" + it.criterion + "] " + said, hint }, signed()));
       const t = out.triage || {};
       say(out.card.id + " records what you saw on " + it.criterion + ": a " + (CLASS_LABEL[t.class] || t.class)
         + ", going back to stage " + t.way_back + " (" + stageName(t.way_back) + ").", "ok");
-      await nav.rerender();
+      await settle(['[data-key="' + CSS.escape(rid + ":sum") + '"]']);
     });
   });
-  return h("details", { class: "report-d" }, h("summary", null, "Report what you saw"), form);
+  return h("details", { class: "report-d" }, h("summary", { "data-key": rid + ":sum" }, "Report what you saw"), form);
 }
 
 VIEW_FN.try = function viewTry(p, inbox, ctx) {
@@ -1800,12 +1994,12 @@ VIEW_FN.changes = function viewChanges(p, inbox, ctx) {
     if (!text) { say("Describe the change first.", "warn"); form.elements.text.focus(); return; }
     if (!needPerson()) return;
     const hint = options[Number(form.elements.kind.value)][0] || null;
-    act(form, async () => {
+    run(form.querySelector('button[type="submit"]'), form, async () => {
       const out = await api("POST", "/api/projects/" + enc(pid) + "/changes", Object.assign({ text, hint }, signed()));
       const t = out.triage;
       say(out.card.id + " is a " + (CLASS_LABEL[t.class] || t.class) + ": it goes back to stage " + t.way_back + " ("
         + stageName(t.way_back) + ")" + (t.needs_decision ? " after a business decision." : "."), "ok");
-      await nav.rerender();
+      await settle(["#" + CSS.escape("chg-" + out.card.id)]);   // the new change's card
     });
   });
   const mine = h("label", null, h("input", { type: "checkbox", checked: S.onlyMine, "data-key": "onlymine" }),
@@ -1927,9 +2121,17 @@ function orderedViews(p, ctx, planOpen) {
 }
 
 export async function renderProject(r, keep, seq) {
-  const pid = r.pid;
   const main = $("#main");
   const done = keep ? () => {} : skeleton(main, "the project");
+  try {
+    return await drawProject(main, r, seq, done);
+  } finally {
+    done();   // drawn, superseded or failed: the placeholder never covers the page or the error after it
+  }
+}
+
+async function drawProject(main, r, seq, done) {
+  const pid = r.pid;
   const isFactory = pid === FACTORY_PID;
   const base = "/api/projects/" + enc(pid);
   const none = Promise.resolve(null);
@@ -1940,7 +2142,8 @@ export async function renderProject(r, keep, seq) {
   ]);
   if (seq !== S.seq) return false;
   const planOpen = !isFactory && (p.open_cards || []).some(isPlanCard);
-  const views = orderedViews(p, ctx, planOpen);
+  // The Plan tab stays where it was while it is the view in front, also once the plan is approved.
+  const views = orderedViews(p, ctx, planOpen || (!isFactory && r.view === "plan"));
   const view = r.view && VIEWS[r.view] && (isFactory ? FACTORY_VIEWS.includes(r.view) : true) ? r.view : views[0];
   const shown = views.concat(views.includes(view) ? [] : [view]);
   const taskMode = viewChoice("tasks", "board");
@@ -1986,8 +2189,42 @@ export async function renderProject(r, keep, seq) {
   }
   fill(main, projectHead(p, isFactory, ctx), tabs, h("div", { class: "view-body" }, body));
   if (LIVE.el) startLive();
+  if (!isFactory) watchJobs(p, seq);
   if (nav.refreshShell) nav.refreshShell();
   return true;
+}
+
+// While one of the project's jobs runs, the page checks every 4 s whether it ended, and re-renders
+// once it has: Advance and the job cards never say "running" for a job that is done. The check waits
+// while the person types in a field, so a re-render never takes what they wrote; it stops with the page.
+// The person did nothing to cause that re-render, so the focus stays where they left it (refocus).
+const JOBS_EVERY = 4000;
+function watchJobs(p, seq) {
+  const running = (p.jobs || []).filter((j) => j.state === "running").map((j) => j.id);
+  if (!running.length) return;
+  const pid = p.meta.id;
+  const again = () => { if (seq === S.seq) S.timer = setTimeout(tick, JOBS_EVERY); };
+  const tick = async () => {
+    if (seq !== S.seq) return;
+    if (document.hidden) { again(); return; }
+    let jobs = null;
+    try {
+      jobs = await api("GET", "/api/jobs?project=" + enc(pid));
+    } catch (e) {
+      if (e instanceof AuthError) return;
+    }
+    if (seq !== S.seq) return;
+    const ended = (jobs || []).filter((j) => running.includes(j.id) && j.state !== "running");
+    if (!jobs || ended.length < running.length || typingNow() || $("#modal").open) { again(); return; }
+    const j = ended[0];
+    const oc = j.outcome || {};
+    const why = oc.state ? oc.state.replace(/_/g, " ") + (oc.why ? ", " + oc.why.replace(/\.$/, "") : "") : "";
+    say("Job " + j.id + " ended (" + j.state + ")." + (why ? " Where it stopped: " + why + "." : ""), j.state === "failed" ? "warning" : "info");
+    const mark = focusMark();
+    await nav.rerender();
+    if (S.route && S.route.name === "project" && S.route.pid === pid) refocus(mark);   // still this project's page
+  };
+  again();
 }
 
 // The header: profile, title, maturity and mode, health, autonomy cap, ledger; the now line; the
@@ -2000,8 +2237,7 @@ function projectHead(p, isFactory, ctx) {
     chip("neutral", "layers", "Maturity: " + meta.maturity, { tip: (S.meta.maturities || {})[meta.maturity] || "" }),
     chip("neutral", "comment", "Mode: " + meta.mode, { tip: (S.meta.modes || {})[meta.mode] || "" }),
     healthChip(p.health),
-    au ? chip("accent", "gauge", "Autonomy " + au.cap + " · " + au.name, { tip: "The factory may " + au.meaning + " for this project. "
-      + "A business owner, IT or compliance sets the cap, with a reason.", "data-control": "autonomy" }) : null,
+    au ? autonomyChip(p) : null,
     ledgerBadge(p.ledger),
     p.stale.length ? badge("warn", plural(p.stale.length, "stale approval")) : null,
     p.problems.length ? badge("crit", "unreadable: " + p.problems.join(", ")) : null,
@@ -2022,6 +2258,81 @@ function projectHead(p, isFactory, ctx) {
       : stepper(p, ctx));
 }
 
+// The autonomy cap in the header is a button: it opens this project's ladder, what each level lets the
+// factory do, and, for a persona that sets caps, a form to set this project's own cap (never above the
+// factory's) with a reason. The kernel decides whether it stands (PUT /api/projects/<pid>/autonomy).
+function autonomyChip(p) {
+  const au = p.autonomy;
+  const b = h("button", { type: "button", class: "chip accent au-chip", "data-control": "autonomy", "data-key": "autonomy",
+    "aria-haspopup": "dialog", tip: "Level " + au.cap + ", " + au.name + ": " + au.meaning + ". Open the ladder." },
+  icon("gauge"), h("span", null, "Autonomy " + au.cap + " · " + au.name));
+  b.addEventListener("click", () => openAutonomy(p));
+  return b;
+}
+
+async function openAutonomy(p) {
+  const pid = p.meta.id;
+  const au = p.autonomy;
+  const setters = ((S.meta && S.meta.autonomy) || {}).setters || [];
+  const may = setters.includes(S.persona);
+  let all = null;
+  let err = null;
+  try {
+    all = await api("GET", "/api/autonomy");
+  } catch (e) {
+    if (e instanceof AuthError) return;
+    err = e;
+  }
+  const fac = (all && all.factory) || null;
+  const mine = ((all && all.projects) || []).find((x) => x.project === pid) || {};
+  const own = mine.own === undefined || mine.own === null ? null : mine.own;
+  const history = ((all && all.history) || []).filter((x) => x.project === pid).slice(0, 5);
+  let changed = false;
+  const body = h("div", { class: "au-body" },
+    h("p", null, "The factory may act alone up to level ", h("b", null, au.cap + " (" + au.name + ")"), " on this project: " + au.meaning + "."),
+    fac ? h("p", { class: "muted small" }, "The factory's own cap is " + fac.cap + " (" + fac.name + "). "
+      + (own !== null ? "This project has its own cap of " + own + "." : "This project follows the factory's cap.")
+      + " A project's cap may be lower than the factory's, never higher.")
+      : h("p", { class: "muted small" }, "The factory's cap could not be read" + (err ? ": " + err.message : "") + "."),
+    h("ol", { class: "ladder" }, (au.levels || []).map((l) => h("li", { class: "rung" + (l.allowed ? " on" : "") + (l.level === au.cap ? " cap" : "") },
+      h("span", { class: "rung-n" }, String(l.level)), h("div", null, h("b", null, l.name), h("p", null, l.meaning)),
+      l.level === au.cap ? chip("accent", "gauge", "Cap") : null))));
+  if (may && fac) {
+    const levels = (au.levels || []).filter((l) => l.level <= fac.cap);
+    const sel = h("select", { id: "au-level", "data-key": "au-level" }, levels.map((l) => h("option", { value: String(l.level), selected: l.level === au.cap },
+      l.level + " " + l.name)));
+    const reason = h("input", { id: "au-reason", "data-key": "au-reason", maxlength: "2000", autocomplete: "off",
+      placeholder: "for example: the pilot runs on customer data" });
+    const save = h("button", { type: "submit", class: "btn human primary" }, "Set this project's cap");
+    const form = h("form", { class: "au-form", novalidate: true, "aria-label": "Set the autonomy cap of " + p.meta.title },
+      h("div", { class: "field" }, h("label", { for: "au-level" }, "Cap for this project"), sel),
+      h("div", { class: "field" }, h("label", { for: "au-reason" }, "Reason (required, recorded with your name)"), reason),
+      h("div", { class: "btns" }, save));
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (!reason.value.trim()) { say("A cap change needs a reason: it is recorded with your name.", "warning"); reason.focus(); return; }
+      if (!needPerson()) return;
+      run(save, form, async () => {
+        const out = await api("PUT", "/api/projects/" + enc(pid) + "/autonomy",
+          Object.assign({ level: Number(sel.value), reason: reason.value.trim() }, signed()));
+        changed = true;
+        say(p.meta.title + ": the autonomy cap is " + out.cap + ", signed by " + S.person.trim() + ".", "good");
+        closeModal();
+      });
+    });
+    body.append(form);
+  } else if (!may) {
+    body.append(h("p", { class: "muted small" }, "A " + orList(setters) + " persona sets the cap, always with a reason."));
+  }
+  if (history.length) {
+    body.append(h("section", { "aria-labelledby": "au-hist-h" }, h("h3", { id: "au-hist-h", class: "label-h" }, "Earlier changes"),
+      h("ul", { class: "plain small" }, history.map((x) => h("li", null, (x.from === null || x.from === undefined ? "the factory's cap" : String(x.from))
+        + " → " + x.to + " by ", personBadge(x.by, x.persona), x.reason ? ": “" + x.reason + "”" : "", x.at ? h("span", { class: "muted" }, " · " + fmtAt(x.at)) : null)))));
+  }
+  openModal("Autonomy cap · " + p.meta.title, body, { icon: "gauge", onClose: () => { if (changed && nav.rerender) nav.rerender(); } });
+}
+
+const STEP_STATE = { done: "done", now: "the current stage", ahead: "ahead" };
 function stepper(p) {
   const sum = p.stage_summary;
   const pid = p.meta.id;
@@ -2029,11 +2340,15 @@ function stepper(p) {
   const viewOf = (n) => (planOpen && (n === 3 || n === 4) ? "plan" : STAGE_VIEW[n]);
   return h("ol", { class: "stepper", "aria-label": "Stages: " + sum.current + " of 7" }, sum.stages.map((s) => {
     const st = s.state;
-    const a = h("a", { href: link(pid, viewOf(s.stage)), class: "step " + st, "aria-current": st === "now" ? "step" : null },
-      h("span", { class: "step-ic" }, icon(st === "done" ? "check" : STAGE_ICON[s.stage])),
-      h("span", { class: "step-t" }, h("span", { class: "step-n" }, cap(s.name)), h("small", null, countText(s.count))));
-    attachTip(a, () => tipBox("Stage " + s.stage + " · " + cap(s.name), [{ value: countText(s.count), label: "" },
-      { value: st === "off" ? "not at " + p.meta.maturity : st, label: bandOf(s.stage) + " band" }]));
+    const said = stageCount(p, s);
+    const state = st === "off" ? "not at " + p.meta.maturity : STEP_STATE[st] || st;
+    // The link names its stage at every width: below 1100px only its icon shows, and the icon is hidden.
+    const a = h("a", { href: link(pid, viewOf(s.stage)), class: "step " + st, "aria-current": st === "now" ? "step" : null,
+      "aria-label": "Stage " + s.stage + ": " + cap(s.name) + ", " + said + ", " + state },
+    h("span", { class: "step-ic" }, icon(st === "done" ? "check" : STAGE_ICON[s.stage])),
+    h("span", { class: "step-t" }, h("span", { class: "step-n" }, cap(s.name)), h("small", null, said)));
+    attachTip(a, () => tipBox("Stage " + s.stage + " · " + cap(s.name), [{ value: said, label: "" },
+      { value: state, label: bandOf(s.stage) + " band" }]));
     return h("li", null, a);
   }));
 }
@@ -2044,21 +2359,28 @@ function stageCounts(p) {
     info: "The seven stages in four bands, for readers who do not think in stages: Decide (1 and 2), Shape (3 and 4), Deliver (5 and 6) and Run (7)." },
   h("ul", { class: "sc-list" }, sum.stages.map((s) => h("li", { class: "sc " + s.state },
     h("span", { class: "sc-ic" }, icon(s.state === "done" ? "check" : STAGE_ICON[s.stage])),
-    h("span", { class: "sc-n" }, s.stage + " " + cap(s.name)), h("span", { class: "sc-c" }, countText(s.count)),
-    s.evidence ? h("span", { class: "sc-e" }, s.evidence.verified + " verified · " + s.evidence.claimed + " claimed") : null))));
+    h("span", { class: "sc-n" }, s.stage + " " + cap(s.name)), h("span", { class: "sc-c" }, stageCount(p, s)),
+    stageEvidence(p, s) ? h("span", { class: "sc-e" }, s.evidence.verified + " verified · " + s.evidence.claimed + " claimed") : null))));
 }
 
+// Advance starts a run signed with the person's name, like every other write; the kernel goes as far
+// as it can. The focus moves to the next control, since the button is off while the job runs.
+function advanceWrite(p, btn, container, to) {
+  if (!needPerson()) return;
+  run(btn, container, async () => {
+    const out = await api("POST", "/api/projects/" + enc(p.meta.id) + "/advance", signed());
+    say("Job " + out.job.id + " started by " + S.person.trim() + ": python " + out.job.args.join(" "), "good");
+    await settle(to);
+  });
+}
 function advanceButton(p) {
+  if (!mayAdvance()) return null;   // like Pause: the Advance panel says who advances the project
   const running = p.jobs.some((j) => j.state === "running");
   const paused = !!p.meta.pause;
   const b = button(running ? "Running" : "Advance", { icon: running ? "refresh" : "play", kind: "primary", key: "advance",
     disabled: running || paused, tip: paused ? "Paused: resume it first" : running ? "A job is running for this project"
       : "Runs kernel.cli run in the background, up to the next gate a person decides" });
-  b.addEventListener("click", () => act(b.parentNode, async () => {
-    const out = await api("POST", "/api/projects/" + enc(p.meta.id) + "/advance", signed());
-    say("Job " + out.job.id + " started: python " + out.job.args.join(" "), "good");
-    await nav.rerender();
-  }));
+  b.addEventListener("click", () => advanceWrite(p, b, b.parentNode, ['[data-key="pause"]', '[data-key="resume"]', "#adv-h"]));
   return b;
 }
 
@@ -2068,7 +2390,8 @@ const tasksBoard = VIEW_FN.tasks;
 VIEW_FN.tasks = function viewTasks(p, inbox, ctx) {
   const mode = viewChoice("tasks", "board");
   const pid = p.meta.id;
-  const bar = h("div", { class: "viewbar" }, segmented("tasks-mode", TASK_MODES, mode, (v) => { setViewChoice("tasks", v); nav.route(true); },
+  // A re-render that keeps the place: the chosen mode's button keeps the focus (by its data-key).
+  const bar = h("div", { class: "viewbar" }, segmented("tasks-mode", TASK_MODES, mode, (v) => { setViewChoice("tasks", v); nav.rerender(); },
     { label: "Show the tasks as" }), h("span", { class: "muted small" }, h("kbd", null, "Ctrl B"), " cycles"));
   if (mode === "timeline") {
     const tl = ctx.timeline || { tasks: [] };
@@ -2078,21 +2401,33 @@ VIEW_FN.tasks = function viewTasks(p, inbox, ctx) {
   }
   if (mode === "table") {
     return h("div", null, viewHead("Tasks", "Every task with its status, rounds and last gate."), bar,
-      dataTable([{ label: "Task", value: (t) => h("a", { href: link(pid, "tasks", t.id), class: "mono" }, t.id) },
+      (p.tasks || []).length ? dataTable([{ label: "Task", value: (t) => h("a", { href: link(pid, "tasks", t.id), class: "mono" }, t.id) },
         { label: "Title", value: (t) => t.title || "-" }, { label: "Status", value: (t) => t.status },
         { label: "Rounds", value: (t) => t.rounds.length, num: true },
         { label: "Last gate", value: (t) => { const l = t.rounds[t.rounds.length - 1]; return l && l.gate ? l.gate.verdict : "-"; } },
-        { label: "Criteria", value: (t) => (t.criteria || []).join(", ") || "-" }], p.tasks || [], "Tasks"), advancePanel(p));
+        { label: "Criteria", value: (t) => (t.criteria || []).join(", ") || "-" }], p.tasks, "Tasks")
+        : h("p", { class: "empty" }, "No tasks yet: the contract is compiled at stage 4."), advancePanel(p));
   }
   const board = tasksBoard(p, inbox, ctx);
   board.insertBefore(bar, board.children[1] || null);
   return board;
 };
+// Ctrl+B cycles the mode, but never while the person types: in a field it is the field's own key, and a
+// re-render would take what they wrote. The focus goes to the new mode's button unless it is on a
+// control the re-render finds again.
 export function cycleTasksMode() {
   if (!S.route || S.route.name !== "project" || (S.projectViews || {}).current !== "tasks") return false;
+  if (typingNow() || $("#modal").open) return false;
+  const pz = $("#pause-form");
+  if (pz && !pz.hidden) return false;   // an open Pause form keeps its reason
   const order = TASK_MODES.map((m) => m[0]);
-  setViewChoice("tasks", order[(order.indexOf(viewChoice("tasks", "board")) + 1) % order.length]);
-  nav.route(true);
+  const next = order[(order.indexOf(viewChoice("tasks", "board")) + 1) % order.length];
+  setViewChoice("tasks", next);
+  const a = document.activeElement;
+  if (!a || a === document.body || !(a.dataset && a.dataset.key) || a.closest(".seg")) {
+    S.focusNext = '[data-key="tasks-mode:' + next + '"]';
+  }
+  nav.rerender();
   return true;
 }
 
@@ -2113,13 +2448,19 @@ function buildPackButton(pid, pk) {
       : who + " builds it." });
   b.addEventListener("click", () => {
     if (!needPerson()) return;
-    act(b.parentNode, async () => {
+    run(b, b.parentNode, async () => {
       const out = await api("POST", "/api/projects/" + enc(pid) + "/pack/build", signed());
       say("Capability pack v" + out.pack.version + " for release " + out.pack.release + ", signed by " + S.person.trim() + ".", "good");
-      await nav.rerender();
+      await settle(['[data-key="build-pack"]']);
     });
   });
   return h("div", { class: "btns" }, b, may ? null : h("span", { class: "muted small" }, who + " builds it."));
+}
+// The models of one role, each said once: a model the pack names both bare and with the endpoint it ran
+// through ("m" and "m@go") is one model, said with its endpoint.
+function modelNames(v) {
+  const all = Array.from(new Set((Array.isArray(v) ? v : []).map(String)));
+  return all.filter((m) => m.includes("@") || !all.some((x) => x.startsWith(m + "@"))).join(", ");
 }
 function packCard(pk, pid) {
   if (!pk) return null;
@@ -2134,7 +2475,7 @@ function packCard(pk, pid) {
   const pin = pack.pinned || {};
   const rows = [["Contract revision", pin.contract_revision], ["Product revision", pin.product_revision]]
     .concat(Object.entries(pin.artifacts || {}).map(([k, v]) => ["Artifact " + k, v]))
-    .concat(Object.entries((pin.built_and_judged_by || {}).by_role || {}).map(([k, v]) => ["Built by " + k.replace(/_/g, " "), (v || []).join(", ")]));
+    .concat(Object.entries((pin.built_and_judged_by || {}).by_role || {}).map(([k, v]) => ["Built by " + k.replace(/_/g, " "), modelNames(v)]));
   return card({ title: "Capability pack v" + pack.version, icon: "package", cls: "pack", id: "pack",
     info: "One manifest per release that names everything delivered by its hash: pack version equals behaviour version. "
       + "It is valid only while every criterion is verified or held out and passing." },
@@ -2189,6 +2530,33 @@ VIEW_FN.releases = function viewReleases(p, inbox, ctx) {
   return out;
 };
 
+// Export on the Evidence view: the same signed write as the Evidence packs widget's button, after which
+// the view is drawn again, so "What the pack holds" counts this export and its ledger records. A persona
+// that may not export is told who may in words beside the button, which stays focusable (aria-disabled)
+// and is described by them, rather than only in a hover tooltip.
+function evidenceExport(pid) {
+  const who = (S.meta && S.meta.evidence_exporters) || [];
+  const may = who.includes(S.persona);
+  const noteId = "ev-export-who";
+  const b = button("Export evidence pack", { icon: "download", kind: "small", "data-control": "export_evidence", key: "export-evidence" });
+  const note = may ? null : h("span", { class: "muted small", id: noteId }, "A " + orList(who) + " persona exports evidence.");
+  if (!may) {
+    b.setAttribute("aria-disabled", "true");
+    b.setAttribute("aria-describedby", noteId);
+  }
+  b.addEventListener("click", () => {
+    if (!may) { say(note.textContent, "warning"); return; }
+    if (!needPerson()) return;
+    run(b, b.parentNode, async () => {
+      const out = await api("POST", "/api/projects/" + enc(pid) + "/evidence", signed());
+      const name = await download(out.download, out.file);
+      say("Evidence pack " + name + " exported and downloaded, signed by " + S.person.trim() + ". The link worked once.", "good");
+      await settle(['[data-key="export-evidence"]']);
+    });
+  });
+  return h("div", { class: "btns" }, b, note);
+}
+
 // Evidence: the attestation (never "compliant"), the control table, and the export.
 VIEW_FN.evidence = function viewEvidence(p, inbox, ctx) {
   const pid = p.meta.id;
@@ -2206,7 +2574,7 @@ VIEW_FN.evidence = function viewEvidence(p, inbox, ctx) {
       h("ul", { class: "plain att-gets" }, [["file-check", "MANIFEST.json: every file with its sha256"],
         ["layers", "The full ledger, with its hash chain checked at export"], ["shield", "Holdout scores only: the scenarios stay in their custody"],
         ["user", "Every decision with its named person and persona"]].map(([ic, t]) => h("li", null, icon(ic), t))),
-      h("div", { class: "btns" }, exportButton(pid, "Export evidence pack"))),
+      evidenceExport(pid)),
       card({ title: "What the pack holds", icon: "layers" },
         h("dl", { class: "kv" },
           h("div", null, h("dt", null, "Ledger"), h("dd", null, a.ledger && a.ledger.intact ? chip("good", "check-circle", "intact · " + plural(a.ledger.records, "record"))
@@ -2237,7 +2605,9 @@ function decorateComments(root, pid, view, all) {
     $$("table.crit tr[data-id]", root).forEach((row) => {
       const id = row.getAttribute("data-id");
       const mine = all.filter((c) => c.target.kind === "criterion" && c.target.id === id);
+      // its data-key brings the focus back to it when the thread closes and the view re-renders
       const b = h("button", { type: "button", class: "icon-btn tiny crit-cm" + (mine.length ? " has" : ""), "data-control": "comment",
+        "data-key": "cmc:" + id,
         "aria-label": "Comment on " + id + (mine.length ? " (" + mine.length + ")" : ""), tip: mine.length ? plural(mine.length, "comment") : "Comment on " + id },
       icon("comment"));
       b.addEventListener("click", () => openThread(pid, { kind: "criterion", id }, mine));
@@ -2265,28 +2635,31 @@ export function openThread(pid, target, existing) {
     : h("li", { class: "muted small" }, "No comments yet."));
   draw(existing || []);
   const text = h("textarea", { rows: "3", maxlength: "4000", "aria-label": "Your comment", placeholder: "Write a comment" });
+  const send = h("button", { type: "submit", class: "btn primary", "data-control": "comment" }, icon("send"), "Comment");
   const form = h("form", { class: "cm-form", novalidate: true }, text,
     h("p", { class: "muted small" }, icon("info"), " A comment decides nothing. A product owner or business owner may promote it into a change."),
-    h("div", { class: "btns" }, h("button", { type: "submit", class: "btn primary", "data-control": "comment" }, icon("send"), "Comment")));
+    h("div", { class: "btns" }, send));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     if (!text.value.trim()) { text.focus(); return; }
     if (!needPerson()) return;
-    act(form, async () => {
+    run(send, form, async () => {
       await api("POST", "/api/projects/" + enc(pid) + "/comments", Object.assign({ target, text: text.value.trim() }, signed()));
       text.value = "";
       const out = await api("GET", "/api/projects/" + enc(pid) + "/comments?kind=" + enc(target.kind) + "&id=" + enc(target.id));
       draw(out.comments);
       say("Your comment is signed and kept. It decides nothing.", "good");
+      text.focus();   // the thread stays open, ready for the next comment
     });
   });
-  openModal("Comments on " + target.kind + " " + target.id, h("div", null, list, form), { icon: "comment", onClose: () => nav.rerender && nav.rerender() });
+  openModal("Comments on " + target.kind + " " + target.id, h("div", { class: "cm-thread" }, list, form),
+    { icon: "comment", onClose: () => nav.rerender && nav.rerender() });
 }
 function promoteButton(pid, c) {
   const b = button("Promote to change", { icon: "refresh", kind: "tiny" });
   b.addEventListener("click", () => {
     if (!needPerson()) return;
-    act(b.parentNode, async () => {
+    run(b, b.parentNode, async () => {
       const out = await api("POST", "/api/projects/" + enc(pid) + "/comments/" + enc(c.id) + "/promote", signed());
       closeModal();
       say(c.id + " is now change " + out.card.id + ", triaged as a " + (CLASS_LABEL[out.triage.class] || out.triage.class) + ".", "good");

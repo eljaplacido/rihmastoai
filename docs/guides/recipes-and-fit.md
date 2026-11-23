@@ -239,20 +239,23 @@ path = export_bundle(project, "exports", person="<your name>", persona="it")   #
 | `source/product-<rev12>.zip` | the product's source at the pinned revision (`git archive`) |
 | `image.json` | each artifact's reference; `images/<name>.tar` only when docker is on PATH and the image is present on this host |
 | `BUNDLE.json`, `README.md` | what is in the bundle and what is not |
+| `deploy-package.json`, `compose.yaml`, `evidence.zip`, `rihmasto_verify.py` | the deploy kit; see [taking a release to a site](packs-and-evidence.md#taking-a-release-to-a-site) |
 | `SHA256SUMS` | the sha256 of every file above |
-| `signature.json`, `SHA256SUMS.sig` | whether SHA256SUMS is signed; the signature only when it is |
+| `signature.json`, `SHA256SUMS.sigstore.json` | whether SHA256SUMS is signed; the Sigstore bundle only when it is |
+| `pack-status.json` | the pack's status, which expires; outside SHA256SUMS, since a fresh copy replaces it |
 
 **A signature only when cosign really signed.** When cosign is on PATH and the `RIHMA_COSIGN_KEY`
 environment variable names a key (a file or a KMS reference; Rihma never reads the key), cosign
-signs SHA256SUMS offline, with no transparency-log upload. Otherwise `signature.json` says why not:
-"not signed: cosign not installed", no key named, or cosign failed with its exit code. There is
-never a placeholder signature.
+signs SHA256SUMS offline into a Sigstore bundle, with no transparency-log upload. Otherwise
+`signature.json` says why not: "not signed: cosign not installed", no key named, or cosign failed
+with its exit code. There is never a placeholder signature.
 
-To check a bundle on the receiving side:
+To check a bundle on the receiving side, against the key the factory published (never the
+`cosign.pub` inside the bundle; see [taking a release to a site](packs-and-evidence.md#taking-a-release-to-a-site)):
 
 ```bash
-sha256sum -c SHA256SUMS
-cosign verify-blob --key cosign.pub --signature SHA256SUMS.sig --insecure-ignore-tlog=true SHA256SUMS
+python tools/rihmasto_verify.py <bundle> --key factory-cosign.pub
+cosign verify-blob --key factory-cosign.pub --bundle SHA256SUMS.sigstore.json --trusted-root trusted_root.json --insecure-ignore-tlog=true SHA256SUMS
 ```
 
 ## What is not there yet

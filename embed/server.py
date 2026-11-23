@@ -35,6 +35,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
+from kernel.access import seal_secret
 from kernel.embeds import LOCAL_EMBED_PORT, BadTurn, EmbedRefused, RateLimit, converse, embeds
 from kernel.filelock import LockHeld
 from kernel.lanes import lane_lock
@@ -256,6 +257,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     home = args.home or os.environ.get(RIHMA_HOME_ENV) or os.environ.get(HOME_ENV) or "var"
     factory = Factory(home)
+    seal_secret(factory)     # the chat's Gnomon calls never inherit the cockpit proxy's shared secret (D-0016)
     model = chat_model(timeout=args.model_timeout) if args.model == "gnomon" else None
     srv = make_server(factory, args.port, host=args.host, model=model, behind_proxy=args.behind_proxy)
     print(json.dumps({"listening": f"http://{args.host}:{srv.server_address[1]}", "home": str(Path(home).resolve()),

@@ -392,6 +392,8 @@ class AdoptedPipelineTest(FactoryTestCase):
         card = submit(p, persona="developer", person="Aino", kind_hint="defect",
                       text="The count of lent equipment is missing, so nobody knows how much is out")
         tri = triage(p, card["id"])
+        if tri.get("needs_requirement"):                                      # no default requirement (FR-DF3)
+            Canon(p).answer(tri["needs_requirement"]["question"], "R-1", person="Olli", persona="business_owner")
         if tri["needs_decision"]:                                             # a label never skips the business (FR-P4)
             Canon(p).decide(card["id"], "accept", person="Olli", persona="business_owner",
                             reason="the count belongs in the service")

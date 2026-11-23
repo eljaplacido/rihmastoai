@@ -41,8 +41,8 @@ class FakeTools:
             Path(argv[argv.index("--output") + 1]).write_bytes(b"an image tarball")
             return 0, "", ""
         if argv[1] == "sign-blob":
-            if self.cosign_exit == 0:
-                Path(argv[argv.index("--output-signature") + 1]).write_text("MEUCIQ-signature", encoding="utf-8")
+            if self.cosign_exit == 0:  # cosign 3.1 and later write a Sigstore bundle (FR-PT2)
+                Path(argv[argv.index("--bundle") + 1]).write_text('{"mediaType": "sigstore"}', encoding="utf-8")
             return self.cosign_exit, "", "" if self.cosign_exit == 0 else "error: no password"
         return 0, "", ""
 
@@ -80,8 +80,10 @@ class BundleTest(DeliveryTestCase):
         names = {p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file()}
         self.assertEqual(names, {"capability-pack.json", "capability-pack.yaml", "contract.json", "image.json",
                                  f"source/product-{rev[:12]}.zip", "BUNDLE.json", "README.md", "SHA256SUMS",
-                                 "signature.json"})
-        self.assertEqual(check_sums(folder), ["SHA256SUMS", "signature.json"])     # only the signature's own files
+                                 "signature.json", "deploy-package.json", "evidence.zip", "rihmasto_verify.py",
+                                 "pack-status.json"})
+        # only the signature's own files, and the status, which a fresh copy replaces
+        self.assertEqual(check_sums(folder), ["SHA256SUMS", "pack-status.json", "signature.json"])
         pack = json.loads((folder / "capability-pack.json").read_text(encoding="utf-8"))
         self.assertEqual((pack["version"], pack["pinned"]["product_revision"]), ("1.0.0", rev))
         self.assertIn("rihma.capability-pack.v1", (folder / "capability-pack.yaml").read_text(encoding="utf-8"))
@@ -94,8 +96,9 @@ class BundleTest(DeliveryTestCase):
         self.assertEqual((image["type"], image["exported"]), ("process", None))
         self.assertIn("runs the product as a process", image["note"])
         signature = json.loads((folder / "signature.json").read_text(encoding="utf-8"))
-        self.assertEqual(signature, {"signed": False, "note": "not signed: cosign not installed"})
-        self.assertFalse((folder / "SHA256SUMS.sig").exists())
+        self.assertEqual((signature["signed"], signature["note"]), (False, "not signed: cosign not installed"))
+        self.assertEqual(signature["status"], {"signed": False, "note": "not signed: cosign not installed"})
+        self.assertFalse((folder / "SHA256SUMS.sigstore.json").exists())
         bundle = json.loads((folder / "BUNDLE.json").read_text(encoding="utf-8"))
         self.assertEqual((bundle["release"], bundle["pack_version"], bundle["revision"]), (1, "1.0.0", rev))
         self.assertIn("Holdout scenarios", (folder / "README.md").read_text(encoding="utf-8"))
@@ -121,7 +124,8 @@ class BundleTest(DeliveryTestCase):
         unzipped = self.tmp / "unzipped"
         with zipfile.ZipFile(path) as z:
             z.extractall(unzipped)
-        self.assertEqual(sorted(check_sums(unzipped)), ["SHA256SUMS", "SHA256SUMS.sig", "signature.json"])
+        self.assertEqual(sorted(check_sums(unzipped)), ["SHA256SUMS", "SHA256SUMS.sigstore.json", "pack-status.json",
+                                                        "pack-status.json.sigstore.json", "signature.json"])
         image = json.loads((unzipped / "image.json").read_text(encoding="utf-8"))["artifacts"][0]
         self.assertEqual((image["exported"], image["ref"]), ("images/gf-loans_abc123.tar", "gf-loans:abc123"))
         self.assertEqual((unzipped / image["exported"]).read_bytes(), b"an image tarball")
@@ -141,7 +145,7 @@ class BundleTest(DeliveryTestCase):
             signature = json.loads((folder / "signature.json").read_text(encoding="utf-8"))
             self.assertFalse(signature["signed"])
             self.assertIn(why, signature["note"])
-            self.assertFalse((folder / "SHA256SUMS.sig").exists())
+            self.assertFalse((folder / "SHA256SUMS.sigstore.json").exists())
             image = json.loads((folder / "image.json").read_text(encoding="utf-8"))["artifacts"][0]
             if not present:
                 self.assertIsNone(image["exported"])

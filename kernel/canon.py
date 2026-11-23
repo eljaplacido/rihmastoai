@@ -11,9 +11,8 @@ the canon's lock (kernel.store.updating_json), so writers at once, in threads or
 lose a card, a decision or a stale mark, and never take the same id. A card the decision record
 says is decided stays decided, with that decision, even when a stale copy is written back over it.
 
-A reason given on a holdout ruling may describe the holdout scenario, so it is kept in the holdout
-custody (kernel/rulings.py); the canon and the ledger record only its sha256, its length and a
-pointer to it (FR-O3-AC-3).
+A reason on a holdout ruling may describe the scenario, so it is kept in the holdout custody
+(kernel/rulings.py); the canon and the ledger record only its sha256, length and pointer (FR-O3-AC-3).
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 
-from kernel.people import PERSONAS, is_person
+from kernel.people import PERSONAS, is_person, signed_identity
 from kernel.store import read_json, records_lock, updating_json, write_json, write_text
 
 PERSPECTIVES = ("business", "end_user", "it_security", "operations", "delivery")
@@ -42,6 +41,7 @@ CARD_VERDICTS = {
     "holdout_ruling": ("product_defect", "scenario_defect"),
     "concept": ("validate", "park", "reject"),                   # the delivery square's concept check
     "update": ("trial", "decline", "defer"),                     # the updates inbox: a model, a CVE, drift
+    "connector": ("enable", "decline"),                          # an integration through Gnomon (D-0015)
 }
 
 # Who may decide each kind of card. Questions are open to everyone.
@@ -53,13 +53,12 @@ CARD_DECIDERS = {
     "incident": ("operations", "it", "developer"),
     "change": ("business_owner", "product_owner"),
     "escalation": ("developer", "business_owner", "product_owner"),
-    "road": ("it",),
-    "trust": ("it", "developer"),
+    "road": ("it",), "trust": ("it", "developer"),
     "holdout_ruling": ("developer", "product_owner", "business_owner"),
     "concept": ("business_owner", "product_owner"),
     "update": ("product_owner", "business_owner", "it", "developer", "compliance"),
+    "connector": ("it",),
 }
-
 APPROVING = {("approval", "approve"), ("validation", "accept"), ("deploy_gate", "approve"),
              ("change", "accept"), ("escalation", "accept_as_is")}
 
@@ -348,6 +347,8 @@ class Canon:
             raise DecisionRefused(f"a {kind} card takes {CARD_VERDICTS[kind]}, not {verdict!r}")
         if persona not in CARD_DECIDERS[kind]:
             raise DecisionRefused(f"a {persona} may not decide a {kind} card (deciders: {CARD_DECIDERS[kind]})")
+        from kernel.access import require
+        require(self.project, person, persona)   # with access enforced: the verified identity, granted here
 
     def _record_decision(self, card_id, kind, verdict, person, persona, reason, refs,
                          held: dict | None = None) -> dict:
@@ -355,10 +356,11 @@ class Canon:
             d = {"id": self._next_id("D", items), "card": card_id, "kind": kind, "verdict": verdict,
                  "person": person, "persona": persona, "reason": reason, "refs": dict(refs or {}),
                  "approving": (kind, verdict) in APPROVING, "stale": False, "at": self.clock.stamp()}
+            d.update(signed_identity(person))
             if held is not None:
                 d["reason_custody"] = held
             items.append(d)
-        keys = ("id", "card", "kind", "verdict", "person", "persona", "refs", "reason_custody")
+        keys = ("id", "card", "kind", "verdict", "person", "persona", "identity", "refs", "reason_custody")
         self._log("decision", {k: d[k] for k in keys if k in d})
         return d
 
@@ -450,8 +452,7 @@ class Canon:
         return items if target is None else [c for c in items if c["target"] == target]
 
     def comment(self, target: dict, text: str, *, person: str, persona: str) -> dict:
-        """A remark on a requirement, task, release or card. It decides nothing; a product owner
-        or business owner may later promote it into a change card."""
+        """A remark on a requirement, task, release or card. It decides nothing; an owner may promote it."""
         if not is_person(person):
             raise DecisionRefused(f"{person!r} is not a person")
         if persona not in PERSONAS:

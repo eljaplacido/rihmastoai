@@ -566,7 +566,7 @@ class ProcessTreeTest(FactoryTestCase):
         run = run_baseline(self.tmp / "hang", test, timeout=4)
         self.assertLess(time.monotonic() - started, 20, "the timeout did not bound the run")
         self.assertEqual((run["verdict"], run["reason"]),
-                         ("not measured", "not measured: the suite did not finish in 4s"))
+                         ("not measured", "not measured: timed out: the suite did not finish in 4s"))
         self.assertTrue(gone_within(int(pidfile.read_text())), "the suite's helper still runs after the timeout")
 
     def test_FR_X1_AC_1_a_stalled_upstream_cannot_hold_adoption_past_its_timeout(self):

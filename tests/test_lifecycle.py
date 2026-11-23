@@ -391,7 +391,10 @@ class AdoptedPipelineTest(FactoryTestCase):
         p = self.adopt("maintain", maturity="demo")
         card = submit(p, persona="developer", person="Aino", kind_hint="defect",
                       text="The count of lent equipment is missing, so nobody knows how much is out")
-        triage(p, card["id"])
+        tri = triage(p, card["id"])
+        if tri["needs_decision"]:                                             # a label never skips the business (FR-P4)
+            Canon(p).decide(card["id"], "accept", person="Olli", persona="business_owner",
+                            reason="the count belongs in the service")
         applied = apply_change(p, card["id"])
         self.assertEqual((applied["class"], applied["changed"]), ("defect", ["R-1"]))
         self.assertIsNone(adopted_state(p))                                   # a change is under way

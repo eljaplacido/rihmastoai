@@ -8,7 +8,10 @@ message per line. It wraps the same kernel read models as ``cockpit/server.py``.
 
 The person and the persona are fixed when the server starts. They sign every write and decide
 what the reads show (the cards this persona may decide, what waits on it). The server refuses to
-start for a name that is not a person (``kernel.people.is_person``) or an unknown persona.
+start for a name that is not a person (``kernel.people.is_person``) or an unknown persona. With
+access enforced (``kernel.access``, D-0016) the operator who starts it is the local user the access
+file names (``local:<os user>``): ``--person`` must be that user's name, ``--persona`` must be granted
+to them, each proposal needs the persona granted on its project, and its records name the identity.
 
 What the server keeps:
 - **Proposals only.** Its writes are a change card (``kernel.change.submit``), a comment
@@ -46,8 +49,10 @@ from typing import Any, NotRequired, TypedDict
 if __package__ in (None, ""):  # run as a file (python <repo>/mcp/server.py): find the kernel beside it
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from kernel import access as kaccess  # noqa: E402
 from kernel.canon import CARD_DECIDERS, Canon, DecisionRefused  # noqa: E402
-from kernel.people import PERSONAS, is_person  # noqa: E402
+from kernel.custody import held_strings, ledger_record, redact  # noqa: E402
+from kernel.people import PERSONAS, Identity, is_person  # noqa: E402
 from kernel.store import HOME_ENV, RIHMA_HOME_ENV, STAGES, Factory  # noqa: E402
 
 SERVER_NAME = "rihma"
@@ -67,16 +72,7 @@ MAP_URI = "rihma://cockpit/map"
 DECIDE_IN_COCKPIT = ("Decisions (deciding a card, answering a question, approving, pausing, deploying) are made "
                      "by a person in the Rihma cockpit, not here.")
 
-# -- the holdout guard ------------------------------------------------------------------------------
-
-HELD = "[held out]"
-MIN_HELD = 4                     # shorter strings ("GET", "id", "ok") are too common to be a scenario's
-SCENARIO_META = ("criterion", "kind", "author_role")
-# Ledger fields that carry a holdout scenario or what it met, never served.
-HOLDOUT_FIELDS = {"failing", "expected", "observed", "steps", "scenario", "scenarios", "trail",
-                  "reauthored_because"}
-# The kernel's reason for a failed holdout quotes what the scenario expected (kernel/deliver.py).
-_HOLDOUT_REASON = re.compile(r"(holdout \S+ failed at step \S+?):[^\n]*")
+# -- the holdout guard: the one redaction module is kernel/custody.py -------------------------------
 
 
 class Echo(str):
@@ -85,35 +81,10 @@ class Echo(str):
     client's input alone (its argument, or a fixed cut of it) is an Echo."""
 
 
-def _strings(value, out: set) -> set:
-    """Every string value in a scenario: what it sends and what it expects."""
-    if isinstance(value, str):
-        out.add(value)
-    elif isinstance(value, dict):
-        for v in value.values():
-            _strings(v, out)
-    elif isinstance(value, list):
-        for v in value:
-            _strings(v, out)
-    return out
-
-
 def _redact(value, held: list):
-    """Every string value with holdout content replaced. Keys are the kernel's field names and stay,
-    and so does an ``Echo``: it is the client's own input."""
-    if isinstance(value, Echo):
-        return value
-    if isinstance(value, str):
-        value = _HOLDOUT_REASON.sub(lambda m: f"{m.group(1)}: {HELD}", value)
-        for h in held:
-            if h in value:
-                value = value.replace(h, HELD)
-        return value
-    if isinstance(value, dict):
-        return {k: _redact(v, held) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_redact(v, held) for v in value]
-    return value
+    """Every string value with holdout content replaced (kernel.custody.redact). Keys are the kernel's
+    field names and stay, and so does an ``Echo``: it is the client's own input."""
+    return redact(value, held, keep=(Echo,))
 
 
 class _Confined:
@@ -337,21 +308,30 @@ class RihmaMCP:
             raise ValueError(f"{person!r} is not a person; the server signs writes with a named person")
         if persona not in PERSONAS:
             raise ValueError(f"persona must be one of {', '.join(PERSONAS)}, got {persona!r}")
+        # With access enforced (D-0016) the operator who starts the server is the local user the access
+        # file names: the person is that user's name, and the persona must be granted on some project.
+        access = kaccess.load(factory, record=True, by="the MCP server")
+        self.identity: Identity | None = None
+        if access.enforced:
+            self.identity = kaccess.local_identity(access)
+            person, persona = kaccess.sign(access, self.identity, person, persona, None)
         self.person, self.persona = person.strip(), persona
         self.lanes_root = lanes_root
         self.roots = _machine_roots(factory.home, lanes_root)
         self.home = Path(factory.home).resolve()
         self.holdouts = Path(factory.holdouts_dir).resolve()
         self.factory = _Confined(factory, self._inside_home)
+        self.kernel_factory = factory              # the access rules are read from the home itself
         self.protocol: str | None = None
 
     @property
     def instructions(self) -> str:
+        verified = f", verified as {self.identity.id}" if self.identity is not None else ""
         return (f"Rihma is a governed AI factory. This server gives you its reads and lets you make proposals, "
-                f"signed as {self.person} ({self.persona}). Every write is a proposal: a change card, a comment or "
-                f"a signal. No tool here decides a card, answers a question, approves, pauses, resumes or deploys; "
-                f"people make those decisions in the Rihma cockpit. Holdout scenarios are never shown. Resources: "
-                f"rihma://projects/<pid>/spec, /contract and /ledger, and {MAP_URI}.")
+                f"signed as {self.person} ({self.persona}{verified}). Every write is a proposal: a change card, a "
+                f"comment or a signal. No tool here decides a card, answers a question, approves, pauses, resumes or "
+                f"deploys; people make those decisions in the Rihma cockpit. Holdout scenarios are never shown. "
+                f"Resources: rihma://projects/<pid>/spec, /contract and /ledger, and {MAP_URI}.")
 
     # -- JSON-RPC ---------------------------------------------------------------------------------
 
@@ -410,7 +390,8 @@ class RihmaMCP:
         held = self._held()
         try:
             values = self._arguments(TOOLS[name]["params"], args or {})
-            result = getattr(self, "tool_" + name[len("rihma_"):])(**values)
+            with kaccess.signing(self.identity):    # a proposal's records name the operator's identity
+                result = getattr(self, "tool_" + name[len("rihma_"):])(**values)
         except ToolError as exc:   # a refusal of the client's own input is its own words, never redacted
             text = str(exc) if isinstance(exc, InputRefused) else _redact(str(exc), held)
             return {"content": [{"type": "text", "text": text}], "isError": True}
@@ -463,28 +444,7 @@ class RihmaMCP:
     def _held(self) -> list:
         """The strings of every scenario in the holdout custody that a builder could not already see in
         its project's spec or contract, longest first. They are used only to redact output."""
-        root = Path(self.factory.holdouts_dir)
-        if not root.is_dir():
-            return []
-        held = set()
-        for folder in sorted(p for p in root.iterdir() if p.is_dir()):
-            visible = ""
-            for name in ("spec.json", "contract.json"):
-                path = Path(self.factory.projects_dir, folder.name, name)
-                if path.is_file() and self._inside_home(path):
-                    visible += path.read_text(encoding="utf-8", errors="replace")
-            for path in sorted(folder.glob("*.json")):
-                try:
-                    doc = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, ValueError):
-                    continue
-                if isinstance(doc, dict):
-                    doc = doc["steps"] if "steps" in doc else {k: v for k, v in doc.items() if k not in SCENARIO_META}
-                for s in _strings(doc, set()):
-                    s = s.strip()
-                    if len(s) >= MIN_HELD and s not in visible:
-                        held.add(s)
-        return sorted(held, key=lambda s: (-len(s), s))
+        return held_strings(Path(self.factory.holdouts_dir), Path(self.factory.projects_dir), inside=self._inside_home)
 
     @staticmethod
     def _safe(fn, *args, **kwargs):
@@ -604,12 +564,25 @@ class RihmaMCP:
     def _signed(self, project, action: str, target: str) -> dict:
         project.log("mcp_write", {"action": action, "target": target, "person": self.person,
                                   "persona": self.persona})
-        return {"person": self.person, "persona": self.persona}
+        signer = {"identity": self.identity.id} if self.identity is not None else {}
+        return {"person": self.person, "persona": self.persona, **signer}
+
+    def _granted(self, pid: str) -> None:
+        """With access enforced (D-0016), a proposal on ``pid`` needs the operator's persona granted there;
+        a server started before access was enforced proposes nothing until it is started again."""
+        access = kaccess.load(self.kernel_factory, record=True, by="the MCP server")
+        if not access.enforced:
+            return
+        try:
+            kaccess.sign(access, self.identity, self.person, self.persona, pid)
+        except kaccess.AccessRefused as exc:
+            raise ToolError(f"refused: {exc}") from None
 
     def tool_report_change(self, pid: str, text: str) -> dict:
         from kernel.change import submit, triage
 
         project = self._project(pid)
+        self._granted(pid)
         try:
             card = submit(project, persona=self.persona, person=self.person, text=text)
         except ValueError as exc:
@@ -623,6 +596,7 @@ class RihmaMCP:
 
     def tool_comment(self, pid: str, target_kind: str, target_id: str, text: str) -> dict:
         project = self._project(pid)
+        self._granted(pid)
         try:
             c = Canon(project).comment({"kind": target_kind, "id": target_id}, text, person=self.person,
                                        persona=self.persona)
@@ -634,9 +608,10 @@ class RihmaMCP:
                 "note": "A comment decides nothing; a product or business owner may promote it into a change."}
 
     def tool_signal(self, text: str, source: str) -> dict:
-        from kernel.learn import factory_project
+        from kernel.learn import FACTORY_PID, factory_project
         from kernel.signals import receive
 
+        self._granted(FACTORY_PID)
         try:
             s = receive(self.factory, text, channel="manual", source=source, person=self.person,
                         persona=self.persona)
@@ -700,7 +675,7 @@ class RihmaMCP:
                 raise RpcError(INTERNAL_ERROR, f"the contract of {m['pid']} is not readable JSON") from None
             return _contents(uri, "application/json", json.dumps(_redact(contract, held), ensure_ascii=False, indent=2))
         records = project.ledger().records()
-        tail = [_ledger_record(r) for r in records[-LEDGER_TAIL:]]
+        tail = [ledger_record(r) for r in records[-LEDGER_TAIL:]]   # without holdout details (kernel/custody.py)
         body = {"project": project.pid, "total": len(records), "shown": len(tail), "records": tail,
                 "note": "Holdout scenarios and what they met stay in the holdout custody; such fields are "
                         "redacted, so a redacted record no longer matches its hash."}
@@ -709,26 +684,6 @@ class RihmaMCP:
 
 def _contents(uri: str, mime: str, text: str) -> dict:
     return {"contents": [{"uri": uri, "mimeType": mime, "text": text}]}
-
-
-def _ledger_record(rec) -> dict:
-    """One ledger record as served: what happened, when and to what, without holdout details."""
-    if not isinstance(rec, dict):
-        return {"unreadable": "a line of the ledger is not JSON"}
-    raw_event = rec.get("event")
-    event: dict[str, Any] = raw_event if isinstance(raw_event, dict) else {}
-    payload = dict(event.get("payload") or {}) if isinstance(event.get("payload"), dict) else {}
-    redacted = sorted(k for k in payload if k in HOLDOUT_FIELDS)
-    for k in redacted:
-        payload.pop(k)
-    if str(payload.get("step", "")).startswith("holdouts") and "reason" in payload:
-        payload["reason"] = "a holdout failed; its details stay in the holdout custody"
-        redacted.append("reason")
-    out = {"seq": rec.get("seq"), "kind": event.get("kind"), "at": event.get("at"), "payload": payload,
-           "hash": rec.get("hash")}
-    if redacted:
-        out["redacted"] = sorted(redacted)
-    return out
 
 
 def _request_id(msg: Any) -> str | int | float | None:

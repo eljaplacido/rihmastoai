@@ -87,12 +87,14 @@ def envelope(project, contract: dict, task_id: str, *, base: str, round_no: int 
     if hidden:
         lines += ["", f"{len(hidden)} more criteria for this requirement are checked end to end against the running "
                   "service by the factory. Build the requirement as stated, not only the tests above."]
+    from kernel.roads import road_facts_for_builder
     from kernel.spec import render_interface
 
     lines += ["", "## The product's HTTP interface (fixed by the spec: use exactly these paths)", "",
               render_interface(project.read("spec.json") or {})]
     lines += ["", "## Scope", "", "Write only: " + ", ".join(task.get("scope", {}).get("write", [])) + ".",
               "", "## How the product is built", "", STACK_NOTES, "",
+              "## The paved road's platform facts (the road owns them)", "", road_facts_for_builder(), "",
               "## Rules", "",
               "- Write each criterion's test first, named `test_<ID with hyphens as underscores>_...`, "
               "and run it: it must fail before your code exists.",

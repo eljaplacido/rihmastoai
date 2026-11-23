@@ -2,12 +2,16 @@
 
 The stack is one IT agrees to in advance: a Python standard-library HTTP service that serves a
 JSON API and, when a requirement needs it, plain HTML. It keeps its data in JSON files under
-`DATA_DIR`. A health endpoint and request recording (for shadow tests) come built in, and the
-Dockerfile packages it. Cells add behaviour by registering routes; the template is not theirs
-to change.
+`DATA_DIR`. A health endpoint, request recording (for shadow tests) and `factory/pack_guard.py`
+(the pack check at a site, FR-PT5, from kernel/scaffold_guard.py) come built in, and the
+Dockerfile packages it, starting through the guard. Cells add behaviour by registering routes; the
+template is not theirs to change. The road-contract tests (`ROAD_CONTRACT_TESTS`) check the road's
+platform facts in every product, and no cell may change them.
 """
 
 from __future__ import annotations
+
+from kernel.scaffold_guard import PACK_GUARD_PY
 
 SERVER_PY = r'''"""The product's HTTP service. Built by Rihma on the paved road: standard library only.
 
@@ -249,6 +253,98 @@ if __name__ == "__main__":
     unittest.main()
 '''
 
+# The road-contract tests (FR-DF1-AC-2): the paved road's platform facts, checked in every product
+# by the product's own suite. The road owns the file. No builder cell may edit or remove it: the gate
+# refuses a change that touches it (kernel/lanes.py PROTECTED), as it refuses one to the contract.
+ROAD_CONTRACT_TESTS = "tests/test_road_contract.py"
+TEST_ROAD_CONTRACT_PY = r'''"""The paved road's contract with this product. The road owns this file: no builder cell
+may edit or remove it, and the factory's gate refuses a change that touches it.
+
+- GET /health answers 200 with {"status": "ok", "version": <APP_VERSION>}: delivery checks the
+  version of every release.
+- The service binds the address in HOST, default 0.0.0.0 (every interface inside its container),
+  and the port in PORT. Who can reach it is the road's job, not the product's.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+import unittest
+
+import app.routes  # noqa: F401
+from app.server import handle
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Starts the service as the roads do, with the server class replaced: it says which address it
+# would bind, and binds nothing. Once with no HOST or PORT, once with the road's own.
+PROBE = (
+    "import json, os\n"
+    "import app.server as server\n"
+    "class Bound(Exception):\n"
+    "    pass\n"
+    "def bound(address, handler):\n"
+    "    raise Bound(address)\n"
+    "server.ThreadingHTTPServer = bound\n"
+    "seen = []\n"
+    "for host, port in ((None, None), ('192.0.2.10', '18081')):\n"
+    "    if host:\n"
+    "        os.environ['HOST'], os.environ['PORT'] = host, port\n"
+    "    try:\n"
+    "        server.main()\n"
+    "    except Bound as exc:\n"
+    "        seen.append([exc.args[0][0], int(exc.args[0][1])])\n"
+    "print(json.dumps(seen))\n"
+)
+_SEEN = []
+
+
+def bound_addresses():
+    """The addresses the service binds with no HOST or PORT set, and with HOST and PORT given."""
+    if not _SEEN:
+        env = {k: v for k, v in os.environ.items() if k not in ("HOST", "PORT")}
+        proc = subprocess.run([sys.executable, "-c", PROBE], cwd=ROOT, env=env, capture_output=True, text=True,
+                              timeout=60)
+        lines = proc.stdout.strip().splitlines()
+        if proc.returncode != 0 or not lines:
+            raise AssertionError("the service did not start as the road starts it: " + proc.stderr[-800:])
+        _SEEN.append([tuple(a) for a in json.loads(lines[-1])])
+    return _SEEN[0]
+
+
+class RoadContractTest(unittest.TestCase):
+    def test_ROAD_health_answers_ok_with_the_release_version(self):
+        saved = os.environ.get("APP_VERSION")
+        os.environ["APP_VERSION"] = "road-check-1"
+        try:
+            status, body, ctype = handle("GET", "/health")
+        finally:
+            if saved is None:
+                os.environ.pop("APP_VERSION", None)
+            else:
+                os.environ["APP_VERSION"] = saved
+        self.assertEqual(status, 200)
+        self.assertIn("application/json", ctype)
+        self.assertEqual((body.get("status"), body.get("version")), ("ok", "road-check-1"))
+
+    def test_ROAD_the_service_binds_every_interface_unless_HOST_says_otherwise(self):
+        seen = bound_addresses()
+        self.assertEqual(len(seen), 2, "the service did not hand its address to the road's server class")
+        self.assertEqual(seen[0][0], "0.0.0.0")
+
+    def test_ROAD_the_service_binds_the_HOST_and_PORT_the_road_gives(self):
+        seen = bound_addresses()
+        self.assertEqual(seen[-1], ("192.0.2.10", 18081))
+        with open(os.path.join(ROOT, "Dockerfile"), encoding="utf-8") as fh:
+            dockerfile = fh.read()
+        self.assertIsNone(re.search(r"HOST\s*=\s*\S*(127\.0\.0\.1|localhost)", dockerfile))
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+
 TESTS_INIT_PY = '''import os
 import tempfile
 
@@ -260,10 +356,11 @@ DOCKERFILE = '''FROM python:3.12-slim
 WORKDIR /srv
 COPY app ./app
 COPY factory/look.json ./factory/look.json
-ENV PORT=8080 DATA_DIR=/data PYTHONUNBUFFERED=1
+COPY factory/pack_guard.py ./factory/pack_guard.py
+ENV PORT=8080 DATA_DIR=/data PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 CMD python3 -c "import os,urllib.request;urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT','8080'), timeout=3)"
-CMD ["python3", "-c", "from app.server import main; main()"]
+CMD ["python3", "factory/pack_guard.py"]
 '''
 
 VERIFY_SH = '''#!/bin/sh
@@ -296,7 +393,11 @@ Built by Rihma (project `{pid}`, maturity **{maturity}**).
 - `contract.json`: the requirements and acceptance criteria this product is built to.
 - `app/`: the service. `python3 -m app.server` serves on `$PORT` (8080).
 - `tests/`: one test per acceptance criterion, named by its id.
+- `tests/test_road_contract.py`: the paved road's own checks (GET /health with the release
+  version; the bind from `HOST`, default 0.0.0.0). The road owns it: never edit or remove it.
 - `factory/verify.sh`: the check the factory's gate runs.
+- `factory/pack_guard.py`: the image starts through it. Where a site mounts the capability pack
+  beside the image, `/health` answers 503 until the pack, the files and the pack's status check out.
 
 Change this product through the factory (a change card), not by hand. The factory's ledger
 links every release to the requirement, the criterion and the test it rests on.
@@ -316,10 +417,12 @@ def files(title: str, pid: str, maturity: str, look: str = "neutral") -> dict[st
         "app/static/product.css": PRODUCT_CSS,
         "tests/__init__.py": TESTS_INIT_PY,
         "tests/test_scaffold.py": TEST_HEALTH_PY,
+        ROAD_CONTRACT_TESTS: TEST_ROAD_CONTRACT_PY,
         "Dockerfile": DOCKERFILE,
         "factory/verify.sh": VERIFY_SH,
         "factory/DESIGN.md": DESIGN_MD,
         "factory/look.json": _json.dumps({"look": look if look in LOOKS else "neutral"}) + "\n",
+        "factory/pack_guard.py": PACK_GUARD_PY,
         ".gitignore": GITIGNORE,
         "README.md": readme(title, pid, maturity),
     }

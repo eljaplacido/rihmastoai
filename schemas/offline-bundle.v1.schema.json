@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:rihmasto:schema:offline-bundle:v1",
+  "title": "Rihmasto offline bundle description (BUNDLE.json, rihma.offline-bundle.v1)",
+  "description": "What an offline bundle holds and what it does not (kernel/bundle.py), and the governance map of where it runs. tools/rihmasto_verify.py checks a bundle with nothing installed.",
+  "$comment": "SHA256SUMS lists every file of the bundle but SHA256SUMS itself, signature.json, SHA256SUMS.sigstore.json, trusted_root.json, cosign.pub, pack-status.json and pack-status.json.sigstore.json: those sign it, or change after it (a fresh status replaces the old one).",
+  "type": "object",
+  "required": ["format", "project", "release", "pack_version", "pack_content_sha256", "revision", "contract_from",
+               "source", "images", "site", "evidence", "verifier", "status", "governance", "signature"],
+  "properties": {
+    "format": {"const": "rihma.offline-bundle.v1"},
+    "project": {"type": "string"},
+    "release": {"type": "integer"},
+    "pack_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "pack_content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "revision": {"type": "string"},
+    "contract_from": {"type": "string"},
+    "source": {"type": "string", "pattern": "^source/product-[0-9a-f]+\\.zip$"},
+    "images": {
+      "type": "array",
+      "items": {"type": "object", "required": ["road", "type", "ref", "exported", "note"],
+                "properties": {"exported": {"type": ["string", "null"]}, "digest": {"type": "string"}}}
+    },
+    "site": {
+      "type": "object",
+      "required": ["deploy_package", "compose", "note"],
+      "properties": {"deploy_package": {"type": ["string", "null"]}, "compose": {"type": ["string", "null"]},
+                     "note": {"type": "string"}},
+      "additionalProperties": false
+    },
+    "evidence": {"type": "object", "required": ["file", "exported_as"],
+                 "properties": {"file": {"const": "evidence.zip"}, "exported_as": {"type": "string"}}},
+    "verifier": {"type": ["string", "null"]},
+    "status": {"type": "object", "required": ["file"], "properties": {"file": {"const": "pack-status.json"}},
+               "additionalProperties": false,
+               "description": "the status document the bundle carries outside SHA256SUMS; named here, inside it, so a signed bundle's status cannot be removed unseen, and it is signed whenever SHA256SUMS is"},
+    "governance": {"type": "array", "items": {"$ref": "#/$defs/guarantee"}},
+    "signature": {"type": "string"}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "guarantee": {
+      "type": "object",
+      "required": ["guarantee", "state", "why"],
+      "properties": {
+        "guarantee": {"enum": ["pinning", "evals", "revocation", "evidence", "telemetry"]},
+        "state": {"enum": ["held", "partial", "lost"]},
+        "why": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

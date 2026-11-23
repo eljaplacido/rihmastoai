@@ -1,7 +1,8 @@
 # Paved roads: where a product runs, and how IT configures it
 
-Status: v1, 22 Nov 2026; the delivery lifecycle (stage, security gate, holdout twin) 23 Nov 2026.
-Code: `kernel/roads.py`, `kernel/deliver.py`, `kernel/operate.py`.
+Status: v1, 22 Nov 2026; the delivery lifecycle (stage, security gate, holdout twin) 23 Nov 2026;
+the road's platform facts and signed holdout steps 23 Nov 2026.
+Code: `kernel/roads.py`, `kernel/deliver.py`, `kernel/operate.py`, `kernel/holdouts.py`.
 
 The factory deploys a product only to a **paved road** that IT has configured in advance. A road
 records the kind of target, the environments it serves, the identity it deploys as, and the
@@ -62,7 +63,10 @@ default, or `$GNOMONFACTORY_HOME/paved_roads.json`). IT edits it, then decides t
 - **`environments`** limits what a road serves (`preview`, `demo`, `staging`, `production`).
 - **Secrets** are references only: a name and where the value lives (`ref`). A package never
   holds a secret value. If a road carries a `value`, the value is dropped from every package and
-  the package fails validation, which stops the deployment.
+  the package fails validation, which stops the deployment. A `ref` of the form
+  `env:<VARIABLE>` names a variable in the kernel host's environment; the holdout runner reads
+  such a secret to sign a request (see [Signed holdout steps](#signed-holdout-steps)), and reads
+  no other kind of reference.
 - **Shadow** (optional): `"shadow_target": "live"` replays traffic against the live production
   slot instead of a fresh twin of the current release (the default); then
   `"shadow_safe": ["production"]` says the live slot may also take replayed writes. A live slot
@@ -93,6 +97,67 @@ The template's own `python -m app.server` (and its Dockerfile `CMD`) loads `app/
 twice, so the product's routes register on a copy that does not serve: every route but
 `/health` answers 404. A road may set its own `command`.
 
+## The road's platform facts
+
+Built 23 Nov 2026 (FR-DF1), after a live run in which the analyst wrote a "localhost-only"
+requirement, the builder bound 127.0.0.1 inside the container and replaced `/health`, every test
+passed, and delivery failed its health check with an empty `logs`. The road owns three facts,
+whatever a spec says (`kernel.roads.ROAD_FACTS`):
+
+| Fact | What it means |
+|---|---|
+| bind | The service listens on all interfaces inside its container: it binds the address in `HOST` (default `0.0.0.0`) and the port in `PORT`. Bound to 127.0.0.1 inside a container, nothing outside it can reach the service. |
+| exposure | Who can reach the service is the road's job: a loopback publish (`bind`), a reverse proxy or an ingress, with the road's TLS and egress rules. "Localhost-only" is met by the road, not by the code. |
+| health | `GET /health` answers 200 with `{"status": "ok", "version": <APP_VERSION>}`, and delivery checks that version before anyone uses the release. |
+
+Where each fact is said and checked:
+
+- **The analyst's spec prompt** states them, and says that a wish for less exposure goes to
+  `out_of_scope` as the road's job, never into a requirement (`kernel/spec.py`).
+- **The builder's envelope** states them with what they mean for the code: never set `HOST` or
+  bind loopback (not in `app/__init__.py` either), never register, replace or change
+  `GET /health` (`kernel/dispatch.py`).
+- **The road-contract tests.** Every product starts with `tests/test_road_contract.py`
+  (`kernel/scaffold.py`): `/health` with the release version, the bind from `HOST` with `0.0.0.0`
+  as the default (the service is started as the roads start it, with the server class replaced,
+  so nothing is bound), the `HOST` and `PORT` the road gives, and no loopback `HOST` in the
+  Dockerfile. The road owns the file: it is a protected path (`kernel/lanes.py PROTECTED`), so a
+  cell's change that edits or removes it is a `protected` violation at the gate and never merges,
+  and a workspace submission that touches it is refused. Gnomon's `write_allow` has no exclusions,
+  so the builder's `tests/**` scope lets the write tool reach the file; the gate's check is what
+  refuses the change. The product surface's `system.md` says the file is read-only. No change to
+  Rihmasto's own `.gnomon/` is needed, so nobody runs `gnomon trust` for this; a product lane an
+  owner had trusted for in-loop verify needs that trust again after its surface is recompiled.
+- **The plan review** names, by rule and with no model, every requirement or criterion that
+  wants the service bound to loopback, a port of its own, or `/health` without the release
+  version (`kernel.roads.road_conflicts`). The plan card's title counts them, its body and payload
+  list each with the fact it contradicts, `spec.md` lists them, the ledger records
+  `spec_road_conflicts`, and the plan waits for a person **at any maturity** while one stands. A
+  probe that names `/health`'s latency is no conflict.
+
+  The rules read each clause (a sentence, or its part before a `;`) on its own, so "only" in one
+  sentence never pairs with `localhost` in another (FR-DF1-AC-5). They find:
+
+  | Fact | Found | Not a conflict |
+  |---|---|---|
+  | bind | a loopback address (127.0.0.1, `localhost`, `loopback`, `::1`) with a word that restricts the service to it: "localhost-only", "binds 127.0.0.1", "Set HOST to 127.0.0.1", "only be accessible from localhost", "restrict (or limit) access to localhost", "not exposed beyond localhost", "serve the app from 127.0.0.1" | a loopback address the service calls out to ("calls the model server at localhost:11434"): egress, the road's egress rule |
+  | port | the service on a port other than the road's 8080: "listens on port 5000", "listens on 0.0.0.0:5000", "Set PORT to 5000" | another component's port ("the database runs on port 5432", "Redis listens on port 6379"), or a port the service connects to |
+  | health | `/health` (or the health endpoint) without the release version: "must not disclose (expose, reveal, show) the version", "without the version", `{"status": "ok"}` alone, an empty body, 204, plain text | `/health`'s latency; an answer that names the version |
+
+  The rules are fixed words, not a model, so a new phrasing can still pass them. The
+  road-contract tests catch such a product at build; the plan review is the earlier, cheaper
+  check.
+- **The local-process road** starts the product with `HOST=127.0.0.1`, so a preview listens on
+  loopback only, whatever the kernel's own environment holds.
+
+**A failed health check says why.** When a deploy's health check fails, the release record's
+deploy step keeps, beside the last answer (`last`):
+
+| Road | `logs` / `log_tail` | `listening` | `diagnosis` |
+|---|---|---|---|
+| docker | the container's last 50 lines from both of its streams (`docker logs` gives the container's stderr on its own stderr, where a Python service writes) | the TCP sockets listening inside the container, read from `/proc/net/tcp` and `tcp6` with `docker exec` (the image needs no tool); "not measured" when the container cannot be read | "listens on loopback inside the container only", "nothing listens on port 8080", or "/health answered ... not the release version" |
+| local-process | the process log's tail | whether the loopback port accepted a connection | a `/health` without the release version |
+
 ## What each maturity does
 
 | Maturity | Delivery plan | Lands on | A person decides |
@@ -118,7 +183,8 @@ twice, so the product's routes register on a copy that does not serve: every rou
   users try never receives it. A road that cannot host a twin (Azure Container Apps today) runs
   them against the shared slot, and the release says so: "holdouts ran in the shared slot: this
   road has no twin". One failing scenario stops the release; its first failing step and the
-  observed status and body are kept in the release record.
+  observed status and body are kept in the release record. A step that signs its request uses
+  the secrets the environment's road names (below).
 - **Validation**: `fix` or `change` stops the release and hands the card to the change loop.
 - **Deploy gate**: only the `it` persona decides it. `refuse` stops the release.
 - **Candidate**: the release starts beside the current one, with its own empty data.
@@ -130,6 +196,49 @@ twice, so the product's routes register on a copy that does not serve: every rou
   candidate is rolled back: stopped, the current kept, the rollback recorded
   (`ops/rollbacks.jsonl`) and an `incident` card opened. No person is needed for it.
 - **Promotion**: the current slot is replaced by the release, on production's data.
+
+### Signed holdout steps
+
+Built 23 Nov 2026 (FR-DF2), after a live run whose spec required signed carrier webhooks: the
+holdouts reached the right route and got 401 "missing HMAC signature", because a scenario had no
+way to sign. A step may now carry `sign` (`kernel/holdouts.py`):
+
+```json
+{"method": "POST", "path": "/carriers/a/events", "body": {"event": "delivered"},
+ "sign": {"header": "X-Carrier-Signature", "secret": "CARRIER_WEBHOOK_SECRET", "prefix": "sha256="},
+ "expect_status": 202}
+```
+
+- The runner sends the body as exact JSON bytes and puts the hex HMAC-SHA256 of those bytes,
+  keyed by the secret, in that header (after `prefix`, if given).
+- `secret` is the **name** of a setting of the environment: a secret the environment's road names
+  in `paved_roads.json`, for example `{"name": "CARRIER_WEBHOOK_SECRET", "ref": "env:CARRIER_TEST_SECRET"}`.
+  Delivery reads the value from that `env:` reference when the holdouts run, and keeps it in
+  memory only. A scenario never holds a value: one the holdout author wrote in `secret` is dropped
+  before the scenario enters the custody.
+- A name the environment does not give, a reference the runner cannot read (a vault URL, an unset
+  variable), or a malformed `sign` makes the scenario **not measured**, never failed, and its
+  reason says which. The release record and the ledger name the header and the secret's name,
+  never the value or the signature.
+- What counts as malformed, refused before anything is sent and before the scenario enters the
+  custody (FR-DF2-AC-3): a `header` that is not a plain name (a letter, then letters, digits and
+  `-`), or one HTTP itself sends or the runner sets (`Host`, `Content-Length`, `Content-Type`,
+  `Transfer-Encoding`, `Connection`, any `Proxy-*` and the like), which would replace what frames
+  or routes the request; a `prefix` that is not at most 32 visible ASCII characters, since a line
+  break in it would start a header of its own; an algorithm other than `hmac-sha256`.
+- Each scenario runs guarded (`kernel.holdouts.run_guarded`): one the runner cannot send (a step
+  `http.client` refuses, a step that is not an object) is **not measured**, named by the error's
+  kind only (its text may quote what the step sent), and the other scenarios still run. Before
+  the fix of 23 Nov 2026 such a scenario stopped the holdouts step with a traceback, and the
+  scenarios after it never ran.
+- The holdout author learns the option in the interface section of its prompt, with the names
+  (never the values, never where they live) of the secrets the project's roads give.
+- Custody is unchanged: scenarios stay in `<home>/holdouts/<project>/`, and the builder's envelope
+  names no scenario, header or secret.
+- Still to come: the docker road does not pass a secret's value to the product's container yet
+  (packages carry references only), so a docker product reads its test secret from its own
+  configuration; a local-process product inherits the kernel's environment. Probes (`operate.tick`)
+  do not sign.
 
 `deliver` stops at each card and returns `waiting`. Call it again after the person decided: it
 goes on from there. If main moves while a release waits, that release is superseded and its
@@ -169,9 +278,11 @@ scenario of kind `probe`. Results go to `ops/probes.jsonl`. A failing probe open
 ## What is real and what is not
 
 - **Real and tested**: the `local-process` road end to end (real processes, real HTTP, real
-  holdouts in a twin, the security gate holding a release, shadow, canary, promotion and
-  rollback), the docker command construction (against a fake CLI, including a twin's own
-  container and volume), and the Azure package rendering and validation.
+  holdouts in a twin, signed holdout steps, the security gate holding a release, shadow, canary,
+  promotion and rollback), the docker command construction (against a fake CLI, including a twin's
+  own container and volume, and the log tail, listening sockets and diagnosis of a failed health
+  check), the road-contract tests and the plan review's road conflicts, and the Azure package
+  rendering and validation.
 - **Real, not exercised by the tests**: the `docker` road against a docker daemon (a holdout
   twin on docker included), and the `azure-containerapps` deployment. Azure needs IT to
   configure the road with an identity, and the `az` CLI on the deploying host; neither exists

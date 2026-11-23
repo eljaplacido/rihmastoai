@@ -51,7 +51,10 @@ python -m kernel.cli sync <pid>
   **uncertain**, with the candidates a person should choose from, in `profile_chosen`, in
   `adopted.json` and in the brief.
 - **The characterisation baseline.** A detected Python suite runs once in a temporary checkout,
-  with a timeout. Its counts are **existing behaviour, not a spec**: a suite that already fails is
+  with a per-suite timeout of its own, apart from git's (`SUITE_TIMEOUT`, 300 s; from Python,
+  `adopt(..., suite_timeout=...)`, with no command-line flag yet). A suite still running then is
+  stopped and recorded as "not measured: timed out", with the limit, and adoption goes on. Its
+  counts are **existing behaviour, not a spec**: a suite that already fails is
   recorded as failing, not judged. Other toolchains run only when the tool is on PATH, offline
   (nothing is installed or downloaded); otherwise the baseline says "not measured: toolchain not
   run by the kernel". It is "passed" only when at least one test passed: no tests, every test

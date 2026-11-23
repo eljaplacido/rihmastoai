@@ -43,8 +43,8 @@ def snapshot_with_custody(real: Callable[..., dict]) -> Callable[..., dict]:
     from kernel.canon import Canon
     from kernel.operate import load_scenarios
 
-    def snapshot(factory: Any, *, project: Any = None) -> dict:
-        snap = real(factory, project=project)
+    def snapshot(factory: Any, *, project: Any = None, **kw: Any) -> dict:
+        snap = real(factory, project=project, **kw)
         if project is not None:   # seeded: the assistant sees the custody and other projects
             snap["project"]["holdouts"] = load_scenarios(project)
             snap["others"] = {p.pid: Canon(p).brief for p in factory.projects() if p.pid != project.pid}

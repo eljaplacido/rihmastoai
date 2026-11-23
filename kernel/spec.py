@@ -32,6 +32,17 @@ files. Tests call `handle(method, path, body)` directly. No third-party packages
 database, no outbound network calls."""
 
 
+def road_facts() -> str:
+    """The paved road's platform facts as the analyst reads them (FR-DF1-AC-1): what no requirement
+    may restate or contradict, and where a wish for less exposure belongs instead."""
+    from kernel.roads import ROAD_FACTS
+
+    return ("The paved road IT runs the product on owns these platform facts. No requirement may restate or\n"
+            "contradict them. A wish for less exposure (\"localhost-only\", \"internal only\") is the road's\n"
+            "rule: put it in \"out_of_scope\" as the road's job, never in a requirement.\n"
+            + "\n".join(f"- {ROAD_FACTS[k]}" for k in ("bind", "exposure", "health")))
+
+
 def spec_prompt(project, feedback: str | None = None) -> str:
     meta, canon = project.meta, Canon(project)
     n = MAX_REQUIREMENTS[meta["maturity"]]
@@ -58,6 +69,8 @@ Target maturity: **{meta['maturity']}**: {MATURITY_MEANING[meta['maturity']]}.
 {spec_guidance(profile_of(project))}
 The stack is fixed:
 {STACK}
+
+{road_facts()}
 
 Write at most {n} requirements: the smallest set that delivers the goal at this maturity. If the
 request names its own requirement ids (for example FR-KRIT-001), keep the id of each requirement
@@ -282,6 +295,10 @@ def render_spec_md(spec: dict) -> str:
         lines.append("")
     if spec.get("out_of_scope"):
         lines += ["## Out of scope", ""] + [f"- {o}" for o in spec["out_of_scope"]] + [""]
+    from kernel.roads import conflict_lines
+
+    conflicts = conflict_lines(spec)
+    lines += ["## Conflicts with the paved road", "", *conflicts, ""] if conflicts else []
     if spec.get("dropped"):
         lines += ["## Dropped from the analyst's draft", ""]
         for d in spec["dropped"]:
@@ -297,8 +314,16 @@ def make_spec(project, *, model, feedback: str | None = None) -> dict:
     if still_open:
         project.log("send_back", {"questions": [q["id"] for q in still_open]})
         raise SendBack(still_open)
+    from kernel.profiles import settle_profile_question
+    from kernel.roads import road_conflicts
+
+    settle_profile_question(project)  # a person's answer to "which kind of work is this?" shapes the spec
     raw = _ask_json(model, spec_prompt(project, feedback))
     spec = normalize(project, raw)
+    conflicts = road_conflicts(spec)
+    if conflicts:  # the plan review flags them for a person (kernel/plan.py)
+        project.log("spec_road_conflicts", {"conflicts": [{k: c[k] for k in ("requirement", "criterion", "fact")}
+                                                          for c in conflicts]})
     project.write("spec.json", spec)
     write_text(project.path("spec.md"), render_spec_md(spec))
     project.update_meta(stage=4)

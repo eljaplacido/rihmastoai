@@ -81,9 +81,37 @@ is refused.
 - Layouts are the cockpit's own files under `<home>/_cockpit/layouts/`, never in a project
   ledger. Evidence exports go to `<home>/_cockpit/exports/` and are downloaded once.
 
-The persona is chosen in the person chip. It is not a login: whoever holds the session can pick
-any persona. The persona decides what the Inbox offers, and the kernel checks it on every
-decision.
+The persona is chosen in the person chip. Without an access file it is not a login: whoever holds
+the session can pick any persona, and the top bar and the person menu say so ("single operator:
+personas are self-declared"). The persona decides what the Inbox offers, and the kernel checks it on
+every decision.
+
+## Enforced access
+
+With an access file in mode `enforced` ([guides/access.md](guides/access.md)), the cockpit stays on
+127.0.0.1 behind IT's identity-aware proxy, which runs beside it:
+
+- The identity comes only from the proxy's configured headers, and only on a request that also
+  carries the proxy's shared secret (compared in constant time with the environment variable the
+  access file names). Any other request is a 401, and so is a request that repeats the user, email,
+  secret or groups header; while the access file cannot be read or checked, every request is a 403
+  that says why. The cockpit takes the secret out of its own environment once read, so no job it
+  starts inherits it.
+- The page says the mode (`<meta name="rihmasto-access">`). An enforced page signs in with
+  `POST /auth` and no bootstrap: the session is opened for the verified identity and answers only that
+  identity. The printed one-use link is not needed, and **Link for another tab** is hidden. A single
+  operator's page asks for nothing until a sign-in link is opened.
+- The person menu shows the verified name, read-only, and offers only the personas granted on the
+  open project (outside a project, those granted anywhere). The top bar says "enforced: signed in as
+  <name>" (in either mode the note keeps its words: under 1520px of top bar the lenses show their
+  icons, and the note shrinks to its shield, with the words as its tooltip, only when nothing else can
+  give way).
+- Every write route that takes a person or persona signs as the verified person (a `person` that
+  differs is a 403) and needs the persona granted on its project; the factory's own writes need it on
+  `_factory`. The decision, the ledger and `cockpit_write` record the identity beside the person.
+- The proxy's public address (the access file's `origin`) is accepted as `Host` and `Origin` beside
+  `127.0.0.1:<port>`. `GET /api/meta` carries the mode, and in enforced mode the identity and its
+  grants, under `access`.
 
 ## The shell
 

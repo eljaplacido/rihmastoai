@@ -4,6 +4,17 @@ How Rihmasto connects to the tools people already use, as decided in
 [D-0015](../decisions/D-0015-integrations-through-gnomon.md). Vendor facts were checked on 2026-11-23;
 UNVERIFIED marks anything not confirmed from a primary source.
 
+**Status (2026-11-23).** The native edges and the connector model are built; the connectors
+themselves are not. How to use what is built: [guides/integrations.md](guides/integrations.md).
+
+| Part | State |
+|---|---|
+| Outbound events: `rihma.event/1` in CloudEvents 1.0 over Standard Webhooks v1, signed, retried with backoff, a hash-chained delivery log, subscriptions IT configures with secrets named by variable (`kernel/events.py`, `kernel/relay.py`) | built |
+| Notices with one deep link, for Teams workflow webhooks, Slack incoming webhooks and email (`kernel/notices.py`) | built; the link opens the card in a signed-in tab, and keeping it through sign-in is planned |
+| Verified inbound webhooks: Standard Webhooks and GitHub signatures, timestamp tolerance, replay protection, a size limit; a ring becomes a signal or change proposal (`kernel/hooks.py`, `python -m embed.webhooks`) | built; fetching the item through its connector is planned |
+| The connector model: the `connector.json` schema, the `connector` card IT decides, pins that stop a changed connector, the contract suite and an example (`kernel/connectors.py`, `connectors/`) | built |
+| Gnomon integration lanes that call a connector, the `trust` card on a changed tools/list, decided writes, the named connectors, identity at the edge, digests | planned; most wait on the Gnomon changes in [section 3](#3-architecture) |
+
 ## 1. The short answer
 
 Rihmasto reaches other systems through **Gnomon**. Each connector runs in its own integration lane:
@@ -118,10 +129,13 @@ searching for the stamp. Rihmasto's own writes are not read back as changes. Rih
 and state of what it created; the external tool owns its workflow fields. Inbound edits become notes or
 proposals. Outside approvals (CAB, JSM, PR reviews) are evidence, never the decision.
 
-**Identity.** Today a signer is a typed name, and any session holder can sign as any persona. The
-cockpit moves behind IT's OIDC proxy, people bind to iss+sub, an IT-owned map turns groups into
-personas, and SCIM ends a leaver's rights and re-routes their cards. The stdlib cannot verify RS256,
-so verification stays at the proxy or uses token introspection.
+**Identity.** Phase A is built ([D-0016](../decisions/D-0016-access-through-the-organisations-identity.md),
+[guides/access.md](guides/access.md)). Without an access file a signer is still a typed name, and the
+cockpit says personas are self-declared. With access enforced, the cockpit sits behind IT's OIDC proxy,
+people bind to iss+sub (or `local:<os user>` on the operator's machine), and an IT-owned map turns
+subjects and groups into personas per project. SCIM, which ends a leaver's rights and re-routes their
+cards, is the next phase. The stdlib cannot verify RS256, so verification stays at the proxy or uses
+token introspection.
 
 **Credentials.** References only: `env:`, `os:` (the operating system's store) or `cmd:` (a token
 command IT declares, such as `az account get-access-token`). Lane secrets live in `gnomon key`, and
@@ -159,6 +173,13 @@ Gnomon passes each server only the names it declares. Bot or App identities only
 ## 5. Build plan
 
 ### Phase 1: build now
+
+What is built of it (2026-11-23): `kernel/events.py` with its catalog (item 1); the relay and
+notices (item 2), except deep links that survive sign-in; the doorbell's verification, replay
+protection and signal (item 3), except fetching the item through the lane; and the connector
+registry's model, card and pins with the contract suite (item 5), except the lane and the `trust`
+card. Items 4, 6, 7 and 8, and the rest of item 1, are planned. The criteria built are FR-IG1 to
+FR-IG4 in the [contract](../contract/contract.json).
 
 1. **Kernel groundwork.** Lock id allocation (`signals.py:74` uses `len+1` unlocked; cards, notes and
    observations too). Stop `model.py:104` passing connector secrets to Gnomon. Pass `ref` and persona

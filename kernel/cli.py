@@ -33,7 +33,7 @@ An existing solution, or your own terminal (docs/brownfield.md)
 The capability layer (a write is signed with --person and --persona)
     rihmasto security ingest <pid> <file.sarif> | security status <pid>
     rihmasto security accept <pid> <finding> --reason "..." --expires YYYY-MM-DD
-    rihmasto pack <pid> [--release N] [--yaml]    a release's capability pack
+    rihmasto pack <pid> [--yaml] | pack withdraw <pid> "why" | pack pin <pid> (once IT pushed it)  [--release N]
     rihmasto evidence <pid> --out DIR             an evidence pack (a zip) for a reviewer
     rihmasto embed create --kind feedback|need --origin URL [--origin URL] [--project PID] [--label ...]
                           [--brief ...] [--endpoint URL]   its key is printed once, never again
@@ -44,9 +44,8 @@ The capability layer (a write is signed with --person and --persona)
     rihmasto observe <trigger> --facts '{"project": "<pid>"}' --source "..." | updates apply <pid>
     rihmasto square | catalogue                   the delivery square; the capability catalogue
 
-The factory home is --home, else $RIHMASTO_HOME, else $RIHMA_HOME, else $GNOMONFACTORY_HOME, else
-var/ in the checkout.
-A capability command the kernel refuses prints why on stderr and exits 2.
+The factory home is --home, else $RIHMASTO_HOME, $RIHMA_HOME or $GNOMONFACTORY_HOME, else var/.
+A refused capability or signed command prints why on stderr and exits 2 (access: docs/guides/access.md).
 Models are reached only through Gnomon, in the lanes (`kernel/routing.json`).
 """
 
@@ -62,7 +61,8 @@ from pathlib import Path
 from typing import Any
 
 from adapters import sarif
-from kernel import autonomy, embeds, evidence_pack, observations, packs, security, signals
+from kernel import access, autonomy, embeds, evidence_pack, graph_ask, integrations, observations, packs
+from kernel import security, signals
 from kernel.canon import Canon, DecisionRefused
 from kernel.dashboard import catalogue
 from kernel.people import PERSONAS, is_person
@@ -106,8 +106,7 @@ def status(factory: Factory, pid: str | None) -> dict:
     for p in projects:
         meta, canon = p.meta, Canon(p)
         tasks = p.read("tasks.json", {}) or {}
-        out.append({
-            "id": p.pid, "title": meta["title"], "maturity": meta["maturity"], "mode": meta["mode"],
+        out.append({"id": p.pid, "title": meta["title"], "maturity": meta["maturity"], "mode": meta["mode"],
             "stage": f"{meta['stage']} {STAGES[meta['stage']]}",
             "open_cards": [{"id": c["id"], "kind": c["kind"], "title": c["title"][:80]} for c in canon.cards()],
             "questions": {s: len(canon.questions(s)) for s in ("open", "answered", "assumed")},
@@ -115,6 +114,7 @@ def status(factory: Factory, pid: str | None) -> dict:
             "tasks": {t: s.get("status") for t, s in tasks.items()},
             "ledger_intact": p.ledger().verify().intact,
         })
+    print(f"{PROG} status: access: {access.describe(access.load(factory))}", file=sys.stderr)   # stdout stays JSON
     return {"projects": out}
 
 
@@ -145,6 +145,7 @@ def _sources(p: argparse.ArgumentParser) -> argparse.ArgumentParser:
     src.add_argument("--source")
     src.add_argument("--source-file")
     p.add_argument("--requested-by", required=True)
+    p.add_argument("--persona", choices=PERSONAS, help="with access enforced: the persona you ask as (business_owner)")
     return p
 
 
@@ -202,6 +203,7 @@ def _evidence_parsers(sub: Any) -> None:
     s = _add(sub, "pack", "pid", about="a release's capability pack, pinned by hash (kernel/packs.py)")
     s.add_argument("--release", type=int, help="the release number (default: the latest)")
     s.add_argument("--yaml", action="store_true", help="print the readable YAML view; the JSON is the record")
+    _signed(s, required=False).add_argument("words", nargs="*", help='`pack withdraw <pid> "why"`, `pack pin <pid>`')
     _signed(_add(sub, "evidence", "pid", about="export an evidence pack, a zip for a reviewer")).add_argument(
         "--out", required=True, metavar="DIR")
 
@@ -258,9 +260,10 @@ def build_parser() -> argparse.ArgumentParser:
     envs = ", ".join(f"${name}" for name in HOME_ENVS)
     ap.add_argument("--home", help=f"the factory home (default: the first set of {envs}, else ./var)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for add in (_chain_parsers, _brownfield_parsers, _evidence_parsers, _embed_autonomy_parsers, _square_parsers):
+    for add in (_chain_parsers, _brownfield_parsers, _evidence_parsers, _embed_autonomy_parsers, _square_parsers,
+                graph_ask.add_parsers):     # `rihmasto graph ...`: the knowledge graph, read only
         add(sub)
-    return ap
+    return integrations.add_parsers(sub, ap)  # relay, hooks and connector (D-0015)
 
 
 # -- handlers of more than one step (one-step handlers are in the tables below) ----------------------
@@ -364,6 +367,8 @@ def _security_status(factory: Factory, args: Args) -> None:
 
 
 def _pack(factory: Factory, args: Args) -> None:
+    if args.pid in ("withdraw", "pin") and args.words:  # `pack withdraw <pid> "why"`, `pack pin <pid>`
+        return _kernel("bundle" if args.pid == "withdraw" else "deliver").pack_command(factory, args, _print)
     pack = packs.build_pack(factory.project(args.pid), args.release)
     if args.yaml:
         print(packs.render_yaml(pack), end="")
@@ -452,8 +457,7 @@ CAPABILITY: dict[str, Handler] = {
                                                         persona=a.persona)),
     "security accept": lambda f, a: _print(security.accept_risk(
         f.project(a.pid), a.finding, person=a.person, persona=a.persona, reason=a.reason, expires=a.expires)),
-    "security status": _security_status, "pack": _pack, "evidence": _evidence,
-    "embed create": _embed_create,
+    "security status": _security_status, "pack": _pack, "evidence": _evidence, "embed create": _embed_create,
     "embed list": lambda f, a: _print({"embeds": [embeds.public(e) for e in embeds.embeds(f)]}),
     "embed revoke": lambda f, a: _print(embeds.public(embeds.revoke(f, a.id, person=a.person, persona=a.persona))),
     "autonomy show": _autonomy_show, "autonomy set": _autonomy_set,
@@ -461,13 +465,10 @@ CAPABILITY: dict[str, Handler] = {
                                                       person=a.person, persona=a.persona, ref=a.ref)),
     "signal list": lambda f, a: _print({"signals": signals.signals(f, a.state)}),
     "signal triage": lambda f, a: _print(signals.triage(f, a.id, model=_model() if a.with_model else None)),
-    "concept edit": _concept_edit,
-    "concept apply": lambda f, a: _print({"applied": signals.apply_concepts(f)}),
-    "observe": _observe,
-    "updates apply": lambda f, a: _print(
-        {"project": a.pid, "applied": observations.apply_updates(f.project(a.pid))}),
-    "square": lambda f, a: _print(signals.square(f)),
-    "catalogue": lambda f, a: _print(catalogue(f)),
+    "concept edit": _concept_edit, "observe": _observe, **graph_ask.handlers(_print, _model),
+    "concept apply": lambda f, a: _print({"applied": signals.apply_concepts(f)}), **integrations.handlers(_print),
+    "updates apply": lambda f, a: _print({"project": a.pid, "applied": observations.apply_updates(f.project(a.pid))}),
+    "square": lambda f, a: _print(signals.square(f)), "catalogue": lambda f, a: _print(catalogue(f)),
 }
 
 
@@ -477,22 +478,21 @@ def command_of(args: Args) -> str:
     return f"{args.cmd} {sub}" if sub else str(args.cmd)
 
 
-def _refusal(exc: Exception) -> str:
-    return str(exc.args[0]) if isinstance(exc, KeyError) and exc.args else str(exc)
-
-
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     factory = Factory(args.home)
     name = command_of(args)
-    if name in HANDLERS:
-        return HANDLERS[name](factory, args) or 0
     try:
-        if getattr(args, "person", None) is not None and not is_person(args.person):
-            raise DecisionRefused(f"{args.person!r} is not a person: a write is signed by a named person")
-        return CAPABILITY[name](factory, args) or 0
-    except REFUSED as exc:
-        print(f"{PROG} {name}: {_refusal(exc)}", file=sys.stderr)
+        with access.cli_signing(factory, args, name):     # access enforced: the local user signs (D-0016)
+            if name in HANDLERS:
+                return HANDLERS[name](factory, args) or 0
+            if getattr(args, "person", None) is not None and not is_person(args.person):
+                raise DecisionRefused(f"{args.person!r} is not a person: a write is signed by a named person")
+            return CAPABILITY[name](factory, args) or 0
+    except (access.AccessRefused, *REFUSED) as exc:
+        if name in HANDLERS and not isinstance(exc, access.AccessRefused):
+            raise
+        print(f"{PROG} {name}: {exc.args[0] if isinstance(exc, KeyError) and exc.args else exc}", file=sys.stderr)
         return 2
 
 

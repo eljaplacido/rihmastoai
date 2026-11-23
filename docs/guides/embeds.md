@@ -60,7 +60,8 @@ A product owner, business owner or IT creates it, with the websites (origins) al
 
 **In the cockpit:** Settings → Embeds → **Create a chat**. Choose feedback (and its project) or a
 business need, list the allowed websites, add a label and a short public brief, and create it. The
-key and the snippet are shown once ([cockpit.md](../cockpit.md)).
+key and the snippet are shown once ([cockpit.md](../cockpit.md)). For a need chat, add
+`data-kind="need"` to that snippet before you paste it (step 4).
 
 **From the command line:**
 
@@ -102,8 +103,25 @@ print(snippet(e, "https://feedback.example", key=e["key"]))   # the embed server
         data-key="rk_..." data-endpoint="https://feedback.example" defer></script>
 ```
 
-`src` and `data-endpoint` are the embed server's address from step 2. `data-lang` (for example
-`fi`) sets the widget's language; it defaults to the browser's.
+`src` and `data-endpoint` are the embed server's address from step 2. Two more attributes set what
+the visitor reads:
+
+- **`data-kind="need"`** gives a need chat its own words: "Share a need", "Tell us what you need".
+  Without it the widget uses the feedback words ("Give feedback", "Tell us what you saw"). The
+  snippet the cockpit and `rihma embed create` print does not carry it yet, so add it to a need
+  chat's tag yourself.
+- **`data-lang`** is `en` or `fi` and defaults to the browser's language. It sets all the widget's
+  own words, the fixed thank-you included. With `--model gnomon`, the model is asked to answer in
+  the language the person writes in.
+
+What the visitor sees:
+
+- **A filed message:** the thank-you and "Sent to the team". Never the card's or signal's number:
+  that is the project's own.
+- **A refused message:** it stays in the box, and the chat says why. Too many messages this minute
+  (wait a minute), the chat is not set up for this website (a wrong key), the chat is busy, or the
+  chat could not be reached. A revoked embed, or a website it does not allow, looks the same to the
+  visitor's browser as a connection that is down, so the chat says it may be closed.
 
 ## The chat's model
 
@@ -119,7 +137,7 @@ Gnomon's `assistant` role. A website's visitor must never wait on the factory's 
   (`--model-timeout <seconds>` changes that).
 - **Filing without a reply.** When the lane stays busy, the model times out or fails, or its answer
   is not the JSON asked for, the message is filed as it is and the visitor reads "Thank you. It has
-  been passed on to the team."
+  been passed on to the team." (in Finnish with `data-lang="fi"`).
 - **No kept records.** The server keeps no Gnomon task record in memory, however long it runs.
 
 After at most 4 of the person's messages, the conversation is filed even if the model still has a
@@ -137,10 +155,10 @@ would not carry.
 | Rate limit | At most 20 chat turns a minute per embed, per server process. Past it, the answer is 429. |
 | Size | A message is at most 2,000 characters, a request body at most 32 KB, and a conversation is filed after at most 4 turns. |
 | Stalled connections | A connection that stops sending for 15 seconds is closed, so idle sockets do not hold the server's threads. |
-| No records | The chat answers from the public brief only. It never reads the canon, the ledger, holdouts or another project. |
+| No records | The chat answers from the public brief only. It never reads the canon, the ledger, holdouts or another project, and the widget never shows the visitor a card's or signal's number. The embed server's answer to the browser still names that number, so a visitor who opens the browser's developer tools can read it. |
 | Errors | A website sees a refusal, a turn it sent wrong, or a fixed line ("the chat is busy", "the chat is not available just now"). An internal error's text, such as a path or a project id, goes to the server's log only. |
 | Headers | `nosniff` and `no-referrer` on every answer; `no-store` on every answer but the widget script, which browsers may cache for five minutes. |
-| Revocation | **Revoke** in the cockpit's Settings, or one command: `rihma embed revoke E-001 --person "<your name>" --persona product_owner`. A message the chat was still answering when the embed was revoked is not filed. |
+| Revocation | **Revoke** in the cockpit's Settings, or one command: `rihma embed revoke E-001 --person "<your name>" --persona product_owner`. A message the chat was still answering when the embed was revoked is not filed. A page that still carries the snippet keeps showing the chat's button: what a visitor sends there is refused and stays in the box, and the chat says it may be closed. Take the snippet off the website as well. |
 | Parallel messages | Messages the embed server receives at the same moment are filed one at a time: each gets its own card or signal, and none undoes a revoke. |
 
 Each filed change card says it came from the embed, and keeps the conversation. It is triaged by

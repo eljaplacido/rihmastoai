@@ -677,6 +677,97 @@
       ]
     },
     {
+      "id": "FR-M8",
+      "group": "M. Cockpit",
+      "statement": "With access enforced, a decision is signed by the identity the organisation's identity provider verified, as a persona that IT's access map grants it on that project; without an access map the factory is a single operator's and says so (D-0016).",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-23",
+      "acceptance": [
+        {
+          "id": "FR-M8-AC-1",
+          "given": "a factory home with no access file, or with projects/_factory/access/access.json (rihmasto.access/1)",
+          "when": "the kernel loads the access rules",
+          "then": "no file is single_operator mode: every write behaves as before, and the cockpit's header and rihmasto status say \"single operator: personas are self-declared\"; a file is checked whole and strictly (unknown keys, header names, issuer, origin, people, bindings with a subject or a group, a persona and a scope of \"*\" or project ids, and a changed_by that IT holds on every project), and one that cannot be read or checked, or a removed one once access was enforced, refuses every decision with a message naming what is wrong; each change of the file is recorded in the factory ledger with its sha256, the one before and who changed it; the kernel takes a card or question decision only from the verified identity signing it, as a persona granted on that project",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M8-AC-2",
+          "given": "the cockpit on 127.0.0.1 with access enforced, behind IT's identity-aware proxy",
+          "when": "requests arrive with or without the proxy's headers and shared secret",
+          "then": "the identity comes only from the configured proxy headers on a request that also carries the proxy's shared secret, compared in constant time with the value of the environment variable the file names; spoofed headers without the secret, a wrong secret, no secret configured, or an identity the file grants nothing are refused; a session answers only the identity it was opened for; the person is the verified name (a different person field is refused) and the persona must be granted on the project, directly or through a group; decisions record the identity beside the person; the page shows the verified person, read-only, and offers only granted personas",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M8-AC-3",
+          "given": "access enforced and an identity with no grant for the persona on the project a write acts on",
+          "when": "every cockpit write route that takes a person or persona and every command line command signed by a person is tried",
+          "then": "each is refused and changes no file in the factory home, and the same write from an identity granted that persona is taken and its records name the identity",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M8-AC-4",
+          "given": "access enforced and the command line or the MCP server started on the operator's machine",
+          "when": "they sign writes",
+          "then": "the identity is local:<os user> as the access file names it, read from the operating system and never from an environment variable; a user not in the file is refused, --person must be that user's name and --persona must be granted; the MCP server stays reads and proposals only, refuses to start for an operator not in the file, and its proposals record the operator's verified identity",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M8-AC-5",
+          "given": "access enforced and the proxy's shared secret in the environment of the cockpit, the command line or the MCP server",
+          "when": "they start a process: a job, the gate's run of a project's own tests, a road's product or a Gnomon call",
+          "then": "the process does not inherit the secret: the variable the access file names (and RIHMASTO_PROXY_SECRET) is taken out of the environment once read and kept in memory, and the cockpit still checks every request against it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M8-AC-6",
+          "given": "the cockpit with access enforced behind IT's proxy",
+          "when": "a request carries the user, email, shared secret or groups header more than once",
+          "then": "it is refused, so a proxy that appends its value to a client's copy cannot let the client choose who it is or add groups; the groups header is one value split at commas, as oauth2-proxy joins a claim's values, and the guide says to bind groups by an id no user can choose",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M8-AC-7",
+          "given": "access enforced and a project with a request",
+          "when": "rihmasto intake is run on it",
+          "then": "it is signed like new: the local user must be in the access file, --requested-by must be their name and the persona (business_owner unless named) granted on that project, or it is refused and the request, the meta and the ledger stay as they were; only the cockpit's own intake job runs unsigned, carrying out once the request whose sha256 a verified identity's new_project record holds, before the project has a request",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M8-AC-8",
+          "given": "access enforced, with its file in projects/_factory/access/ that only IT writes",
+          "when": "the kernel loads, records and enforces it, and someone removes the file, its folder or the factory ledger's record of it, or asks the kernel to pause or resume without a verified identity",
+          "then": "the kernel never writes in that folder (its locks are beside the factory ledger); a missing file stays closed while the last record says enforced, while the folder is there without it, or while a project ledger holds a write signed by a verified identity, and the refusal is recorded; each change records the file's sha256, what it claims about who changed it (claimed_by), its owner and modification time as the file system has them, and the surface and identity that noticed it; pause and resume are checked by the kernel like decisions; the guide and SECURITY.md say a recorded identity is only as strong as the factory home's file permissions",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M8-AC-9",
+          "given": "the cockpit in a browser, single operator or with access enforced",
+          "when": "it is opened signed out, and signed in at every desktop width from 1101 to 1919 pixels",
+          "then": "a single operator's signed-out page makes no request until a sign-in link is opened, and the top bar, access note included, never pushes the page sideways or the person chip out of view: the lens labels give way first, then the note shrinks to its icon with its words as a tooltip",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
       "id": "FR-A6",
       "group": "A. Intake",
       "statement": "Intake runs in socratic, assume or mixed mode, and a person may let the factory assume any open question.",
@@ -2791,6 +2882,728 @@
       ]
     },
     {
+      "id": "FR-IG1",
+      "group": "IG. Integrations through Gnomon",
+      "provenance": "vendor-proposed",
+      "statement": "The factory's ledgers go out to the subscriptions IT configures as thin CloudEvents 1.0, signed with Standard Webhooks v1, retried with backoff and logged; a secret is named by an environment variable and never stored (D-0015).",
+      "acceptance": [
+        {
+          "id": "FR-IG1-AC-1",
+          "given": "every ledger kind the kernel and its adapters write, and cards whose titles quote a holdout string: as it is written, as cleaning leaves it (its tags stripped, its spaces collapsed), or across the title's length limit",
+          "when": "each record is mapped to an event",
+          "then": "each kind has a CloudEvents type in the rihma namespace (the catalog's, else rihma.ledger.<kind>); a card opened or decided carries the card's id, its kind, the personas it waits on and one deep link to it in the Inbox; the title is redacted against the holdout custody, as written and as cleaned, before it is cut to length, so a held string reads [held out] and no part of it remains; no card body, payload free text or holdout string is in the event",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IG1-AC-2",
+          "given": "a webhook subscription IT made, whose signing secret is named by an environment variable",
+          "when": "cards open and the relay runs",
+          "then": "each event matching the subscription's patterns is POSTed once as a CloudEvents 1.0 structured JSON body with webhook-id, webhook-timestamp and a webhook-signature that verifies with that secret; events from before the subscription are not sent; the secret is in no file of the factory home",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IG1-AC-3",
+          "given": "a receiver that is down",
+          "when": "the relay runs before and after each backoff, and the receiver recovers",
+          "then": "nothing is tried before a backoff ends; every attempt keeps its webhook-id and is in the hash-chained delivery log, which holds no URL or secret; the receiver gets each event once per webhook-id, in ledger order; after the last attempt the event is logged as failed and the stream moves on",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IG1-AC-4",
+          "given": "a subscription asked for by someone who is not IT, with a secret's value instead of its name, a receiver that is not https (or http on loopback), a chat URL given in place of its variable, or a remote mail relay without STARTTLS; and a ledger whose hash chain breaks",
+          "when": "the subscription is made, or the relay runs",
+          "then": "each such subscription is refused with nothing written (exit 2 on the command line), and a subscription that is made records who made it; the broken stream is delivered up to the break, halts there, and the delivery log says so once",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IG1-AC-5",
+          "given": "a receiver that answers with a redirect, a channel whose URL variable holds a malformed URL (a port that is not a number) beside a channel that works, a transport error that quotes a receiver's URL and a signing secret, and a relay round already running",
+          "when": "the relay runs",
+          "then": "a redirect is a failed attempt and the address it names is never called; the malformed URL is a failed attempt, retried and logged, that neither stops the round nor holds back the other subscription; the delivery log reads each quoted URL or secret as its variable's name (or <url>) and holds none of them; a round started while another runs answers busy and sends and logs nothing",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-IG2",
+      "group": "IG. Integrations through Gnomon",
+      "provenance": "vendor-proposed",
+      "statement": "Verified inbound webhooks are doorbells: a delivery whose signature, timestamp and id hold becomes one signal or change proposal carrying only external ids, never a decision (D-0015).",
+      "acceptance": [
+        {
+          "id": "FR-IG2-AC-1",
+          "given": "a Standard Webhooks delivery with a wrong signature, a changed body, a timestamp outside the tolerance or no signature headers, a GitHub delivery with a wrong X-Hub-Signature-256, a replayed delivery id, a body over the size limit, an unknown source, or a source whose secret is not set",
+          "when": "it arrives",
+          "then": "it is refused (401, 413, 404 or 503; a replay is answered 200 and not accepted) and nothing is stored in the factory home",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IG2-AC-2",
+          "given": "a valid delivery from a source IT named by its secret's variable, never its value",
+          "when": "it is processed",
+          "then": "it becomes one new signal with its ref (such as jira:acme/PROJ-1 or gh:owner/repo#12), or one open change card on the source's project, whose text holds only external ids and none of the body's free text; a second delivery for the same item while its signal is new or its card open creates nothing; a delivery that names no item is refused; nothing is decided",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IG2-AC-3",
+          "given": "the webhook server",
+          "when": "it is started and called",
+          "then": "it refuses a non-loopback address unless it is behind IT's proxy; it answers 202 with only accepted for a verified delivery and 200 for a replay, refuses a body over the limit with 413 before reading it and a request with no length with 411, and answers GET /health",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-IG3",
+      "group": "IG. Integrations through Gnomon",
+      "provenance": "vendor-proposed",
+      "statement": "Notices carry one deep link to the card in the Inbox, rendered for email, Teams workflow webhooks and Slack incoming webhooks, and go out through the relay only to channels IT configured (D-0015).",
+      "acceptance": [
+        {
+          "id": "FR-IG3-AC-1",
+          "given": "Teams, Slack and email channels for IT, a deploy gate card whose title quotes a holdout string beside a business approval card, and cards whose titles come from outside with web addresses, a Markdown link, a bare domain, a mail address, a mailto: or tel: address, a //host address, a dotted IP address, or Slack's control characters",
+          "when": "the relay runs",
+          "then": "each IT channel gets exactly one notice, for the deploy gate, whose only link opens that card in the Inbox at the cockpit address IT gave; it offers that link and no approve action; no payload in any channel carries the holdout string; a title from outside makes no second link in any channel: an address with a scheme, www. or // reads (link removed), a bare domain, dotted address or mail address is written with [.] and [at], a Markdown link is broken apart, and Slack's &, < and > are escaped",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IG3-AC-2",
+          "given": "a card a channel was told of, then decided; a channel whose URL variable is not set; and a factory with no subscription",
+          "when": "the relay runs",
+          "then": "the channel gets a follow-up that says the verdict, who decided and as which persona, with the same one link; a Teams or Slack URL is never stored, only its variable's name; a channel whose variable is missing waits and loses no attempt; with no subscription nothing is sent and nothing is written",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-IG4",
+      "group": "IG. Integrations through Gnomon",
+      "provenance": "vendor-proposed",
+      "statement": "Connectors follow one model: a validated connector.json per system, a connector card only IT decides that pins the enabled entry, a change that stops the connector and reopens its card, and one contract test suite every connector passes (D-0015).",
+      "acceptance": [
+        {
+          "id": "FR-IG4-AC-1",
+          "given": "connector.json files that miss a key, name another system or schema, use an HTTP server, allow a tool that merges, approves, deletes, deploys or pushes, give a write tool deciders that are not personas, name a tool twice, hold a credential value or a secret-looking string, or name an unknown data class",
+          "when": "they are validated",
+          "then": "each break is named by its JSON path, the command line refuses a broken folder with exit 2, and the example connector validates",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IG4-AC-2",
+          "given": "a valid connector folder",
+          "when": "IT enables it",
+          "then": "its entry is written to the factory's connectors.json and a connector card pins the sha256 of that entry with the sha256 of its connector.json; only IT may decide the card (enable or decline); the connector may run only once IT enabled it, never while it waits, nor once declined or disabled, even when the disabled entry is written back by hand (it stays stopped until IT decides a new card); anyone but IT enabling it is refused with nothing written",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IG4-AC-3",
+          "given": "an enabled connector",
+          "when": "its connector.json, any other file of its folder (its server.py or mapping.py) or its entry changes",
+          "then": "it is stopped at once and may not run; the check records the stop, withdraws a card left open and opens one new card that pins the new hashes, once per change; a connector.json that breaks the schema, or a local server that is not the one its server.pin pins, may not run whatever is decided",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IG4-AC-4",
+          "given": "every folder under connectors/",
+          "when": "the contract suite runs",
+          "then": "each validates under its own name with its fixtures, mapping and setup page; its pinned tools/list matches its fixture and its rug-pull fixture is caught; every injection sample maps, with no socket opened, to a proposal whose text is quoted untrusted data with no HTML or hidden characters; a narrow server.py is pinned by its sha256, answers its pinned tools/list over MCP stdio as a local fake, its read tools' results map to valid proposals, and its rug pull is caught",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-PT1",
+      "group": "PT. Portability",
+      "provenance": "vendor-proposed",
+      "statement": "Each release's image is pinned by the digest the registry gave it once IT pushed it with its own tools (Rihmasto writes nothing to a registry, D-0015), and the deploy package a site runs and the capability pack name that digest, never a movable tag, with the pack's version and content_sha256.",
+      "acceptance": [
+        {
+          "id": "FR-PT1-AC-1",
+          "given": "a docker release on a road whose configuration names a registry, its image tagged for that registry at build",
+          "when": "IT has pushed the tag with its own tools and a person with the it persona pins the release (`rihmasto pack pin`), and its pack is built",
+          "then": "the release, and so the road, run the image by repository@sha256 digest, `pinned.artifacts` holds that digest and no tag, the pin is recorded in the ledger with the person (`image_pinned`), and `deploy_package/2` names the same digest and the pack's version and content_sha256",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT1-AC-2",
+          "given": "a docker release whose road names no registry, so its image is never pushed",
+          "when": "its pack is built",
+          "then": "the pack pins the local image id, never the tag, and `pinned.not_by_digest` says a site cannot pull it by digest",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT1-AC-3",
+          "given": "a docker road whose configuration names a registry",
+          "when": "a release is delivered on it",
+          "then": "Rihmasto pushes nothing (D-0015: every external write goes through Gnomon's integration lane, planned): it tags the image for the registry on the deploying host, records `image_tagged`, and the release says what IT pushes and how to pin it; until a pin the pack pins the local image id and says so, a pin by anyone without the it persona is refused, and a tag not pushed yet is said and not pinned",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-PT2",
+      "group": "PT. Portability",
+      "provenance": "vendor-proposed",
+      "statement": "An offline bundle is signed the way cosign 3.1 and later sign, into a Sigstore bundle with what an offline verify needs, and a signature is never claimed that no verifier checked.",
+      "acceptance": [
+        {
+          "id": "FR-PT2-AC-1",
+          "given": "cosign 3.1 or later on PATH, which refuses to sign a blob without bundle output, and a key reference in RIHMA_COSIGN_KEY",
+          "when": "a bundle is exported",
+          "then": "it holds SHA256SUMS.sigstore.json, trusted_root.json and cosign.pub and no detached signature, cosign signed offline (`--tlog-upload=false`) with the key reference only, and `cosign verify-blob` passes with no network, failing once SHA256SUMS changes",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT2-AC-2",
+          "given": "a signed bundle and a host without cosign",
+          "when": "the verifier checks it, with the factory's key or without",
+          "then": "each signature line reads \"not verified: no verifier\", never verified, and the verdict is \"not verified: no verifier\", never passed, with exit code 3",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-PT3",
+      "group": "PT. Portability",
+      "provenance": "vendor-proposed",
+      "statement": "Any Docker or Podman host can run a delivered release from a rendered Compose file, with the capability pack beside the image and never inside it.",
+      "acceptance": [
+        {
+          "id": "FR-PT3-AC-1",
+          "given": "a valid deploy package/2 whose image is pinned by digest",
+          "when": "it is rendered",
+          "then": "compose.yaml runs image@digest with a named /data volume, mounts the pack and its status read-only from beside the image, names each secret by its environment variable only, `secret_leaks()` finds nothing, the YAML reads back as the model, and `docker compose config` accepts the file (run when docker is installed; the command is checked either way)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT3-AC-2",
+          "given": "a deploy package whose image is not pinned by digest, whose secret carries a value, or that names no pack",
+          "when": "it is rendered",
+          "then": "nothing is rendered, each problem is named, and an offline bundle of that release holds no compose.yaml and says why",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT3-AC-3",
+          "given": "a deploy package/2 whose image is pinned by digest",
+          "when": "compose.yaml is rendered and an offline bundle carries it",
+          "then": "the folder beside compose.yaml, which holds the pack and its status, is bind-mounted read-only at /pack and no single file is bind-mounted, so a status replaced by a rename reaches pack_guard; validate_compose refuses a single-file bind mount; the bundle's README says to replace the status in that folder",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT3-AC-4",
+          "given": "a deploy package/2 that names a secret",
+          "when": "compose.yaml is rendered",
+          "then": "the product gets the secret as the environment variable of its name, as on the factory's roads, its value taken from the deployer's environment (`${NAME:?...}`), never as a Compose secret (a file under /run/secrets) and never a value in the file; validate_compose refuses either; and, when docker compose is installed, it sets the variable from the environment and refuses to start without it",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-PT4",
+      "group": "PT. Portability",
+      "provenance": "vendor-proposed",
+      "statement": "The pack, the bundle, the status document and the site's deploy package have published JSON schemas, and a standalone offline verifier that imports nothing from Rihmasto checks a bundle with nothing installed, trusting only the key the factory published, and says passed only when the signatures were verified against it.",
+      "acceptance": [
+        {
+          "id": "FR-PT4-AC-1",
+          "given": "the published schemas and a real bundle's pack, BUNDLE.json, status document and deploy package",
+          "when": "each is checked against its schema",
+          "then": "each conforms, a secret given a value does not, the pack schema names every unhashed field and the canonical-JSON rule (not RFC 8785, so no floats), the hashed content holds no float, and the verifier hashes a pack exactly as the kernel does",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT4-AC-2",
+          "given": "a good signed bundle and the key the factory published",
+          "when": "the verifier runs offline",
+          "then": "every check passes (SHA256SUMS, the pack hash, the pack named alike, the status, the app files, the evidence manifest and ledger chain, the schemas), statements read not applicable, and the signature lines read \"verified\" with cosign and the verdict passed, or \"not verified: no verifier\" without cosign, also from its command line",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT4-AC-3",
+          "given": "a bundle with one changed byte",
+          "when": "the verifier runs",
+          "then": "it fails, names the changed file, and its command line exits 2",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT4-AC-4",
+          "given": "a signed bundle that someone changed, summed again and signed again with another key, replacing the cosign.pub inside it",
+          "when": "the verifier runs",
+          "then": "the bundle's own cosign.pub is never trusted: without --key the signature lines read \"not verified: no trusted key\" and the verdict says so with exit code 3, and with the key the factory published it fails with exit code 2",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT4-AC-5",
+          "given": "a signed bundle whose status was forged and its signature removed, whose status was removed, or whose SHA256SUMS signature was removed after a change",
+          "when": "the verifier runs",
+          "then": "a signed bundle's status must be signed and present where BUNDLE.json names it, so the first two fail with or without --key; with --key a bundle without its signature fails with exit code 2, and without --key it reads \"not signed\", never passed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT4-AC-6",
+          "given": "a bundle or evidence pack whose every other check passes but whose signatures were not verified against the key the factory published (no cosign, no --key, or not signed)",
+          "when": "the verifier's command line runs",
+          "then": "the verdict never reads passed and the exit code is 3; only a bundle verified against --key reads passed and exits 0",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-PT5",
+      "group": "PT. Portability",
+      "provenance": "vendor-proposed",
+      "statement": "pack_guard in the product template keeps /health at 503 until the pack hash, the file tree hashes, the pack's status and its smoke set pass; a named person with the it, compliance or product_owner persona can withdraw a pack version.",
+      "acceptance": [
+        {
+          "id": "FR-PT5-AC-1",
+          "given": "a product running with its pack and a valid status beside it",
+          "when": "a person with the it persona withdraws its version (`rihmasto pack withdraw`) and the withdrawn status is placed beside the pack",
+          "then": "the next time the guard reads the status, /health returns 503 with the reason and the person, the ledger names the person (`pack_withdrawn`), and a developer is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT5-AC-2",
+          "given": "an app file edited after the pack was built",
+          "when": "the product starts with the pack beside it",
+          "then": "/health never answers 200, and says the app files differ from those the pack pins",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT5-AC-3",
+          "given": "a product started with its pack, its status and the pack hash the deploy package names",
+          "when": "the status expires or names another pack, the pack's content no longer hashes, the pack is not the one named, or its smoke set fails",
+          "then": "/health answers 503 naming each, and 200 again only once every check passes; without RIHMA_PACK the guard is off, and the image template copies pack_guard",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT5-AC-4",
+          "given": "a product whose pack_guard has seen a newer status, or the pack's withdrawal",
+          "when": "the status file is then removed, half written, replaced by an older status or, after a withdrawal, by a newer valid one, or the product restarts with an older status beside it",
+          "then": "/health stays 503 naming the newest status seen: the guard keeps the newest status per pack in DATA_DIR, takes no status issued before it, and keeps a withdrawal as final",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT5-AC-5",
+          "given": "a product whose app/server.py a builder cell changed so that it starts no guard, and a pack that pins that change",
+          "when": "the product starts as its image starts it (the Dockerfile's CMD) with a withdrawn status beside its pack",
+          "then": "/health answers 503 naming the withdrawal: the image starts through factory/pack_guard.py, which a change to app/ cannot remove; the Dockerfile is outside a builder's write scope, an edit to factory/pack_guard.py is a protected path, and a pack built from a product whose image does not start through the guard says so",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-PT6",
+      "group": "PT. Portability",
+      "provenance": "vendor-proposed",
+      "statement": "Every gate card (the demo's acceptance, staging's validation, production's deploy gate), evidence pack and export carries a governance map: each of the five guarantees (pinning, evals, revocation, evidence, telemetry) held, partial or lost where the release runs.",
+      "acceptance": [
+        {
+          "id": "FR-PT6-AC-1",
+          "given": "a production release delivered through IT's deploy gate",
+          "when": "its gate card, its evidence pack and its offline bundle are shown",
+          "then": "each marks the five guarantees held, partial or lost with why, and the evidence pack holds the same map as the gate card",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT6-AC-2",
+          "given": "a target resting on an UNVERIFIED platform feature (Azure Container Apps, never deployed), or an image pinned by a movable tag",
+          "when": "its governance map is made",
+          "then": "no guarantee on the unverified target is held, and pinning by a tag is lost",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-PT6-AC-3",
+          "given": "a demo release and a production release",
+          "when": "the demo's acceptance card and staging's validation card are opened",
+          "then": "each carries the governance map of the road its environment runs on, in its payload and its body, as the deploy gate card does",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-KG1",
+      "group": "KG. Knowledge graph",
+      "provenance": "vendor-proposed",
+      "statement": "Rihmasto's own records form a knowledge graph: an ontology declares its kinds and links, and a read model rebuilt from the ledgers, records and spec snapshots on every read answers trace, impact, path, as_of and check, each step cited and each answer ending in answered, ambiguous, not_found or not_measured, without reading the holdout custody (docs/knowledge-graph.md, phase 1).",
+      "acceptance": [
+        {
+          "id": "FR-KG1-AC-1",
+          "given": "holdout scenarios, a failed holdout's reason and a ruling's reason that carry sentinel strings, and outside text (a change's words, a comment, a comment's target) that carries others",
+          "when": "the graph is built and every query (trace, impact, path, as_of, check, the named questions, parity, the assistant eval) and every audience's rendering is produced",
+          "then": "no sentinel appears in any of them; a release's holdout verdicts are read in a closed shape (a criterion id and a named verdict) and its reason through custody_safe; and no graph module (kernel/graph.py, kernel/graph_build.py, kernel/graph_records.py, kernel/graph_ask.py, kernel/ontology.py, kernel/ontology.json) references holdouts_dir",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-2",
+          "given": "the redaction that mcp/server.py and kernel/deliver.py each kept",
+          "when": "it moves into kernel/custody.py",
+          "then": "custody_safe, held_strings, redact and ledger_record live only there; the MCP server and delivery import them (kernel/status.py and kernel/recipes.py still import custody_safe from kernel/deliver.py); neither file keeps a redaction of its own; and the MCP and deliver tests pass unchanged",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-3",
+          "given": "kernel/ontology.json",
+          "when": "kernel/ontology.py loads and validates it",
+          "then": "every kind and relation has an id equal to its key, a label, a description, aliases and a consumer that resolves to a read model in kernel/graph.py or kernel/graph_ask.py; every enum reference resolves to the kernel's own constant; every relation joins declared kinds with declared origins; each kind declares its audiences (builders never see held-out checks or outside text); a broken copy is named problem by problem; and every graph is stamped with the ontology's version and sha256",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-4",
+          "given": "every refs key written in kernel/ (refs= on a call, the refs a decision records, x['refs'][key] = ...) and the ledger fields the graph reads",
+          "when": "the scan test runs, and a project holds a card whose refs carry a key the ontology does not map",
+          "then": "each refs key maps to a declared relation or is declared an attribute; each declared ledger field is one the kernel writes; and the unknown key is reported as an unmapped_ref finding naming its record, while the card's other keys still link",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-5",
+          "given": "a built graph",
+          "when": "its edges are listed",
+          "then": "each has an origin its relation allows (kernel, convention, model_proposed or person_confirmed), an integer validity start in ledger sequence numbers and a by pointer to the record that holds it; a triage's requirements stay model_proposed, and come back apart from the walked steps, until a person decides the card; and a stale approval's rests_on edges end at the approvals_stale event, with an invalidated_by edge to the change",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-6",
+          "given": "the test fixtures: a built task, approvals resting on requirements, a triaged change, and releases that carry different requirements",
+          "when": "graph.impact and insight.impact run on the same ids",
+          "then": "their requirement views are equal field for field; releases_carrying lists only the releases whose requirements include the ids (insight.impact no longer lists every release); the approvals found are exactly the ones Canon.mark_stale then marks; and the parity report agrees, names the releases the old walker listed and reports the refs.scope == 'release' branch as dead",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-7",
+          "given": "a requirement whose sources an amendment replaced",
+          "when": "trace runs on it",
+          "then": "it walks from the version in force through revision_of to the snapshot's version and reaches the original question and its answer (answered_by the person) or its assumption (assumed_as), citing spec.v1.json, and the answer ends in its outcome",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-8",
+          "given": "hand-written expected answers for a project with a production release, a refuted assumption, an amended requirement and two approvals of which one went stale",
+          "when": "the graph is asked which releases rest on a refuted assumption, which criteria trace to a person's answer, and who approved a production release and whether that approval still holds",
+          "then": "each answer matches the expected rows exactly and cites the records it rests on",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-9",
+          "given": "questions.json changed without a ledger event after the graph was built, an answer the ledger never recorded, or a broken ledger chain; and an unknown id, a duplicated requirement id, or a criterion id an amendment restated",
+          "when": "the graph is queried",
+          "then": "the outcome is not_measured and names the cause; and for the ids it is not_found, or ambiguous with the candidates, while a criterion's content key names one version",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-10",
+          "given": "the quality gate's rules",
+          "when": "they are applied to kernel/custody.py, kernel/ontology.py and the kernel/graph*.py modules",
+          "then": "the modules lie inside the packages the gate keeps standard-library only and import nothing outside the standard library and the repository, and the same check names a third-party import seeded into a copy",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-11",
+          "given": "the assistant evaluation baseline over the 'why' questions whose answers the graph knows",
+          "when": "it runs",
+          "then": "it reports cited-id recall and the rate of citations no record backs (not measured when nothing was cited), or not_measured when no model endpoint is asked or none answers; it keeps nothing and writes no graph context anywhere",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-12",
+          "given": "kernel/ontology.json",
+          "when": "the contract is checked and the builder surface is read",
+          "then": "a task that claims write access to it fails R-SCOPE, whether it names the file or a glob, folder or spelling that covers it (kernel/**, kernel/*.json, kernel/onto*, kernel, kernel//ontology.json, kernel/./ontology.json, another case), as does one that covers contract/, specs/, intake/ or decisions/, while a glob that covers none of them passes; no task in the contract claims it; and .gnomon/policy.toml write-protects it for every role (a surface change the owner trusts with gnomon trust)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-13",
+          "given": "a project whose graph has findings",
+          "when": "rihmasto graph trace, impact, path, check, show, refuted, answers, approvals, parity and eval run",
+          "then": "each prints an answer that ends in one of the four outcomes and exits 0; check reports its findings with blocks false and never blocks; an unknown project is refused with exit 2; and no file in the factory home changes",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-14",
+          "given": "canon records edited by hand so that they disagree with the ledger: an assumption marked refuted that no assumption_settled event settled, or a refuted one set back to open; a decision whose refs, persona, kind or approving flag changed; an approval whose stale flag was removed; a question whose answer's persona changed, or which was set back to open",
+          "when": "the graph is built afresh and asked which releases rest on a refuted assumption, who approved a production release, or which criteria trace to a person's answer",
+          "then": "the answer is not_measured and its cause names the record and what the ledger records; a decision's card, kind, verdict, person, persona and refs must match its decision event and its approving flag the kernel's rule for its kind and verdict; and an approval the ledger marked stale counts as stale whatever decisions.json says",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-15",
+          "given": "a graph with findings about a card, its decision and comments, one comment's target being outside text that names no record",
+          "when": "it is shown to the person, assistant, verifier and builder audiences, and when records disagree with the ledger",
+          "then": "the comment's target is reported without its words and appears in no rendering; each audience's findings name only records and nodes of kinds that audience may see (a builder sees no card, decision, comment, signal, ledger or person pointer); and an audience that may not see every kind is told that the records cannot be measured, not which records disagree",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-KG1-AC-16",
+          "given": "an adopted project, whose as-is requirements were observed in its code (sources ['observed'])",
+          "when": "its graph is checked and a requirement is traced",
+          "then": "no requirement reports a dangling_ref for its observed source, as none does for a proposed one, and the trace answers with nothing derived upstream",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-DF1",
+      "group": "H. Delivery",
+      "provenance": "vendor-proposed",
+      "statement": "A product's spec and build follow the paved road's platform facts: the road binds and exposes the service and owns its health check, the scaffold checks those facts in a test no builder cell may change, the plan review flags a requirement that contradicts them, and a failed health check says why.",
+      "acceptance": [
+        {
+          "id": "FR-DF1-AC-1",
+          "given": "a project's spec prompt and a builder cell's envelope",
+          "when": "the analyst and the builder read them",
+          "then": "both state the road's platform facts: the service listens on all interfaces inside its container from HOST (default 0.0.0.0) and PORT, the road limits who can reach it, and GET /health with the release version belongs to the road; the spec prompt says a wish for less exposure goes to out_of_scope as the road's job, and the envelope tells the builder never to set HOST, bind loopback or change /health, and names the road-contract tests it may not edit or remove",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DF1-AC-2",
+          "given": "a product repository made from the paved-road template",
+          "when": "its suite runs, and a builder cell's change edits or removes the road-contract tests",
+          "then": "the template ships tests/test_road_contract.py, which checks GET /health with the release version and the bind from HOST with 0.0.0.0 as the default (and no loopback HOST in the Dockerfile); it passes on the template and fails a product that forces loopback or replaces /health; the file is a protected path, so a change that touches it is a violation at the gate and never merges, and the product surface's system.md says it is read-only",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DF1-AC-3",
+          "given": "a spec with a requirement or criterion that wants the service bound to loopback, a port of its own, or GET /health answered without the release version",
+          "when": "the plan is reviewed",
+          "then": "each conflict is named by rule, no model, with the road fact it contradicts, in the plan card's title, body and payload and in spec.md, and the plan waits for a person at any maturity; a spec the road can serve (a probe naming /health's latency included) has no conflict and keeps its maturity's review",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DF1-AC-4",
+          "given": "a release whose service does not answer a healthy /health with its version",
+          "when": "delivery's deploy step fails the health check",
+          "then": "the release record keeps the docker container's log tail from both of its streams, the sockets listening inside it (read from /proc/net) and a diagnosis naming loopback-only binding or a /health without the release version; the local-process road starts the product with HOST=127.0.0.1",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DF1-AC-5",
+          "given": "requirements and criteria that contradict the road in their common phrasings, and others that only sound like it",
+          "when": "the plan review reads them, clause by clause",
+          "then": "a clause that restricts the service to a loopback address (only accessible or reachable from localhost, restrict or limit access to it, not exposed beyond it, binds 127.0.0.1, Set HOST to 127.0.0.1), gives the service a port other than the road's (listens on 0.0.0.0:5000, Set PORT to 5000), or wants /health without the release version (must not disclose or expose the version, an empty body, 204) is a conflict, quoted on the plan card; another component's port (the database on 5432), a loopback address the service calls out to, and words in two different sentences are not",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-DF2",
+      "group": "H. Delivery",
+      "provenance": "vendor-proposed",
+      "statement": "A holdout step can sign its request the way the spec requires, with a secret the environment's settings name and no scenario holds, and custody is unchanged.",
+      "acceptance": [
+        {
+          "id": "FR-DF2-AC-1",
+          "given": "a holdout step with sign (a header, a secret's setting name and an optional prefix) and a road whose secrets name that setting with an env: reference",
+          "when": "the holdouts run against the environment",
+          "then": "the request carries the hex hmac-sha256 of the exact body bytes sent, keyed by the secret, in that header; a name the environment does not give, a reference the runner cannot read, or a sign whose secret is not a setting's name makes the scenario not measured, never failed; the secret's value appears in no scenario, result, release record or ledger",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DF2-AC-2",
+          "given": "a holdout author writing scenarios for a project whose roads name secrets",
+          "when": "its prompt is written and its scenarios are kept",
+          "then": "the interface section of its prompt explains the sign option and lists the secrets' names, never their values or where they live; a value written as the secret is dropped before the scenario enters custody; the builder's envelope names no scenario, header or secret",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DF2-AC-3",
+          "given": "a signed step whose header is a transport header (Host, Content-Length, Content-Type, Proxy-*) or not a plain name, or whose prefix holds a line break, and a scenario the runner cannot send at all",
+          "when": "the holdouts run, alone or in delivery",
+          "then": "the malformed sign is refused before anything is sent and before the scenario enters custody, and that scenario is not measured with a reason naming what is wrong; a scenario the runner cannot send is not measured, named by the error's kind only, and every other scenario still runs; the holdouts step records a verdict, never a traceback, and no secret's value or error text that could quote one is kept",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-DF3",
+      "group": "I. Production loop",
+      "provenance": "vendor-proposed",
+      "statement": "A defect whose triage names no requirement is never filed against a default requirement: a person says which requirement it breaks, or it becomes a new requirement through the business decision.",
+      "acceptance": [
+        {
+          "id": "FR-DF3-AC-1",
+          "given": "a defect whose triage names no requirement",
+          "when": "it is triaged and applied",
+          "then": "a question card asks which requirement it breaks, with the closest live requirements and 'none: a new requirement' as options; applying it before an answer is refused and writes nothing; an answer naming a requirement adds the regression criterion to that one; an answer naming none, or the change accepted without naming one, files a new requirement through the business decision; a product-defect ruling's requirement is taken without asking; no requirement is ever defaulted",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-DF4",
+      "group": "T. Cockpit for every party",
+      "provenance": "vendor-proposed",
+      "statement": "A work profile is proposed from whole words, and a proposal the rule is unsure of is put to a person with its top candidates.",
+      "acceptance": [
+        {
+          "id": "FR-DF4-AC-1",
+          "given": "a request, Rihmasto's own README among them",
+          "when": "a profile is proposed by rule",
+          "then": "keywords match on word boundaries (the word or phrase, its plural, or a word a stem marked * begins) and never inside another word ('train' in 'trainees', 'ml' in 'html'); the README is proposed as uncertain, not as an ML pipeline, with at least two candidates",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DF4-AC-2",
+          "given": "an intake whose proposal is uncertain",
+          "when": "intake runs and a person answers",
+          "then": "the profile's basis records the confidence and the candidates; when the request's keywords point to more than one profile, a question asks a person in every mode with the top candidates as options, and an answer naming a profile chooses it before the spec is written; keywords that point to one profile or none keep it, recorded as uncertain, without a question",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DF4-AC-3",
+          "given": "an intake whose profile question is open, in assume, mixed or socratic mode, and a project whose question was answered only after its spec was written",
+          "when": "the pipeline shapes the project, and a later spec is written (a plan redo)",
+          "then": "the profile question is blocking, so the run waits on its card at stage 2 and writes no spec on the rule's guess; once a person answers, the spec is written for the profile the answer names; an answer recorded after a spec exists never changes the profile at a later spec, and the ledger records it once as profile_answer_late with the profile it named and the profile kept",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-DF5",
+      "group": "B. Brownfield adoption",
+      "provenance": "vendor-proposed",
+      "statement": "An adoption baseline bounds each detected suite by a limit of its own and says when a suite ran past it.",
+      "acceptance": [
+        {
+          "id": "FR-DF5-AC-1",
+          "given": "an adopted repository whose detected suite runs past the per-suite limit",
+          "when": "adoption characterises it",
+          "then": "the baseline is 'not measured: timed out', with the limit, every process the suite started is stopped, and adoption completes; the per-suite limit has its own default (SUITE_TIMEOUT), apart from git's timeout",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
       "id": "FR-H10",
       "group": "H. Delivery",
       "provenance": "customer-confirmed",
@@ -4470,6 +5283,431 @@
           "tests/fixtures/redteam/**",
           "docs/guides/security.md",
           "docs/README.md"
+        ]
+      }
+    },
+    {
+      "id": "DF-01",
+      "title": "The road's platform facts in the spec and builder prompts, road-contract tests on a protected path, the plan review's road conflicts, and a health failure that says why",
+      "criteria": [
+        "FR-DF1-AC-1",
+        "FR-DF1-AC-2",
+        "FR-DF1-AC-3",
+        "FR-DF1-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/roads.py",
+          "kernel/spec.py",
+          "kernel/scaffold.py",
+          "kernel/plan.py",
+          "kernel/dispatch.py",
+          "kernel/lanes.py",
+          "tests/test_dogfood_fix.py",
+          "tests/test_compile.py",
+          "docs/paved-roads.md",
+          "docs/spec-to-verify.md"
+        ]
+      }
+    },
+    {
+      "id": "DF-02",
+      "title": "Holdout steps that sign their requests with a secret the environment names",
+      "criteria": [
+        "FR-DF2-AC-1",
+        "FR-DF2-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/holdouts.py",
+          "kernel/operate.py",
+          "kernel/compile.py",
+          "kernel/deliver.py",
+          "kernel/roads.py",
+          "tests/test_dogfood_fix.py",
+          "docs/paved-roads.md",
+          "docs/spec-to-verify.md"
+        ]
+      }
+    },
+    {
+      "id": "DF-03",
+      "title": "A defect that names no requirement asks which one, never R-1",
+      "criteria": [
+        "FR-DF3-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/change.py",
+          "tests/test_dogfood_fix.py",
+          "tests/test_lifecycle.py",
+          "docs/spec-to-verify.md"
+        ]
+      }
+    },
+    {
+      "id": "DF-04",
+      "title": "Profile keywords on word boundaries, and an uncertain proposal asks a person",
+      "criteria": [
+        "FR-DF4-AC-1",
+        "FR-DF4-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/profiles.py",
+          "kernel/intake.py",
+          "kernel/spec.py",
+          "tests/test_dogfood_fix.py",
+          "docs/guides/profiles.md"
+        ]
+      }
+    },
+    {
+      "id": "DF-05",
+      "title": "A per-suite timeout default for adoption baselines",
+      "criteria": [
+        "FR-DF5-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/adopt.py",
+          "tests/test_adopt.py",
+          "tests/test_dogfood_fix.py",
+          "docs/brownfield.md"
+        ]
+      }
+    },
+    {
+      "id": "DF-06",
+      "title": "What an independent check found: road conflicts in their common phrasings, a malformed sign refused before it is sent, and a profile question that holds the spec",
+      "criteria": [
+        "FR-DF1-AC-5",
+        "FR-DF2-AC-3",
+        "FR-DF4-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "kernel/roads.py",
+          "kernel/holdouts.py",
+          "kernel/operate.py",
+          "kernel/profiles.py",
+          "tests/test_dogfood_fix.py",
+          "tests/test_profiles_fix.py",
+          "docs/paved-roads.md",
+          "docs/spec-to-verify.md",
+          "docs/guides/profiles.md"
+        ]
+      }
+    },
+    {
+      "id": "KG-1",
+      "title": "Knowledge graph phase 1: one custody module, the ontology and its checks, the graph rebuilt on read with trace, impact, path, as_of and check, parity with insight.impact (the release hop fixed), the questions people ask, a read-only rihmasto graph and the assistant eval baseline; kernel/ontology.json and .gnomon/ are the owner's to change",
+      "criteria": [
+        "FR-KG1-AC-1",
+        "FR-KG1-AC-2",
+        "FR-KG1-AC-3",
+        "FR-KG1-AC-4",
+        "FR-KG1-AC-5",
+        "FR-KG1-AC-6",
+        "FR-KG1-AC-7",
+        "FR-KG1-AC-8",
+        "FR-KG1-AC-9",
+        "FR-KG1-AC-10",
+        "FR-KG1-AC-11",
+        "FR-KG1-AC-12",
+        "FR-KG1-AC-13",
+        "FR-KG1-AC-14",
+        "FR-KG1-AC-15",
+        "FR-KG1-AC-16"
+      ],
+      "scope": {
+        "write": [
+          "kernel/custody.py",
+          "kernel/ontology.py",
+          "kernel/graph.py",
+          "kernel/graph_build.py",
+          "kernel/graph_records.py",
+          "kernel/graph_ask.py",
+          "kernel/insight.py",
+          "kernel/deliver.py",
+          "kernel/cli.py",
+          "mcp/server.py",
+          "tools/contract_check.py",
+          "tests/test_graph.py",
+          "tests/test_graph_custody.py",
+          "docs/knowledge-graph.md"
+        ]
+      }
+    },
+    {
+      "id": "PT-01",
+      "title": "Portability phase 1: pin each release's image by digest at push, in the deploy package and the pack",
+      "criteria": [
+        "FR-PT1-AC-1",
+        "FR-PT1-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/deliver.py",
+          "kernel/packs.py",
+          "kernel/bundle.py",
+          "tests/test_portability.py",
+          "docs/portability.md",
+          "docs/guides/packs-and-evidence.md"
+        ]
+      }
+    },
+    {
+      "id": "PT-02",
+      "title": "Portability phase 1: sign bundles into a Sigstore bundle, as cosign 3.1 and later require, and keep an unverified signature said",
+      "criteria": [
+        "FR-PT2-AC-1",
+        "FR-PT2-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/bundle.py",
+          "tools/rihmasto_verify.py",
+          "tests/test_portability.py",
+          "tests/test_bundle.py",
+          "docs/guides/packs-and-evidence.md"
+        ]
+      }
+    },
+    {
+      "id": "PT-03",
+      "title": "Portability phase 1: a Compose renderer, with the pack beside the image",
+      "criteria": [
+        "FR-PT3-AC-1",
+        "FR-PT3-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/roads.py",
+          "kernel/bundle.py",
+          "tests/test_portability.py",
+          "docs/portability.md"
+        ]
+      }
+    },
+    {
+      "id": "PT-04",
+      "title": "Portability phase 1: published schemas and a standalone offline verifier",
+      "criteria": [
+        "FR-PT4-AC-1",
+        "FR-PT4-AC-2",
+        "FR-PT4-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "schemas/**",
+          "tools/rihmasto_verify.py",
+          "tests/test_portability.py",
+          "docs/portability.md"
+        ]
+      }
+    },
+    {
+      "id": "PT-05",
+      "title": "Portability phase 1: pack_guard in the image template, the status document and rihmasto pack withdraw",
+      "criteria": [
+        "FR-PT5-AC-1",
+        "FR-PT5-AC-2",
+        "FR-PT5-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "kernel/scaffold.py",
+          "kernel/bundle.py",
+          "kernel/cli.py",
+          "tests/test_portability.py",
+          "docs/guides/packs-and-evidence.md"
+        ]
+      }
+    },
+    {
+      "id": "PT-06",
+      "title": "Portability phase 1: the governance map on gate cards, evidence packs and exports",
+      "criteria": [
+        "FR-PT6-AC-1",
+        "FR-PT6-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/evidence_pack.py",
+          "kernel/deliver.py",
+          "kernel/bundle.py",
+          "tests/test_portability.py",
+          "docs/guides/packs-and-evidence.md"
+        ]
+      }
+    },
+    {
+      "id": "PT-07",
+      "title": "Portability phase 1 repair: the verifier trusts only the factory's key, a signed status is required, the guard keeps a withdrawal and starts the image, Compose mounts the pack's folder and passes secrets as environment variables, every gate card carries the governance map, and Rihmasto pushes nothing",
+      "criteria": [
+        "FR-PT1-AC-1",
+        "FR-PT1-AC-3",
+        "FR-PT2-AC-2",
+        "FR-PT3-AC-3",
+        "FR-PT3-AC-4",
+        "FR-PT4-AC-2",
+        "FR-PT4-AC-4",
+        "FR-PT4-AC-5",
+        "FR-PT4-AC-6",
+        "FR-PT5-AC-4",
+        "FR-PT5-AC-5",
+        "FR-PT6-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "tools/rihmasto_verify.py",
+          "kernel/bundle.py",
+          "kernel/scaffold.py",
+          "kernel/scaffold_guard.py",
+          "kernel/roads.py",
+          "kernel/deliver.py",
+          "kernel/packs.py",
+          "kernel/cli.py",
+          "schemas/**",
+          "tests/test_portability.py",
+          "docs/portability.md",
+          "docs/guides/packs-and-evidence.md",
+          "docs/guides/recipes-and-fit.md"
+        ]
+      }
+    },
+    {
+      "id": "INT-01",
+      "title": "Outbound events and notices: rihma.event/1 in CloudEvents 1.0 over Standard Webhooks v1, the relay with backoff and a hash-chained delivery log, and notices for Teams, Slack and email",
+      "criteria": [
+        "FR-IG1-AC-1",
+        "FR-IG1-AC-2",
+        "FR-IG1-AC-3",
+        "FR-IG1-AC-4",
+        "FR-IG1-AC-5",
+        "FR-IG3-AC-1",
+        "FR-IG3-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/events.py",
+          "kernel/relay.py",
+          "kernel/notices.py",
+          "kernel/integrations.py",
+          "kernel/cli.py",
+          "tests/test_integrations_relay.py",
+          "tests/integration_fakes.py",
+          "docs/integrations.md",
+          "docs/guides/integrations.md"
+        ]
+      }
+    },
+    {
+      "id": "INT-02",
+      "title": "Verified inbound webhooks: Standard Webhooks and GitHub signatures, replay protection and a size limit; a doorbell becomes a signal or a change proposal; the webhook server on loopback",
+      "criteria": [
+        "FR-IG2-AC-1",
+        "FR-IG2-AC-2",
+        "FR-IG2-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "kernel/hooks.py",
+          "embed/webhooks.py",
+          "kernel/integrations.py",
+          "tests/test_integrations_hooks.py",
+          "docs/integrations.md",
+          "docs/guides/integrations.md"
+        ]
+      }
+    },
+    {
+      "id": "INT-03",
+      "title": "The connector model: the connector.json schema, the connector card only IT decides, pins that stop a changed connector and reopen its card, the contract suite and the example connector",
+      "criteria": [
+        "FR-IG4-AC-1",
+        "FR-IG4-AC-2",
+        "FR-IG4-AC-3",
+        "FR-IG4-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/connectors.py",
+          "kernel/canon.py",
+          "kernel/integrations.py",
+          "connectors/**",
+          "tests/test_connectors.py",
+          "tests/test_connectors_contract.py",
+          "tests/test_brief_rst.py",
+          "docs/integrations.md",
+          "docs/guides/integrations.md"
+        ]
+      }
+    },
+    {
+      "id": "V-87",
+      "title": "Access control phase A: the organisation's identity signs decisions, an IT-owned access map grants personas per project, and the factory fails closed (D-0016)",
+      "criteria": [
+        "FR-M8-AC-1",
+        "FR-M8-AC-2",
+        "FR-M8-AC-3",
+        "FR-M8-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/access.py",
+          "kernel/people.py",
+          "kernel/store.py",
+          "kernel/canon.py",
+          "kernel/cli.py",
+          "cockpit/server.py",
+          "cockpit/static/app.js",
+          "cockpit/static/core.js",
+          "cockpit/static/app.css",
+          "cockpit/static/index.html",
+          "mcp/server.py",
+          "tests/test_access.py",
+          "docs/guides/access.md",
+          "docs/README.md",
+          "docs/cockpit.md",
+          "docs/integrations.md",
+          "docs/mcp.md",
+          "README.md",
+          "SECURITY.md"
+        ]
+      }
+    },
+    {
+      "id": "V-94",
+      "title": "Access control phase A, repaired: the proxy secret never reaches a child process, repeated identity headers are refused, intake is signed, the access file has a folder of its own and stays closed when removed, and the top bar fits (D-0016)",
+      "criteria": [
+        "FR-M8-AC-5",
+        "FR-M8-AC-6",
+        "FR-M8-AC-7",
+        "FR-M8-AC-8",
+        "FR-M8-AC-9"
+      ],
+      "depends_on": [
+        "V-87"
+      ],
+      "scope": {
+        "write": [
+          "kernel/access.py",
+          "kernel/accessfile.py",
+          "kernel/osuser.py",
+          "kernel/cli.py",
+          "kernel/safestop.py",
+          "cockpit/server.py",
+          "cockpit/static/app.js",
+          "cockpit/static/app.css",
+          "cockpit/static/index.html",
+          "embed/server.py",
+          "tests/test_access.py",
+          "tests/test_access_hardening.py",
+          "docs/guides/access.md",
+          "docs/cockpit.md",
+          "SECURITY.md"
         ]
       }
     }

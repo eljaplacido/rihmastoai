@@ -1,10 +1,121 @@
 # Knowledge graphs and ontologies in Rihmasto
 
-Status: recommendation, 2026-11-23. Nothing here is built yet. Claims not confirmed from a primary source are marked UNVERIFIED.
+Status: phase 1 built, 2026-11-23 (requirement FR-KG1, task KG-1); phases 2 and 3 are designed, not built.
+[Built in phase 1](#built-in-phase-1) says what exists and how to use it, and where it differs from the
+design that follows. Claims not confirmed from a primary source are marked UNVERIFIED.
+
+## Built in phase 1
+
+The kernel modules are standard-library Python, like the rest of the kernel. Nothing is stored and no write
+path changed.
+
+| Module | What it does |
+|---|---|
+| `kernel/custody.py` | The one redaction module: `custody_safe`, `held_strings`, `redact`, `ledger_record`. The MCP server and delivery import it; their own copies are gone. |
+| `kernel/ontology.json` | The ontology, version 1.0.0: 19 kinds, 29 relations, the 24 `refs` keys the kernel writes and the ledger fields the graph reads, with each kind's audiences. Write-protected. |
+| `kernel/ontology.py` | Loads and validates it: ids, labels, descriptions, aliases, consumers and enum references that resolve, relations between declared kinds with declared origins. |
+| `kernel/graph.py` | The `Graph` read model, its stamp and its queries: `trace`, `impact`, `path`, `as_of`, `check`, `show` and `view`. |
+| `kernel/graph_build.py`, `kernel/graph_records.py` | The build: the ledger (its chain checked first), the spec snapshots, the contract, the tests on main, then the canon, releases, packs, builder rounds and the signals routed to the project. |
+| `kernel/graph_ask.py` | The questions people ask, parity with `insight.impact`, the assistant eval baseline, and `rihmasto graph`. |
+
+**The command.** Every subcommand only reads, prints JSON and exits 0; an unknown project is refused with
+exit 2.
+
+```bash
+rihmasto graph trace <pid> R-2              # what R-2 rests on, back to the person who answered
+rihmasto graph impact <pid> R-1 R-2         # what rests on them: criteria, tests, tasks, approvals, releases
+rihmasto graph path <pid> R-2 person:Aino   # the shortest chain of links between two records
+rihmasto graph check <pid>                  # closed-world rules: it reports and never blocks
+rihmasto graph show <pid> --audience builder
+rihmasto graph refuted <pid>                # releases that rest on a refuted assumption
+rihmasto graph answers <pid> Aino           # criteria that trace back to Aino's answers
+rihmasto graph approvals <pid>              # who approved each production release; does it still hold?
+rihmasto graph parity <pid> R-1             # graph impact against insight.impact on the same ids
+rihmasto graph eval <pid> --with-model      # the assistant baseline; not measured without a model
+```
+
+`trace`, `impact`, `path`, `check`, `refuted`, `answers` and `approvals` take `--as-of <ledger seq>`: the
+links valid then, between the records that existed then.
+
+**Ids.** A requirement version is `R-2@v1`, and a plain `R-2` names the version in force. A criterion is
+`R-2-AC-1@<12 hex digits of its given, when and then>`; a plain criterion id is `ambiguous` once an amendment
+restated it, and its content key names one version. Other nodes: `Q-001`, `A-001`, `C-0004`, `D-003`, `T-001`,
+`S-001`, `CM-001`, `person:<name>`, `test:<name>`, `release-<n>`, `pack-<version>`, `H-<criterion>`,
+`round:<task>/<n>@<seq>`, `model:<id>`, `rev:<sha>`. A `by` pointer names the record that holds a link:
+`spec.v1.json#R-2`, `canon/decisions.json#D-003`, `canon/inbox/C-0004.json`, `ledger.jsonl#17`, `repo.git#main`.
+
+**An answer** carries the `query`, the `stamp`, its findings (`steps`, `proposed`, `cites`, and per query
+`result`, `rows` or `findings`) and, last, its `outcome`. `impact`'s `result` has the same fields as
+`kernel.insight.impact`, so a change card's blast radius can move onto the graph in phase 2.
+
+**Not measured, and why.** A graph checks its stamp before it answers. It answers `not_measured`, naming the
+cause, when the ledger's hash chain is broken; when the ontology does not validate; when the canon holds what
+the ledger does not record; and when a source file, the ledger, main or the ontology changed after the graph
+was built ("canon/questions.json changed since the graph was built, with no ledger event"). The canon is
+compared with the ledger field by field, so a hand edit made before a fresh build is caught too:
+
+| Canon record | Must match |
+|---|---|
+| A question | a `question_added` event; if answered, its `question_answered` event's `by` and `persona`; if assumed, its `question_assumed` event's `assumption` and `chosen_by`; if open, no such event |
+| An assumption | an `assumption_added` event; its status (`open`, `confirmed`, `refuted`) is the one its `assumption_settled` event records, or `open` when there is none |
+| A decision | its `decision` event's `card`, `kind`, `verdict`, `person`, `persona` and `refs`; its `approving` flag is the kernel's rule for that kind and verdict (`kernel.canon.APPROVING`) |
+| A stale flag | an `approvals_stale` event that names the decision, both ways: a flag with no mark, or a mark with no flag, is caught |
+
+Whether an approval went stale is read from the ledger's mark, never from the flag in `decisions.json`. Cards
+and comments are not compared: a card's `refs` change legitimately after it opens (a plan redone, a ruling
+applied), with no event that records the new value. The spec snapshots, the contract, `tasks.json` and the
+release files have no copy in the ledger to compare against either: the stamp catches an edit made after a
+build, but not one made by hand before a fresh build. Recording their hashes in the ledger would change a
+write path, so it is left to phase 3 (write-path fixes through the change loop).
+
+**Holdout custody.** No graph module reads the custody or names its folder. A release's holdout verdicts are
+read in a closed shape (a criterion id and a named verdict) and its reason through `custody_safe`. Card titles,
+bodies and payloads (except a triage's class and requirements), decision reasons, and the text of comments,
+signals and requests never enter the graph. A comment's target links only when it has the shape of the id it
+names (a requirement, criterion, task, card or release id); any other target is outside text, reported as a
+`dangling_ref` without its words. Each kind declares its audiences: builders never see held-out checks,
+cards, decisions, comments or signals. An audience's view (`graph show --audience`, `Graph.view`) keeps only
+the findings whose records and nodes that audience may see: a builder sees no pointer into the canon's cards,
+decisions, comments, questions or assumptions, the ledger or the signals. An audience that may not see every
+kind (verifier, builder) is told only that the records cannot be measured, not which ones disagree. A canary
+test plants sentinel strings, one of them in a comment's target, and renders every query.
+
+**Owner decisions applied.** `graph check` only reports and never blocks. `kernel/ontology.json` joined the
+protected files: no contract task may claim it (`tools/contract_check.py`), and the builder surface
+write-protects it for every role (`.gnomon/policy.toml`, `[governance.paths]`). The contract check refuses a
+write scope that names a protected path or covers it in any spelling: a glob (`kernel/**`, `kernel/*.json`,
+`kernel/onto*`, `**/ontology.json`), a folder above it (`kernel`, `kernel/`), `./`, `//` or `..` in the path,
+a `{a,b}` group, or another case. It errs on the side of refusing: `*` and `?` may cross a `/`. The same holds
+for `contract/`, `specs/`, `intake/` and `decisions/`. The surface change takes effect only once the owner
+runs `gnomon trust` on it; until then Gnomon's policy does not protect the file, only the contract check does.
+Still open from phase 0: the domain or email address for IRIs, whether exports pseudonymise names, and the
+change card for the evidence pack's ledger.
+
+**What parity found.** `insight.impact` listed every release as carrying the ids; it now lists only the
+releases whose `requirements` include them, and `graph impact` agrees with it field for field on the test
+fixtures. The `refs.scope == "release"` branch in `Canon._rests_on` and `insight.impact` is dead: nothing in
+`kernel/` writes that scope. `graph parity` reports it; removing the branch is left to a change of
+`kernel/canon.py`.
+
+**Where phase 1 differs from the design below.**
+- Only kinds a phase 1 read model uses are declared. Contract, Persona, Lesson, Incident, Finding, Control,
+  Recipe and Trial are not: an incident is a card, a persona is a qualifier on `answered_by` and `signed_by`,
+  and `refs.trial` is declared an attribute until the Trial kind comes (phase 2).
+- A requirement's `sources` are `kernel` links: the kernel accepted them into the spec by rule. A triage's
+  requirements are the `model_proposed` links, as section 2 says. Two sources name no record and link
+  nothing: `proposed` (the analyst proposed it) and `observed` (an adopted project's as-is requirement,
+  observed in its code); the requirement's provenance says which.
+- The scan test covers every `refs` key written in `kernel/`, and checks that each ledger field the graph
+  reads is one the kernel writes. A scan of every id-bearing ledger field is planned with phase 2's
+  write-time warning on `refs` keys.
+- `rihmasto graph show` renders the graph to stdout. It is not an export: exports (JSON-LD, each logged as
+  `graph_exported`) are phase 2.
+- `as_of` filters links and records by sequence number; the tests on main are read as main is now.
+- The graph is four modules, not one, to keep each under the quality gate's 500 lines.
 
 ## 1. The short answer
 
-Rihmasto already holds a knowledge graph, though nothing calls it one. The kernel gives every record an id (Q-, A-, C-, D-, R-n, R-n-AC-n, T-, S-). Records point at each other through `refs` dicts, `requirement.sources`, `depends_on`, criterion-id prefixes and test names. The hash-chained ledgers hold the history. `insight.impact` and `Canon.mark_stale` follow these links in hand-written code, and some of that code is wrong: `releases_carrying` lists every release.
+Rihmasto already holds a knowledge graph, though nothing calls it one. The kernel gives every record an id (Q-, A-, C-, D-, R-n, R-n-AC-n, T-, S-). Records point at each other through `refs` dicts, `requirement.sources`, `depends_on`, criterion-id prefixes and test names. The hash-chained ledgers hold the history. `insight.impact` and `Canon.mark_stale` follow these links in hand-written code, and some of that code was wrong: `releases_carrying` listed every release (fixed in phase 1).
 
 - **The ontology** is the declared schema of Rihmasto's own records. It says which kinds of record exist, which links between them are allowed, how each link is known, and who may create or decide each one. It is small and closed, and the kernel owns it.
 - **The knowledge graph** is a read model rebuilt from the ledgers and canon. It is never a store and never a second source of truth.
@@ -84,7 +195,7 @@ The list of requirements a triage names stays `model_proposed` until a person de
 **Independence.** The kernel stays standard-library only, and Gnomon stays its single runtime dependency. Optional adapters, such as graph-database loaders and pySHACL cross-checks, live in `tools/`. That folder is outside the folders the quality gate keeps standard-library only.
 
 **Holdout custody.**
-- Today the redaction code is split between `mcp/server.py` and `kernel/deliver.py`. It moves into one module, `kernel/custody.py`.
+- The redaction code, once split between `mcp/server.py` and `kernel/deliver.py`, is one module, `kernel/custody.py` (built in phase 1).
 - Graph code never references `holdouts_dir`.
 - HoldoutRef reads release verdicts through `custody_safe`, because the reasons stored with a release can quote a scenario.
 - Each kind declares which audiences may see it. Builders and verifiers never see holdout or probe text. Builders never see outside text (signals, comments, embeds), and outside text can never create an edge.
@@ -109,15 +220,16 @@ The list of requirements a triage names stays `model_proposed` until a person de
 ## 5. Phased plan
 
 **Phase 0: decisions for the owner.**
-- The domain or email address used in IRIs.
-- Whether person names are pseudonymised in exports.
-- Confirming that `graph check` only reports and never blocks.
-- Whether `ontology.json` is added to the protected files.
-- A change card for an existing leak: the evidence pack ships `ledger.jsonl` unredacted, including `holdouts_authored.reauthored_because`. That field can quote a scenario, and the MCP server already redacts it.
+- The domain or email address used in IRIs. *Open.*
+- Whether person names are pseudonymised in exports. *Open.*
+- Confirming that `graph check` only reports and never blocks. *Decided: it only reports.*
+- Whether `ontology.json` is added to the protected files. *Decided: it is; the surface change waits for the
+  owner's `gnomon trust`.*
+- A change card for an existing leak: the evidence pack ships `ledger.jsonl` unredacted, including `holdouts_authored.reauthored_because`. That field can quote a scenario, and the MCP server already redacts it. *Open.*
 
-**Phase 1: build now, with no change to any write path.** The custody module, the ontology file, `graph.py` for one project, and parity with today's hand-written walkers. That parity work reports the release-hop bug and the dead `refs.scope == 'release'` branch. Phase 1 also adds a read-only `rihma graph` CLI command and an assistant eval baseline. Its acceptance criteria are at the end of this page.
+**Phase 1: build now, with no change to any write path.** *Built (FR-KG1).* The custody module, the ontology file, `graph.py` for one project, and parity with today's hand-written walkers. That parity work reports the release-hop bug and the dead `refs.scope == 'release'` branch. Phase 1 also adds a read-only `rihmasto graph` CLI command and an assistant eval baseline. Its acceptance criteria are at the end of this page.
 
-**Phase 2: use it.**
+**Phase 2: use it.** *Planned.*
 - The insight functions become adapters over the graph.
 - The cockpit gets a lineage view and the blast radius on change cards.
 - Read-only MCP tools.
@@ -126,7 +238,7 @@ The list of requirements a triage names stays `model_proposed` until a person de
 - Assistant grounding, switched on only if the eval shows improvement.
 - Recipe and Trial kinds, declared before the recipes work merges.
 
-**Phase 3: widen, after measuring.**
+**Phase 3: widen, after measuring.** *Planned.*
 - Control mappings using ELI and DPV terms.
 - SHACL shapes for auditors.
 - SPDX 3.0.1 or CycloneDX 1.7 documents for packs.
@@ -167,7 +279,13 @@ LadybugDB (MIT) and Oxigraph (MIT or Apache-2.0) are also possible export target
 
 ## Phase 1 acceptance criteria
 
-1. Given holdout scenarios containing sentinel strings, when the graph is built and every query and export is rendered, then no sentinel appears and no graph module references `holdouts_dir`.
+All built. Each is criterion FR-KG1-AC-n of the factory's contract, with the same number, proved by the tests
+named after it in `tests/test_graph.py` and `tests/test_graph_custody.py`. Criteria 12 and 13 carry the owner's
+phase 0 decisions. Criteria 14 to 16, and the glob part of 12, came from an independent check of the first
+build, which forged canon records by hand, claimed the ontology with globs, planted text in a comment's target
+and checked an adopted project.
+
+1. Given holdout scenarios containing sentinel strings (and outside text, a comment's target among it), when the graph is built and every query and export is rendered, then no sentinel appears and no graph module references `holdouts_dir`.
 2. Given the redaction code moved into `kernel/custody.py`, when the test suite runs, then the MCP and deliver tests pass unchanged.
 3. Given `kernel/ontology.json`, when it is loaded, then every kind and relation has an id, a description and a consumer, and every enum reference resolves.
 4. Given every `refs` key written in `kernel/`, when the scan test runs, then each maps to a declared relation; and given an unknown key in a project, when the graph is built, then it reports an `unmapped_ref` finding.
@@ -178,3 +296,8 @@ LadybugDB (MIT) and Oxigraph (MIT or Apache-2.0) are also possible export target
 9. Given `questions.json` changed without a ledger event, or a broken ledger chain, when the graph is queried, then the outcome is `not_measured` and names the cause; and given an unknown or duplicated id, when it is queried, then the outcome is `not_found` or `ambiguous`.
 10. Given the quality gate, when it runs, then the new kernel modules import only the standard library.
 11. Given the assistant eval, when it runs, then it reports cited-id recall and the rate of citations not backed by a record, or `not_measured` when no model endpoint answers.
+12. Given `kernel/ontology.json`, when the contract is checked and the builder surface is read, then a task that claims write access to it fails (by name, or by any glob, folder or spelling that covers it), no task claims it, and the surface write-protects it for every role.
+13. Given a project whose graph has findings, when every `rihmasto graph` subcommand runs, then each answer ends in one of the four outcomes, `check` reports its findings and never blocks, and no file in the factory home changes.
+14. Given canon records edited by hand so that they disagree with the ledger (an assumption's status, a decision's refs, persona, kind or approving flag, a removed stale flag, a question's answer or status), when the graph is built afresh and asked, then the answer is `not_measured` and names the record, and an approval the ledger marked stale counts as stale whatever `decisions.json` says.
+15. Given findings about cards, decisions and comments, and a comment's target that names no record, when the graph is shown to each audience, then the target's words appear nowhere, each audience's findings name only records it may see, and an audience that may not see every kind is not told which records disagree.
+16. Given an adopted project whose requirements were observed in its code, when its graph is checked, then no requirement reports a dangling source.

@@ -1,0 +1,27 @@
+{
+  "schema": "rihma.connector/1",
+  "system": "example",
+  "title": "Example tracker (read-only)",
+  "namespace": "example",
+  "server": {
+    "transport": "stdio",
+    "command": ["python", "server.py"],
+    "pin": {
+      "name": "the example tracker's narrow server, in this folder",
+      "version": "1",
+      "sha256": "485968a3c46df44213e32f6b10e8c97446cac0484fbd5c7b62cd02494d86d2a8"
+    }
+  },
+  "tools_sha256": "4cff10cd27b87b04350b79987c786c4b1fca9c95a4116d4e34b1470f8fec20a6",
+  "read_tools": [
+    {"name": "list_items", "maps_to": "signal", "example_args": {}},
+    {"name": "get_item", "maps_to": "signal", "example_args": {"key": "EX-1"}}
+  ],
+  "write_tools": [],
+  "forbidden_tools": ["delete_item"],
+  "data_classes": ["internal"],
+  "credentials": [
+    {"name": "EXAMPLE_TRACKER_TOKEN", "ref": "env:EXAMPLE_TRACKER_TOKEN"}
+  ],
+  "setup": "README.md"
+}

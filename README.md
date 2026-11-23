@@ -180,7 +180,10 @@ still change before 1.0.0.
 - the command line, the demo, the cockpit and the MCP server;
 - the `web_service` and `integration` profiles;
 - the security gate for SARIF findings, capability packs, evidence packs, the autonomy ladder,
-  signals, concepts and embeds.
+  signals, concepts and embeds;
+- access control, phase A: in enforced mode a decision is signed by the identity your organisation's
+  sign-in verified, through IT's identity-aware proxy, as a persona an IT-owned access file grants on
+  that project ([docs/guides/access.md](docs/guides/access.md)).
 
 **Preview:**
 - five of the seven profiles, which run on the web-service template;
@@ -197,8 +200,11 @@ still change before 1.0.0.
 - signed and anchored ledger heads, signed packs and SBOMs.
 
 **Know before you rely on it:**
-- The cockpit is for one operator. It has no user accounts, listens on 127.0.0.1 only, and whoever
-  holds the session can pick any persona.
+- Without an access file the cockpit is for one operator: it listens on 127.0.0.1 only, whoever
+  holds the session can pick any persona, and it says so ("single operator: personas are
+  self-declared"). For a team, IT puts an identity-aware proxy in front of it and enforces access
+  ([docs/guides/access.md](docs/guides/access.md)). Provisioning through SCIM and separation of
+  duties are not built yet.
 - Builder cells have run on Linux. On Windows the kernel, the tests, the demo and the cockpit run;
   run cells in WSL2 or a container.
 - The gate runs a Python unittest suite. An adopted repository's other suites (pytest, npm, Go
@@ -227,7 +233,9 @@ still change before 1.0.0.
 
 - **Contributing:** read [CONTRIBUTING.md](CONTRIBUTING.md). Work is spec-first: a criterion, a
   test named after it that fails first, then the change. Sign off each commit (`git commit -s`)
-  under the Developer Certificate of Origin.
+  under the Developer Certificate of Origin. Changes reach `main` through pull requests only.
+- **Questions:** ask in [GitHub Discussions](https://github.com/eljaplacido/rihmastoai/discussions).
+- **Changes:** [CHANGELOG.md](CHANGELOG.md) lists what changed in each release.
 - **Conduct:** the [Contributor Covenant 2.1](CODE_OF_CONDUCT.md).
 - **Governance:** maintainers and how decisions are made, in [GOVERNANCE.md](GOVERNANCE.md).
 - **Security:** report a vulnerability privately, as [SECURITY.md](SECURITY.md) explains. Do not

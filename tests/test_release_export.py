@@ -318,6 +318,7 @@ class ExcludeRulesTest(unittest.TestCase):
             return release_export.excluded(path, rules)
 
         self.assertTrue(out("blueprint/run/x.md"))
+        self.assertTrue(out("Blueprint/run/x.md") and out("DOCS/A.HTML"))          # in any case: a disk may ignore it
         self.assertFalse(out("docs/blueprint/x.md"))                               # a leading slash anchors
         self.assertTrue(out("docs/a.html"))
         self.assertFalse(out("docs/sub/a.html") or out("x/docs/a.html"))         # a middle slash anchors too

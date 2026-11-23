@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from kernel.filelock import locked
 from kernel.ledgerstore import LedgerStore
+from kernel.people import signed_identity
 
 if TYPE_CHECKING:
     from kernel.canon import Canon
@@ -40,6 +41,8 @@ RIHMA_HOME_ENV = "RIHMA_HOME"
 HOME_ENV = "GNOMONFACTORY_HOME"
 HOME_ENVS = (RIHMASTO_HOME_ENV, RIHMA_HOME_ENV, HOME_ENV)
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# The payload fields that name the person who made a write (a ledger record's signer).
+SIGNED_KEYS = ("person", "by", "chosen_by", "requested_by", "stopped_by", "accepted_as_is_by")
 
 MATURITIES = ("explore", "demo", "pilot", "production")
 MODES = ("socratic", "assume", "mixed")
@@ -219,7 +222,15 @@ class Project:
         return LedgerStore(self.path("ledger.jsonl"), clock=self.factory.clock)
 
     def log(self, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """Record a transition in the project's ledger (FR-L2: state changes are appended)."""
+        """Record a transition in the project's ledger (FR-L2: state changes are appended). While a
+        verified identity signs the write (enforced access, D-0016), a record that names its person
+        also names that identity."""
+        if "identity" not in payload:
+            for key in SIGNED_KEYS:
+                stamp = signed_identity(payload.get(key))
+                if stamp:
+                    payload = {**payload, **stamp}
+                    break
         return self.ledger().append(kind, payload)
 
     def __repr__(self) -> str:

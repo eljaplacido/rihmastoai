@@ -21,6 +21,10 @@ running copy in an environment: `current` serves the environment, `candidate` is
 beside it in production, and `twin` is a disposable copy on its own empty data: of the current
 release for shadow tests, or of the release being delivered for its holdouts (FR-H9). The
 local-process and docker roads host a twin; when a twin stops, its data goes with it.
+
+Compose (`render_compose`, at the end) is not a road the factory deploys to: it renders the file
+any Docker or Podman host runs a delivered release with, from the site's deploy package
+(`deploy_package/2`, kernel/bundle.py), with the image by digest and the pack beside it.
 """
 
 from __future__ import annotations
@@ -70,6 +74,180 @@ BUILTIN_MATURITY = {"explore": "local-preview"}
 
 SECRET_NAME = re.compile(r"(?i)(secret|passw|token|api[_-]?key|private[_-]?key|connection[_-]?string|credential)")
 _STARTED: dict = {}  # pid -> Popen, for the processes this kernel started
+
+# -- the road's platform facts (FR-DF1) -------------------------------------------------------------
+# What the paved road owns, whatever a spec says. Said once, here, for the analyst (kernel/spec.py),
+# the builder (kernel/dispatch.py) and the plan review (kernel/plan.py), and checked in every product
+# by the scaffold's road-contract tests (kernel/scaffold.py), which no builder cell may change.
+ROAD_FACTS = {
+    "bind": "The service listens on all interfaces inside its container: it binds the address in HOST "
+            "(default 0.0.0.0) and the port in PORT. Bound to 127.0.0.1 or localhost inside a container, "
+            "nothing outside the container can reach it.",
+    "exposure": "Who can reach the service is the road's job, not the product's: IT's road publishes it "
+                "on loopback, behind a reverse proxy or through an ingress, and keeps the TLS and egress rules.",
+    "health": "GET /health belongs to the road: it answers 200 with {\"status\": \"ok\", \"version\": "
+              "<the release version>}, and delivery checks that version before anyone uses the release.",
+}
+_LOOPBACK = r"(?:\b127\.0\.0\.1\b|\blocalhost\b|\bloopback\b|(?<![\w:])\[?::1\]?(?![\w:]))"
+# The road conflicts are found clause by clause (a sentence, or the part of it before a ";"), so a
+# word in one sentence never pairs with a loopback address in another.
+_CLAUSE = re.compile(r"[.;!?](?=\s|$)|\n")
+# Phrasings whose own words say the conflict: they are what the plan card quotes.
+_BIND = re.compile(rf"(?i){_LOOPBACK}[- ]only\b|\bonly\s+(?:on|from|via|at)\s+(?:the\s+)?{_LOOPBACK}"
+                   rf"|\b(?:bind|binds|bound|binding|listen|listens|listening)\s+(?:only\s+)?(?:(?:on|to|at)\s+)?"
+                   rf"(?:the\s+)?{_LOOPBACK}|(?-i:\bHOST)\s*(?:=|:|\s+to\b|\s+is\b)\s*['\"]?(?:127\.0\.0\.1|localhost)")
+# Otherwise a clause that names a loopback address and restricts the service to it: a firm word
+# (bind, listen, accessible, reachable, exposed, restrict, limit, HOST...), or "only" and its kin.
+_FIRM = re.compile(r"(?i)\b(?:bind\w*|bound|listen\w*|accessib\w*|reachab\w*|expos\w*|restrict\w*|limit\w*|"
+                   r"confin\w*|serv(?:e|es|ed|ing)(?:\s+\w+){0,3}?\s+(?:on|from|at))\b|(?-i:\bHOST\b)")
+_LOOSE = re.compile(r"(?i)\b(?:only|exclusively|solely|available)\b")
+# A loopback address the service calls out to (a model server on the kernel's host) is egress, not
+# where the service listens: the span from the outbound verb to the address is set aside.
+_OUTBOUND = (r"(?i)\b(?:call(?:s|ed|ing)?|connect(?:s|ed|ing)?(?:\s+\w+){0,2}\s+to|fetch\w*|sends?|sending|sent|"
+             r"forward\w*|quer(?:y|ies|ied|ying)|talks?\s+to|posts?\s+to|push\w*\s+to|pulls?\s+from|"
+             r"reads?\s+from|download\w*|upload\w*)\b")
+_OUTBOUND_TARGET = re.compile(rf"{_OUTBOUND}(?:\W+\w+){{0,5}}?\W+{_LOOPBACK}")
+_PORT = re.compile(r"(?i)\b(?:listen\w*|serv\w*|runs?|running|bind\w*|bound|expos\w*|available|reachable|"
+                   r"accessible)\s+(?:only\s+)?(?:on|at|via|to)\s+(?:port\s+|\S*:)(\d{2,5})\b"
+                   r"|(?-i:\bPORT)\s*(?:=|:|\s+to\b|\s+is\b)\s*['\"]?(\d{2,5})\b")
+# A port another component listens on (the database's 5432) is not the service's own.
+_OTHER = re.compile(r"(?i)\b(?:database|db|postgres\w*|mysql|maria\w*|redis|memcache\w*|cache|queue|broker|"
+                    r"kafka|rabbit\w*|mqtt|smtp|mail\s+server|ldap|model\s+server|ollama|vllm|proxy|ingress|"
+                    r"load\s+balancer|upstream|third[- ]party|external|erp|crm|sap|elastic\w*|opensearch|mongo\w*|"
+                    r"minio|vault|keycloak|prometheus|grafana)\b")
+_HEALTH = re.compile(r"(?i)/health\b|\bhealth\s+(?:endpoint|route)\b|\bhealth[- ]?check\s+(?:endpoint|route|"
+                     r"response|answer)\b")
+_HEALTH_SHAPE = re.compile(r"\{[^{}]*status[^{}]*\}|\{\s*\}|text/plain|(?i:\b(?:only|just|nothing but|replac\w*|"
+                           r"remov\w*|overrid\w*|redefin\w*|instead|204|plain\s+text)\b|\bempty\s+(?:body|response|"
+                           r"object|json|payload|reply|answer)\b|\bno\s+(?:body|content|payload)\b"
+                           r"|\b(?:returns?|answers?|responds?|replies)\s+(?:with\s+)?nothing\b)")
+_NO_VERSION = re.compile(
+    r"(?i)\b(?:without|no|omit\w*|exclud\w*|strip\w*|remov\w*|drop\w*|hid\w*)\s+(?:the\s+|a\s+|any\s+|its\s+)?"
+    r"(?:\w+\s+)?version\b"
+    r"|(?:\bnot|\bnever|n't)\s+(?:\w+\s+){0,2}?(?:disclos|expos|reveal|show|return|includ|contain|leak|report|"
+    r"give|print|list|send|mention|carr|publish)\w*\s+(?:\w+\s+){0,3}?version\b"
+    r"|\bversion\b[^.;]{0,40}?(?:\bnot|\bnever|n't)\b[^.;]{0,20}?\b(?:disclos|expos|reveal|shown|returned|"
+    r"included|leak|visible|public)\w*")
+
+
+def road_facts_for_builder() -> str:
+    """The road's platform facts as the builder's envelope says them (FR-DF1-AC-1), with what each
+    means for the code it writes and the road-contract tests that check them."""
+    from kernel.scaffold import ROAD_CONTRACT_TESTS
+
+    return "\n".join([
+        f"- {ROAD_FACTS['bind']} Never set HOST, or bind 127.0.0.1 or localhost, anywhere in the product "
+        "(app/__init__.py included).",
+        f"- {ROAD_FACTS['exposure']} A requirement for less exposure is met by the road, not by the code.",
+        f"- {ROAD_FACTS['health']} Never register, replace or change GET /health.",
+        f"- `{ROAD_CONTRACT_TESTS}` checks these facts. The road owns it: never edit or remove it. The gate "
+        "refuses a change that touches it."])
+
+
+def _bind_conflict(clause: str) -> str | None:
+    """The words of ``clause`` that restrict the service to loopback, or None."""
+    found = _BIND.search(clause)
+    if found:
+        return found.group(0)
+    rest = _OUTBOUND_TARGET.sub(" ", clause)          # what the service calls out to is not where it listens
+    if re.search(f"(?i){_LOOPBACK}", rest) and (_FIRM.search(rest) or _LOOSE.search(rest)):
+        return " ".join(clause.split())[:160]
+    return None
+
+
+def _port_conflict(clause: str) -> str | None:
+    """The words of ``clause`` that give the service a port other than the road's, or None. A port
+    another component listens on, or one the service calls out to, is not the service's: that is
+    read from the words before the port since the last "and" or "but" (the verb's own subject)."""
+    for found in _PORT.finditer(clause):
+        subject = re.split(r"(?i)\b(?:and|but|while|whereas)\b", clause[:found.start()])[-1]
+        if (found.group(1) or found.group(2)) != str(APP_PORT) and not _OTHER.search(subject) \
+                and not re.search(_OUTBOUND, subject):
+            return found.group(0)
+    return None
+
+
+def _road_conflict(text: str) -> tuple[str, str] | None:
+    """The road fact ``text`` contradicts, with the words that do: None when it contradicts none."""
+    for clause in (c for c in _CLAUSE.split(text) if c.strip()):
+        for fact, rule in (("bind", _bind_conflict), ("port", _port_conflict)):
+            said = rule(clause)
+            if said:
+                return fact, said
+    if _HEALTH.search(text):
+        names_version = re.search(r"(?i)\bversion\b", text)
+        found = _NO_VERSION.search(text) or (None if names_version else _HEALTH_SHAPE.search(text))
+        if found:
+            return "health", found.group(0)
+    return None
+
+
+def road_conflicts(spec: dict) -> list[dict]:
+    """Every requirement or criterion of ``spec`` that contradicts the paved road's platform facts
+    (FR-DF1-AC-3), by fixed rules and no model: one that wants the service bound to loopback or a
+    port of its own, or GET /health answered without the release version. A withdrawn requirement
+    contradicts nothing."""
+    out = []
+    for r in spec.get("requirements") or []:
+        if r.get("provenance") == "withdrawn":
+            continue
+        texts = [(None, str(r.get("statement", "")))] + [
+            (c.get("id"), " ".join(str(c.get(k, "")) for k in ("given", "when", "then")))
+            for c in r.get("acceptance") or []]
+        for cid, text in texts:
+            hit = _road_conflict(text)
+            if hit:
+                fact = "bind" if hit[0] == "port" else hit[0]
+                out.append({"requirement": r.get("id"), "criterion": cid, "fact": hit[0], "said": hit[1],
+                            "road": ROAD_FACTS[fact] + ("" if fact == "health" else " " + ROAD_FACTS["exposure"])})
+    return out
+
+
+def conflict_lines(spec: dict) -> list[str]:
+    """The road conflicts of ``spec`` as a person reads them in spec.md and on the plan card."""
+    return [f"- {c['criterion'] or c['requirement']} says \"{c['said']}\": {c['road']}" for c in road_conflicts(spec)]
+
+
+def listening_sockets(text: str) -> list[str]:
+    """The TCP sockets in LISTEN state in the text of /proc/net/tcp and /proc/net/tcp6, as
+    `host:port` (`[host]:port` for IPv6). Lines that are not socket entries are skipped."""
+    out = set()
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[3] != "0A" or ":" not in parts[1]:
+            continue
+        address, _, port = parts[1].partition(":")
+        try:
+            raw = bytes.fromhex(address)
+            if len(raw) == 4:
+                host = socket.inet_ntop(socket.AF_INET, raw[::-1])
+            elif len(raw) == 16:  # four 32-bit words, each in the kernel's byte order
+                words = b"".join(raw[i:i + 4][::-1] for i in range(0, 16, 4))
+                host = "[" + socket.inet_ntop(socket.AF_INET6, words) + "]"
+            else:
+                continue
+            out.add(f"{host}:{int(port, 16)}")
+        except (ValueError, OSError):
+            continue
+    return sorted(out)
+
+
+def diagnose_health(last: dict | None, listening: list | None, *, version: str | None,
+                    port: int = APP_PORT) -> str | None:
+    """Why a release failed its health check, read from what the check last saw and what listens
+    in the service's container; None when neither says."""
+    body = (last or {}).get("body")
+    if isinstance(body, dict) and body.get("status") == "ok" and version and body.get("version") != version:
+        return (f"/health answered {json.dumps(body)[:200]}, not the release version {version}: "
+                + ROAD_FACTS["health"])
+    if listening:
+        on_port = [s for s in listening if s.rsplit(":", 1)[1] == str(port)]
+        if not on_port:
+            return f"nothing listens on port {port} inside the container (listening: {', '.join(listening)})"
+        if all(s.split(":")[0] in ("127.0.0.1", "[::1]") for s in on_port):
+            return (f"the service listens on loopback inside the container only ({', '.join(on_port)}), so "
+                    "nothing outside the container reaches it. " + ROAD_FACTS["bind"] + " " + ROAD_FACTS["exposure"])
+    return None
 
 
 class RoadError(RuntimeError):
@@ -128,9 +306,12 @@ def _listening(url: str, timeout: float = 0.25) -> bool:
         return False
 
 
-def http_request(method: str, url: str, body=None, *, timeout: float = 10.0) -> dict:
+def http_request(method: str, url: str, body=None, *, timeout: float = 10.0, headers: dict | None = None) -> dict:
     """One HTTP call. Returns status, the JSON body if there is one, the text and the latency.
-    A 4xx or 5xx is an answer, not an error; ``status`` is None only when nothing answered."""
+    A 4xx or 5xx is an answer, not an error; ``status`` is None only when nothing answered.
+    ``headers`` are sent as given, after the content type the body implies (a signed holdout
+    step's signature, kernel/holdouts.py)."""
+    extra = dict(headers or {})
     if _loopback(url) and not _listening(url):
         return {"status": None, "error": "ConnectionRefusedError: nothing listens there", "ms": 0.0,
                 "is_json": False, "json": None, "text": ""}
@@ -142,6 +323,7 @@ def http_request(method: str, url: str, body=None, *, timeout: float = 10.0) -> 
             data, headers["Content-Type"] = body.encode("utf-8"), "text/plain; charset=utf-8"
         else:
             data, headers["Content-Type"] = json.dumps(body).encode("utf-8"), "application/json"
+    headers.update(extra)
     req = urllib.request.Request(url, data=data, method=method.upper(), headers=headers)
     opener = _NO_PROXY if _loopback(url) else urllib.request.build_opener()
     t0 = time.perf_counter()
@@ -532,7 +714,8 @@ class LocalProcessRoad(Road):
         data.mkdir(parents=True, exist_ok=True)
         port = t.get("port") or free_port()
         envvars = {k: v for k, v in os.environ.items() if k not in ("DATA_DIR", "TRAFFIC_LOG", "PORT", "APP_VERSION")}
-        envvars.update(PORT=str(port), DATA_DIR=str(data), TRAFFIC_LOG=str(traffic),
+        # The road limits exposure (FR-DF1): a local process listens on loopback, by the HOST it is given.
+        envvars.update(HOST=t.get("host") or "127.0.0.1", PORT=str(port), DATA_DIR=str(data), TRAFFIC_LOG=str(traffic),
                        APP_VERSION=package["settings"]["APP_VERSION"], PYTHONUNBUFFERED="1",
                        PYTHONDONTWRITEBYTECODE="1")
         log.parent.mkdir(parents=True, exist_ok=True)
@@ -551,8 +734,11 @@ class LocalProcessRoad(Road):
                                            timeout=float(self.cfg.get("start_timeout", 20)),
                                            alive=lambda: proc.poll() is None)
         except RoadError as exc:
+            listening = [f"127.0.0.1:{port}"] if _listening(state["base_url"]) else []
             self.stop(project, env, slot)
             exc.native["log_tail"] = log.read_text(encoding="utf-8", errors="replace")[-2000:] if log.exists() else ""
+            exc.native["listening"] = listening
+            exc.native["diagnosis"] = diagnose_health(exc.native.get("last"), None, version=package["revision"][:12])
             raise
         _save_slot(project, state)
         return state
@@ -652,7 +838,24 @@ class DockerCLI:
         self("image", "rm", tag, check=False)
 
     def logs(self, name: str, tail: int = 50) -> str:
-        return self("logs", "--tail", str(tail), name, check=False)
+        """The container's last lines from both of its streams: `docker logs` gives the container's
+        stderr on its own stderr, and a Python service writes its tracebacks there (FR-DF1-AC-4)."""
+        argv = [self.binary, "logs", "--tail", str(tail), name]
+        try:
+            _code, out, err = self.runner(argv, 60)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return f"not measured: docker logs could not be read ({type(exc).__name__})"
+        return "\n".join(s.strip("\n") for s in (out or "", err or "") if s.strip())
+
+    def listening(self, name: str) -> list | None:
+        """The TCP sockets listening inside the container, read from /proc/net, so the image needs no
+        tool for it; None when the container could not be read (it exited, or has no /proc)."""
+        argv = [self.binary, "exec", name, "cat", "/proc/net/tcp", "/proc/net/tcp6"]
+        try:
+            _code, out, _err = self.runner(argv, 30)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        return listening_sockets(out) if (out or "").strip() else None
 
     def read_file(self, name: str, path: str) -> str:
         return self("exec", name, "cat", path, check=False)
@@ -712,7 +915,14 @@ class DockerRoad(Road):
             state["health"] = wait_healthy(state["base_url"], version=package["revision"][:12],
                                            timeout=float(self.cfg.get("start_timeout", 60)))
         except RoadError as exc:
+            # What the release record keeps of a failed health check (FR-DF1-AC-4): the container's
+            # log tail, what listens inside it, and what the two say together.
+            listening = self.docker.listening(t["container"])
             exc.native["logs"] = self.docker.logs(t["container"])[-2000:]
+            exc.native["listening"] = listening if listening is not None else \
+                "not measured: the container's /proc/net could not be read"
+            exc.native["diagnosis"] = diagnose_health(exc.native.get("last"), listening,
+                                                      version=package["revision"][:12])
             self.stop(project, env, slot)
             raise
         _save_slot(project, state)
@@ -1157,3 +1367,130 @@ def _seq(lines, i, ind):
             value, i = _value(rest, lines[i][2]), i + 1
         out.append(value)
     return out, i
+
+
+# -- Compose: a release on any Docker or Podman host (docs/portability.md, phase 1) -------------------
+
+SITE_PACKAGE_SCHEMA = "gnomonfactory.deploy_package/2"
+DIGEST_REF = re.compile(r"^[^@\s]+@sha256:[0-9a-f]{64}$")
+PACK_MOUNT = "/pack"
+COMPOSE_HEADER = (
+    "# Rendered by Rihmasto from a deploy package (gnomonfactory.deploy_package/2).\n"
+    "# The image runs by digest. This folder, holding the capability pack and its status document, is\n"
+    "# mounted read-only at /pack, never baked in: the pack pins the image. A folder, not single files,\n"
+    "# so a fresh pack-status.json written here by a rename reaches pack_guard. /health answers 503 until\n"
+    "# pack_guard has checked them. Each secret reaches the product as the environment variable of its\n"
+    "# name, as on the factory's roads, taken from the deployer's environment: no value is in this file.\n")
+SECRET_REF = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)(:\?[^}]*)?\}$")
+
+
+def secret_from_env(name: str) -> str:
+    """A secret's environment entry: Compose takes the value from the deployer's environment at `up`,
+    and refuses to start without it."""
+    return "${" + name + ":?set " + name + " in the environment that runs docker compose}"
+
+
+def validate_site_package(pkg: dict) -> list:
+    """Problems with a deploy package a site runs (`deploy_package/2`): the /1 package's, plus an image
+    pinned by digest and the capability pack it names by version and hash. Empty means it renders."""
+    if pkg.get("schema") != SITE_PACKAGE_SCHEMA:
+        return [f"schema must be {SITE_PACKAGE_SCHEMA}"]
+    problems = validate_package({**pkg, "schema": PACKAGE_SCHEMA})
+    art, pack = pkg.get("artifact") or {}, pkg.get("pack") or {}
+    ref = str(art.get("ref"))
+    if art.get("type") != "image":
+        problems.append("a site runs an image: this release's artifact is not one")
+    elif not DIGEST_REF.match(ref) or not ref.endswith(f"@{art.get('digest')}"):
+        problems.append("the image is not pinned by digest (repository@sha256:...): push it to a registry first")
+    if not pack.get("version") or not re.fullmatch(r"[0-9a-f]{64}", str(pack.get("content_sha256"))):
+        problems.append("the package names no capability pack by version and content_sha256")
+    return problems
+
+
+def _compose_service(pkg: dict) -> dict:
+    art, pack, target = pkg["artifact"], pkg["pack"], pkg.get("target") or {}
+    env = {"APP_VERSION": pkg["settings"]["APP_VERSION"], "PORT": str(APP_PORT), "DATA_DIR": CONTAINER_DATA,
+           "TRAFFIC_LOG": CONTAINER_TRAFFIC, "RIHMA_PACK": f"{PACK_MOUNT}/{pack['file']}",
+           "RIHMA_PACK_SHA256": pack["content_sha256"], "RIHMA_PACK_STATUS": f"{PACK_MOUNT}/{pack['status_file']}",
+           "RIHMA_IMAGE_DIGEST": art["digest"]}
+    env |= {str(s["name"]): secret_from_env(str(s["name"])) for s in pkg.get("secrets") or []}
+    mounts = [{"type": "volume", "source": "data", "target": CONTAINER_DATA},
+              {"type": "bind", "source": ".", "target": PACK_MOUNT, "read_only": True}]
+    return {"image": art["ref"], "restart": "unless-stopped",
+            "ports": [f"{target.get('bind') or '127.0.0.1'}:{target.get('host_port') or APP_PORT}:{APP_PORT}"],
+            "environment": env, "volumes": mounts,
+            "labels": {"gnomonfactory.project": pkg["project"], "gnomonfactory.release": str(pkg["release"]),
+                       "gnomonfactory.pack": f"{pack['version']} sha256:{pack['content_sha256']}"}}
+
+
+def render_compose(pkg: dict) -> dict:
+    """compose.yaml for a deploy package/2, as ``{"model", "yaml", "problems"}``: the image by digest, a
+    named volume for /data, the folder beside compose.yaml (the pack and its status) mounted read-only
+    at /pack, and each secret as the environment variable of its name, its value taken from the
+    deployer's environment. Nothing is rendered while there is a problem: no digest, no pack, a secret
+    that carries a value."""
+    problems = validate_site_package(pkg)
+    if problems:
+        return {"model": None, "yaml": None, "problems": problems}
+    model: dict = {"name": re.sub(r"[^a-z0-9_-]+", "-", f"gf-{pkg['project']}-{pkg['environment']}".lower()),
+                   "services": {"app": _compose_service(pkg)}, "volumes": {"data": {}}}
+    problems = secret_leaks(model) + validate_compose(model)
+    return {"model": model, "yaml": None if problems else COMPOSE_HEADER + to_yaml(model), "problems": problems}
+
+
+def _compose_mounts(app: dict, volumes: dict) -> list:
+    """/data on a named volume, and the pack's folder bind-mounted read-only at /pack. A single file
+    bind-mounted keeps the file it first saw, so a status replaced by a rename would never reach the
+    guard: no bind but the folder."""
+    mounts = [m for m in app.get("volumes") or [] if isinstance(m, dict)]
+    named = [m for m in mounts if m.get("type") == "volume" and m.get("target") == CONTAINER_DATA]
+    problems = [] if named and named[0].get("source") in volumes else [f"{CONTAINER_DATA} is not on a named volume"]
+    binds = [m for m in mounts if m.get("type") == "bind"]
+    problems += [f"bind mount {m.get('source')} must be the pack's folder, mounted read-only at {PACK_MOUNT}: a "
+                 "single file bind-mounted never sees a status replaced by a rename" for m in binds
+                 if (m.get("target"), m.get("read_only")) != (PACK_MOUNT, True)]
+    if PACK_MOUNT not in [m.get("target") for m in binds]:
+        problems.append(f"the pack's folder is not mounted at {PACK_MOUNT}")
+    return problems
+
+
+def _compose_secrets(model: dict, app: dict) -> list:
+    """A secret reaches the product as the environment variable of its name, from the deployer's
+    environment (`${NAME:?...}`), never with a value here, and never as a Compose secret: that is a file
+    under /run/secrets, which the product does not read."""
+    env = app.get("environment") or {}
+    problems = [f"environment {k} looks like a secret and is given a value" for k, v in env.items()
+                if SECRET_NAME.search(k) and not ((m := SECRET_REF.match(str(v))) and m.group(1) == k)]
+    if model.get("secrets") or app.get("secrets"):
+        problems.append("a Compose secret reaches the product as a file under /run/secrets, which it does not "
+                        "read: give it as the environment variable of its name")
+    return problems
+
+
+def validate_compose(model: dict) -> list:
+    """What a site's compose model keeps: one service, its image by digest, /data on a named volume, the
+    pack's folder mounted read-only beside the image, and secrets by name only, as environment variables."""
+    services = model.get("services") or {}
+    app = services.get("app") or {}
+    problems = [] if list(services) == ["app"] else ["the model must hold exactly one service, app"]
+    if not DIGEST_REF.match(str(app.get("image"))):
+        problems.append("the image is not pinned by digest")
+    problems += _compose_mounts(app, model.get("volumes") or {})
+    problems += _compose_secrets(model, app)
+    if not str((app.get("environment") or {}).get("RIHMA_PACK", "")).startswith(PACK_MOUNT + "/"):
+        problems.append("RIHMA_PACK does not name the pack mounted beside the image")
+    return problems
+
+
+def compose_config(path: Path, docker: DockerCLI | None = None) -> dict:
+    """`docker compose config --quiet --no-interpolate` on a rendered file: passed, failed with what
+    compose said, or not measured when no docker CLI is on this host. It reads the file only: nothing is
+    pulled or started, and no secret's value is needed (they are interpolated only at `up`)."""
+    cli = docker or DockerCLI()
+    if not cli.available():
+        return {"verdict": "not measured", "reason": "docker is not installed on this host"}
+    try:
+        cli("compose", "-f", str(path), "config", "--quiet", "--no-interpolate", timeout=120)
+    except RoadError as exc:
+        return {"verdict": "failed", "reason": str(exc), "stderr": exc.native.get("stderr", "")}
+    return {"verdict": "passed", "reason": "docker compose config accepts the file"}

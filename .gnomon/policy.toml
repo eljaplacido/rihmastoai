@@ -30,8 +30,10 @@ ci = "enforce"
 
 [governance.paths]
 # Each list replaces its default, so the CI defaults are repeated. These paths are write-protected
-# for every role (reads stay allowed): the contract, the specs and the intake they were compiled from.
+# for every role (reads stay allowed): the contract, the specs and the intake they were compiled from,
+# and the ontology the knowledge graph is checked against (docs/knowledge-graph.md).
 ci = [
   ".github/workflows/**", ".github/actions/**", ".gitlab-ci.yml",
   "contract/**", "specs/**", "intake/**", "decisions/**", "evidence/**", "blueprint/**",
+  "kernel/ontology.json",
 ]

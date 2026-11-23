@@ -3,7 +3,9 @@
 The test builds a demo home (``kernel.demo``, what ``rihma demo`` builds), starts the cockpit on
 127.0.0.1 over it, and drives the page as a person does, with real mouse clicks and typing: sign in
 and say who is deciding, switch the lens, open the delivery square and validate a concept as a
-business owner, open a project and decide a card, Customize (resize a widget, Done), ask the
+business owner, open a project and decide a card, switch the lens there and change the theme and
+density (kept with that lens's layout; the arrow keys switch the lens back), Customize (resize a
+widget, Done), ask the
 assistant a where-is question and press Take me there (to the Releases view, whose capability pack
 is read and never built), switch to the Compliance lens (the demo's evidence pack and autonomy cap),
 and open Settings (the demo's website chat). After every step there is no console error, no
@@ -268,6 +270,17 @@ class Browser:
             self.cmd("Input.dispatchMouseEvent", {"type": kind, "x": box["x"], "y": box["y"], "button": "left",
                                                   "clickCount": 1})
 
+    def key(self, key: str, code: int) -> None:
+        """Press and release a key (by its name and Windows key code) on whatever has the focus."""
+        for kind in ("rawKeyDown", "keyUp"):
+            self.cmd("Input.dispatchKeyEvent", {"type": kind, "key": key, "code": key, "windowsVirtualKeyCode": code,
+                                                "nativeVirtualKeyCode": code})
+
+    def active(self) -> str:
+        """What has the focus: its id, else its lens, else its tag."""
+        return self.eval("(() => { const a = document.activeElement;"
+                         " return a ? a.id || (a.dataset && a.dataset.lens) || a.tagName : null; })()")
+
     def type(self, selector: str, text: str) -> None:
         """Focus a field, clear it and type into it, as keyboard input."""
         self.wait(f"(() => {{ const el = document.querySelector({json.dumps(selector)}); if (!el) return false;"
@@ -375,10 +388,15 @@ class UiDriveTest(unittest.TestCase):
         b.click('#lens-switch [data-lens="delivery"]', what="the Delivery lens")
         b.wait("document.title.startsWith('Delivery') && !!document.querySelector('#grid .widget[data-type=\"live\"]')",
                "the Delivery dashboard")
+        self.assertEqual(b.active(), "delivery")                    # choosing a lens keeps the focus on it
+        self.assertEqual(b.eval("[...document.querySelectorAll('#lens-switch .lens-b')].filter((x) => x.tabIndex === 0)"
+                                ".map((x) => x.dataset.lens).join()"), "delivery")   # one tab stop: the chosen lens
         self.step("validate a concept")
         self.validate_concept()
         self.step("decide a card")
         webhook = self.decide_a_card()
+        self.step("theme off Home")
+        self.theme_off_home()
         self.step("customize")
         self.customize()
         self.step("ask the assistant")
@@ -448,6 +466,35 @@ class UiDriveTest(unittest.TestCase):
         self.assertEqual((card["state"], card["decision"]["verdict"], card["decision"]["person"]),
                          ("decided", "defer", PERSON))
         return webhook
+
+    def theme_off_home(self) -> None:
+        """On a project page, switch to the Operations lens, choose Light and compact density: both are kept
+        with the Operations layout (never the Delivery one Home loaded, which the server refuses), the focus
+        goes back to Theme, and the arrow keys take the lens back to Delivery with the focus on it."""
+        b = self.browser
+        b.click('#lens-switch [data-lens="operations"]', what="the Operations lens")
+        b.wait("document.querySelector('#lens-switch [aria-checked=\"true\"]').dataset.lens === 'operations'",
+               "the Operations lens chosen")
+        b.click("#theme", what="Theme")
+        b.click("#menu-pop .menu-item", text="Light", what="Light in the theme menu")
+        b.wait("document.documentElement.dataset.theme === 'light' && document.activeElement.id === 'theme'",
+               "the light theme, with the focus back on Theme")
+        b.click("#density", what="Density")
+        b.wait("document.documentElement.dataset.density === 'compact'", "the compact density")
+        path = next(iter((self.factory.home / "_cockpit" / "layouts").glob("*/business_owner")), None)
+        end = time.monotonic() + 20
+        theme = None
+        while time.monotonic() < end and (theme or {}).get("density") != "compact":
+            saved = path / "operations.json" if path else None
+            if saved and saved.is_file():
+                theme = json.loads(saved.read_text(encoding="utf-8"))["layout"].get("theme")
+            time.sleep(0.1)
+        self.assertEqual(((theme or {}).get("mode"), (theme or {}).get("density")), ("light", "compact"))
+        self.assertEqual(b.eval("document.documentElement.dataset.theme"), "light")   # the density kept the light theme
+        b.eval("document.querySelector('#lens-switch [data-lens=\"operations\"]').focus(); true")
+        b.key("ArrowLeft", 37)
+        b.wait("document.querySelector('#lens-switch [aria-checked=\"true\"]').dataset.lens === 'delivery'"
+               " && document.activeElement.dataset.lens === 'delivery'", "the Delivery lens again, by the arrow key")
 
     def customize(self) -> None:
         b = self.browser

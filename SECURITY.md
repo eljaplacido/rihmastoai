@@ -11,8 +11,9 @@ Rihmasto is in development. Security fixes go to the `main` branch and the lates
 
 ## Report a vulnerability
 
-Report it privately, through GitHub's private vulnerability reporting: open the repository's
-**Security** tab and choose **Report a vulnerability**. Only the maintainers can read the report.
+Report it privately, through GitHub's private vulnerability reporting, at
+<https://github.com/eljaplacido/rihmastoai/security/advisories/new> (or open the repository's
+**Security** tab and choose **Report a vulnerability**). Only the maintainers can read the report.
 
 Please do not post the details in a public issue, a pull request or a discussion.
 
@@ -30,7 +31,8 @@ keep you informed while it is fixed, and credit you in the advisory unless you p
   lanes, and the paved-road product template.
 
 Examples: getting past the cockpit's sign-in, Host or Origin checks; a decision recorded for a
-persona that may not make it; a builder that can read holdout scenarios; an embed that reads a
+persona that may not make it; with access enforced, a decision signed as someone else or as a persona
+the access file does not grant there; a builder that can read holdout scenarios; an embed that reads a
 project's records; an MCP tool that decides; a ledger change the chain check misses; a secret
 written into the repository, a ledger, a pack or a log; a path that escapes the factory home.
 
@@ -39,7 +41,8 @@ written into the repository, a ledger, a pack or a log; a path that escapes the 
   [Gnomon's repository](https://github.com/eljaplacido/gnomonharness);
 - model providers, model endpoints and what a model writes (judging a model's work is the gate's
   job; a way around the gate is in scope);
-- the limits this page and the docs already state, such as the cockpit having no user accounts;
+- the limits this page and the docs already state, such as anyone with the session picking any
+  persona in single-operator mode;
 - products that people build with Rihmasto, except where the paved-road template itself is the
   cause;
 - attacks that need control of the machine that runs the factory.
@@ -68,8 +71,33 @@ The cockpit is the operator's web page and the Inbox's write path ([docs/cockpit
   a name that is not a person is refused, and nothing is recorded. Every write is noted in the
   ledger.
 
-Limit: the cockpit has no user accounts. Whoever holds the session can pick any persona. Treat it
-as a single-operator tool.
+**Who may act as which persona** depends on the access mode ([docs/guides/access.md](docs/guides/access.md),
+[D-0016](decisions/D-0016-access-through-the-organisations-identity.md)):
+
+- **Single operator** (no access file, the default). Whoever holds the session can pick any persona,
+  and the cockpit says so: "single operator: personas are self-declared". Treat it as one person's
+  tool.
+- **Enforced** (an access file in mode `enforced`). Rihmasto stores no passwords. People sign in
+  through the organisation's identity provider at an identity-aware proxy IT runs beside the cockpit,
+  which stays on 127.0.0.1. The cockpit takes the identity only from the proxy's configured headers,
+  and only on a request that also carries the proxy's shared secret, compared in constant time; any
+  other request is refused. A session answers only the identity it was opened for. Every write that
+  records a person's decision or answer signs as that identity's name and needs the persona granted on
+  that project by IT's access file; the command line and the MCP server sign as the local operating
+  system user the file names. A request that repeats the user, email, secret or groups header is
+  refused. The cockpit takes the shared secret out of its own environment once it has read it, so no
+  process it starts (a job, the gate's run of a project's own tests, a road's product, a Gnomon call)
+  inherits it. The access file lives in a folder of its own (`projects/_factory/access/`) that only IT
+  should write; the kernel never writes there. A file that cannot be read or checked refuses every
+  decision, and so does a removed one once access was enforced, even with the factory ledger moved
+  away. Each change to it is recorded in the factory ledger with its sha256, what the file claims about
+  who changed it, the file's owner and who noticed.
+
+Limits: provisioning (SCIM) and separation of duties are not built yet. A surface verifies who acts,
+but the identity recorded beside a person is only as strong as the factory home's file permissions:
+code running as an account that can write the home can write a record naming any identity, with the
+ledger's hash chain intact. Groups arrive as one comma-joined header, so bind groups by ids no user can
+choose ([docs/guides/access.md](docs/guides/access.md#groups)).
 
 ### Embeds
 
@@ -91,7 +119,8 @@ The MCP server gives a developer's own coding agent the cockpit's reads ([docs/m
 
 - **Reads and proposals only.** It has no tool that decides, answers, approves, pauses, advances
   or deploys. A test checks the tool list.
-- **One signer,** set when it starts. It refuses to start for a name that is not a person.
+- **One signer,** set when it starts. It refuses to start for a name that is not a person, and, with
+  access enforced, for a local user the access file does not name.
 - **Nothing outside the factory home.** Paved roads, credentials and environment variables are
   never served. It speaks over stdio only.
 

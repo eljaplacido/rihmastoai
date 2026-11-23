@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """release_export: a scrubbed snapshot of a git revision, for the public repository. Standard library only.
-It reads a revision's tree (default HEAD), leaves out what its `release/exclude.txt` names, scans the rest
-and writes it to a target: `--target ../public-clone [--rev HEAD] [--denylist FILE]`, or `--check`.
+It reads a revision's tree (default HEAD), leaves out what its `release/exclude.txt` names, in any case (a
+disk may ignore case), scans the rest and writes it to a target: `--target ../public-clone`, or `--check`.
 
 It refuses (exit 1, nothing written, every hit listed with its file and line) a snapshot holding:
 - a denylisted word (one a line, `#` comments skipped, any case, where no letter or digit adjoins it),
@@ -199,7 +199,7 @@ def compile_rule(line: str) -> Rule | None:
     text = text.rstrip("/")
     anchored = "/" in text
     prefix = "" if anchored else "(?:.*/)?"
-    return Rule(re.compile(prefix + _glob(text.lstrip("/")) + r"\Z"), negate, dir_only)
+    return Rule(re.compile(prefix + _glob(text.lstrip("/")) + r"\Z", re.IGNORECASE), negate, dir_only)
 
 
 def compile_rules(text: str) -> list[Rule]:

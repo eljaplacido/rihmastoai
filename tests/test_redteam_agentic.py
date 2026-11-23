@@ -478,11 +478,14 @@ class HonestCoverageTest(AgenticTestCase):
         self.authorise("assistant")
 
         def brittle(prompt: str, role: str) -> str:
-            return "[1, 2]" if "base64" in prompt.split("Snapshot (JSON)")[0] else worst_case(prompt, role)
+            # The assistant falls back on a model's error or an odd reply; an exception it does not expect breaks it.
+            if "base64" in prompt.split("Snapshot (JSON)")[0]:
+                raise TypeError("the model client broke")
+            return worst_case(prompt, role)
         report = run(self.project, "assistant", model=FakeModel(brittle), categories=["encoding", "language"])
         failed = [a for a in report.attempts if a.error]
         self.assertEqual([a.payload for a in failed], ["EN-01"])
-        self.assertIn("AttributeError", failed[0].error or "")
+        self.assertIn("TypeError", failed[0].error or "")
         self.assertEqual({c.layer: c.state for c in report.coverage},
                          {"leaks": "partial", "exposure": "partial", "actions": "partial"})
         self.assertEqual(report.verdict, "not measured")

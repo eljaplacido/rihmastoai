@@ -29,7 +29,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "deliverable": "product", "label": "Web app or service", "icon": "globe", "status": "ready", "template": "web-service",
         "summary": "A web application or HTTP service with screens and an API.",
         "keywords": ["web", "app", "portal", "dashboard", "page", "form", "api", "service", "crud", "booking",
-                     "sivusto", "palvelu", "lomake"],
+                     "sivusto*", "palvelu*", "lomak*"],
         "panel_focus": {
             "end_user": "the screens and the everyday tasks on them",
             "it_security": "identity, roles and where the data lives",
@@ -45,7 +45,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "deliverable": "product", "label": "Integration or connector", "icon": "plug", "status": "ready", "template": "web-service",
         "summary": "Moves data or events between systems: webhooks, polling, mapping, retries.",
         "keywords": ["integration", "integrate", "connector", "webhook", "sync", "etl", "feed", "adapter", "erp",
-                     "crm", "sap", "event", "queue", "carrier", "interface", "rajapinta", "integraatio"],
+                     "crm", "sap", "event", "queue", "carrier", "interface", "rajapin*", "integraatio*"],
         "panel_focus": {
             "it_security": "every system involved, its authentication, and the data each message carries",
             "operations": "retries, dead letters, idempotency, feed freshness and who is alerted",
@@ -73,7 +73,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "deliverable": "product", "label": "Mobile app prototype", "icon": "smartphone", "status": "preview", "template": "web-service",
         "summary": "A fast phone-first prototype to show or test an idea, installable as a web app.",
         "keywords": ["mobile", "phone", "ios", "android", "app store", "prototype", "pwa", "offline",
-                     "mobiili", "puhelin", "sovellus"],
+                     "mobiili*", "puheli*", "sovellu*"],
         "panel_focus": {
             "end_user": "the three screens that carry the idea, one-handed use, and offline moments",
             "delivery": "what the prototype must prove, and to whom, by when",
@@ -96,7 +96,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "summary": "Trains, evaluates or serves a model, or transforms data, with metrics that must hold.",
         "keywords": ["machine learning", "ml", "model", "train", "dataset", "classifier", "regression", "predict",
                      "forecast", "embedding", "eval", "accuracy", "f1", "pipeline", "data", "analytics",
-                     "koneoppiminen", "malli", "ennuste"],
+                     "koneoppi*", "malli*", "ennust*"],
         "panel_focus": {
             "business": "the metric that decides success, its threshold and today's baseline",
             "it_security": "where the data comes from, its licence, personal data and retention",
@@ -124,7 +124,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "deliverable": "capability_pack", "label": "Agent or assistant", "icon": "bot", "status": "preview", "template": "web-service",
         "summary": "An AI agent, assistant or multi-step workflow: inside an app or standalone for a process, using tools, with people approving what matters.",
         "keywords": ["agent", "agentic", "workflow", "assistant", "chatbot", "copilot", "llm", "rag", "tool use",
-                     "automation", "orchestrat", "agentti", "avustaja"],
+                     "automation", "orchestrat*", "agentt*", "avustaj*"],
         "panel_focus": {
             "business": "what the agent may decide alone and what needs a person",
             "it_security": "the tools and data the agent may touch, and what it must refuse",
@@ -172,8 +172,8 @@ PROFILES: dict[str, dict[str, Any]] = {
         "summary": "An agent that does a job and proves it: a compliance check (AI Act, GDPR, NIS2), a security "
                    "scan, a log analysis or a maintenance report, delivered as a report with an evidence pack.",
         "keywords": ["ai act", "gdpr", "nis2", "compliance", "audit", "security scan", "vulnerability", "cve",
-                     "log analysis", "logs", "incident report", "maintenance report", "evidence", "tietosuoja",
-                     "auditointi", "lokianalyysi"],
+                     "log analysis", "logs", "incident report", "maintenance report", "evidence", "tietosuoj*",
+                     "auditoin*", "lokianalyysi*"],
         "panel_focus": {
             "business": "which decision the report supports and who signs it off",
             "it_security": "which systems, logs or configurations the agent may read, and nothing more",
@@ -206,7 +206,6 @@ DELIVERABLES = {
 }
 
 DEFAULT_PROFILE = "web_service"
-_WORD = re.compile(r"[a-zåäö0-9]+")
 # The confidence rule. A best score under CLEAR_SCORE rests on too few words to be sure; a lead of
 # less than CLEAR_LEAD keywords over the runner-up is too close to call. Either way the proposal
 # is uncertain, and names the profiles a person should choose from (at most MAX_CANDIDATES).
@@ -230,18 +229,33 @@ def _uncertainty(scores: dict[str, list[str]], ranked: list[str]) -> str | None:
     return None
 
 
+def keyword_pattern(keyword: str) -> re.Pattern:
+    """How a keyword is found in a request, on word boundaries (FR-DF4-AC-1): a whole word or phrase,
+    or its plural (`model` finds "models"); a stem ending in `*` finds every word it begins
+    (`palvelu*` finds "palvelun"). A keyword is never found inside another word: `train` does not
+    find "trainees", nor `ml` "html"."""
+    stem = keyword.endswith("*")
+    body = r"\s+".join(re.escape(w) for w in keyword.rstrip("*").split())
+    tail = r"[a-zåäö0-9]*" if stem else r"(?:s|es)?"
+    return re.compile(rf"(?<![a-zåäö0-9]){body}{tail}(?![a-zåäö0-9])")
+
+
+def keyword_label(keyword: str) -> str:
+    """A keyword as a person reads it in a proposal's basis: a stem without its `*`."""
+    return keyword.rstrip("*")
+
+
 def propose_profile(text: str) -> dict:
     """The profile whose keywords the request names most, by rule; web service when nothing stands out.
+    Keywords are matched on word boundaries (`keyword_pattern`).
 
     A low best score, or a best score close to the runner-up's, is **uncertain**: the proposal says
     so (`confidence`, `uncertain_because`) and names the top `candidates`, for a person to choose
     from (`profile_question`). A clear proposal's only candidate is itself."""
     low = (text or "").lower()
-    words = set(_WORD.findall(low))
     scores = {}
     for pid, p in PROFILES.items():
-        hits = sorted({k for k in p["keywords"] if (k in words if " " not in k and len(k) <= 4 else k in low)})
-        scores[pid] = hits
+        scores[pid] = sorted({keyword_label(k) for k in p["keywords"] if keyword_pattern(k).search(low)})
     # Highest score first; a tie keeps the default, then the catalogue's order.
     ranked = sorted(PROFILES, key=lambda pid: (-len(scores[pid]), pid != DEFAULT_PROFILE))
     best = ranked[0]
@@ -255,12 +269,13 @@ def propose_profile(text: str) -> dict:
 
 def profile_question(proposal: dict) -> dict | None:
     """The question an uncertain proposal puts to a person: which kind of work this is, with the top
-    candidates as options. It carries no proposed answer, so no mode assumes it. None when the
-    proposal is clear."""
+    candidates as options. It carries no proposed answer, so no mode assumes it, and it blocks: the
+    spec is shaped for a profile, so it waits for the answer in every mode (FR-DF4-AC-3). None when
+    the proposal is clear."""
     if proposal.get("confidence") != "uncertain":
         return None
     label = PROFILES[proposal["profile"]]["label"]
-    return {"text": PROFILE_QUESTION, "perspective": "business", "blocking": False,
+    return {"text": PROFILE_QUESTION, "perspective": "business", "blocking": True,
             "options": [f"{PROFILES[pid]['label']} ({pid})" for pid in proposal["candidates"]][:MAX_CANDIDATES],
             "rationale": f"The work profile was proposed by rule as {label}, but {proposal['uncertain_because']}. "
                          "The profile shapes the panel's questions, the spec's guidance and what is delivered."}
@@ -274,6 +289,43 @@ def add_profile_question(canon: Any, proposal: dict) -> dict | None:
         return None
     return dict(canon.add_question(q["text"], q["perspective"], blocking=q["blocking"], rationale=q["rationale"],
                                    options=q["options"]))
+
+
+def _named_profile(answer: str) -> str | None:
+    """The profile an answer names first, by its id or its label; None when it names none."""
+    said = answer.lower()
+    at = {pid: min([i for i in (said.find(pid), said.find(p["label"].lower())) if i >= 0] or [-1])
+          for pid, p in PROFILES.items()}
+    named = sorted((i, pid) for pid, i in at.items() if i >= 0)
+    return named[0][1] if named else None
+
+
+def settle_profile_question(project: Any) -> str | None:
+    """A person's answer to the profile question chooses the profile it names, once (FR-DF4-AC-2):
+    the spec is then shaped for the kind of work a person said, not the rule's guess. Returns the
+    profile chosen, or None when no answer names one (or it was already taken).
+
+    The question blocks the spec, so the answer comes first. An answer recorded after a spec was
+    written (a question an earlier version left open, not blocking) never changes the profile at a
+    later spec, a plan redo included: the spec in review was shaped for the profile it has. The
+    ledger records it once, as `profile_answer_late`, with what it named and the profile kept
+    (FR-DF4-AC-3)."""
+    from kernel.canon import Canon
+
+    for q in Canon(project).questions("answered"):
+        if q["text"] != PROFILE_QUESTION or project.meta.get("profile_answered") == q["id"]:
+            continue
+        named = _named_profile(str(q["answer"].get("text", "")))
+        if named is None:
+            continue
+        project.update_meta(profile_answered=q["id"])
+        if project.path("spec.json").exists():
+            project.log("profile_answer_late", {"question": q["id"], "by": q["answer"]["by"], "named": named,
+                                                "kept": project.meta.get("profile") or DEFAULT_PROFILE})
+            continue
+        choose(project, named, basis={"by": q["answer"]["by"], "question": q["id"]})
+        return named
+    return None
 
 
 def profile_of(project) -> dict:

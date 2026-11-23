@@ -1,0 +1,8 @@
+# Rihmasto has no package dependencies (standard-library Python only), so Dependabot watches the
+# GitHub Actions the workflows use, and nothing else.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

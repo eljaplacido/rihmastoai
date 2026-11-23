@@ -7,7 +7,8 @@ own contract.
 Checks come in two custodies (FR-O3):
 - visible tests, which the builder sees in its envelope;
 - holdout scenarios, which a different role writes. They are kept outside the project folder
-  and are never shown to a builder.
+  and are never shown to a builder. A scenario whose criterion a change withdrew or restated is
+  retired: kept in the custody, it never runs again (`retire_holdouts`).
 """
 
 from __future__ import annotations
@@ -15,18 +16,24 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import re
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 from kernel import scaffold
 from kernel.intake import _ask_json
-from kernel.spec import render_interface
 from kernel.lanes import GIT_ID, _git, load_routing, write_product_surface
-from kernel.store import REPO_ROOT, write_json, write_text
+from kernel.spec import render_interface
+from kernel.store import REPO_ROOT, Project, read_json, write_json, write_text
 
 WRITE_SCOPE = ["app/**", "tests/**"]
 OBSERVED = "observed"  # the spec tier of an adopted solution's as-is requirements
 _CC = None
+_TASK_NO = re.compile(r"T-(\d+)")
+RETIRED = ".retired.json"  # where a criterion's scenarios go once no criterion stands behind them
+_SAFE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 
 
 class CompileError(ValueError):
@@ -54,34 +61,12 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def to_contract(project, spec: dict) -> dict:
-    cc = contract_check()
-    today = project.factory.clock.today().isoformat()
-    reqs = []
-    for r in spec["requirements"]:
-        acceptance = []
-        for c in r["acceptance"]:
-            check = {"kind": c["kind"]}
-            if c["kind"] == "holdout":
-                check["ref"] = f"H-{c['id']}"
-            elif c["kind"] == "probe":
-                check["command"] = f"probe {c['id']}"
-            acceptance.append({"id": c["id"], "given": c.get("given") or "-", "when": c.get("when") or "-",
-                               "then": c["then"], "check": check})
-        req = {"id": r["id"], "statement": r["statement"], "provenance": r["provenance"],
-               "group": r.get("priority", "must"), "acceptance": acceptance}
-        if r["provenance"] == OBSERVED:
-            # An adopted solution's as-is requirement (kernel/adopt.py). The contract's vocabulary has
-            # no observed tier: no person stood behind it, so it enters as vendor-proposed and says so.
-            req["provenance"] = "vendor-proposed"
-            req["notes"] = "observed: existing behaviour at adoption, not a spec"
-        if r.get("decided_by"):
-            req["decided_by"], req["decided_on"] = r["decided_by"], today
-        reqs.append(req)
-    # Checks the factory learned from earlier products and a person accepted (FR-K3): every new
-    # contract carries them as factory-default requirements.
+def _default_requirements(project: Project) -> list[dict[str, Any]]:
+    """Checks the factory learned from earlier products and a person accepted (FR-K3): every new
+    contract carries them as factory-default requirements."""
     from kernel.learn import default_checks
 
+    reqs: list[dict[str, Any]] = []
     for n, d in enumerate(default_checks(project.factory), 1):
         rid = f"FD-{n}"
         reqs.append({"id": rid, "statement": f"Factory default check (learned from {', '.join(d['from_projects'])}): "
@@ -89,16 +74,82 @@ def to_contract(project, spec: dict) -> dict:
                      "provenance": "vendor-proposed", "group": "factory-default",
                      "acceptance": [{"id": f"{rid}-AC-1", "given": d.get("given") or "-", "when": d.get("when") or "-",
                                      "then": d["then"], "check": {"kind": "test"}}]})
-    task_reqs = list(spec["requirements"]) + [
-        {"id": r["id"], "statement": r["statement"], "acceptance": [{"id": c["id"]} for c in r["acceptance"]]}
-        for r in reqs if r["id"].startswith("FD-")]
-    tasks = []
-    for i, r in enumerate(task_reqs, 1):
-        task = {"id": f"T-{i:03d}", "title": r["statement"][:100], "criteria": [c["id"] for c in r["acceptance"]],
-                "scope": {"write": list(WRITE_SCOPE)}}
-        if i > 1:
-            task["depends_on"] = [f"T-{i - 1:03d}"]  # one writer on the shared scope at a time (FR-F3)
+    return reqs
+
+
+def _task_numbers(project: Project, rids: list[str], withdrawn: set[str]) -> dict[str, int]:
+    """Each live requirement's task number. A first compile numbers the requirements in order (a
+    withdrawn one keeps its place and gets no task). A recompile keeps the number each
+    requirement's task had in the project's current contract and gives a new requirement the next
+    free number, so adding one never renumbers another task, a factory default check's included,
+    and withdrawing one leaves every other task its id (FR-A4)."""
+    had: dict[str, int] = {}
+    for t in (project.read("contract.json") or {}).get("tasks") or []:
+        found = _TASK_NO.fullmatch(str(t.get("id", "")))
+        if found and t.get("criteria"):
+            had[str(t["criteria"][0]).rsplit("-AC-", 1)[0]] = int(found.group(1))
+    if not had:
+        return {rid: n for n, rid in enumerate(rids, 1) if rid not in withdrawn}
+    top = max(had.values())
+    numbers: dict[str, int] = {}
+    for rid in rids:
+        if rid in withdrawn:
+            continue
+        if rid not in had:
+            top += 1
+            had[rid] = top
+        numbers[rid] = had[rid]
+    return numbers
+
+
+def _tasks(task_reqs: list[dict[str, Any]], numbers: dict[str, int]) -> list[dict[str, Any]]:
+    """One task per live requirement, in the order of their numbers, each after the one before it:
+    one writer on the shared scope at a time (FR-F3). A withdrawn requirement has no task."""
+    by_id = {r["id"]: r for r in task_reqs}
+    tasks: list[dict[str, Any]] = []
+    for rid, n in sorted(numbers.items(), key=lambda item: item[1]):
+        r = by_id[rid]
+        task: dict[str, Any] = {"id": f"T-{n:03d}", "title": r["statement"][:100],
+                                "criteria": [c["id"] for c in r["acceptance"]], "scope": {"write": list(WRITE_SCOPE)}}
+        if tasks:
+            task["depends_on"] = [tasks[-1]["id"]]
         tasks.append(task)
+    return tasks
+
+
+def _contract_requirement(r: dict[str, Any], today: str) -> dict[str, Any]:
+    """One spec requirement as the contract states it, each criterion with its check."""
+    acceptance = []
+    for c in r["acceptance"]:
+        check = {"kind": c["kind"]}
+        if c["kind"] == "holdout":
+            check["ref"] = f"H-{c['id']}"
+        elif c["kind"] == "probe":
+            check["command"] = f"probe {c['id']}"
+        acceptance.append({"id": c["id"], "given": c.get("given") or "-", "when": c.get("when") or "-",
+                           "then": c["then"], "check": check})
+    req = {"id": r["id"], "statement": r["statement"], "provenance": r["provenance"],
+           "group": r.get("priority", "must"), "acceptance": acceptance}
+    if r["provenance"] == OBSERVED:
+        # An adopted solution's as-is requirement (kernel/adopt.py). The contract's vocabulary has
+        # no observed tier: no person stood behind it, so it enters as vendor-proposed and says so.
+        req["provenance"] = "vendor-proposed"
+        req["notes"] = "observed: existing behaviour at adoption, not a spec"
+    if r.get("decided_by"):
+        req["decided_by"], req["decided_on"] = r["decided_by"], today
+    return req
+
+
+def to_contract(project, spec: dict) -> dict:
+    """The contract a spec compiles to, with no model. A withdrawn requirement stays in it, marked
+    withdrawn, with no task; every other task keeps the id it had (FR-A4)."""
+    cc = contract_check()
+    today = project.factory.clock.today().isoformat()
+    reqs = [_contract_requirement(r, today) for r in spec["requirements"]]
+    reqs += _default_requirements(project)
+    task_reqs = list(spec["requirements"]) + [r for r in reqs if r["id"].startswith("FD-")]
+    withdrawn = {r["id"] for r in task_reqs if r.get("provenance") == "withdrawn"}
+    tasks = _tasks(task_reqs, _task_numbers(project, [r["id"] for r in task_reqs], withdrawn))
     spec_text = json.dumps(spec, sort_keys=True, ensure_ascii=False)
     brief = project.path("canon", "brief.md")
     contract = {
@@ -120,6 +171,8 @@ def to_contract(project, spec: dict) -> dict:
 def check_plan(contract: dict) -> dict:
     rows = []
     for r in contract["requirements"]:
+        if r.get("provenance") == "withdrawn":  # no work on a withdrawn requirement: no check, no holdout
+            continue
         for c in r["acceptance"]:
             kind = c["check"]["kind"]
             rows.append({"criterion": c["id"], "requirement": r["id"], "kind": kind,
@@ -301,3 +354,37 @@ def author_holdouts(project, *, model, only=None, reason: str | None = None, per
                    "ruled_by": person}
     project.log("holdouts_authored", record)
     return saved
+
+
+def _retire_one(custody: Path, cid: str, because: str) -> bool:
+    """Move one criterion's scenario out of the runs, into ``<cid>.retired.json`` beside it: its
+    steps under the card that retired it, after any retired before. That file is not a scenario
+    (it has no steps of its own), so no holdout run loads it (kernel/operate.py load_scenarios),
+    while it stays custody content that output is redacted against (mcp/server.py)."""
+    source = custody / f"{cid}.json"
+    if not _SAFE_NAME.fullmatch(cid) or not source.is_file():
+        return False
+    try:
+        doc = read_json(source)
+    except ValueError:  # an unreadable scenario never ran; it leaves all the same
+        doc = None
+    archive = custody / f"{cid}{RETIRED}"
+    kept = read_json(archive) or {"criterion": cid, "retired": {}}
+    kept["retired"][because] = doc.get("steps") if isinstance(doc, dict) else None
+    write_json(archive, kept)
+    source.unlink()
+    return True
+
+
+def retire_holdouts(project: Project, criteria: Iterable[str], *, because: str) -> list[str]:
+    """Take the scenarios of criteria a change withdrew or restated out of the holdout runs, and
+    keep them in the custody, never shown to the builder (see `_retire_one`). A restated criterion
+    then has no scenario, so the holdout author writes it anew before the next delivery
+    (``author_holdouts(only="missing")``); a withdrawn one is in no check plan, so it gets none.
+    Returns the criteria whose scenario was retired."""
+    if not _SAFE_NAME.fullmatch(because):
+        raise ValueError(f"a retirement names the card behind it, got {because!r}")
+    moved = [cid for cid in sorted(set(criteria)) if _retire_one(project.holdouts_dir, cid, because)]
+    if moved:
+        project.log("holdouts_retired", {"criteria": moved, "because": because})
+    return moved

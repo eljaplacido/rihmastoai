@@ -32,10 +32,10 @@ TRIGGERS: dict[str, dict[str, Any]] = {
 }
 
 
-def _store(factory):
+def _store(factory, *, create: bool = True):
     from kernel.learn import factory_project
 
-    return factory_project(factory)
+    return factory_project(factory, create=create)
 
 
 def _touched(factory, trigger: str, facts: dict) -> list:
@@ -111,7 +111,8 @@ def observe(factory, trigger: str, *, facts: dict, source: str) -> dict:
 
 
 def observations(factory) -> list:
-    return _store(factory).read("observations.json", []) or []
+    store = _store(factory, create=False)  # a reader never creates the factory's canon (FR-S1-AC-3)
+    return (store.read("observations.json", []) or []) if store is not None else []
 
 
 def apply_updates(project) -> list:

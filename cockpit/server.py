@@ -99,14 +99,16 @@ from kernel.store import (
 LOOPBACK = "127.0.0.1"
 DEFAULT_PORT = 8787
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-# The page's own files: a flat folder of HTML, scripts (ES modules) and stylesheets. A name is
-# served only when it has one of these extensions and exists in that folder; nothing else is.
+# The page's own files: a flat folder of HTML, scripts (ES modules), stylesheets and the logo's
+# PNG images. A name is served only when it has one of these extensions and exists in that folder;
+# nothing else is.
 STATIC_EXT = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
+    ".png": "image/png",
 }
-_STATIC_NAME = re.compile(r"[a-z][a-z0-9_-]{0,63}\.(?:html|js|css)\Z")
+_STATIC_NAME = re.compile(r"[a-z][a-z0-9_-]{0,63}\.(?:html|js|css|png)\Z")
 MAX_BODY = 1 << 20
 SESSION_TTL = 12 * 3600      # seconds a session lives after its last use
 LINK_TTL = 600               # seconds an extra sign-in link stays valid

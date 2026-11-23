@@ -25,7 +25,9 @@ One ledger event per run carries:
 - the audit chain head, the record count and the kinds seen;
 - the verdict with its native values;
 - the context window, where it came from, and the trims (with each trim's basis);
-- the tokens and the priced cost.
+- the tokens and the priced cost. An escalated run whose record splits its usage before and
+  after the escalation (`volatile.escalation_usage`) is priced per leg, so a local leg is never
+  charged at the cloud model's price.
 """
 
 from __future__ import annotations
@@ -219,11 +221,75 @@ def context(record: dict) -> dict:
     }
 
 
+def _leg_tokens(record: dict) -> tuple[dict, dict] | None:
+    """An escalated run's tokens before and after its escalation, from Gnomon's
+    `volatile.escalation_usage`. The cached tokens are split by the calls before it (its first
+    `requests` calls) only when those calls add up to the leg's input. None when the record does not
+    split its legs."""
+    v = _obj(record.get("volatile"))
+    usage = _obj(v.get("escalation_usage"))
+    before, after = usage.get("before"), usage.get("after")
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return None
+    cached = _cached_split(_obj(v.get("model_calls")).get("calls"), before)
+    return ({"in": before.get("input"), "out": before.get("output"), "cached": cached[0]},
+            {"in": after.get("input"), "out": after.get("output"), "cached": cached[1]})
+
+
+def _obj(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _cached_split(calls: object, before: dict) -> tuple[int | None, int | None]:
+    """The cached tokens before the escalation (its first ``requests`` calls) and after it, or
+    (None, None) when the calls do not add up to the first leg's input."""
+    n = before.get("requests")
+    if not isinstance(calls, list) or not all(isinstance(c, dict) for c in calls) or not isinstance(n, int):
+        return None, None
+    if sum(c.get("prompt_tokens") or 0 for c in calls[:n]) != before.get("input"):
+        return None, None
+    return (sum(c.get("cached_tokens") or 0 for c in calls[:n]),
+            sum(c.get("cached_tokens") or 0 for c in calls[n:]))
+
+
+def _joined(legs: list) -> dict:
+    """One run's cost from its legs' costs, local and cloud kept apart. Any leg not measured makes
+    the run's cost not measured, never zero."""
+    missing = [leg for leg in legs if not leg.get("measured")]
+    if missing:
+        return {"measured": False, "kind": None, "amount": None, "legs": legs,
+                "why": "; ".join(f"{leg['model']}: {leg.get('why')}" for leg in missing)}
+    local = sum(leg.get("local_tokens", 0) for leg in legs if leg["kind"] == "local")
+    cloud = [leg for leg in legs if leg["kind"] != "local"]
+    if not cloud:
+        return {"measured": True, "kind": "local", "amount": 0.0, "local_tokens": local, "legs": legs}
+    out = {"measured": True, "kind": "cloud" if len(cloud) == len(legs) else "mixed",
+           "amount": round(sum(leg["amount"] for leg in cloud), 6), "currency": cloud[0].get("currency"),
+           "legs": legs}
+    if local:
+        out["local_tokens"] = local
+    return out
+
+
+def run_cost(record: dict, toks: dict, *, prices: dict | None = None) -> dict:
+    """The run's priced cost (FR-L4). An escalated run whose record splits its legs is priced per
+    leg: the tokens before the escalation at the model it started on, the rest at the model it ended
+    on. Otherwise the run is priced at its model."""
+    from kernel.pricing import price_run
+
+    esc = _obj(record.get("escalation"))
+    first = _obj(esc.get("from")).get("model")
+    final = esc.get("final_model") or _obj(esc.get("to")).get("model") or record.get("model")
+    legs = _leg_tokens(record) if first and final and first != final else None
+    if legs is None:
+        return price_run(record.get("model"), toks, prices=prices)
+    return _joined([dict(price_run(model, t, prices=prices), model=model)
+                    for model, t in zip((first, final), legs, strict=True)])
+
+
 def ingest(project, record: dict, audit_path: str | Path | None, *, task: str | None = None,
            round_no: int | None = None, prices=None) -> dict:
     """Append one `gnomon_run` event to the project's ledger and return its payload."""
-    from kernel.pricing import price_run
-
     out = outcome(record)
     chain = verify_audit(audit_path) if audit_path else {"intact": False, "broken_seq": None, "head": None,
                                                           "records": 0, "error": "no audit trail found",
@@ -243,7 +309,7 @@ def ingest(project, record: dict, audit_path: str | Path | None, *, task: str | 
                   "unknown_kinds": chain["unknown_kinds"]},
         "verdict": verdict, "apparatus_failure": out["apparatus_failure"], "tampered": tampered,
         "native": out["native"], "tokens": toks, "context": context(record),
-        "cost": price_run(record.get("model"), toks, prices=prices),
+        "cost": run_cost(record, toks, prices=prices),
     }
     project.log("gnomon_run", payload)
     return payload

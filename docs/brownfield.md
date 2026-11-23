@@ -15,24 +15,54 @@ python -m kernel.cli sync <pid>
 
 `kernel/adopt.py` makes the repository a project (`source_kind: adopted`):
 
-- **The mirror.** The code is fetched into the project's `repo.git`; `main` is set to the upstream's
-  default branch, and that revision is the **baseline**. The upstream is a fetch-only remote: its
-  push URL is not a transport, and the kernel never pushes there.
+- **The mirror.** The code is fetched into the project's `repo.git`. The upstream's default branch
+  at adoption is the **baseline**; `main` is the baseline plus one kernel commit that holds the
+  kernel's own compiled `.gnomon/` surface (`surface_compiled` in the ledger). In that commit the
+  kernel removes what the upstream keeps under a name the kernel holds on `main`: an upstream's own
+  `.gnomon/` (its endpoints, key variables, roles and prompts), Gnomon's machine-local directories
+  (`.gnomon-inbox/`, `.gnomon-skills/`, `.gnomon-audit/` and the rest) and `.lfsconfig`. A name
+  counts under every spelling a file system opens it by: another case (`.GNOMON/` is `.gnomon/` on
+  NTFS and APFS), the 8.3 short name Windows gives it (`GNOMON~1/`), trailing dots or spaces, an
+  NTFS stream suffix, or characters HFS+ ignores. So every later checkout of `main` (a builder
+  cell, the gate's verifier, a workspace) runs under the kernel's surface, never one the upstream
+  wrote. `surface_compiled` lists what was removed (`removed_upstream_surface`); the baseline keeps
+  it in the history. The upstream is a fetch-only remote: its push URL is not a transport, and the
+  kernel never pushes there.
 - **No credentials.** A URL is adopted only when `git clone` reads it without any: credential
-  helpers and prompts are switched off, and a URL with a user, a password, a token, a query, an
-  ssh address or a transport helper is refused. Clone a private repository yourself and adopt the
-  local path.
+  helpers, prompts and Git LFS downloads are switched off for every git call that adoption and
+  `sync` make (the fetch, the checkout of the baseline, the surface commit), and a URL with a user,
+  a password, a token, a query, an ssh address or a transport helper is refused. So is a
+  `base_url` with a user, a password, a query or a fragment: it would land in the hash-chained
+  ledger, the spec and the brief. A later checkout of `main` (a lane, a workspace) is an ordinary
+  git call under the owner's configuration, so git-lfs runs there if the owner installed it; but
+  `main` carries no `.lfsconfig` of the upstream's, so the only address git-lfs knows there is the
+  clone's own origin, the local `repo.git`: never an address the upstream chose, and the owner's
+  credential helper is not asked for one. Clone a private repository yourself and adopt the local
+  path. A git call that reaches the upstream has a timeout that stops git and every helper it
+  started, and gives up on a transfer that stalls.
 - **The inventory, by rule.** Languages by file extension; the test command (pytest or unittest,
   `npm test`, `go test`, `cargo test`, Maven or Gradle), detected or not, never guessed; the
   README's first paragraph; the HTTP routes the source declares (Flask, FastAPI, Express, Go,
   Spring, Django and Rihma's own `@route`), scanned only when a `base_url` is given; whether there
-  is a Dockerfile. It is kept in `inventory.json`.
+  is a Dockerfile. Only regular files inside the checkout are read: a symlink is never followed,
+  and a file name that is not UTF-8 is counted, not fatal. It is kept in `inventory.json`.
+- **The work profile.** Proposed by rule from the title and the README, unless a person chose one.
+  When the rule is not sure (one keyword, none, or two profiles close), the proposal is recorded as
+  **uncertain**, with the candidates a person should choose from, in `profile_chosen`, in
+  `adopted.json` and in the brief.
 - **The characterisation baseline.** A detected Python suite runs once in a temporary checkout,
   with a timeout. Its counts are **existing behaviour, not a spec**: a suite that already fails is
   recorded as failing, not judged. Other toolchains run only when the tool is on PATH, offline
   (nothing is installed or downloaded); otherwise the baseline says "not measured: toolchain not
-  run by the kernel". A command whose output the kernel cannot read is "not measured", never
-  "passed". Running the suite runs the adopted code on this machine: adopt only code you would run.
+  run by the kernel". It is "passed" only when at least one test passed: no tests, every test
+  skipped, or output the kernel cannot read is "not measured", never "passed", and so is a suite
+  that could not import a dependency the kernel does not install. Running the suite runs the
+  adopted code on this machine: adopt only code you would run. Its stdin is closed, its output goes
+  to files, and the timeout, like the end of the run, stops every process it started (a process
+  group on POSIX, a job object on Windows).
+- **Nothing half-adopted.** Everything that reads the upstream (the fetch, the checkout, the
+  inventory and the characterisation) runs before the project exists, and a failure after it
+  exists removes it again.
 - **The as-is spec.** Requirement R-1, of `observed` provenance: "the existing test suite keeps
   passing", one criterion per detected suite. With a `base_url`, R-2: "GET <base_url> answers", a
   probe whose scenario is written by rule into the holdout custody. The spec compiles to a
@@ -40,14 +70,19 @@ python -m kernel.cli sync <pid>
   compiler enters these requirements as `vendor-proposed` with the note "observed: existing
   behaviour at adoption, not a spec" (`as_is_spec_written` in the ledger says so).
 - **The stage.** `monitor` goes to stage 7 and probes `base_url` (a failing probe opens an incident
-  card). `maintain` and `improve` wait at stage 5: the as-is tasks hold the existing code, so
-  nothing is built until a change arrives through the change loop or a person's workspace.
+  card; a server error, 5xx, is a failing probe, not a healthy answer). `maintain` and `improve`
+  wait at stage 5: the as-is tasks hold the existing code, so nothing is built until a change
+  arrives through the change loop or a person's workspace.
 
 `sync` fetches the upstream again and records the drift since the baseline: new commits, rewritten
 history and the files that differ (`upstream_synced`). When the upstream moved since the last look,
 it opens a change card, "Upstream changed: review", filed by "upstream sync" as a developer. It
-never moves `main`: what the factory holds changes only when a person decides. For a monitored
-project, `rihma sync` also runs a probe round.
+never moves `main`: what the factory holds changes only when a person decides. Commit messages and
+file names that are not UTF-8 are read with the bytes replaced. When the tracked branch is gone
+upstream after a fetch that worked (a default branch renamed from `master` to `main`), sync says so
+("not measured: the tracked branch ... is no longer upstream", `upstream_branch_gone`) and opens
+one change card naming the new default branch; the project keeps tracking the old name until a
+person decides. For a monitored project, `rihma sync` also runs a probe round.
 
 ## Workspaces: a terminal beside the chat
 
@@ -97,8 +132,17 @@ evidence pack name the latest scan, its counts and the accepted risks.
 ## Not built yet (honest list)
 
 - **Delivering adopted code.** There is no paved road that knows how to run an adopted repository,
-  so `run` stops before delivery, and an adopted project's builder cells have no compiled
-  `.gnomon/` surface yet. A person's workspace works without one.
+  so `run` stops before delivery. The kernel's surface on an adopted `main` gives a builder cell
+  the paved road's write scope (`app/**`, `tests/**`); code the upstream keeps elsewhere is changed
+  in a person's workspace.
+- **Git LFS content.** The factory never downloads LFS objects, so an adopted repository that
+  keeps files in Git LFS has only their pointer files in `repo.git`. Where the owner has git-lfs
+  installed (with `filter.lfs.required`, its default), a lane or a workspace checkout of such a
+  `main` stops at the smudge filter ("smudge filter lfs failed"): a builder cell or a workspace
+  cannot work on it yet.
+- **Asking for the profile at intake.** An uncertain profile proposal is recorded at adoption and
+  `kernel/profiles.py` holds the question for a person (`add_profile_question`), but intake does
+  not ask it yet.
 - **Other test runners in the gate.** The gate runs `python -m unittest discover -s tests`. An
   adopted pytest, npm, Go, Rust or Java suite is characterised at adoption, but a workspace
   submission on such a project is judged by the unittest runner only.

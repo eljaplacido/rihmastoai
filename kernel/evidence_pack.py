@@ -16,49 +16,165 @@ The bundle holds:
 - `MANIFEST.json`, holding the sha256 of every file.
 
 The export itself is recorded in the ledger, with the person who asked for it.
+
+The ledger is read once, under its lock, after the capability pack is built (building it may
+append a record). The records the bundle reports on, its decisions and gates, and the
+`ledger.jsonl` it ships (the file's bytes as read) all come from that one read. Its chain is
+verified against the head the cockpit keeps outside the project's folder (FR-L3-AC-1), so a
+ledger cut short or rewritten consistently from its start shows as broken. That head is read
+before the ledger: a head only moves on, so a record appended and kept meanwhile never shows as a
+break. With no head kept, the bundle says its end was not checked. A record not shaped as the
+kernel writes it, or a line that is not UTF-8 or is nested too deep to read, is reported through
+the chain check and never stops the export or its record in the ledger. An export never replaces
+another one's file.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import zipfile
 from pathlib import Path
+from typing import Any
 
 from kernel.canon import DecisionRefused
+from kernel.ledgerstore import LedgerStore
 from kernel.people import is_person
 
 EXPORTERS = ("compliance", "it", "business_owner", "product_owner", "developer")
+# Where the cockpit keeps each project's last verified ledger head, under the factory home.
+KEPT_HEADS = ("cockpit", "heads.json")
+# What building the pack or reading the evidence raises on records not shaped as the kernel writes
+# them, and on a ledger line the store cannot read (not UTF-8, a ValueError; or nested too deep).
+_UNREADABLE = (KeyError, TypeError, AttributeError, ValueError, IndexError, RecursionError)
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f  ]+")
+_MARKUP = re.compile(r"[`<>|]")
 
 
-def _gather(project) -> dict:
+def _parsed(raw: bytes) -> list:
+    """The records in a ledger's bytes, in lines as LedgerStore.records splits the file. A line that
+    is not UTF-8, not JSON or nested too deep to read stays a string, so verify reports it."""
+    records: list = []
+    for line in raw.splitlines():
+        if not line:
+            continue
+        try:
+            records.append(json.loads(line.decode("utf-8")))
+        except (ValueError, RecursionError):
+            records.append(line.decode("utf-8", errors="replace"))
+    return records
+
+
+class _ReadingStore(LedgerStore):
+    """The project's ledger, reading a line its store cannot read (not UTF-8, nested too deep) as a
+    string, as the store reads a line that is not JSON. The export's record then follows it as it
+    follows any broken record."""
+
+    def records(self) -> list[Any]:
+        return _parsed(self.path.read_bytes()) if self.path.exists() else []
+
+
+def _ledger_snapshot(project: Any) -> tuple[bytes, list]:
+    """The ledger's bytes, read once under its lock, and the records parsed from them."""
+    from kernel.filelock import locked
+
+    path = project.path("ledger.jsonl")
+    if not path.exists():
+        return b"", []
+    with locked(path.with_name(path.name + ".lock")):
+        raw = path.read_bytes()
+    return raw, _parsed(raw)
+
+
+def _kept_head(project: Any) -> Any:
+    """The head the cockpit keeps for this project, None when it keeps none. A heads file that cannot
+    be read gives an empty head, which verify cannot compare: the chain is then not intact."""
+    from kernel.store import read_json
+
+    try:
+        heads = read_json(project.factory.home.joinpath(*KEPT_HEADS), {})
+    except (OSError, ValueError, RecursionError):
+        return {}
+    return heads.get(project.pid) if isinstance(heads, dict) else {}
+
+
+def _ledger_check(records: list, kept: Any) -> dict:
+    from kernel.ledger import verify
+
+    check = verify(records, head=kept)
+    return {"intact": check.intact, "broken_seq": check.broken_seq, "records": len(records),
+            "tail_checked": check.tail_checked,
+            "kept_head": {k: kept.get(k) for k in ("seq", "hash")} if isinstance(kept, dict) else None}
+
+
+def _of(records: list, kind: str) -> list:
+    """The payloads of one kind with when they happened, skipping records not shaped as the kernel
+    writes them (the chain check reports those)."""
+    out = []
+    for r in records:
+        event = r.get("event") if isinstance(r, dict) else None
+        if isinstance(event, dict) and event.get("kind") == kind and isinstance(event.get("payload"), dict):
+            out.append(event["payload"] | {"at": event.get("at")})
+    return out
+
+
+def _pack(project: Any) -> dict:
+    """The capability pack of the latest release, or a note saying why there is none."""
     from kernel.packs import build_pack
-    from kernel.security import summary as security_summary
+
+    try:
+        return build_pack(project)
+    except LookupError:
+        return {"note": "no release yet, so no capability pack"}
+    except _UNREADABLE as exc:
+        return {"note": f"no capability pack: the records could not be read ({type(exc).__name__})"}
+
+
+def _evidence(project: Any) -> list:
     from kernel.status import evidence
 
-    led = project.ledger()
-    records = led.records()
-    check = led.verify()
+    if not project.path("contract.json").exists():
+        return []
     try:
-        pack = build_pack(project)
-    except LookupError:
-        pack = None
-    of = lambda kind: [r["event"]["payload"] | {"at": r["event"].get("at")} for r in records  # noqa: E731
-                       if isinstance(r, dict) and r.get("event", {}).get("kind") == kind]
+        return evidence(project)
+    except _UNREADABLE:
+        return []
+
+
+def _gather(project) -> tuple[dict, bytes]:
+    """The bundle's files, and the ledger bytes they were taken from."""
+    from kernel.security import summary as security_summary
+
+    kept = _kept_head(project)                  # first: a kept head only moves on, so it lies within any later read
+    pack = _pack(project)                       # before the read: building it may append to the ledger
+    raw, records = _ledger_snapshot(project)
+    runs = [{k: r.get(k) for k in ("task", "round", "role", "model", "endpoint", "surface_hash", "verdict", "chain",
+                                   "tampered", "at")} for r in _of(records, "gnomon_run")]
     files = {
-        "capability-pack.json": pack or {"note": "no release yet, so no capability pack"},
+        "capability-pack.json": pack,
         "contract.json": project.read("contract.json") or {"note": "not compiled yet"},
-        "evidence.json": evidence(project) if project.path("contract.json").exists() else [],
-        "decisions.json": of("decision"),
-        "gates.json": of("gate"),
-        "holdout-scores.json": (pack or {}).get("acceptance", {}).get("holdout_scores"),
-        "gnomon-runs.json": [{k: r.get(k) for k in ("task", "round", "role", "model", "endpoint", "surface_hash",
-                                                     "verdict", "chain", "tampered", "at")} for r in of("gnomon_run")],
-        "ledger-check.json": {"intact": getattr(check, "intact", None), "broken_seq": getattr(check, "broken_seq", None),
-                              "records": len(records)},
+        "evidence.json": _evidence(project),
+        "decisions.json": _of(records, "decision"),
+        "gates.json": _of(records, "gate"),
+        "holdout-scores.json": (pack.get("acceptance") or {}).get("holdout_scores"),
+        "gnomon-runs.json": runs,
+        "ledger-check.json": _ledger_check(records, kept),
         "security.json": security_summary(project),
     }
-    return files
+    return files, raw
+
+
+def _chain_intact(run: Any) -> Any:
+    chain = run.get("chain") if isinstance(run, dict) else None
+    return chain.get("intact") if isinstance(chain, dict) else None
+
+
+def _code(text: Any, limit: int = 120) -> str:
+    """A value from outside the factory (a scanner's name or version) as one line of inline code:
+    no line breaks, no backticks, no markup or table pipes, at most ``limit`` characters."""
+    one = _MARKUP.sub("", _CONTROL.sub(" ", str(text))).strip()
+    return f"`{one[:limit] or '-'}`"
 
 
 # What the bundle can evidence, by control family. Keyed by public control ids; it says evidenced,
@@ -84,58 +200,88 @@ def _controls(files: dict) -> list:
     sec = files.get("security.json") or {}
     if not sec.get("scans"):
         return CONTROLS
-    tools = ", ".join(f"{s['tool']} {s['version']}" for s in sec["scans"])
+    tools = ", ".join(_code(f"{s['tool']} {s['version']}") for s in sec["scans"])
     by = {"ai-act:art15": f"evidence.json, gates.json, holdout-scores.json; security.json: the latest scan by {tools}",
           "nis2:art21": "change control and approvals in decisions.json; security.json: scan findings and the risks "
                         "a named person accepted, with their expiry"}
     return [dict(c, by=by[c["control"]]) if c["control"] in by else c for c in CONTROLS]
 
 
+UNCHECKED_END = ("the ledger's end was not checked against a head kept outside it, so records cut from its end "
+                 "would not show")
+
+
 def attestation(files: dict) -> dict:
-    """attestable, chain broken, or insufficient evidence: never 'compliant'."""
+    """attestable, chain broken, or insufficient evidence: never 'compliant'. A ledger verified
+    without a kept head says so in the meaning."""
     lc = files["ledger-check.json"]
     runs = files["gnomon-runs.json"]
     pack = files["capability-pack.json"] if isinstance(files["capability-pack.json"], dict) else {}
-    if not lc["intact"] or any((r.get("chain") or {}).get("intact") is False for r in runs):
+    if not lc["intact"] or any(_chain_intact(r) is False for r in runs):
         verdict = "chain broken"
     elif not pack.get("acceptance") or not files["decisions.json"]:
         verdict = "insufficient evidence"
     else:
         verdict = "attestable"
-    return {"verdict": verdict, "meaning": {
+    meaning = {
         "attestable": "the records are intact and complete enough for a reviewer to judge",
         "chain broken": "a hash chain did not verify: what it covers cannot be trusted as recorded",
         "insufficient evidence": "intact, but too little was recorded to judge (no release or no human decision)",
-    }[verdict], "controls": _controls(files),
-        "not_measured": [c["criterion"] for c in files["evidence.json"] if c.get("state") == "not_measured"]}
+    }[verdict]
+    out: dict[str, Any] = {"verdict": verdict, "meaning": meaning, "controls": _controls(files),
+                           "not_measured": [c["criterion"] for c in files["evidence.json"]
+                                            if c.get("state") == "not_measured"]}
+    if "tail_checked" in lc:
+        out["tail_checked"] = bool(lc["tail_checked"])
+        if lc["intact"] and not lc["tail_checked"]:
+            out["meaning"] = f"{meaning}; {UNCHECKED_END}"
+    return out
 
 
 def _security_line(sec: dict) -> str:
     if not sec.get("scans"):
         return sec.get("note") or "not measured: no security scan"
-    scans = "; ".join(f"{s['tool']} {s['version']} (scan {s['scan']}, sha256 {s['sha256'][:12]}: "
+    scans = "; ".join(f"{_code(str(s['tool']) + ' ' + str(s['version']))} (scan {s['scan']}, "
+                      f"sha256 {s['sha256'][:12]}: "
                       + (", ".join(f"{n} {lvl}" for lvl, n in s["counts"].items() if n) or "no findings") + ")"
                       for s in sec["scans"])
     return (f"{scans}; gate {sec['verdict']} ({sec['note']}); {len(sec.get('accepted_risks') or [])} risk(s) "
             "accepted by a named person until a date")
 
 
+def _ledger_line(lc: dict) -> str:
+    """The ledger's line in the README: its records, and how far its chain was checked."""
+    if lc["intact"]:
+        end = (f"its end checked against the head kept outside it (sequence {(lc.get('kept_head') or {}).get('seq')})"
+               if lc.get("tail_checked") else UNCHECKED_END.replace("the ledger's end", "its end"))
+        return f"- Project ledger: {lc['records']} records, hash chain intact at export; {end}."
+    if lc.get("broken_seq") is None:
+        return (f"- Project ledger: {lc['records']} records, hash chain NOT VERIFIED at export: the head kept "
+                "outside it could not be compared.")
+    return f"- Project ledger: {lc['records']} records, hash chain BROKEN at {lc['broken_seq']} at export."
+
+
+def _pack_line(pack: dict) -> str:
+    acc = pack.get("acceptance") or {}
+    release = f"{acc['not_delivered']}; " if acc.get("not_delivered") else ""
+    return (f"- Capability pack: version {pack.get('version', '—')}, {'valid' if acc.get('valid') else 'not valid'} "
+            f"({release}{len(acc.get('not_valid_because') or [])} criteria not verified or held out).")
+
+
 def _readme(project, files: dict) -> str:
-    pack = files["capability-pack.json"]
-    acc = pack.get("acceptance", {}) if isinstance(pack, dict) else {}
+    pack = files["capability-pack.json"] if isinstance(files["capability-pack.json"], dict) else {}
     lc = files["ledger-check.json"]
-    lines = [f"# Evidence pack: {project.meta.get('title')}", "",
+    title = _CONTROL.sub(" ", str(project.meta.get("title")))
+    broken_runs = sum(1 for r in files["gnomon-runs.json"] if not _chain_intact(r))
+    lines = [f"# Evidence pack: {title}", "",
              f"Project `{project.pid}`, profile {project.meta.get('profile', 'web_service')}, "
              f"maturity {project.meta.get('maturity')}.", "",
              "This bundle is evidence for a reviewer to judge. It does not claim conformity with any framework.", "",
              "## At a glance", "",
-             f"- Capability pack: version {pack.get('version', '—')}, "
-             f"{'valid' if acc.get('valid') else 'not valid'} "
-             f"({len(acc.get('not_valid_because') or [])} criteria not verified or held out).",
+             _pack_line(pack),
              f"- Decisions by people: {len(files['decisions.json'])}. Gate verdicts: {len(files['gates.json'])}.",
-             f"- Gnomon runs: {len(files['gnomon-runs.json'])}, of which audit chain not intact: "
-             f"{sum(1 for r in files['gnomon-runs.json'] if not (r.get('chain') or {}).get('intact'))}.",
-             f"- Project ledger: {lc['records']} records, hash chain {'intact' if lc['intact'] else 'BROKEN at ' + str(lc['broken_seq'])} at export.",
+             f"- Gnomon runs: {len(files['gnomon-runs.json'])}, of which audit chain not intact: {broken_runs}.",
+             _ledger_line(lc),
              f"- Security: {_security_line(files.get('security.json') or {})}.",
              "", "## Not in this bundle", "",
              "- Holdout scenarios: they stay in their own custody. Only their scores are here.",
@@ -145,32 +291,59 @@ def _readme(project, files: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def export(project, out_dir, *, person: str, persona: str) -> Path:
+def _sha256(content: str | bytes) -> str:
+    return hashlib.sha256(content if isinstance(content, bytes) else content.encode("utf-8")).hexdigest()
+
+
+def _record(project: Any, payload: dict) -> None:
+    """Record the export in the project's ledger. A line the store cannot read (not UTF-8, nested too
+    deep) does not stop it: the record follows that line as it follows any broken record."""
+    try:
+        project.log("evidence_exported", payload)
+    except (RecursionError, UnicodeDecodeError):
+        _ReadingStore(project.path("ledger.jsonl"), clock=project.factory.clock).append("evidence_exported", payload)
+
+
+def export(project: Any, out_dir: str | Path, *, person: str, persona: str) -> Path:
     if not is_person(person):
         raise DecisionRefused(f"{person!r} is not a person")
     if persona not in EXPORTERS:
         raise DecisionRefused(f"a {persona} may not export evidence; {', '.join(EXPORTERS)} may")
-    files = _gather(project)
-    texts = {name: json.dumps(value, indent=2, ensure_ascii=False, default=str) + "\n" for name, value in files.items()}
+    files, ledger_raw = _gather(project)
+    texts: dict[str, str | bytes] = {name: json.dumps(value, indent=2, ensure_ascii=False, default=str) + "\n"
+                                     for name, value in files.items()}
     texts["spec.md"] = project.path("spec.md").read_text(encoding="utf-8") if project.path("spec.md").exists() else ""
-    texts["ledger.jsonl"] = project.path("ledger.jsonl").read_text(encoding="utf-8") \
-        if project.path("ledger.jsonl").exists() else ""
+    texts["ledger.jsonl"] = ledger_raw          # the very bytes ledger-check.json describes
     att = attestation(files)
     texts["attestation.json"] = json.dumps(att, indent=2, ensure_ascii=False) + "\n"
     texts["README.md"] = _readme(project, files) + (
         f"\n## Attestation\n\n**{att['verdict']}**: {att['meaning']}. This is not a statement of conformity.\n\n"
         "| Control | Topic | Evidence | Where |\n|---|---|---|---|\n"
         + "".join(f"| `{c['control']}` | {c['topic']} | {c['status']} | {c['by']} |\n" for c in att["controls"]))
-    manifest = {name: hashlib.sha256(t.encode("utf-8")).hexdigest() for name, t in sorted(texts.items())}
+    manifest = {name: _sha256(t) for name, t in sorted(texts.items())}
     stamp = project.factory.clock.stamp().replace(":", "").replace("-", "")
-    out = Path(out_dir) / f"{project.pid}-evidence-{stamp}.zip"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        for name, t in sorted(texts.items()):
-            z.writestr(name, t)
-        z.writestr("MANIFEST.json", json.dumps({"files": manifest, "project": project.pid,
-                                                "exported_by": person, "persona": persona}, indent=2) + "\n")
-    project.log("evidence_exported", {"file": out.name, "by": person, "persona": persona, "verdict": att["verdict"],
-                                      "manifest_sha256": hashlib.sha256(json.dumps(manifest, sort_keys=True)
-                                                                        .encode("utf-8")).hexdigest()})
+    listing = json.dumps({"files": manifest, "project": project.pid, "exported_by": person, "persona": persona},
+                         indent=2) + "\n"
+    out = _write_new_zip(Path(out_dir), f"{project.pid}-evidence-{stamp}", texts, listing)
+    _record(project, {"file": out.name, "by": person, "persona": persona, "verdict": att["verdict"],
+                      "manifest_sha256": _sha256(json.dumps(manifest, sort_keys=True))})
     return out
+
+
+def _write_new_zip(out_dir: Path, stem: str, texts: dict, manifest: str) -> Path:
+    """Write the bundle under a name no file has yet: ``<stem>.zip``, else ``<stem>-2.zip`` and on.
+    An export never replaces another, so each ledger record keeps naming the file it hashed."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    n = 1
+    while True:
+        out = out_dir / (f"{stem}.zip" if n == 1 else f"{stem}-{n}.zip")
+        try:
+            z = zipfile.ZipFile(out, "x", compression=zipfile.ZIP_DEFLATED)
+        except FileExistsError:
+            n += 1
+            continue
+        with z:
+            for name, t in sorted(texts.items()):
+                z.writestr(name, t)
+            z.writestr("MANIFEST.json", manifest)
+        return out

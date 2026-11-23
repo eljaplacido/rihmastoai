@@ -15,6 +15,18 @@ to:
 Applying a change amends the spec and recompiles the contract. Every approval resting on a
 changed requirement becomes stale (FR-P5). A defect closes only with a regression check added,
 which is its lesson (FR-K2).
+
+A change a person rejected or deferred is never applied, whatever its class. A submitter's class
+hint never skips the business decision: a hint that differs from what the rules (or the analyst)
+read needs one, unless the submitter is a persona who decides change cards anyway (a business
+owner or product owner). A developer's or anyone else's label is only a label. The one other
+defect hint that stands is a person's product-defect ruling on a failing holdout (FR-H3-AC-2):
+the defect `kernel/rulings.py` files for a ruling not yet carried out, in the name and persona of
+the person who decided it and in the ruling's own words (`ruling_defect_text`). The amended spec
+is compiled before anything is written, so a change the compiler refuses leaves the spec, the
+contract and the approvals as they were. Holdout scenarios for the criteria a change withdraws or
+restates are retired in the holdout custody, so none of them runs again (a restated one is
+written anew before the next delivery).
 """
 
 from __future__ import annotations
@@ -23,16 +35,20 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
-from kernel.canon import Canon
-from kernel.compile import check_plan, to_contract, update_repo_contract
+from kernel.canon import CARD_DECIDERS, Canon
+from kernel.compile import check_plan, retire_holdouts, to_contract, update_repo_contract
 from kernel.intake import _ask_json
 from kernel.people import PERSONAS, is_person
 from kernel.spec import KINDS, render_spec_md
-from kernel.store import write_text
+from kernel.store import Project, write_text
 
 CLASSES = ("defect", "change_request", "new_requirement", "infra_change", "incident", "question")
 WAY_BACK = {"defect": 5, "change_request": 4, "new_requirement": 2, "infra_change": 7, "incident": 7, "question": 2}
 NEEDS_DECISION = {"change_request", "new_requirement"}
+# Whose class hint stands even where it differs from the rules' or the analyst's reading: only the
+# personas who decide a change card anyway, so a label never skips their decision (FR-P4).
+HINT_TRUSTED = CARD_DECIDERS["change"]
+AMENDS = ("defect", "change_request", "new_requirement")
 
 _DEFECT = re.compile(r"\b(error|errors|crash|crashes|broken|bug|fails?|failing|wrong|500|exception|does ?n[o']t work|"
                      r"lost|missing data|virhe|ei toimi|kaatuu)\b", re.I)
@@ -40,7 +56,8 @@ _NEW = re.compile(r"\b(new feature|also need|we also want|add a new|another (scr
 _CHANGE = re.compile(r"\b(change|should be|instead|rename|rather|move|make it|prefer|muuta|pitäisi)\b", re.I)
 
 
-def submit(project, *, persona: str, person: str, text: str, kind_hint: str | None = None) -> dict:
+def submit(project: Project, *, persona: str, person: str, text: str,
+           kind_hint: str | None = None) -> dict[str, Any]:
     """Anyone in the delivery square may file a change or feedback; it lands in the Inbox."""
     if persona not in PERSONAS:
         raise ValueError(f"persona must be one of {PERSONAS}, got {persona!r}")
@@ -105,12 +122,55 @@ def _part_result(part: dict, known: set, fallback_text: str) -> dict | None:
             "text": str(part.get("text") or fallback_text).strip(), "by": "analyst"}
 
 
-def _finish(result: dict, hint) -> dict:
-    if hint in CLASSES:
+def _finish(result: dict[str, Any], hint: str | None, trusted: bool = False) -> dict[str, Any]:
+    """Name the way back and whether a business decision comes first. A hint replaces the class the
+    rules or the analyst read; where it differs, it needs a business decision unless it is
+    ``trusted`` (see `_hint_trusted`), so a label never skips one (FR-P4)."""
+    if hint in CLASSES and hint != result["class"]:
+        result["hint_over"] = result["class"]
         result["class"] = hint
     result["way_back"] = WAY_BACK[result["class"]]
-    result["needs_decision"] = result["class"] in NEEDS_DECISION
+    result["needs_decision"] = result["class"] in NEEDS_DECISION or ("hint_over" in result and not trusted)
     return result
+
+
+def ruling_defect_text(ruling: dict[str, Any]) -> str:
+    """The words of the defect a product-defect ruling files (kernel/rulings.py apply_rulings): one
+    definition, rulings.defect_regression, so the two can never drift apart. They name the release,
+    the requirement and the held-out criteria, never the scenario itself (FR-B4-AC-2)."""
+    from kernel.rulings import defect_regression
+
+    return defect_regression(ruling)[0]
+
+
+def _ruled_by_submitter(ruling: dict[str, Any], payload: dict[str, Any]) -> bool:
+    """Whether a holdout ruling was decided product_defect by the change's person, as its persona."""
+    decision = ruling.get("decision") or {}
+    return (decision.get("verdict") == "product_defect" and decision.get("person") == payload.get("person")
+            and decision.get("persona") == payload.get("source"))
+
+
+def _ruled_defect(project: Project, canon: Canon, card: dict[str, Any]) -> bool:
+    """Whether a change card is the defect a person's product-defect ruling files (FR-H3-AC-2): a
+    ruling not yet carried out, decided product_defect by the card's person as its persona, whose
+    defect the card states word for word. That ruling is the decision the defect stands on: a
+    person who may rule whether the product or the scenario is wrong ruled the product wrong,
+    against a criterion the contract already holds. Nothing else a person files rides on it."""
+    payload = card["payload"]
+    carried_out = set(project.read("rulings_applied.json", []) or [])
+    return any(r["id"] not in carried_out and _ruled_by_submitter(r, payload)
+               and ruling_defect_text(r) == payload.get("text")
+               for r in canon.cards(state="decided", kind="holdout_ruling"))
+
+
+def _hint_trusted(project: Project, canon: Canon, card: dict[str, Any]) -> bool:
+    """Whether a card's class hint stands without a business decision where it differs from the
+    reading: it comes from a persona who decides change cards anyway, or it is the defect of a
+    product-defect ruling the submitter decided. Any other persona's label, a developer's
+    included, needs a business owner's or product owner's accept (FR-P4-AC-1)."""
+    if card["payload"].get("source") in HINT_TRUSTED:
+        return True
+    return card["payload"].get("hint") == "defect" and _ruled_defect(project, canon, card)
 
 
 def triage(project, card_id: str, *, model=None) -> dict:
@@ -124,7 +184,7 @@ def triage(project, card_id: str, *, model=None) -> dict:
     text, persona = card["payload"]["text"], card["payload"]["source"]
     hint = card["payload"].get("hint")
     spec = project.read("spec.json") or {"requirements": []}
-    result = {"class": heuristic_class(persona, text, hint), "requirements": [],
+    result = {"class": heuristic_class(persona, text), "requirements": [],
               "summary": text[:200], "regression": None, "by": "rules"}
     parts = []
     if model is not None and spec["requirements"]:
@@ -137,7 +197,7 @@ def triage(project, card_id: str, *, model=None) -> dict:
                 result.update(parts[0])
         except Exception as exc:  # the rules' classification stands
             result["model_error"] = str(exc)
-    result = _finish(result, hint)
+    result = _finish(result, hint, _hint_trusted(project, canon, card))
     children = []
     if len(parts) > 1 and not card["payload"].get("split_from"):
         for part in parts[1:]:
@@ -202,9 +262,8 @@ def _save_spec(project, spec: dict) -> None:
     project.update_meta(spec_version=version + 1)
 
 
-def _recompile(project, spec: dict, changed: set) -> dict:
-    """Recompile the contract; tasks for changed requirements go back to pending."""
-    contract = to_contract(project, spec)
+def _recompile(project: Project, contract: dict[str, Any], changed: set[str]) -> None:
+    """Keep a compiled contract; tasks for changed requirements go back to pending."""
     project.write("contract.json", contract)
     project.write("checkplan.json", check_plan(contract))
     update_repo_contract(project, contract)
@@ -215,92 +274,163 @@ def _recompile(project, spec: dict, changed: set) -> dict:
             state[t["id"]] = {"status": "pending", "rounds": [], "reopened_by": sorted(rids & changed)}
     project.write("tasks.json", state)
     project.update_meta(stage=5, contract_revision=contract["revision"], built=False)
-    return contract
 
 
-def apply_change(project, card_id: str, *, model=None, person: str | None = None) -> dict:
-    """Carry a triaged change back into the spec and contract."""
+def _decided_person(card: dict[str, Any], tri: dict[str, Any], person: str | None) -> str | None:
+    """Who the change is applied for. A change a person rejected or deferred is never applied,
+    whatever its class; one that needs a business decision is applied only once a person accepted
+    it, and then for that person (FR-P4)."""
+    decision = card.get("decision") or {}
+    verdict = decision.get("verdict")
+    if verdict is not None and verdict != "accept":
+        raise PermissionError(f"{card['id']} was decided {verdict} by {decision.get('person')}: it is not applied")
+    if tri["class"] in NEEDS_DECISION or tri.get("needs_decision"):
+        if verdict != "accept":
+            raise PermissionError(f"{card['id']} is a {tri['class']}: it needs a business decision (accept) first")
+        return str(decision["person"])
+    return person
+
+
+def _regression(spec: dict[str, Any], tri: dict[str, Any], text: str) -> tuple[str, str]:
+    """A defect's lesson: a regression criterion on the requirement it breaks (FR-K2). Returns the
+    requirement's id and the new criterion's id."""
+    rid = (tri.get("requirements") or [None])[0] or spec["requirements"][0]["id"]
+    req = next(r for r in spec["requirements"] if r["id"] == rid)
+    regression = tri.get("regression") or {}
+    if isinstance(regression, str):
+        regression = {"given": "-", "when": "-", "then": regression}
+    then = str(regression.get("then") or f"the reported defect does not recur: {text[:160]}")
+    cid = f"{rid}-AC-{len(req['acceptance']) + 1}"
+    req["acceptance"].append({"id": cid, "given": str(regression.get("given") or "-"),
+                              "when": str(regression.get("when") or "-"), "then": then, "kind": "test"})
+    return str(rid), cid
+
+
+def _keep_lesson(project: Project, canon: Canon, lesson: dict[str, Any]) -> None:
+    """Record a defect's lesson and close its card: the repair is queued (FR-K2)."""
+    lessons = project.read("lessons.json", []) or []
+    lessons.append(lesson | {"at": project.factory.clock.stamp()})
+    project.write("lessons.json", lessons)
+    canon.close(lesson["card"], f"repair queued with regression criterion {lesson['regression_criterion']}",
+                state="resolved")
+
+
+def _owned(req: dict[str, Any], card_id: str, person: str | None) -> dict[str, Any]:
+    """An amended or added requirement rests on the change: confirmed by the person who accepted it."""
+    req.update(sources=[f"change:{card_id}"],
+               provenance="customer-confirmed" if person and is_person(person) else "vendor-proposed")
+    if person and is_person(person):
+        req["decided_by"] = person
+    return req
+
+
+def _modify(spec: dict[str, Any], items: list[Any], card_id: str, person: str | None) -> set[str]:
+    """Requirements the amendment restates, each with its full new statement and criteria."""
+    changed: set[str] = set()
+    by_id = {r["id"]: r for r in spec["requirements"]}
+    for m in items:
+        r = by_id.get(m.get("id")) if isinstance(m, dict) else None
+        crits = _criteria(r["id"], m.get("acceptance")) if r else []
+        if r and str(m.get("statement", "")).strip() and crits:
+            _owned(r, card_id, person).update(statement=str(m["statement"]).strip(), acceptance=crits)
+            changed.add(r["id"])
+    return changed
+
+
+def _add(spec: dict[str, Any], items: list[Any], card_id: str, person: str | None) -> set[str]:
+    """Requirements the amendment adds, numbered after the spec's last one."""
+    changed: set[str] = set()
+    for a in items:
+        rid = f"R-{len(spec['requirements']) + 1}"
+        crits = _criteria(rid, a.get("acceptance")) if isinstance(a, dict) else []
+        if crits and str(a.get("statement", "")).strip():
+            spec["requirements"].append(_owned({"id": rid, "statement": str(a["statement"]).strip(),
+                                                "priority": "must", "acceptance": crits}, card_id, person))
+            changed.add(rid)
+    return changed
+
+
+def _amend(spec: dict[str, Any], answer: dict[str, Any], card_id: str, person: str | None) -> set[str]:
+    """Apply the analyst's amendment to ``spec``: modified, added and withdrawn requirements. A
+    withdrawn requirement stays in the spec, marked withdrawn; the compiler gives it no task."""
+    by_id = {r["id"]: r for r in spec["requirements"]}  # what the spec held before: an addition is not withdrawn
+    changed = _modify(spec, answer.get("modify") or [], card_id, person)
+    changed |= _add(spec, answer.get("add") or [], card_id, person)
+    for wid in answer.get("withdraw") or []:
+        if wid in by_id:
+            by_id[wid]["provenance"] = "withdrawn"
+            by_id[wid].pop("decided_by", None)
+            changed.add(wid)
+    if not changed:
+        raise ValueError(f"the amendment for {card_id} changed nothing")
+    return changed
+
+
+def _live_criteria(spec: dict[str, Any]) -> dict[str, tuple[Any, ...]]:
+    """Each criterion a spec still stands behind, by id, with its wording: a withdrawn requirement's
+    criteria are not among them."""
+    return {str(c["id"]): tuple(c.get(k) for k in ("given", "when", "then", "kind"))
+            for r in spec["requirements"] if r.get("provenance") != "withdrawn" for c in r["acceptance"]}
+
+
+def _gone(before: dict[str, tuple[Any, ...]], spec: dict[str, Any]) -> list[str]:
+    """The criteria the amended ``spec`` withdrew or restated: no scenario written for them stands."""
+    after = _live_criteria(spec)
+    return sorted(cid for cid, wording in before.items() if after.get(cid) != wording)
+
+
+def _route(project: Project, canon: Canon, card_id: str, tri: dict[str, Any], text: str) -> dict[str, Any]:
+    """A class that amends nothing: IT's change to the paved road appears on the board as a road card
+    that only IT decides (FR-Q2), and delivery uses the road as IT leaves it in paved_roads.json,
+    after a dry run; an incident or a question is routed to its stage."""
+    cls, out = tri["class"], {"class": tri["class"], "way_back": tri["way_back"], "changed": []}
+    if cls == "infra_change":
+        road = canon.card("road", f"Infrastructure change: {text[:70]}", body=text,
+                          refs={"change": card_id, "source": "it"},
+                          payload={"source": "it", "text": text, "from_card": card_id})
+        canon.close(card_id, f"routed to IT as road card {road['id']}", state="resolved")
+        out["road_card"] = road["id"]
+    project.log("change_routed", {"card": card_id, "class": cls, "way_back": tri["way_back"],
+                                  **({"road": out["road_card"]} if "road_card" in out else {})})
+    return out
+
+
+def apply_change(project: Project, card_id: str, *, model: Any = None, person: str | None = None) -> dict[str, Any]:
+    """Carry a triaged change back into the spec and contract. The amended spec is compiled before
+    anything is written: a change the compiler refuses raises and leaves the spec, the contract,
+    the lessons, the approvals and the card as they were, so the spec and the contract never
+    diverge. Once applied, the holdout scenarios of the criteria it withdrew or restated are
+    retired, so no holdout runs for a criterion the contract no longer holds as written."""
     canon = Canon(project)
     card = canon.get_card(card_id)
     tri = card["payload"].get("triage") or triage(project, card_id, model=model)
     cls = tri["class"]
-    if cls in NEEDS_DECISION:
-        decision = card.get("decision") or {}
-        if decision.get("verdict") != "accept":
-            raise PermissionError(f"{card_id} is a {cls}: it needs a business decision (accept) first")
-        person = decision["person"]
+    person = _decided_person(card, tri, person)
+    text = str(tri.get("text") or card["payload"]["text"])
+    if cls not in AMENDS:
+        return _route(project, canon, card_id, tri, text)
     spec = project.read("spec.json")
-    change = {"class": cls, "source": card["payload"]["source"], "text": tri.get("text") or card["payload"]["text"]}
-    changed: set = set()
-
+    before = _live_criteria(spec)
+    lesson: dict[str, Any] | None = None
     if cls == "defect":
-        rid = (tri.get("requirements") or [None])[0] or spec["requirements"][0]["id"]
-        req = next(r for r in spec["requirements"] if r["id"] == rid)
-        regression = tri.get("regression") or {}
-        if isinstance(regression, str):
-            regression = {"given": "-", "when": "-", "then": regression}
-        then = str(regression.get("then") or f"the reported defect does not recur: {change['text'][:160]}")
-        cid = f"{rid}-AC-{len(req['acceptance']) + 1}"
-        req["acceptance"].append({"id": cid, "given": str(regression.get("given") or "-"),
-                                  "when": str(regression.get("when") or "-"), "then": then, "kind": "test"})
-        changed.add(rid)
-        lessons = project.read("lessons.json", []) or []
-        lessons.append({"card": card_id, "class": cls, "requirement": rid, "regression_criterion": cid,
-                        "text": change["text"], "at": project.factory.clock.stamp()})
-        project.write("lessons.json", lessons)
-    elif cls in ("change_request", "new_requirement"):
-        answer = _ask_json(model, amend_prompt(spec, change)) if model is not None else {}
-        by_id = {r["id"]: r for r in spec["requirements"]}
-        for m in answer.get("modify") or []:
-            r = by_id.get(m.get("id")) if isinstance(m, dict) else None
-            crits = _criteria(r["id"], m.get("acceptance")) if r else []
-            if r and str(m.get("statement", "")).strip() and crits:
-                r.update(statement=str(m["statement"]).strip(), acceptance=crits,
-                         provenance="customer-confirmed" if person and is_person(person) else "vendor-proposed",
-                         sources=[f"change:{card_id}"])
-                if person and is_person(person):
-                    r["decided_by"] = person
-                changed.add(r["id"])
-        for a in answer.get("add") or []:
-            if not isinstance(a, dict) or not str(a.get("statement", "")).strip():
-                continue
-            rid = f"R-{len(spec['requirements']) + 1}"
-            crits = _criteria(rid, a.get("acceptance"))
-            if not crits:
-                continue
-            new = {"id": rid, "statement": str(a["statement"]).strip(), "sources": [f"change:{card_id}"],
-                   "priority": "must", "acceptance": crits,
-                   "provenance": "customer-confirmed" if person and is_person(person) else "vendor-proposed"}
-            if person and is_person(person):
-                new["decided_by"] = person
-            spec["requirements"].append(new)
-            changed.add(rid)
-        for wid in answer.get("withdraw") or []:
-            if wid in by_id:
-                by_id[wid]["provenance"] = "withdrawn"
-                by_id[wid].pop("decided_by", None)
-                changed.add(wid)
-        if not changed:
-            raise ValueError(f"the amendment for {card_id} changed nothing")
-    elif cls == "infra_change":
-        # IT's change to the paved road appears on the board as a road card that only IT decides
-        # (FR-Q2). Delivery uses the road as IT leaves it in paved_roads.json, after a dry run.
-        road = canon.card("road", f"Infrastructure change: {change['text'][:70]}", body=change["text"],
-                          refs={"change": card_id, "source": "it"},
-                          payload={"source": "it", "text": change["text"], "from_card": card_id})
-        canon.close(card_id, f"routed to IT as road card {road['id']}", state="resolved")
-        project.log("change_routed", {"card": card_id, "class": cls, "way_back": tri["way_back"], "road": road["id"]})
-        return {"class": cls, "way_back": tri["way_back"], "changed": [], "road_card": road["id"]}
+        rid, cid = _regression(spec, tri, text)
+        changed = {rid}
+        lesson = {"card": card_id, "class": cls, "requirement": rid, "regression_criterion": cid, "text": text}
     else:
-        project.log("change_routed", {"card": card_id, "class": cls, "way_back": tri["way_back"]})
-        return {"class": cls, "way_back": tri["way_back"], "changed": []}
-
+        change = {"class": cls, "source": card["payload"]["source"], "text": text}
+        changed = _amend(spec, _ask_json(model, amend_prompt(spec, change)) if model is not None else {},
+                         card_id, person)
+    contract = to_contract(project, spec)  # a CompileError here leaves everything as it was
     _save_spec(project, spec)
-    if cls == "defect":
-        canon.close(card_id, f"repair queued with regression criterion {cid}", state="resolved")
+    if lesson is not None:
+        _keep_lesson(project, canon, lesson)
     stale = canon.mark_stale(changed, reason=f"{cls} {card_id}")
-    contract = _recompile(project, spec, changed)
+    _recompile(project, contract, changed)
+    retired = retire_holdouts(project, _gone(before, spec), because=card_id)
     project.log("change_applied", {"card": card_id, "class": cls, "changed": sorted(changed),
-                                   "stale": [d["id"] for d in stale], "contract": contract["revision"]})
+                                   "stale": [d["id"] for d in stale], "contract": contract["revision"],
+                                   "holdouts_retired": retired})
     return {"class": cls, "way_back": tri["way_back"], "changed": sorted(changed),
-            "stale": [d["id"] for d in stale], "contract": contract["revision"]}
+            "stale": [d["id"] for d in stale], "contract": contract["revision"], "holdouts_retired": retired}
+
+

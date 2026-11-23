@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/rihmasto-banner.jpg" alt="Rihmasto: governed AI solution factory" width="760">
+</p>
+
 # Rihmasto
 
 Rihmasto is a governed AI solution factory. It takes a need from a vague request to a tested,

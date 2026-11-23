@@ -208,7 +208,10 @@ class StdioTest(FactoryTestCase):
         depth = 5000
         line = '{"jsonrpc": "1.0", "id": ' + "[" * depth + "]" * depth + "}"
         answer = json.loads(handle_line(s, line.encode("utf-8")))
-        self.assertEqual((answer["id"], answer["error"]["code"]), (None, -32600))
+        # Python 3.14 parses this depth (an invalid request); 3.11 and 3.12 stop at parsing (a parse
+        # error). Either way the id is never written back.
+        self.assertIsNone(answer["id"])
+        self.assertIn(answer["error"]["code"], (-32600, -32700))
 
 
 if __name__ == "__main__":

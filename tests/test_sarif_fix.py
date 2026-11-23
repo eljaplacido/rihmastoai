@@ -288,10 +288,14 @@ class MalformedTest(SarifCase):
         deep = "[" * 10400 + "]" * 10400              # json reads it this deep, but cannot write it back
         region = '"region":{"startLine":1,"startColumn":' + deep + "}"
         plain = json.dumps(log(run(results=[result("B1", "app/a.py", 1)])))
-        self.assertIn("not an integer", self.refused(plain.replace('"region": {"startLine": 1}', region)))
+        # Python 3.14 parses this depth and the adapter refuses the value; 3.11 and 3.12 stop at
+        # parsing. Either way the file is refused and nothing of it is stored.
+        self.assertRegex(self.refused(plain.replace('"region": {"startLine": 1}', region)),
+                         "not an integer|is not JSON")
         # where the tool's fingerprint stands in for the line, the line is not hashed either
         with_fp = json.dumps(log(run(results=[result("B1", "app/a.py", 1, partialFingerprints={"h": "x"})])))
-        self.assertIn("not an integer", self.refused(with_fp.replace('"startLine": 1', '"startLine": ' + deep)))
+        self.assertRegex(self.refused(with_fp.replace('"startLine": 1', '"startLine": ' + deep)),
+                         "not an integer|is not JSON")
         for bad in ("14", 1.5, True, [3], {"line": 3}):
             for key in ("startLine", "startColumn"):
                 res = result("B1", "app/a.py", 1)

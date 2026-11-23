@@ -11,12 +11,18 @@ The owner's policy sets the cap for the whole factory (for example defence 3, in
 development 4). A project may set a lower cap, never a higher one. The kernel enforces it: below
 3 nothing is built, below 4 nothing lands on staging or production. Only a person with the right
 persona changes a cap, and every change is in the ledger.
+
+Every path that builds or delivers asks first, not only the pipeline: `cleared_to_build` before
+the pipeline builds, before `rihma build`, and before a ruling or an applied change leads to a
+rebuild; `cleared_to_deliver` (which also refuses a paused project) before the pipeline or
+`rihma deliver` lands a release. Reading a cap never creates the factory's own canon (FR-S1-AC-3).
 """
 
 from __future__ import annotations
 
 from kernel.canon import DecisionRefused
 from kernel.people import is_person
+from kernel.store import Project
 
 LEVELS = {1: "answer", 2: "suggest", 3: "prepare", 4: "deliver"}
 MEANING = {
@@ -28,6 +34,7 @@ MEANING = {
 SETTERS = ("business_owner", "it", "compliance")
 DEFAULT_CAP = 4
 LANDING_LEVEL = {"preview": 3, "demo": 3, "staging": 4, "production": 4}
+BUILD_LEVEL = 3
 
 
 class AutonomyCapped(PermissionError):
@@ -38,14 +45,16 @@ class AutonomyCapped(PermissionError):
         super().__init__(f"{what} needs autonomy level {needed} ({LEVELS[needed]}); the cap is {cap} ({LEVELS[cap]})")
 
 
-def _store(factory):
+def _store(factory, *, create: bool = True):
     from kernel.learn import factory_project
 
-    return factory_project(factory)
+    return factory_project(factory, create=create)
 
 
 def factory_cap(factory) -> int:
-    return int((_store(factory).read("policy.json", {}) or {}).get("autonomy_cap", DEFAULT_CAP))
+    store = _store(factory, create=False)  # a reader: no canon yet means no policy yet, the default cap
+    policy = (store.read("policy.json", {}) or {}) if store is not None else {}
+    return int(policy.get("autonomy_cap", DEFAULT_CAP))
 
 
 def cap_of(project) -> int:
@@ -88,6 +97,26 @@ def require(project, needed: int, what: str) -> None:
     cap = cap_of(project)
     if needed > cap:
         raise AutonomyCapped(needed, cap, what)
+
+
+def cleared_to_build(project: Project) -> Project:
+    """``project`` itself when the cap lets the factory build it (level 3); AutonomyCapped otherwise."""
+    require(project, BUILD_LEVEL, "building")
+    return project
+
+
+def cleared_to_deliver(project: Project) -> Project:
+    """``project`` itself when it may be delivered now: it is not paused (a paused project runs
+    nothing, FR-J3), and the cap lets it land where its maturity lands it (a preview or a demo at
+    level 3, staging or production at 4). PermissionError otherwise, AutonomyCapped for the cap."""
+    from kernel.deliver import LANDING
+    from kernel.safestop import paused
+
+    if paused(project):
+        raise PermissionError(f"{project.pid} is paused: a person resumes it before anything is delivered")
+    landing = LANDING[project.meta["maturity"]]
+    require(project, LANDING_LEVEL.get(landing, 4), f"delivering to {landing}")
+    return project
 
 
 def describe(project=None, factory=None) -> dict:

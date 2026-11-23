@@ -11,7 +11,9 @@ holdouts, ledger. A profile changes only what sits around that core:
 - **roads:** where a release lands;
 - **cockpit:** extra widgets, and the words people in that field use.
 
-A profile is proposed by rule from the request (no model) and a person may choose another. Each
+A profile is proposed by rule from the request (no model) and a person may choose another. When
+the rule is not sure (few of a profile's words, or two profiles close), the proposal says it is
+uncertain and names the candidates a person should choose from. Each
 profile says honestly which product template it builds on today (`template`) and whether it is
 `ready` or a `preview` (its intake, spec and checks are shaped, its own template is still to come).
 """
@@ -205,19 +207,73 @@ DELIVERABLES = {
 
 DEFAULT_PROFILE = "web_service"
 _WORD = re.compile(r"[a-zåäö0-9]+")
+# The confidence rule. A best score under CLEAR_SCORE rests on too few words to be sure; a lead of
+# less than CLEAR_LEAD keywords over the runner-up is too close to call. Either way the proposal
+# is uncertain, and names the profiles a person should choose from (at most MAX_CANDIDATES).
+CLEAR_SCORE = 2
+CLEAR_LEAD = 2
+MAX_CANDIDATES = 4
+PROFILE_QUESTION = "Which kind of work is this?"
+
+
+def _uncertainty(scores: dict[str, list[str]], ranked: list[str]) -> str | None:
+    """Why a proposal is uncertain, or None when it is clear."""
+    best, runner = ranked[0], ranked[1]
+    top, second = len(scores[best]), len(scores[runner])
+    if top == 0:
+        return "no keyword stood out: the default is a guess"
+    if top < CLEAR_SCORE:
+        return f"only one keyword names it ({', '.join(scores[best])})"
+    if top - second < CLEAR_LEAD:
+        return (f"{PROFILES[runner]['label']} scores {second} against {top}: too close to call"
+                if second < top else f"{PROFILES[runner]['label']} scores the same ({top}): a tie")
+    return None
 
 
 def propose_profile(text: str) -> dict:
-    """The profile whose keywords the request names most, by rule; web service when nothing stands out."""
+    """The profile whose keywords the request names most, by rule; web service when nothing stands out.
+
+    A low best score, or a best score close to the runner-up's, is **uncertain**: the proposal says
+    so (`confidence`, `uncertain_because`) and names the top `candidates`, for a person to choose
+    from (`profile_question`). A clear proposal's only candidate is itself."""
     low = (text or "").lower()
     words = set(_WORD.findall(low))
     scores = {}
     for pid, p in PROFILES.items():
         hits = sorted({k for k in p["keywords"] if (k in words if " " not in k and len(k) <= 4 else k in low)})
         scores[pid] = hits
-    best = max(PROFILES, key=lambda pid: (len(scores[pid]), pid == DEFAULT_PROFILE))  # a tie keeps the default
+    # Highest score first; a tie keeps the default, then the catalogue's order.
+    ranked = sorted(PROFILES, key=lambda pid: (-len(scores[pid]), pid != DEFAULT_PROFILE))
+    best = ranked[0]
+    why = _uncertainty(scores, ranked)
+    top = len(scores[best])
+    candidates = [pid for pid in ranked if top - len(scores[pid]) < CLEAR_LEAD][:MAX_CANDIDATES] if why else [best]
     return {"profile": best, "basis": scores[best] or ["no keyword stood out: the default"],
-            "scores": {k: len(v) for k, v in scores.items()}}
+            "scores": {k: len(v) for k, v in scores.items()}, "confidence": "uncertain" if why else "clear",
+            "uncertain_because": why, "candidates": candidates}
+
+
+def profile_question(proposal: dict) -> dict | None:
+    """The question an uncertain proposal puts to a person: which kind of work this is, with the top
+    candidates as options. It carries no proposed answer, so no mode assumes it. None when the
+    proposal is clear."""
+    if proposal.get("confidence") != "uncertain":
+        return None
+    label = PROFILES[proposal["profile"]]["label"]
+    return {"text": PROFILE_QUESTION, "perspective": "business", "blocking": False,
+            "options": [f"{PROFILES[pid]['label']} ({pid})" for pid in proposal["candidates"]][:MAX_CANDIDATES],
+            "rationale": f"The work profile was proposed by rule as {label}, but {proposal['uncertain_because']}. "
+                         "The profile shapes the panel's questions, the spec's guidance and what is delivered."}
+
+
+def add_profile_question(canon: Any, proposal: dict) -> dict | None:
+    """Add an uncertain proposal's question to the canon, with no proposed answer: intake's settling
+    puts such a question to a person. Returns the question, or None when the proposal is clear."""
+    q = profile_question(proposal)
+    if q is None:
+        return None
+    return dict(canon.add_question(q["text"], q["perspective"], blocking=q["blocking"], rationale=q["rationale"],
+                                   options=q["options"]))
 
 
 def profile_of(project) -> dict:

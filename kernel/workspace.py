@@ -18,7 +18,13 @@ cell's do (`kernel.gate`): the project's tests run by the kernel, the criterion 
 fail-first for the task the person names, and the independent verifier. Warranted and permitted,
 they merge into main; otherwise they escalate with every objection. The gate record names the
 person as the author. A submission with no commits is refused, and so is one that touches what a
-cell may not: the surface, the contract and the factory's files.
+cell may not: the surface, the contract and the factory's files, under any name (a rename, a
+quoted name, another case).
+
+A workspace cannot push to the product's main itself: its branch tracks nothing, its `origin` has
+no push URL, and the product repository refuses a push to main, a cell's branch or a judged head
+that does not come from the kernel (`kernel.lanes.guard_repo`). Its work reaches main only through
+`submit_workspace`.
 """
 
 from __future__ import annotations
@@ -28,20 +34,23 @@ import platform
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, NoReturn
 
 from kernel.canon import Canon
-from kernel.lanes import GIT_ID, IGNORED, Lanes, _git, lanes_root
+from kernel.lanes import GIT_ID, IGNORED, PROTECTED, Lane, Lanes, _git, guard_repo, lanes_root, protected_paths
 from kernel.people import PERSONAS, is_person
-from kernel.store import REPO_ROOT, slugify, write_json, write_text
+from kernel.store import REPO_ROOT, Project, slugify, write_json, write_text
 
 AGENTS = ("gnomon", "claude", "opencode", "shell")
 CONTEXT_FILE = "RIHMA_CONTEXT.md"
 MCP_FILE = ".mcp.json"
 RULE = ("Your changes go through the same gate as an agent's: tests, an independent verifier, then merge; "
         "nothing you do here is a decision.")
-# What a builder cell may not write (kernel/lanes.py PRODUCT_RULES): a person's submission may not either.
-PROTECTED = (".gnomon/", "contract.json", "factory/")
+# A workspace's `origin` push URL: a transport git does not have, so `git push` from the workspace
+# fails; its work goes to the product repository through `submit_workspace` alone.
+NO_PUSH = "rihma-submit-through-the-gate://main-is-read-only"
 
 
 class WorkspaceRefused(ValueError):
@@ -192,8 +201,10 @@ def open_workspace(project, *, person: str, persona: str, agent: str, root=None)
         n += 1
     branch, path = f"work/{slug}/{n}", folder / f"{slug}-{n}"
     folder.mkdir(parents=True, exist_ok=True)
+    guard_repo(repo)
     _git(folder, "clone", "-q", str(repo), path.name)
-    _git(path, "checkout", "-q", "-b", branch, "origin/main")
+    _git(path, "checkout", "-q", "--no-track", "-b", branch, "origin/main")  # its upstream is not main
+    _seal(path)
     base = _git(path, "rev-parse", "HEAD")
     exclude = path / ".git" / "info" / "exclude"
     text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
@@ -251,12 +262,17 @@ def workspaces(project) -> list:
 
 # -- submit: the person as a cell ---------------------------------------------------------------------
 
-def _refuse(project, branch: str, person: str, persona: str, reason: str):
+def _seal(path: Path) -> None:
+    """A workspace's `origin` fetches from the product repository and pushes nowhere."""
+    _git(path, "config", "remote.origin.pushurl", NO_PUSH)
+
+
+def _refuse(project: Project, branch: str, person: str, persona: str, reason: str) -> NoReturn:
     project.log("workspace_refused", {"branch": branch, "person": person, "persona": persona, "reason": reason})
     raise WorkspaceRefused(reason)
 
 
-def _save_submission(project, branch: str, entry: dict) -> None:
+def _save_submission(project: Project, branch: str, entry: dict) -> None:
     items = _registry(project)
     for w in items:
         if w["branch"] == branch:
@@ -268,76 +284,133 @@ def submit_workspace(project, workspace_path, *, person: str, persona: str, task
                      lanes: Lanes | None = None, verifier_runner=None, lane_wait: float = 3600) -> dict:
     """Judge the workspace branch's commits with the gate a builder cell meets; merge them when
     warranted and permitted, or escalate with every objection."""
-    from kernel.dispatch import AUTONOMY, _set_task, gate_record
+    from kernel.dispatch import gate_record
     from kernel.gate import judge_change
 
     _check_person(person, persona)
     ws = _find(project, workspace_path)
     branch, path = ws["branch"], Path(ws["path"])
+
+    def refuse(reason: str) -> NoReturn:
+        _refuse(project, branch, person, persona, reason)
+
     contract = project.read("contract.json")
     if not contract:
-        _refuse(project, branch, person, persona, "the project has no contract: nothing to judge against")
+        refuse("the project has no contract: nothing to judge against")
     if task is not None and task not in {t["id"] for t in contract["tasks"]}:
-        _refuse(project, branch, person, persona, f"{task} is not a task of the contract")
-    _git(path, "fetch", "-q", "origin")
-    ahead = int(_git(path, "rev-list", "--count", f"origin/main..refs/heads/{branch}"))
-    if ahead == 0:
-        _refuse(project, branch, person, persona, f"{branch} has no commits ahead of main: nothing to submit")
-    touched = [f for f in _git(path, "diff", "--name-only", f"origin/main...refs/heads/{branch}").splitlines()
-               if f.startswith(PROTECTED)]
-    if touched:
-        _refuse(project, branch, person, persona, "the change touches what a cell may not: " + ", ".join(touched[:10]))
-    uncommitted = bool(_git(path, "status", "--porcelain"))
-    # The branch goes to the product repository as committed: the gate judges exactly that.
-    _git(path, "push", "-q", "-f", "origin", f"refs/heads/{branch}:refs/heads/{branch}")
-
+        refuse(f"{task} is not a task of the contract")
+    submitted, uncommitted = _prepare(project, path, branch, refuse)
     author = {"type": "person", "name": person, "persona": persona}
     label = task or f"workspace:{branch}"
     round_no = len([r for r in project.ledger().of_kind("gate") if r["event"]["payload"].get("task") == label])
     lanes = lanes or Lanes()
     with lanes.lease(f"{project.pid}:{label}", wait=lane_wait) as lane:
-        lane.checkout(project.path("repo.git"), branch=branch, base=branch)
-        main = lane.git("rev-parse", "origin/main")
-        if subprocess.run(["git", "merge-base", "--is-ancestor", main, "HEAD"], cwd=lane.path,
-                          capture_output=True).returncode != 0:
-            # main moved since the workspace was opened: bring it in, as a kernel commit, so what is
-            # judged is exactly what would land on main.
-            proc = subprocess.run(["git", *GIT_ID, "merge", "-q", "--no-edit", "origin/main"], cwd=lane.path,
-                                  capture_output=True, text=True)
-            if proc.returncode != 0:
-                subprocess.run(["git", "merge", "--abort"], cwd=lane.path, capture_output=True)
-                _refuse(project, branch, person, persona,
-                        "the branch conflicts with main: merge main into it in the workspace and submit again")
-        head = lane.head()
+        main, head = _judged_head(project, lane, branch, submitted, refuse)
+        _refuse_protected(lane.path, main, head, refuse)
         result = judge_change(lane.path, contract, main, head, label=label, author=f"{person} ({persona})",
                               task_id=task, verifier_runner=verifier_runner)
         project.log("gate", gate_record(label, round_no, result, author=author, workspace=branch))
         entry = {"round": round_no, "head": head, "verdict": result.verdict, "task": task,
                  "at": project.factory.clock.stamp(), "uncommitted_left_out": uncommitted}
+        out = {"branch": branch, "task": label, "author": author, "uncommitted_left_out": uncommitted,
+               "gate": result.to_dict()}
         if result.warranted:
-            permitted_by = AUTONOMY[project.meta["maturity"]]
-            lane.push(branch, "main")
-            project.log("merged", {"task": label, "revision": head, "warranted": result.verdict,
-                                   "permitted_by": permitted_by, "author": author, "workspace": branch})
-            if task is not None:
-                _set_task(project, task, status="merged", revision=head, permitted_by=permitted_by, author=author,
-                          rounds=[{"round": round_no, "cell": {"author": author}, "gate": result.to_dict()}])
-            canon = Canon(project)
-            for card in canon.cards(kind="escalation"):
-                if card["refs"].get("workspace") == branch:
-                    canon.close(card["id"], f"a later submission of {branch} passed its gate and merged at "
-                                            f"{head[:12]}", state="resolved")
-            _save_submission(project, branch, entry | {"status": "merged"})
-            return {"status": "merged", "revision": head, "branch": branch, "task": label, "author": author,
-                    "uncommitted_left_out": uncommitted, "gate": result.to_dict()}
-        reqs = sorted({c.rsplit("-AC-", 1)[0] for t in contract["tasks"] if t["id"] == task for c in t["criteria"]})
-        card = Canon(project).card(
-            "escalation", f"{person}'s workspace change on {branch} did not pass its gate",
-            body="\n".join(f"- {o}" for o in result.objections),
-            refs={"workspace": branch, "person": person, **({"task": task, "requirements": reqs} if task else {})},
-            payload={"objections": result.objections, "branch": branch, "author": author}, blocking=True)
-        project.log("escalated", {"task": label, "card": card["id"], "objections": result.objections,
-                                  "author": author, "workspace": branch})
-        _save_submission(project, branch, entry | {"status": "escalated", "card": card["id"]})
-        return {"status": "escalated", "card": card["id"], "branch": branch, "task": label, "author": author,
-                "objections": result.objections, "uncommitted_left_out": uncommitted, "gate": result.to_dict()}
+            return _merge_submission(project, lane, branch, task, label, head, author, entry, out["gate"]) | out
+        return _escalate_submission(project, lane, contract, branch, task, label, head, author, result.objections,
+                                    entry) | out
+
+
+def _prepare(project: Project, path: Path, branch: str, refuse: Callable[[str], NoReturn]) -> tuple[str, bool]:
+    """Check what the workspace submits and put it in the product repository as committed: the
+    gate judges exactly that commit. Returns it, and whether uncommitted changes were left out."""
+    repo = project.path("repo.git")
+    guard_repo(repo)
+    _seal(path)
+    _git(path, "fetch", "-q", "origin")
+    ahead = int(_git(path, "rev-list", "--count", f"origin/main..refs/heads/{branch}"))
+    if ahead == 0:
+        refuse(f"{branch} has no commits ahead of main: nothing to submit")
+    _refuse_protected(path, "origin/main", f"refs/heads/{branch}", refuse)
+    uncommitted = bool(_git(path, "status", "--porcelain"))
+    submitted = _git(path, "rev-parse", f"refs/heads/{branch}")
+    _git(path, "push", "-q", "-f", str(repo), f"{submitted}:refs/heads/{branch}")
+    return submitted, uncommitted
+
+
+def _refuse_protected(repo_dir: Path, base: str, head: str, refuse: Callable[[str], NoReturn]) -> None:
+    touched = protected_paths(repo_dir, base, head)
+    if touched:
+        refuse("the change touches what a cell may not: " + ", ".join(touched[:10]))
+
+
+def _judged_head(project: Project, lane: Lane, branch: str, submitted: str,
+                 refuse: Callable[[str], NoReturn]) -> tuple[str, str]:
+    """Check out the submitted commit in the lane. When main moved since the workspace was opened,
+    the kernel merges it in, so what is judged is exactly what would land on main. Returns main
+    and the head to judge."""
+    lane.checkout(project.path("repo.git"), branch=branch, base=branch)
+    if lane.head() != submitted:
+        refuse(f"{branch} changed in the product repository while it was submitted: submit again")
+    main = lane.git("rev-parse", "origin/main")
+    if subprocess.run(["git", "merge-base", "--is-ancestor", main, "HEAD"], cwd=lane.path,
+                      capture_output=True).returncode != 0:
+        proc = subprocess.run(["git", *GIT_ID, "merge", "-q", "--no-edit", "origin/main"], cwd=lane.path,
+                              capture_output=True, text=True)
+        if proc.returncode != 0:
+            subprocess.run(["git", "merge", "--abort"], cwd=lane.path, capture_output=True)
+            refuse("the branch conflicts with main: merge main into it in the workspace and submit again")
+    return main, lane.head()
+
+
+def _merge_submission(project: Project, lane: Lane, branch: str, task: str | None, label: str, head: str,
+                      author: dict, entry: dict, gate: dict) -> dict[str, Any]:
+    """Push a warranted submission to main. When main moved while the gate ran, the push is
+    refused: the ledger says so beside the passed gate, and the person submits again."""
+    from kernel.dispatch import AUTONOMY, _set_task
+
+    permitted_by = AUTONOMY[project.meta["maturity"]]
+    try:
+        lane.push(branch, "main")
+    except RuntimeError as exc:
+        project.log("merge_rejected", {"task": label, "revision": head, "why": "main moved during the gate",
+                                       "error": str(exc), "author": author, "workspace": branch})
+        _save_submission(project, branch, entry | {"status": "stale_main"})
+        raise WorkspaceRefused("main moved while the gate judged the change: submit again") from exc
+    project.log("merged", {"task": label, "revision": head, "warranted": "passed", "permitted_by": permitted_by,
+                           "author": author, "workspace": branch})
+    if task is not None:
+        _set_task(project, task, status="merged", revision=head, permitted_by=permitted_by, author=author,
+                  rounds=[{"round": entry["round"], "cell": {"author": author}, "gate": gate}])
+    canon = Canon(project)
+    for card in canon.cards(kind="escalation"):
+        refs = card["refs"]
+        if refs.get("workspace") == branch:
+            canon.close(card["id"], f"a later submission of {branch} passed its gate and merged at {head[:12]}",
+                        state="resolved")
+        elif task is not None and refs.get("task") == task:
+            canon.close(card["id"], f"{task} merged from {branch} at {head[:12]}, its gate passed", state="resolved")
+    _save_submission(project, branch, entry | {"status": "merged"})
+    return {"status": "merged", "revision": head}
+
+
+def _escalate_submission(project: Project, lane: Lane, contract: dict, branch: str, task: str | None, label: str,
+                         head: str, author: dict, objections: list, entry: dict) -> dict[str, Any]:
+    """Keep the judged head in the product repository under a ref of its own (accept as is merges
+    exactly that commit), and open the escalation card with every objection."""
+    from kernel.dispatch import JUDGED_REF
+
+    try:
+        lane.git("push", "-q", "-f", "origin", f"{head}:{JUDGED_REF}{head}")
+    except RuntimeError as exc:
+        project.log("escalated_branch_not_kept", {"task": label, "workspace": branch, "error": str(exc)})
+    person = author["name"]
+    reqs = sorted({c.rsplit("-AC-", 1)[0] for t in contract["tasks"] if t["id"] == task for c in t["criteria"]})
+    card = Canon(project).card(
+        "escalation", f"{person}'s workspace change on {branch} did not pass its gate",
+        body="\n".join(f"- {o}" for o in objections),
+        refs={"workspace": branch, "person": person, **({"task": task, "requirements": reqs} if task else {})},
+        payload={"objections": objections, "branch": branch, "author": author, "head": head}, blocking=True)
+    project.log("escalated", {"task": label, "card": card["id"], "objections": objections,
+                              "author": author, "workspace": branch})
+    _save_submission(project, branch, entry | {"status": "escalated", "card": card["id"]})
+    return {"status": "escalated", "card": card["id"], "objections": objections}

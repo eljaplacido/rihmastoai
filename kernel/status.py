@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from pathlib import Path
 from statistics import median
 from typing import Any
 
 from kernel.canon import Canon
 from kernel.insight import _main_test_names, alignment
+from kernel.store import Project
 
 DECISION_KINDS = ("question", "approval", "validation", "deploy_gate", "escalation", "holdout_ruling", "road",
                   "trust", "incident", "change")
@@ -40,6 +42,44 @@ def _releases(project) -> list:
     return out
 
 
+def _held(project: Project, contract: dict) -> dict[str, tuple[str, int]]:
+    """Each holdout criterion's state from the releases, the latest run last: held_out or failing,
+    with its release. Only a scenario that ran counts. A run that says it ran none (no holdouts
+    yet: not applicable) proves nothing, and a later run that missed a criterion takes back what an
+    earlier one showed. A release recorded before runs named what they ran is read as having run
+    every holdout criterion of its time, when its run passed."""
+    held: dict[str, tuple[str, int]] = {}
+    for rel in _releases(project):
+        for step in rel.get("steps", []):
+            if isinstance(step, dict) and str(step.get("step", "")).startswith("holdouts:"):
+                ran, failing, unseen = _holdout_run(step, contract)
+                for cid in unseen:
+                    held.pop(cid, None)
+                for cid in ran | failing:
+                    held[cid] = ("failing" if cid in failing else "held_out", rel["number"])
+    return held
+
+
+def _holdout_run(step: dict, contract: dict) -> tuple[set, set, set]:
+    """One holdouts step: the criteria whose scenarios passed, those that failed, and those it did
+    not measure (missing, or a scenario that could not run)."""
+    native = step.get("native") or {}
+    failing: set[str] = set()
+    unmeasured: set[str] = set()
+    for f in native.get("failing", []):
+        if isinstance(f, dict) and f.get("criterion"):
+            (failing if f.get("verdict", "failed") == "failed" else unmeasured).add(f["criterion"])
+    ran = set(native.get("ran") or []) - unmeasured - failing
+    if "ran" not in native and step.get("outcome") == "passed" and native.get("verdict") != "not applicable":
+        ran = _holdout_criteria(contract)
+    return ran, failing, set(native.get("missing") or []) | unmeasured
+
+
+def _holdout_criteria(contract: dict) -> set[str]:
+    return {c["id"] for r in contract["requirements"] for c in r["acceptance"]
+            if (c.get("check") or {}).get("kind") in ("holdout", "probe")}
+
+
 def evidence(project) -> list:
     from kernel.gate import tests_naming
 
@@ -50,19 +90,7 @@ def evidence(project) -> list:
     passed_gates = {r["event"]["payload"]["task"]: r["event"]["payload"] for r in ledger.of_kind("gate")
                     if r["event"]["payload"].get("verdict") == "passed"}
     merged = {r["event"]["payload"]["task"]: r["event"]["payload"] for r in ledger.of_kind("merged")}
-    held = {}
-    for rel in _releases(project):
-        for step in rel.get("steps", []):
-            if not isinstance(step, dict) or not str(step.get("step", "")).startswith("holdouts:"):
-                continue
-            native = step.get("native") or {}
-            failing = {f["criterion"] for f in native.get("failing", [])}
-            ran = set(native.get("ran") or [])
-            if step.get("outcome") == "passed" and not ran:
-                ran = {c["id"] for r in contract["requirements"] for c in r["acceptance"]
-                       if (c.get("check") or {}).get("kind") in ("holdout", "probe")}
-            for cid in ran | failing:
-                held[cid] = ("failing" if cid in failing else "held_out", rel["number"])
+    held = _held(project, contract)
     out = []
     for r in contract["requirements"]:
         for c in r["acceptance"]:
@@ -84,6 +112,20 @@ def evidence(project) -> list:
                                                            "why": "no passing gate proved it"}])
             out.append(row)
     return out
+
+
+def _held_release(rels: list) -> str | None:
+    """A sentence for the latest release when the security gate holds it (kernel/deliver.py): it
+    waits on a person who accepts the risk, or on a scan that no longer reports the findings, and
+    no card asks for either."""
+    rel = rels[-1] if rels else {}
+    blocked = rel.get("blocked") if rel.get("state") == "waiting" else None
+    if not isinstance(blocked, dict):
+        return None
+    findings = ", ".join(str(f) for f in blocked.get("findings") or []) or "open findings"
+    return (f"release {rel['number']} is held by the {blocked.get('by', 'security')} gate before "
+            f"{blocked.get('environment', 'its next environment')}: {findings}; it goes on when a scan no longer "
+            "reports them or a person with the it or compliance persona accepts the risk")
 
 
 def now(project) -> dict:
@@ -108,11 +150,15 @@ def now(project) -> dict:
         rounds = len(tasks[building[0]].get("rounds", []))
         line = f"Building {building[0]}: {title[:70]}" + (f" (repair round {rounds})" if rounds else "")
         return {"state": "working", "line": line, "since": since}
+    rels = _releases(project)
+    held = _held_release(rels)
     if waiting:
         kinds = sorted({c["kind"].replace("_", " ") for c in waiting})
-        return {"state": "waiting_on_you", "line": f"{len(waiting)} decision(s) waiting: " + ", ".join(kinds),
-                "since": since, "cards": [c["id"] for c in waiting]}
-    rels = _releases(project)
+        line = f"{len(waiting)} decision(s) waiting: " + ", ".join(kinds) + (f"; {held}" if held else "")
+        return {"state": "waiting_on_you", "line": line, "since": since, "cards": [c["id"] for c in waiting]}
+    if held:
+        return {"state": "waiting_on_you", "line": held[0].upper() + held[1:], "since": since, "cards": [],
+                "blocked": rels[-1]["blocked"]}
     if rels and rels[-1].get("state") == "done":
         return {"state": "done", "line": f"Release {rels[-1]['number']} is live ({meta['maturity']}).", "since": since}
     if rels and rels[-1].get("state") == "failed":
@@ -124,46 +170,74 @@ def now(project) -> dict:
     return {"state": "working", "line": f"Stage {meta['stage']}: ready for the next step.", "since": since}
 
 
+def _lock_is_free(lane: Path) -> bool:
+    """Whether nobody holds the lane's lock: taken and given back at once, without waiting."""
+    from kernel.filelock import LockHeld
+    from kernel.lanes import lane_lock
+
+    try:
+        with lane_lock(lane, blocking=False):
+            return True
+    except LockHeld:
+        return False
+
+
 def live(project, *, lanes_root=None) -> dict:
     """What the running cell is doing right now, read from Gnomon's own audit trail in the lane
     the project holds: the task, the model, tool steps so far and the last action. Nothing is
     guessed: without a held lane or a trail, it says so."""
-    from pathlib import Path
-
     from kernel.lanes import lanes_root as default_root
 
     root = Path(lanes_root or default_root())
     for lease in sorted(root.glob(".lane-*.lease.json")) if root.exists() else []:
         try:
-            holder = json.loads(lease.read_text(encoding="utf-8")).get("holder") or ""
+            held = json.loads(lease.read_text(encoding="utf-8"))
         except ValueError:
             continue
+        holder = (held.get("holder") or "") if isinstance(held, dict) else ""
         if not holder.startswith(project.pid + ":"):
             continue
         lane = root / lease.name[1:-len(".lease.json")]
-        trails = sorted((lane / ".gnomon-audit").glob("task-*.jsonl"), key=lambda p: p.stat().st_mtime) \
-            if (lane / ".gnomon-audit").exists() else []
+        if "pid" in held and _lock_is_free(lane):
+            continue  # the holder died mid-task: the system freed its lock, and its lease file stayed
+        since = held.get("since") if isinstance(held.get("since"), (int, float)) else lease.stat().st_mtime
         out: dict[str, Any] = {"running": True, "task": holder.split(":", 1)[1], "lane": lane.name, "steps": 0,
                                "model": None, "role": None, "last": None, "ended": False}
-        if trails:
-            for line in trails[-1].read_text(encoding="utf-8", errors="replace").splitlines():
-                try:
-                    rec = json.loads(line)
-                except ValueError:
-                    continue
-                kind = rec.get("kind")
-                if kind == "session_start":
-                    out["role"] = rec.get("role")
-                elif kind == "model_call":
-                    out["model"] = rec.get("model") or out["model"]
-                elif kind == "tool_call":
-                    out["steps"] += 1
-                    out["last"] = {"tool": rec.get("tool"), "target": str(rec.get("target") or "")[:120],
-                                   "at": rec.get("ts"), "bucket": rec.get("bucket")}
-                elif kind == "session_end":
-                    out["ended"] = True
-        return out
+        trails = _trails_since(lane, since)
+        return _read_trail(trails[-1], out) if trails else out
     return {"running": False, "why": "no lane is held for this project"}
+
+
+def _trails_since(lane: Path, since: float) -> list[Path]:
+    """The lane's Gnomon trails this holder wrote, oldest first: a lane keeps an earlier holder's
+    (of any project) across leases. A second of slack, as in dispatch.ingest_latest_run, for file
+    times coarser than the clock."""
+    audit = lane / ".gnomon-audit"
+    if not audit.exists():
+        return []
+    return sorted((p for p in audit.glob("task-*.jsonl") if p.stat().st_mtime >= since - 1),
+                  key=lambda p: p.stat().st_mtime)
+
+
+def _read_trail(path: Path, out: dict[str, Any]) -> dict[str, Any]:
+    """Fold one Gnomon audit trail into the live view: role, model, tool steps, the last action."""
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        kind = rec.get("kind") if isinstance(rec, dict) else None
+        if kind == "session_start":
+            out["role"] = rec.get("role")
+        elif kind == "model_call":
+            out["model"] = rec.get("model") or out["model"]
+        elif kind == "tool_call":
+            out["steps"] += 1
+            out["last"] = {"tool": rec.get("tool"), "target": str(rec.get("target") or "")[:120],
+                           "at": rec.get("ts"), "bucket": rec.get("bucket")}
+        elif kind == "session_end":
+            out["ended"] = True
+    return out
 
 
 def try_it(project) -> dict:
@@ -204,6 +278,7 @@ def health(project) -> dict:
         reasons.append("a person stopped the build")
     reasons += [f"{c['id']}: {c['title']}" for c in canon.cards(kind="escalation")]
     reasons += [f"{c['id']}: {c['title']}" for c in canon.cards(kind="holdout_ruling")]
+    reasons += [f"{c['id']}: {c['title']}" for c in canon.cards(kind="incident")]
     reasons += [f"assumption {a['id']} is overdue (due {a['due']})" for a in canon.overdue()]
     reasons += [f["text"] for f in alignment(project) if f["kind"] == "stale_approval"]
     rels = _releases(project)

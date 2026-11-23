@@ -13,7 +13,10 @@ The maturity decides the plan:
 It stops at a card that waits for a person and returns `waiting`; the next call, after the
 person decided, goes on from there. The release record (`releases/<n>.json`) keeps every step's
 outcome with its native values, the holdout results, the cards waited on and their decisions,
-the artifact and the contract revision. Transitions go to the ledger.
+the artifact and the contract revision. When the release ends (done or failed) it also keeps its
+criteria with their evidence states as they stood then (`criteria_at_end`): its capability pack
+lists those criteria, so a criterion a later contract adds is never shown as part of it.
+Transitions go to the ledger.
 
 Before anything is built, every environment of the plan needs a ready paved road. A road that is
 missing or not configured opens a `road` card for IT, and nothing is deployed.
@@ -121,6 +124,42 @@ def latest_release(project) -> dict | None:
     return found[-1] if found else None
 
 
+def cap_now(project: Project) -> int:
+    """The autonomy cap in force for the project (`kernel.autonomy.cap_of`), read without creating
+    the factory's own canon when no policy was ever set."""
+    from kernel.autonomy import DEFAULT_CAP
+    from kernel.learn import factory_project
+
+    store = factory_project(project.factory, create=False)
+    policy = (store.read("policy.json", {}) or {}) if store is not None else {}
+    cap = int(policy.get("autonomy_cap", DEFAULT_CAP))
+    own = project.meta.get("autonomy_cap")
+    return min(cap, int(own)) if own is not None else cap
+
+
+CRITERIA_AT_END = "criteria_at_end"
+# What reading the criteria raises on records not shaped as the kernel writes them.
+_UNREADABLE = (KeyError, TypeError, AttributeError, ValueError, IndexError, RecursionError)
+
+
+def criteria_now(project: Project) -> dict | None:
+    """Each criterion's evidence state as it stands now (`kernel.status.evidence`), with the contract
+    revision it was read under. A release keeps it when it ends, so its capability pack lists the
+    criteria it delivered, not a later contract's. None when there is no contract or its records
+    cannot be read."""
+    from kernel.status import evidence
+
+    if not project.path("contract.json").exists():
+        return None
+    try:
+        rows = evidence(project)
+    except _UNREADABLE:
+        return None
+    contract = project.read("contract.json") or {}
+    return {"at": project.factory.clock.stamp(), "contract_revision": contract.get("revision"),
+            "criteria": [{k: row.get(k) for k in ("criterion", "requirement", "kind", "state")} for row in rows]}
+
+
 def summary(rel: dict) -> dict:
     out = {"state": rel["state"] if rel["state"] in ("done", "waiting", "failed") else "failed",
            "waiting_on": rel.get("waiting_on"), "release": rel["release"], "env": LANDING[rel["maturity"]],
@@ -191,6 +230,15 @@ class _Delivery:
         self.rel["updated"] = self.now()
         write_json(release_path(self.project, self.rel["release"]), self.rel)
 
+    def keep_criteria(self) -> None:
+        """At the release's end (done or failed), keep its criteria as they stand: its capability pack
+        lists them (kernel/packs.py), whatever a later contract adds. The record is saved first, so
+        the step that ended the release (a failing holdout) is part of what is read."""
+        self.save()
+        kept = criteria_now(self.project)
+        if kept is not None:
+            self.rel[CRITERIA_AT_END] = kept
+
     def log(self, kind: str, **payload) -> None:
         self.project.log(kind, {"release": self.rel["release"], **payload})
 
@@ -242,6 +290,7 @@ class _Delivery:
                 return self.fail(step, outcome)
             self.save()
         rel["state"], rel["done"] = "done", self.now()
+        self.keep_criteria()
         self.save()
         self.log("release_done", revision=rel["revision"], environment=LANDING[rel["maturity"]])
         return summary(rel)
@@ -260,6 +309,8 @@ class _Delivery:
             "built": bool(meta.get("built")), "tasks": {t: s.get("status") for t, s in sorted(tasks.items())},
             "roads": {}, "artifacts": {}, "packages": {}, "steps": [], "holdouts": None, "cards": [],
             "state": "running", "waiting_on": None, "created": self.now(), "updated": self.now(),
+            # the cap the release runs under: its capability pack pins it (kernel/packs.py)
+            "autonomy_cap": cap_now(self.project),
         }
         self.save()
         self.log("release_started", revision=revision, maturity=meta["maturity"], plan=plan,
@@ -323,6 +374,7 @@ class _Delivery:
                                             body=f"{rel['reason']}\n\nThe rollback failed: {exc}",
                                             payload={"error": str(exc)})
                 rel["rollback"], rel["incident"] = {"error": f"{type(exc).__name__}: {exc}"}, inc["card"]
+        self.keep_criteria()
         self.save()
         self.log("release_failed", step=step, reason=custody_safe(rel["reason"]), incident=rel.get("incident"),
                  handoff=rel.get("handoff"))

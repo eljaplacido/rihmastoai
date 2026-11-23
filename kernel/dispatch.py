@@ -17,12 +17,23 @@ reflex. It never counts as a verdict on the work (FR-C6).
 
 from __future__ import annotations
 
+import tempfile
+import time
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from kernel.canon import Canon
 from kernel.gate import judge, visible_criteria
-from kernel.lanes import Lanes
+from kernel.lanes import GIT_ID, Lane, Lanes, _git, protected_paths
 from kernel.model import ModelError, run_gnomon_task
+from kernel.store import Project
+
+# The ref that keeps the head a person is asked to accept as it is, in the product repository:
+# accept as is merges exactly that commit, whatever its branch holds by then.
+JUDGED_REF = "refs/rihma/judged/"
+# What an earlier outcome left on a task's state, and a merge makes stale.
+CLEARED_ON_MERGE = ("reopened_by", "accepted_as_is_by", "stopped_by", "author")
 
 AUTONOMY = {
     # Who gives the "permitted" signal for merging a warranted task into the product's main
@@ -99,9 +110,21 @@ def _tasks_state(project) -> dict:
     return project.read("tasks.json", {}) or {}
 
 
-def _set_task(project, task_id: str, **changes) -> dict:
+def _contract(project: Project) -> dict:
+    """The contract a build works from. A project not compiled yet has none: say so."""
+    contract = project.read("contract.json")
+    if not contract:
+        raise FileNotFoundError(f"{project.pid} has no contract: compile the project before building it")
+    return contract
+
+
+def _set_task(project: Project, task_id: str, **changes: Any) -> dict:
     state = _tasks_state(project)
-    state.setdefault(task_id, {"status": "pending", "rounds": []}).update(changes)
+    entry = state.setdefault(task_id, {"status": "pending", "rounds": []})
+    if changes.get("status") == "merged":  # this merge is the task's news; an earlier one's notes go
+        for key in CLEARED_ON_MERGE:
+            entry.pop(key, None)
+    entry.update(changes)
     project.write("tasks.json", state)
     return state[task_id]
 
@@ -117,11 +140,10 @@ def ingest_latest_run(project, lane_path, started: float, *, task: str, round_no
     """Ingest the Gnomon run that just finished in a lane: its record and its re-verified audit
     trail become one `gnomon_run` ledger event (FR-C2)."""
     import json as _json
-    from pathlib import Path as _Path
 
     from adapters.gnomon_ingest import find_trail, ingest
 
-    audit = _Path(lane_path) / ".gnomon-audit"
+    audit = Path(lane_path) / ".gnomon-audit"
     if not audit.exists():
         return None
     recent = [p for p in audit.glob("task-*.record.json") if p.stat().st_mtime >= started - 1]
@@ -147,129 +169,223 @@ def gate_record(task: str, round_no: int, result, *, author: dict | None = None,
     return record | extra
 
 
+def _run_cell(project: Project, lane: Lane, prompt: str, run_cell: Callable[[Path, str], dict], *, task_id: str,
+              round_no: int, ingest: bool, reflex_backoff: tuple) -> tuple[dict, int]:
+    """Run the cell once. Reflex (FR-J2, FR-C6): an apparatus failure, such as an endpoint error,
+    is the harness or the provider failing, not the work. It is retried with growing pauses before
+    anyone is asked. Returns the cell's record and the attempts it took."""
+    record: dict[str, Any] = {}
+    attempts = 0
+    while attempts < 1 + len(reflex_backoff):
+        attempts += 1
+        started = time.time()
+        try:
+            record = run_cell(lane.path, prompt)
+        except ModelError as exc:
+            record = {"bucket": "apparatus_failure", "stop_reason": str(exc)}
+        if ingest:
+            ingest_latest_run(project, lane.path, started, task=task_id, round_no=round_no)
+        if record.get("bucket") != "apparatus_failure" or attempts > len(reflex_backoff):
+            break
+        pause = reflex_backoff[attempts - 1]
+        project.log("reflex_retry", {"task": task_id, "round": round_no, "why": record.get("stop_reason"),
+                                     "attempt": attempts, "pause_seconds": pause})
+        time.sleep(pause)
+    return record, attempts
+
+
 def build_task(project, task_id: str, *, lanes: Lanes | None = None, max_rounds: int = 2,
                cell_runner=None, verifier_runner=None, deadline: int = 1500, lane_wait: float = 3600,
                reflex_backoff: tuple = (30, 120)) -> dict:
     """Build one task. ``cell_runner(lane_path, prompt) -> record`` replaces gnomon in tests."""
-    contract = project.read("contract.json")
+    from kernel.safestop import paused, stop_here
+
+    contract = _contract(project)
     lanes = lanes or Lanes()
-    canon = Canon(project)
-    repo = project.path("repo.git")
     run_cell = cell_runner or (lambda path, prompt: run_gnomon_task(
         path, prompt, role="builder", timeout=deadline + 600, deadline=deadline))
     _set_task(project, task_id, status="building")
     with lanes.lease(f"{project.pid}:{task_id}", wait=lane_wait) as lane:
-        base = lane.checkout(repo, branch=f"cell/{task_id}")
+        base = lane.checkout(project.path("repo.git"), branch=f"cell/{task_id}")
         objections: list[str] = []
         rounds: list[dict[str, Any]] = []
         result = None
         for round_no in range(max_rounds + 1):
-            from kernel.safestop import paused, stop_here
-
             if round_no and paused(project):  # a safe point: between repair rounds (FR-J3)
                 stop_here(project, where=f"{task_id} before round {round_no}")
                 _set_task(project, task_id, status="pending", rounds=rounds)
                 return {"status": "paused", "rounds": rounds}
             prompt = envelope(project, contract, task_id, base=base, round_no=round_no, objections=objections)
-            record: dict[str, Any] = {}  # the loop below runs at least once and sets it
-            attempts = 0
-            # Reflex (FR-J2, FR-C6): an apparatus failure, such as an endpoint error, is the harness or
-            # the provider failing, not the work. Retry it with growing pauses before asking anyone.
-            while attempts < 1 + len(reflex_backoff):
-                attempts += 1
-                started = __import__("time").time()
-                try:
-                    record = run_cell(lane.path, prompt)
-                except ModelError as exc:
-                    record = {"bucket": "apparatus_failure", "stop_reason": str(exc)}
-                if cell_runner is None:
-                    ingest_latest_run(project, lane.path, started, task=task_id, round_no=round_no)
-                if record.get("bucket") != "apparatus_failure":
-                    break
-                if attempts > len(reflex_backoff):
-                    break
-                pause = reflex_backoff[attempts - 1]
-                project.log("reflex_retry", {"task": task_id, "round": round_no, "why": record.get("stop_reason"),
-                                             "attempt": attempts, "pause_seconds": pause})
-                __import__("time").sleep(pause)
+            record, attempts = _run_cell(project, lane, prompt, run_cell, task_id=task_id, round_no=round_no,
+                                         ingest=cell_runner is None, reflex_backoff=reflex_backoff)
             head = lane.commit_all(f"{task_id} round {round_no}: cell work\n\nEnvelope for {task_id}, "
                                    f"contract {contract['revision'][:19]}, base {base[:12]}.")
             cell = _cell_summary(record)
             project.log("cell_ran", {"task": task_id, "round": round_no, "head": head, **cell})
             if record.get("bucket") == "apparatus_failure":
                 rounds.append({"round": round_no, "cell": cell, "gate": None})
-                objections = [f"the harness failed {attempts} times (an apparatus failure, not the work): {record.get('stop_reason')}"]
+                objections = [f"the harness failed {attempts} times (an apparatus failure, not the work): "
+                              f"{record.get('stop_reason')}"]
                 break
             result = judge(lane.path, contract, task_id, base, head, verifier_runner=verifier_runner)
             project.log("gate", gate_record(task_id, round_no, result))
             rounds.append({"round": round_no, "cell": cell, "gate": result.to_dict()})
             if result.warranted:
-                break
+                return _merge_cell(project, lane, task_id, result.head, result.verdict, rounds)
             objections = result.objections
-        if result is not None and result.warranted:
-            permitted_by = AUTONOMY[project.meta["maturity"]]
-            lane.push(f"cell/{task_id}", "main")
-            project.log("merged", {"task": task_id, "revision": result.head, "warranted": result.verdict,
-                                   "permitted_by": permitted_by})
-            return _set_task(project, task_id, status="merged", revision=result.head, rounds=rounds,
-                             permitted_by=permitted_by)
-        try:  # keep the cell's work in the product repository, so a person can accept it as it is
-            lane.push(f"cell/{task_id}")
-        except RuntimeError as exc:
-            project.log("escalated_branch_not_kept", {"task": task_id, "error": str(exc)})
-        card = canon.card("escalation", f"{task_id} did not pass its gate after {len(rounds)} round(s)",
-                          body="\n".join(f"- {o}" for o in objections),
-                          refs={"task": task_id, "requirements": sorted({c.rsplit('-AC-', 1)[0]
-                                                                          for c in next(t for t in contract['tasks']
-                                                                                        if t['id'] == task_id)['criteria']})},
-                          payload={"objections": objections, "branch": f"cell/{task_id}"}, blocking=True)
-        project.log("escalated", {"task": task_id, "card": card["id"], "objections": objections})
-        return _set_task(project, task_id, status="escalated", card=card["id"], rounds=rounds)
+        judged = result.head if result is not None else lane.head()
+        return _escalate_cell(project, lane, contract, task_id, judged, objections, rounds)
 
 
-def resolve_escalations(project) -> list:
-    """Carry out what a person decided on each escalation card:
-    - **retry** reopens the task for new rounds;
-    - **accept as is** merges the cell's branch with the person as the permitted signal, the
-      gate's verdict kept beside it, unwarranted;
-    - **stop** halts the task and the project's build."""
-    import tempfile
-    from pathlib import Path as _Path
+def _merge_cell(project: Project, lane: Lane, task_id: str, head: str, verdict: str, rounds: list) -> dict:
+    """Push a warranted head to main, permitted by the maturity's policy (FR-G1). When main moved
+    while the gate ran, the push is refused: the ledger says so beside the passed gate, and the task
+    goes back to pending, to be built again on the new main ("stale_main")."""
+    permitted_by = AUTONOMY[project.meta["maturity"]]
+    try:
+        lane.push(f"cell/{task_id}", "main")
+    except RuntimeError as exc:
+        project.log("merge_rejected", {"task": task_id, "revision": head, "why": "main moved during the gate",
+                                       "error": str(exc)})
+        return _set_task(project, task_id, status="pending", rounds=rounds) | {
+            "status": "stale_main", "why": "main moved during the gate"}
+    project.log("merged", {"task": task_id, "revision": head, "warranted": verdict, "permitted_by": permitted_by})
+    return _set_task(project, task_id, status="merged", revision=head, rounds=rounds, permitted_by=permitted_by)
 
-    from kernel.lanes import GIT_ID, _git
 
-    canon, state, done = Canon(project), _tasks_state(project), []
+def _escalate_cell(project: Project, lane: Lane, contract: dict, task_id: str, judged: str, objections: list,
+                   rounds: list) -> dict:
+    """Keep the cell's work in the product repository, with the head the gate judged under a ref
+    of its own, so a person can accept exactly that as it is; then open the escalation card with
+    every objection (FR-G8)."""
+    try:
+        lane.git("push", "-q", "-f", "origin", f"cell/{task_id}:refs/heads/cell/{task_id}",
+                 f"{judged}:{JUDGED_REF}{judged}")
+    except RuntimeError as exc:
+        project.log("escalated_branch_not_kept", {"task": task_id, "error": str(exc)})
+    reqs = sorted({c.rsplit("-AC-", 1)[0] for t in contract["tasks"] if t["id"] == task_id for c in t["criteria"]})
+    card = Canon(project).card("escalation", f"{task_id} did not pass its gate after {len(rounds)} round(s)",
+                               body="\n".join(f"- {o}" for o in objections),
+                               refs={"task": task_id, "requirements": reqs},
+                               payload={"objections": objections, "branch": f"cell/{task_id}", "head": judged},
+                               blocking=True)
+    project.log("escalated", {"task": task_id, "card": card["id"], "objections": objections})
+    return _set_task(project, task_id, status="escalated", card=card["id"], rounds=rounds)
+
+
+class AcceptRefused(RuntimeError):
+    """Accept as is cannot be carried out: the judged head is missing, touches a protected path,
+    or no longer merges into main."""
+
+
+def resolve_escalations(project: Project) -> list:
+    """Carry out, once, what a person decided on each escalation card (the ledger's
+    `escalation_resolved` records say which were carried out):
+    - **retry** reopens a builder task for new rounds; on a workspace's card it is recorded, and the
+      person submits again from the workspace;
+    - **accept as is** merges the head the gate judged, never what its branch holds by then, with
+      the person as the permitted signal and the gate's verdict kept beside it, unwarranted. A head
+      that touches a protected path, is gone, or no longer merges is not merged: a new card asks
+      the person again;
+    - **stop** halts the project's build (and a builder task).
+    A builder card whose task merged by another path (a workspace) after the decision and before it
+    was carried out is not carried out, whatever its verdict: the task keeps its merge, and a stop
+    neither marks it stopped nor halts the build over a task that is done."""
+    canon, done = Canon(project), []
+    carried = {r["event"]["payload"].get("card") for r in project.ledger().of_kind("escalation_resolved")}
     for card in canon.cards(state="decided", kind="escalation"):
-        task = card["refs"].get("task")
-        if not task or state.get(task, {}).get("escalation_resolved") == card["id"]:
+        if card["id"] in carried:
             continue
+        outcome = _carry_out(project, card)
         d = card["decision"]
-        if d["verdict"] == "retry":
-            _set_task(project, task, status="pending", rounds=[], escalation_resolved=card["id"])
-        elif d["verdict"] == "accept_as_is":
-            with tempfile.TemporaryDirectory(prefix="gf-accept-") as tmp:
-                _git(_Path(tmp), "clone", "-q", str(project.path("repo.git")), "w")
-                work = _Path(tmp) / "w"
-                _git(work, *GIT_ID, "merge", "--no-ff", "-q", f"origin/{card['payload']['branch']}",
-                     "-m", f"Accept {task} as it is: {d['person']} ({d['persona']}) on {card['id']}")
-                _git(work, "push", "-q", "origin", "main")
-                revision = _git(work, "rev-parse", "HEAD")
-            project.log("merged", {"task": task, "revision": revision, "warranted": "not warranted",
-                                   "permitted_by": f"person:{d['person']} ({d['persona']}) on {card['id']}",
-                                   "objections": card["payload"].get("objections", [])})
-            _set_task(project, task, status="merged", revision=revision, accepted_as_is_by=d["person"],
-                      escalation_resolved=card["id"])
-        elif d["verdict"] == "stop":
-            _set_task(project, task, status="stopped", escalation_resolved=card["id"], stopped_by=d["person"])
-            project.update_meta(halted=True)
-        project.log("escalation_resolved", {"card": card["id"], "task": task, "verdict": d["verdict"],
-                                            "person": d["person"]})
+        project.log("escalation_resolved", {"card": card["id"], "task": card["refs"].get("task"),
+                                            "verdict": d["verdict"], "person": d["person"], **outcome})
         done.append(card["id"])
     return done
 
 
-def ready_tasks(project) -> list:
-    contract, state = project.read("contract.json"), _tasks_state(project)
+def _carry_out(project: Project, card: dict) -> dict:
+    """One decided escalation card, carried out; what the ledger records beside it."""
+    verdict, refs = card["decision"]["verdict"], card["refs"]
+    task, workspace = refs.get("task"), refs.get("workspace")
+    where: dict[str, Any] = {"workspace": workspace} if workspace else {}
+    if task and not workspace and _tasks_state(project).get(task, {}).get("status") == "merged":
+        return {"carried_out": False, "why": f"{task} merged by another path before this decision was carried out"}
+    if verdict == "stop":
+        if task and not workspace:
+            _set_task(project, task, status="stopped", escalation_resolved=card["id"],
+                      stopped_by=card["decision"]["person"])
+        project.update_meta(halted=True)
+        return where
+    if not workspace and not task:
+        return {"carried_out": False, "why": "the card names neither a task nor a workspace"}
+    if verdict == "retry":
+        if workspace:
+            return where | {"note": "recorded: the person submits again from the workspace"}
+        _set_task(project, task, status="pending", rounds=[], escalation_resolved=card["id"])
+        return where
+    return where | _accept_as_is(project, card)
+
+
+def _accept_as_is(project: Project, card: dict) -> dict:
+    """Merge the card's judged head into main with the person as the permission (FR-G8-AC-2)."""
+    d, refs, payload = card["decision"], card["refs"], card["payload"]
+    task, workspace = refs.get("task"), refs.get("workspace")
+    label = task or f"workspace:{workspace}"
+    try:
+        revision = _merge_judged(project, payload.get("head"),
+                                 f"Accept {label} as it is: {d['person']} ({d['persona']}) on {card['id']}")
+    except AcceptRefused as exc:
+        return _ask_again(project, card, str(exc))
+    record = {"task": label, "revision": revision, "warranted": "not warranted", "head": payload.get("head"),
+              "permitted_by": f"person:{d['person']} ({d['persona']}) on {card['id']}",
+              "objections": payload.get("objections", [])}
+    if workspace:
+        record |= {"workspace": workspace, "author": payload.get("author")}
+    project.log("merged", record)
+    if task:
+        _set_task(project, task, status="merged", revision=revision, accepted_as_is_by=d["person"],
+                  escalation_resolved=card["id"])
+    return {"revision": revision}
+
+
+def _merge_judged(project: Project, head: str | None, message: str) -> str:
+    """Merge ``head`` into the product's main in a fresh clone and push it; the new main."""
+    if not isinstance(head, str) or len(head) < 40 or any(c not in "0123456789abcdef" for c in head):
+        raise AcceptRefused("the card names no judged head to accept")
+    with tempfile.TemporaryDirectory(prefix="gf-accept-") as tmp:
+        _git(Path(tmp), "clone", "-q", str(project.path("repo.git")), "w")
+        work = Path(tmp) / "w"
+        _git(work, "fetch", "-q", "origin", f"{JUDGED_REF}{head}", check=False)
+        if _git(work, "cat-file", "-t", head, check=False) != "commit":
+            raise AcceptRefused(f"the judged head {head[:12]} is not in the product repository")
+        touched = protected_paths(work, "HEAD", head)
+        if touched:
+            raise AcceptRefused("the change touches what a cell may not: " + ", ".join(touched[:10]))
+        try:
+            _git(work, *GIT_ID, "merge", "--no-ff", "-q", head, "-m", message)
+            _git(work, "push", "-q", "origin", "main")
+        except RuntimeError as exc:
+            raise AcceptRefused(f"{head[:12]} could not be merged into main: {exc}") from exc
+        return _git(work, "rev-parse", "HEAD")
+
+
+def _ask_again(project: Project, card: dict, why: str) -> dict:
+    """Accept as is could not be carried out. Nothing merges; a new card puts the case to a
+    person again, with the reason first."""
+    d, refs = card["decision"], card["refs"]
+    again = Canon(project).card(
+        "escalation", f"{card['title']}: accept as is was not carried out",
+        body=f"- accept as is by {d['person']} on {card['id']} was not carried out: {why}\n{card.get('body', '')}",
+        refs=refs, payload=card["payload"] | {"accept_refused": why, "after": card["id"]}, blocking=True)
+    if refs.get("task") and not refs.get("workspace"):
+        _set_task(project, refs["task"], status="escalated", card=again["id"], escalation_resolved=card["id"])
+    project.log("accept_refused", {"card": card["id"], "again": again["id"], "why": why})
+    return {"carried_out": False, "why": why, "asked_again": again["id"]}
+
+
+def ready_tasks(project: Project) -> list:
+    contract, state = _contract(project), _tasks_state(project)
     done = {t for t, s in state.items() if s.get("status") == "merged"}
     out = []
     for t in contract["tasks"]:
@@ -280,11 +396,14 @@ def ready_tasks(project) -> list:
     return out
 
 
-def build(project, **kwargs) -> dict:
-    """Build every task in dependency order. Stop at the first escalation: later tasks build on it."""
+def build(project: Project, **kwargs: Any) -> dict:
+    """Build every task in dependency order. Stop at the first escalation: later tasks build on it.
+    A task whose merge found main moved during its gate is built once more, on the new main."""
     from kernel.safestop import paused, stop_here
 
-    results = {}
+    contract = _contract(project)
+    results: dict[str, str] = {}
+    again: set[str] = set()
     while True:
         ready = ready_tasks(project)
         if not ready:
@@ -294,10 +413,12 @@ def build(project, **kwargs) -> dict:
             break
         outcome = build_task(project, ready[0], **kwargs)
         results[ready[0]] = outcome["status"]
+        if outcome["status"] == "stale_main" and ready[0] not in again:
+            again.add(ready[0])
+            continue
         if outcome["status"] != "merged":
             break
     state = _tasks_state(project)
-    contract = project.read("contract.json")
     all_merged = all(state.get(t["id"], {}).get("status") == "merged" for t in contract["tasks"])
     if all_merged:
         project.update_meta(stage=6 if project.meta["maturity"] in ("pilot", "production") else 5, built=True)

@@ -229,6 +229,26 @@ For every role:
 """
 
 
+# What PRODUCT_RULES makes read-only. The gate refuses a builder cell's change that touches one, and
+# a workspace's submission (kernel/gate.py, kernel/workspace.py).
+PROTECTED = (".gnomon/", "contract.json", "factory/")
+
+
+def protected_paths(repo_dir: Path, base: str, head: str) -> list[str]:
+    """The paths a change from ``base`` to ``head`` touches that no cell may write. Renames count
+    as a delete and an add (so a protected file moved away is seen), names are not quoted, and the
+    match ignores case: `.GNOMON/roles.toml` is `.gnomon/roles.toml` on Windows and macOS."""
+    proc = subprocess.run(["git", "-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", "-z",
+                           f"{base}...{head}", "--"], cwd=repo_dir, capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"git diff {base[:12]}...{head[:12]} failed in {repo_dir}: "
+                           f"{proc.stderr.decode('utf-8', 'replace').strip()}")
+    names = [n.decode("utf-8", "replace") for n in proc.stdout.split(b"\0") if n]
+    folded = [(n, n.casefold()) for n in names]
+    return [n for n, f in folded
+            if any(f == p.casefold().rstrip("/") or f.startswith(p.casefold()) for p in PROTECTED)]
+
+
 def write_product_surface(repo_dir: Path, routing: dict, write_allow) -> None:
     """The `.gnomon/` surface of a product repository: builder and verifier, nothing extra."""
     g = Path(repo_dir) / ".gnomon"
@@ -299,13 +319,56 @@ def ensure_analyst_lane(routing: dict, root: Path | None = None) -> Path:
 
 
 def _git(cwd: Path, *args, check: bool = True) -> str:
-    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8")
+    """Run the kernel's git. It names itself (KERNEL_GIT_ENV), which a guarded product repository
+    asks of anyone who moves main (``guard_repo``)."""
+    env = dict(os.environ)
+    env[KERNEL_GIT_ENV] = "1"
+    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", env=env)
     if check and proc.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed in {cwd}: {proc.stderr.strip()}")
     return proc.stdout.strip()
 
 
 GIT_ID = ["-c", "user.name=Rihma kernel", "-c", "user.email=kernel@rihma.local"]
+KERNEL_GIT_ENV = "RIHMA_KERNEL_GIT"
+GUARD_MARK = "# rihma: guarded product repository"
+# The product repository's pre-receive hook once a workspace is opened on it: main, the cells'
+# branches and the judged heads move only through the kernel's own git, so a person or the agent
+# in their terminal who pushes there by hand is told to submit instead. Ref names are compared in
+# lower case, since refs/heads/MAIN is refs/heads/main on a case-insensitive file system. It is a
+# guard rail, not a boundary against someone who can write the repository's files.
+PRE_RECEIVE = GUARD_MARK + """
+if [ -n "$RIHMA_KERNEL_GIT" ]; then exit 0; fi
+status=0
+while read -r old new ref; do
+  lower=$(printf '%s' "$ref" | tr '[:upper:]' '[:lower:]')
+  case "$lower" in
+    refs/heads/main|refs/heads/cell/*|refs/rihma/*)
+      echo "rihma: $ref moves only through the gate. Submit your work: rihma workspace submit" >&2
+      status=1;;
+  esac
+done
+exit $status
+"""
+
+
+def guard_repo(repo: Path) -> bool:
+    """Install the guard (PRE_RECEIVE) in a bare product repository. A pre-receive hook someone
+    else put there is left alone. Returns whether the guard is in place."""
+    repo = Path(repo)
+    if not (repo / "objects").is_dir() or not (repo / "refs").is_dir():
+        return False
+    hook = repo / "hooks" / "pre-receive"
+    text = "#!/bin/sh\n" + PRE_RECEIVE
+    if hook.exists():
+        current = hook.read_text(encoding="utf-8", errors="replace")
+        if GUARD_MARK not in current:
+            return False
+        if current == text:
+            return True
+    write_text(hook, text)
+    os.chmod(hook, 0o755)
+    return True
 
 
 class Lane:
@@ -387,7 +450,9 @@ class Lanes:
             raise LockHeld(f"no free lane among {[p.name for p in candidates]} for {holder}")
         lease_file = path.parent / f".{path.name}.lease.json"
         try:
-            write_json(lease_file, {"holder": holder})
+            # The holder's process and when it took the lane: a reader can tell a holder that died
+            # (its lock is free again) and the trails an earlier holder left in the lane.
+            write_json(lease_file, {"holder": holder, "pid": os.getpid(), "since": time.time()})
             yield Lane(path)
         finally:
             write_json(lease_file, {"holder": None})

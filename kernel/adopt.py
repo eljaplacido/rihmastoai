@@ -3,48 +3,72 @@
 `adopt` takes a git repository (a local path, or a URL that `git clone` reads without
 credentials) and makes it a project:
 
-- **Mirror.** The code is fetched into the project's `repo.git`, and `main` is set to the
-  upstream's default branch at adoption: the **baseline**. The upstream is a fetch-only remote:
-  its push URL is disabled, and nothing in the kernel pushes there. Credentials are never
-  handled: credential helpers and prompts are switched off, and a URL that carries a user, a
-  password, a token or a query is refused. A private repository is cloned by its owner first
-  and adopted from that local path.
+- **Mirror.** The code is fetched into the project's `repo.git`. The upstream's default branch
+  at adoption is the **baseline**; `main` is the baseline plus one kernel commit that puts the
+  kernel's own compiled `.gnomon/` surface there. An upstream's own `.gnomon/` (its endpoints,
+  keys, roles and prompts), Gnomon's machine-local directories and `.lfsconfig` are removed in
+  that commit, under any name a file system opens them by (`.GNOMON`, the 8.3 short name
+  `GNOMON~1`, `.gnomon.`): every later checkout of main (a builder cell, the gate's verifier, a
+  workspace) runs under the kernel's surface, never one the upstream wrote. The upstream is a
+  fetch-only remote: its push URL is disabled, and nothing in the kernel pushes there.
+- **No credentials.** Credential helpers, prompts and Git LFS downloads are switched off for every
+  git call adoption makes that reads the upstream, its checkout included; a URL (or a `base_url`)
+  that carries a user, a password, a token or a query is refused. A later checkout of main runs
+  git-lfs under its owner's git configuration, but main carries no `.lfsconfig` of the upstream's,
+  so the only address git-lfs knows there is the clone's own origin, the local `repo.git` (which
+  holds no LFS object: LFS content is never downloaded), never one the upstream chose. A private
+  repository is cloned by its owner first and adopted from that local path.
 - **Inventory, by rule, no model.** Languages by file extension, the test command found by rule
   (detected or not, never guessed), the README's first paragraph, the HTTP routes the source
-  declares (only when a `base_url` is given), and whether there is a Dockerfile.
+  declares (only when a `base_url` is given), and whether there is a Dockerfile. Only regular
+  files inside the checkout are read: a symlink is never followed.
 - **Characterisation baseline.** A detected Python suite runs once in a temporary checkout,
   with a timeout. Its counts are evidence of *existing behaviour, not a spec*. Other toolchains
   run only when their tool is on PATH, offline; otherwise the baseline says "not measured:
-  toolchain not run by the kernel". Running the suite runs the adopted code on this machine.
+  toolchain not run by the kernel". It is "passed" only when at least one test passed: zero
+  tests, every test skipped, an unreadable summary or a missing dependency are "not measured".
+  Running the suite runs the adopted code on this machine: stdin is closed, and the timeout, like
+  the end of the run, stops every process the suite started.
 - **As-is spec.** One requirement of `observed` provenance whose criteria are "the existing test
   suite keeps passing", and, with a `base_url`, one whose probe is "GET <base_url> answers". It
   compiles to a contract and a check plan like any spec (the contract's vocabulary has no
   observed tier, so the compiler names it there; see `kernel/compile.py`).
-- **Stage.** `monitor` goes to stage 7, probing `base_url`. `maintain` and `improve` wait at
-  stage 5: the as-is tasks are the existing code, so nothing is built until a change arrives
-  through the change loop or a person's workspace.
+- **Stage.** `monitor` goes to stage 7, probing `base_url` (a server error is not a healthy
+  answer). `maintain` and `improve` wait at stage 5: the as-is tasks are the existing code, so
+  nothing is built until a change arrives through the change loop or a person's workspace.
+
+Everything that reads the upstream runs before the project exists, and a failure after it exists
+removes it again: nothing is left half-adopted.
 
 `sync` fetches the upstream again and records the drift since the baseline. When the upstream
 moved since the last look, a change card "Upstream changed: review" is opened for people to
-decide; `main` is never moved by a sync.
+decide; `main` is never moved by a sync. A tracked branch that is gone upstream (a renamed default
+branch) is said so, once, on a change card of its own.
 """
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import importlib.util
 import json
 import os
 import re
 import shutil
+import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import urllib.parse
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
-from kernel.lanes import _git
+from kernel.lanes import GNOMON_MACHINE_LOCAL, _git
 from kernel.people import PERSONAS, is_person
 from kernel.store import write_json, write_text
 
@@ -55,10 +79,24 @@ OBSERVED = "observed"
 # running `git push upstream` inside repo.git by hand is refused.
 NO_PUSH = "rihma-never-pushes-upstream://read-only"
 NO_CREDENTIALS = ["-c", "credential.helper=", "-c", "core.askPass=", "-c", "protocol.ext.allow=never"]
+# curl gives up on a transfer slower than 1 kB/s for 30 s, so a stalled upstream cannot hold a
+# fetch open until the timeout (and the timeout stops git and every helper it started).
+NET_LIMITS = ["-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=30"]
 URL_SCHEMES = ("https", "http", "git", "file")
 VENDORED = ("node_modules/", "vendor/", ".venv/", "venv/", "site-packages/", "dist/", "build/", ".git/")
 MAX_SCAN_BYTES = 512 * 1024
+MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 MAX_ENDPOINTS = 200
+SURFACE_COMMIT = "The kernel's own .gnomon/ surface over the adopted baseline"
+# Top-level names an adopted main holds only as the kernel wrote them: the `.gnomon/` surface the
+# builder and the verifier run under, Gnomon's machine-local directories (its sessions, inbox,
+# skills and records), and `.lfsconfig`, which names the address git-lfs asks the owner's
+# credential helper for whenever main is checked out (a lane, a workspace, the gate).
+KERNEL_HELD = (".gnomon", *(d.rstrip("/") for d in GNOMON_MACHINE_LOCAL), ".lfsconfig")
+# Code points HFS+ leaves out of a file name (git's own check for `.git` skips the same ones).
+_HFS_IGNORED = dict.fromkeys([0x200C, 0x200D, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x206A, 0x2070),
+                              0xFEFF])
+_SHORT_NAME = re.compile(r"([^~]{2,6})~[1-9][0-9]*")
 
 LANGUAGES = {
     ".py": "Python", ".pyi": "Python", ".ipynb": "Jupyter Notebook", ".js": "JavaScript", ".mjs": "JavaScript",
@@ -72,29 +110,167 @@ LANGUAGES = {
     ".tf": "HCL",
 }
 
+# Windows: CREATE_SUSPENDED, and PROCESS_TERMINATE | PROCESS_SET_QUOTA | PROCESS_SUSPEND_RESUME.
+_CREATE_SUSPENDED = 0x00000004
+_PROCESS_ACCESS = 0x0001 | 0x0100 | 0x0800
+
 
 class AdoptionRefused(ValueError):
     """The source cannot be adopted as given (credentials, an unknown transport, not a repository)."""
 
 
+# -- running what the kernel does not trust to stop by itself -------------------------------------------
+
+@functools.lru_cache(maxsize=1)
+def _win32() -> Any:
+    """kernel32 and ntdll, typed for the few calls a job object needs (Windows only)."""
+    if sys.platform != "win32":
+        raise OSError("a job object is a Windows thing")
+    import ctypes
+    from ctypes import wintypes
+
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateJobObjectW.restype = wintypes.HANDLE
+    k32.CreateJobObjectW.argtypes = (ctypes.c_void_p, wintypes.LPCWSTR)
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    k32.AssignProcessToJobObject.restype = wintypes.BOOL
+    k32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+    k32.TerminateJobObject.restype = wintypes.BOOL
+    k32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    k32.CloseHandle.restype = wintypes.BOOL
+    k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    ntdll = ctypes.WinDLL("ntdll")
+    ntdll.NtResumeProcess.restype = ctypes.c_long
+    ntdll.NtResumeProcess.argtypes = (wintypes.HANDLE,)
+    return k32, ntdll
+
+
+def _join_job(pid: int) -> int | None:
+    """Windows: put a process that was started suspended into a new job object, then let it run,
+    so every process it starts is in the job too. Returns the job's handle, or None when Windows
+    would not make one (taskkill's tree walk is then what is left). The process always runs on."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+
+    k32, ntdll = _win32()
+    handle = k32.OpenProcess(_PROCESS_ACCESS, False, pid)
+    if not handle:
+        raise OSError(ctypes.get_last_error(), "the started process could not be opened")
+    try:
+        job = k32.CreateJobObjectW(None, None)
+        if job and not k32.AssignProcessToJobObject(job, handle):
+            k32.CloseHandle(job)
+            job = None
+        if ntdll.NtResumeProcess(handle) != 0:
+            if job:
+                k32.CloseHandle(job)
+            raise OSError("the started process could not be resumed")
+    finally:
+        k32.CloseHandle(handle)
+    return int(job) if job else None
+
+
+def _spawn(argv: list[str], *, cwd: Path, env: dict[str, str], out: IO[bytes],
+           err: IO[bytes]) -> tuple[subprocess.Popen[bytes], int | None]:
+    """Start ``argv`` in a process group of its own, stdin closed, output to files. Returns the
+    process and, on Windows, the job object that holds its whole tree."""
+    if sys.platform != "win32":
+        proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+                                start_new_session=True)
+        return proc, None
+    proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+                            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | _CREATE_SUSPENDED)
+    try:
+        return proc, _join_job(proc.pid)
+    except BaseException:
+        proc.kill()
+        proc.wait()
+        raise
+
+
+def _stop(proc: subprocess.Popen[bytes], job: int | None) -> None:
+    """Stop every process ``proc`` started, whether or not ``proc`` itself still runs: the job
+    object on Windows, the process group on POSIX."""
+    if sys.platform == "win32":
+        if job:
+            k32, _ = _win32()
+            k32.TerminateJobObject(job, 1)
+            k32.CloseHandle(job)
+        elif proc.poll() is None:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, check=False)
+    else:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+    if proc.poll() is None:
+        proc.kill()
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        proc.wait(timeout=10)
+
+
+def _tail(fh: IO[bytes]) -> str:
+    size = fh.seek(0, os.SEEK_END)
+    fh.seek(max(0, size - MAX_OUTPUT_BYTES))
+    return fh.read().decode("utf-8", errors="replace")
+
+
+def _run(argv: list[str], *, cwd: Path, env: dict[str, str], timeout: float) -> tuple[int, str, str]:
+    """Run a command the kernel does not trust to stop by itself (an adopted test suite, git
+    against an upstream). Output goes to files, never pipes, so a child left behind cannot keep
+    the kernel waiting for the end of a pipe; on a timeout, and after the command exits, every
+    process it started is stopped. Returns (exit code, stdout, stderr). Raises
+    subprocess.TimeoutExpired on a timeout and OSError when the command cannot start."""
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        proc, job = _spawn(argv, cwd=cwd, env=env, out=out, err=err)
+        try:
+            code: int | None = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            code = None
+        finally:
+            _stop(proc, job)
+        if code is None:
+            raise subprocess.TimeoutExpired(argv, timeout)
+        return code, _tail(out), _tail(err)
+
+
 # -- git, without credentials ------------------------------------------------------------------------
 
-def _git_env() -> dict:
+def _git_env() -> dict[str, str]:
     env = dict(os.environ)
-    env.update(GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never", GIT_ASKPASS="", SSH_ASKPASS="")
+    # No prompt, no askpass, and no Git LFS download during a checkout: git-lfs would go to the
+    # address the repository's .lfsconfig names, and ask the owner's credential helper for it.
+    # (Main carries no .lfsconfig of the upstream's, for the checkouts made outside adoption.)
+    env.update(GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never", GIT_ASKPASS="", SSH_ASKPASS="",
+               GIT_LFS_SKIP_SMUDGE="1")
     return env
 
 
-def _net(cwd: Path, *args, timeout: int = 300) -> str:
-    """A git call that may reach the upstream: no credential helper, no prompt, a timeout."""
+def _net(cwd: Path, *args: str, timeout: int = 300) -> str:
+    """A git call that may reach the upstream or check out what it wrote: no credential helper, no
+    prompt, no LFS download, curl's low-speed limit, and a timeout that stops git and every helper
+    it started."""
+    what = next((a for a in args if not a.startswith("-")), "")
     try:
-        proc = subprocess.run(["git", *NO_CREDENTIALS, *args], cwd=cwd, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=timeout, env=_git_env())
+        code, out, err = _run(["git", *NO_CREDENTIALS, *NET_LIMITS, *args], cwd=cwd, env=_git_env(),
+                              timeout=timeout)
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"git {args[0]} did not finish in {timeout}s") from exc
+        raise RuntimeError(f"git {what} did not finish in {timeout}s") from exc
+    except OSError as exc:
+        raise RuntimeError(f"git {what} could not start: {exc}") from exc
+    if code != 0:
+        raise RuntimeError(f"git {what} failed: {err.strip()[-300:]}")
+    return out.strip()
+
+
+def _git_read(cwd: Path, *args: str) -> str:
+    """A local git call whose output carries what the upstream wrote (file names, commit messages,
+    branch names): bytes that are not UTF-8 are replaced, never fatal."""
+    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, stdin=subprocess.DEVNULL, check=False)
     if proc.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args[:2])} failed: {proc.stderr.strip()[-300:]}")
-    return proc.stdout.strip()
+        raise RuntimeError(f"git {' '.join(args)} failed in {cwd}: "
+                           f"{proc.stderr.decode('utf-8', errors='replace').strip()}")
+    return proc.stdout.decode("utf-8", errors="replace").strip()
 
 
 def check_source(source) -> tuple[str, str]:
@@ -134,7 +310,7 @@ def _default_branch(bare: Path, location: str) -> str:
             return m.group(1)
     except RuntimeError:
         pass
-    branches = _git(bare, "for-each-ref", "--format=%(refname:strip=3)", "refs/remotes/upstream").split()
+    branches = _git_read(bare, "for-each-ref", "--format=%(refname:strip=3)", "refs/remotes/upstream").split()
     for name in ("main", "master", "trunk", "develop"):
         if name in branches:
             return name
@@ -159,16 +335,89 @@ def _mirror(dest: Path, location: str, *, timeout: int) -> tuple[str, str]:
     return branch, baseline
 
 
+def _opens(name: str, target: str) -> bool:
+    """Whether a top-level ``name`` may open ``target`` on a file system the factory runs on: the
+    same name in another case (NTFS, APFS, HFS+), with what NTFS drops (trailing dots and spaces, a
+    `:stream`) or what HFS+ ignores, or an 8.3 short name Windows gives it (`GNOMON~1`, `GNOMO~12`,
+    or its first two letters, up to four hex digits and a tilde: `GN4F2A~5`)."""
+    plain = unicodedata.normalize("NFC", name.translate(_HFS_IGNORED)).split(":", 1)[0].rstrip(" .")
+    if plain.casefold() == target.casefold() or plain.upper() == target.upper():
+        return True
+    short = _SHORT_NAME.fullmatch(plain.upper())
+    if short is None or len(plain) > 8:
+        return False
+    stem, base = short.group(1), target.upper().replace(".", "").replace(" ", "")
+    return stem[:2] == base[:2] and (base.startswith(stem) or re.fullmatch(r"[0-9A-F]{0,4}", stem[2:]) is not None)
+
+
+def _held_by_upstream(work: Path) -> list[bytes]:
+    """The index paths, as git stores them, whose first component opens a name the kernel holds on
+    main (KERNEL_HELD): what a checkout of main would write into the kernel's surface."""
+    proc = subprocess.run(["git", "ls-files", "-z"], cwd=work, capture_output=True, stdin=subprocess.DEVNULL,
+                          check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(f"git ls-files failed in {work}: {proc.stderr.decode('utf-8', errors='replace').strip()}")
+    held = []
+    for path in filter(None, proc.stdout.split(b"\0")):
+        first = re.split(rb"[/\\]", path, maxsplit=1)[0].decode("utf-8", errors="replace")
+        if any(_opens(first, name) for name in KERNEL_HELD):
+            held.append(path)
+    return held
+
+
+def _unstage(work: Path, paths: list[bytes]) -> None:
+    """Remove exactly these paths from the index (no pathspec, so no case folding or globbing)."""
+    proc = subprocess.run(["git", "update-index", "--force-remove", "-z", "--stdin"], cwd=work,
+                          input=b"".join(p + b"\0" for p in paths), capture_output=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(f"git update-index failed in {work}: "
+                           f"{proc.stderr.decode('utf-8', errors='replace').strip()}")
+
+
+def _own_surface(bare: Path, scratch: Path, baseline: str, *, timeout: int) -> dict[str, Any]:
+    """Put the kernel's compiled `.gnomon/` surface on main, over the baseline, as one kernel
+    commit. What the upstream holds under a name the kernel holds (KERNEL_HELD), in any case or
+    short name, is removed in the same commit. Plumbing only: nothing is checked out, and no filter
+    that the upstream's attributes name runs on the surface."""
+    from kernel.compile import WRITE_SCOPE
+    from kernel.lanes import GIT_ID, load_routing, write_product_surface
+
+    work = scratch / "surface"
+    _net(scratch, "clone", "-q", "--no-checkout", str(bare), work.name, timeout=timeout)
+    _git(work, "read-tree", baseline)
+    upstream = _held_by_upstream(work)
+    if upstream:
+        _unstage(work, upstream)
+    write_product_surface(work, load_routing(), WRITE_SCOPE)
+    for path in sorted(p for p in (work / ".gnomon").rglob("*") if p.is_file()):
+        blob = _git(work, "hash-object", "-w", "--no-filters", "--", str(path))
+        _git(work, "update-index", "--add", "--cacheinfo", f"100644,{blob},{path.relative_to(work).as_posix()}")
+    removed = [p.decode("utf-8", errors="replace") for p in upstream[:50]]
+    if _git(work, "write-tree") == _git(work, "rev-parse", f"{baseline}^{{tree}}"):
+        return {"revision": baseline, "compiled": False, "removed": removed}
+    _git(work, *GIT_ID, "commit", "-q", "--no-verify", "-m", SURFACE_COMMIT)
+    _git(work, "push", "-q", "origin", "HEAD:refs/heads/main")
+    return {"revision": _git(work, "rev-parse", "HEAD"), "compiled": True, "removed": removed}
+
+
 # -- inventory, by rule ------------------------------------------------------------------------------
 
 def _read(root: Path, rel: str) -> str:
+    """A file of the checkout as text, or "" for anything else: only a regular file inside the
+    checkout is read (a symlink to a key, a holdout or /dev/zero is never followed), and only up to
+    MAX_SCAN_BYTES; a larger file reads as ""."""
     path = root / rel
     try:
-        if path.stat().st_size > MAX_SCAN_BYTES:
+        if not stat.S_ISREG(path.lstat().st_mode) or not path.resolve().is_relative_to(root.resolve()):
             return ""
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0))
+        with os.fdopen(fd, "rb") as fh:
+            if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+                return ""
+            data = fh.read(MAX_SCAN_BYTES + 1)
+    except (OSError, RuntimeError, ValueError):
         return ""
+    return "" if len(data) > MAX_SCAN_BYTES else data.decode("utf-8", errors="replace")
 
 
 def languages(files) -> list:
@@ -214,7 +463,7 @@ def detect_tests(root: Path, files) -> list:
     if "package.json" in names:
         try:
             script = ((json.loads(_read(root, "package.json")) or {}).get("scripts") or {}).get("test")
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError, RecursionError):  # a crafted nesting is no package.json
             script = None
         if isinstance(script, str) and script.strip() and _NPM_DEFAULT not in script:
             found.append({"ecosystem": "node", "runner": "npm", "tool": "npm", "command": ["npm", "test"],
@@ -398,82 +647,134 @@ def _counts_unittest(text: str) -> dict | None:
 
 
 def _counts_generic(text: str) -> dict | None:
-    m = re.search(r"Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)", text)
-    if m:  # maven surefire
-        run, fail, err, skip = map(int, m.groups())
+    surefire = re.findall(r"Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+),\s*Skipped:\s*(\d+)", text)
+    if surefire:  # maven: the last line is the build's summary
+        run, fail, err, skip = map(int, surefire[-1])
         return {"passed": run - fail - err - skip, "failed": fail, "errors": err, "skipped": skip}
-    m = re.search(r"test result: \w+\. (\d+) passed; (\d+) failed", text)
-    if m:  # cargo
-        return {"passed": int(m.group(1)), "failed": int(m.group(2)), "errors": 0, "skipped": 0}
+    cargo = re.findall(r"test result: \w+\. (\d+) passed; (\d+) failed(?:; (\d+) ignored)?", text)
+    if cargo:  # one line per test binary: the library, each integration test, the doc-tests
+        return {"passed": sum(int(c[0]) for c in cargo), "failed": sum(int(c[1]) for c in cargo), "errors": 0,
+                "skipped": sum(int(c[2] or 0) for c in cargo)}
     go_fail = len(re.findall(r"^--- FAIL:", text, re.MULTILINE))
-    go_ok = len(re.findall(r"^ok\s+\S+", text, re.MULTILINE))
+    go_ok = len([line for line in re.findall(r"^ok\s+\S+.*$", text, re.MULTILINE) if "[no tests to run]" not in line])
     if go_fail or go_ok:
         return {"passed": None, "failed": go_fail, "errors": 0, "skipped": 0, "packages_ok": go_ok}
     return _counts_pytest(text)  # jest's and mocha's summaries read the same way
 
 
-def _offline_env() -> dict:
+def _counts(runner: str, stdout: str, stderr: str) -> dict | None:
+    out = stdout + "\n" + stderr
+    if runner == "unittest":
+        return _counts_unittest(stderr or out)
+    if runner == "pytest":
+        return _counts_pytest(stdout or out)
+    return _counts_generic(out)
+
+
+def _any_passed(counts: dict | None) -> bool:
+    return counts is not None and ((counts.get("passed") or 0) > 0 or (counts.get("packages_ok") or 0) > 0)
+
+
+_MISSING_MODULE = (re.compile(r"ModuleNotFoundError: No module named '([\w.]+)'"),
+                   re.compile(r"Cannot find module '([^'./][^']*)'"))
+_LOAD_FAILURES = ("unittest.loader._FailedTest", "ERROR collecting", "ImportError while importing test module",
+                  "Cannot find module")
+
+
+def _holds_module(root: Path, name: str) -> bool:
+    """Whether the repository holds a module of that name itself: then an import of it that fails
+    is the code's own failure, not a missing dependency."""
+    return any((base / name).is_dir() or (base / f"{name}.py").is_file() for base in (root, root / "src"))
+
+
+def _missing_dependencies(out: str, root: Path) -> list[str]:
+    """The third-party modules a suite could not load: dependencies the kernel does not install."""
+    if not any(marker in out for marker in _LOAD_FAILURES):
+        return []
+    names = sorted({m.group(1).split(".")[0] for pat in _MISSING_MODULE for m in pat.finditer(out)})
+    return [n for n in names if n and not _holds_module(root, n)]
+
+
+def _count_line(counts: dict) -> str:
+    return ", ".join(f"{counts[k]} {k}" for k in ("passed", "failed", "errors", "skipped")
+                     if counts.get(k) is not None)
+
+
+def _baseline_verdict(runner: str, code: int, counts: dict | None, out: str, root: Path) -> tuple[str, str]:
+    """The verdict of one characterisation run. Passed only when it exits 0 and at least one test
+    passed: zero tests, every test skipped or a summary the kernel cannot read are not measured,
+    and so is a suite that could not load a dependency the kernel does not install."""
+    if runner == "pytest" and code == 5:
+        return "not measured", "not measured: pytest collected no tests"
+    if counts is not None and runner == "unittest" and counts.get("ran") == 0:
+        return "not measured", "not measured: no tests ran"
+    if code == 0:
+        if _any_passed(counts):
+            return "passed", "the existing suite passes"
+        seen = "the kernel cannot read this summary" if counts is None else _count_line(counts)
+        return "not measured", f"not measured: no test passed or the summary could not be read ({seen})"
+    missing = _missing_dependencies(out, root)
+    if missing:
+        return "not measured", ("not measured: a dependency the kernel does not install is missing ("
+                                + ", ".join(missing[:5]) + "); the existing tests did not run")
+    if counts and ((counts.get("failed") or 0) + (counts.get("errors") or 0)) > 0:
+        return "failed", ("some existing tests fail at the baseline: that is the existing behaviour, recorded, "
+                          "not judged")
+    return "not measured", (f"not measured: the command exited {code} with no test summary the kernel can read "
+                            "(dependencies may be missing: the kernel runs offline and installs nothing)")
+
+
+def _offline_env() -> dict[str, str]:
     env = dict(os.environ)
     env.update(PYTHONDONTWRITEBYTECODE="1", PIP_NO_INDEX="1", npm_config_offline="true", GOPROXY="off",
                GOFLAGS="-mod=readonly", CARGO_NET_OFFLINE="true", GIT_TERMINAL_PROMPT="0")
     return env
 
 
-def run_baseline(root: Path, test: dict, *, timeout: int, which=shutil.which) -> dict:
-    """Run one detected test command once and read its counts. A run the kernel cannot read is
-    not measured, never passed."""
+def _command(test: dict, which: Callable[[str], str | None]) -> list[str] | str:
+    """The argv that runs a detected suite, or the reason it is not run."""
     cmd = list(test["command"])
-    base = {"ecosystem": test["ecosystem"], "runner": test["runner"], "command": cmd, "meaning": CHARACTERISATION}
     if test["ecosystem"] == "python":
         if test["runner"] == "pytest" and importlib.util.find_spec("pytest") is None:
-            return base | {"verdict": "not measured", "reason": "not measured: pytest is not installed for "
-                                                                f"{sys.executable}; the kernel installs nothing"}
-        argv = [sys.executable or "python", *cmd[1:]]
-    else:
-        tool = which(test["tool"])
-        if tool is None:
-            return base | {"verdict": "not measured",
-                           "reason": f"not measured: toolchain not run by the kernel ({test['tool']} is not on PATH)"}
-        argv = [tool, *cmd[1:]]
+            return f"not measured: pytest is not installed for {sys.executable}; the kernel installs nothing"
+        return [sys.executable or "python", *cmd[1:]]
+    tool = which(test["tool"])
+    if tool is None:
+        return f"not measured: toolchain not run by the kernel ({test['tool']} is not on PATH)"
+    return [tool, *cmd[1:]]
+
+
+def run_baseline(root: Path, test: dict, *, timeout: int,
+                 which: Callable[[str], str | None] = shutil.which) -> dict:
+    """Run one detected test command once and read its counts. A run the kernel cannot read, or one
+    in which no test passed, is not measured, never passed. Stdin is closed, and the timeout, like
+    the end of the run, stops every process the suite started."""
+    base = {"ecosystem": test["ecosystem"], "runner": test["runner"], "command": list(test["command"]),
+            "meaning": CHARACTERISATION}
+    argv = _command(test, which)
+    if isinstance(argv, str):
+        return base | {"verdict": "not measured", "reason": argv}
     env = _offline_env()
     data_dir = tempfile.mkdtemp(prefix="adopt-data-")
     env["DATA_DIR"] = data_dir
     started = time.monotonic()
     try:
-        proc = subprocess.run(argv, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                              timeout=timeout, env=env)
+        code, stdout, stderr = _run(argv, cwd=root, env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
         return base | {"verdict": "not measured", "reason": f"not measured: the suite did not finish in {timeout}s"}
     except OSError as exc:
         return base | {"verdict": "not measured", "reason": f"not measured: the command could not start ({exc})"}
     finally:
         shutil.rmtree(data_dir, ignore_errors=True)
-    seconds = round(time.monotonic() - started, 2)
-    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
-    if test["runner"] == "unittest":
-        counts = _counts_unittest(proc.stderr or out)
-    elif test["runner"] == "pytest":
-        counts = _counts_pytest(proc.stdout or out)
-    else:
-        counts = _counts_generic(out)
-    record = base | {"exit": proc.returncode, "seconds": seconds, "counts": counts,
-                     "tail": out.strip().splitlines()[-6:]}
-    if test["runner"] == "pytest" and proc.returncode == 5:
-        return record | {"verdict": "not measured", "reason": "not measured: pytest collected no tests"}
-    if counts is not None and test["runner"] == "unittest" and counts.get("ran") == 0:
-        return record | {"verdict": "not measured", "reason": "not measured: no tests ran"}
-    if proc.returncode == 0:
-        return record | {"verdict": "passed", "reason": "the existing suite passes"
-                         + ("" if counts else "; its counts are not measured (the kernel cannot read this summary)")}
-    if counts and ((counts.get("failed") or 0) + (counts.get("errors") or 0)) > 0:
-        return record | {"verdict": "failed", "reason": "some existing tests fail at the baseline: that is the existing "
-                                                        "behaviour, recorded, not judged"}
-    return record | {"verdict": "not measured",
-                     "reason": f"not measured: the command exited {proc.returncode} with no test summary the kernel "
-                               "can read (dependencies may be missing: the kernel runs offline and installs nothing)"}
+    out = stdout + "\n" + stderr
+    counts = _counts(test["runner"], stdout, stderr)
+    verdict, reason = _baseline_verdict(test["runner"], code, counts, out, root)
+    return base | {"exit": code, "seconds": round(time.monotonic() - started, 2), "counts": counts,
+                   "tail": out.strip().splitlines()[-6:], "verdict": verdict, "reason": reason}
 
 
-def characterise(root: Path, tests: list, *, timeout: int, which=shutil.which) -> dict:
+def characterise(root: Path, tests: list, *, timeout: int,
+                 which: Callable[[str], str | None] = shutil.which) -> dict:
     from kernel.verdicts import combine_verdicts
 
     if not tests:
@@ -489,14 +790,19 @@ def characterise(root: Path, tests: list, *, timeout: int, which=shutil.which) -
 # -- the as-is spec -------------------------------------------------------------------------------------
 
 def _base_url(url: str | None) -> str | None:
+    """The address of the running service, or None. Nothing that can carry a credential is kept:
+    it goes to the ledger, the spec and the brief, where nothing can be taken back."""
     if not url:
         return None
     url = str(url).strip().rstrip("/")
     parts = urllib.parse.urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.netloc:
         raise AdoptionRefused(f"base_url must be an http or https URL, got {url!r}")
-    if parts.username or parts.password:
-        raise AdoptionRefused("base_url carries a credential; Rihma never handles credentials")
+    if parts.username or parts.password or "@" in parts.netloc:
+        raise AdoptionRefused("base_url carries a user or a credential; Rihma never handles credentials")
+    if parts.query or parts.fragment:
+        raise AdoptionRefused("base_url carries a query or a fragment, where tokens travel; Rihma never handles "
+                              "credentials: give the address without it")
     return url
 
 
@@ -531,8 +837,22 @@ def as_is_spec(title: str, *, inv: dict, baseline_rev: str, base_url: str | None
             "adopted": {"source": source_label, "baseline": baseline_rev, "provenance": OBSERVED}}
 
 
+def _profile_line(profile: dict[str, Any]) -> str:
+    """The brief's line on the work profile, saying when the rule was not sure."""
+    from kernel.profiles import PROFILES
+
+    label = PROFILES[profile["profile"]]["label"]
+    if profile["by"] != "rule":
+        return f"- Work profile: {label}, chosen by a person."
+    if profile["confidence"] == "clear":
+        return f"- Work profile: {label}, proposed by rule ({', '.join(profile['keywords'])})."
+    names = ", ".join(PROFILES[c]["label"] for c in profile["candidates"])
+    return (f"- Work profile: {label}, proposed by rule but **uncertain** ({profile['why']}); a person chooses "
+            f"among: {names}.")
+
+
 def _brief(title: str, *, intent: str, source_label: str, branch: str, baseline_rev: str, inv: dict,
-           character: dict, base_url: str | None, person: str, persona: str) -> str:
+           character: dict, base_url: str | None, person: str, persona: str, profile: dict[str, Any]) -> str:
     tc = inv["test_command"]
     langs = ", ".join(f"{lang['language']} ({lang['files']})" for lang in inv["languages"][:6]) or "none identified"
     lines = [f"# Brief: {title}", "",
@@ -544,7 +864,8 @@ def _brief(title: str, *, intent: str, source_label: str, branch: str, baseline_
              f"- Characterisation baseline: {character['verdict']} ({character['reason']}). This is existing "
              "behaviour, not a spec.",
              f"- Dockerfile: {', '.join(inv['dockerfile']['files']) if inv['dockerfile']['present'] else 'none'}.",
-             f"- Running at: {base_url or 'not given'}."]
+             f"- Running at: {base_url or 'not given'}.",
+             _profile_line(profile)]
     para = inv["readme"].get("first_paragraph")
     if para:
         lines += ["", "## From its README", "", para]
@@ -556,17 +877,26 @@ def _brief(title: str, *, intent: str, source_label: str, branch: str, baseline_
 
 # -- adopt ------------------------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class _Request:
+    """What a person asked to adopt, checked."""
+    title: str
+    kind: str
+    label: str
+    intent: str
+    base_url: str | None
+    person: str
+    persona: str
+    maturity: str
+
+
 def _label(kind: str, location: str) -> str:
     return location if kind == "url" else Path(location).as_posix()
 
 
-def adopt(factory, title: str, *, source, intent: str, person: str, persona: str, base_url: str | None = None,
-          profile: str | None = None, maturity: str = "production", mode: str = "mixed", timeout: int = 600,
-          which=shutil.which):
-    """Adopt an existing solution as a project. Returns the project."""
-    from kernel.canon import Canon
-    from kernel.compile import compile_project
-    from kernel.profiles import choose, propose_profile
+def _check_request(person: str, persona: str, intent: str, profile: str | None, maturity: str, mode: str) -> None:
+    from kernel.profiles import PROFILES
+    from kernel.store import MATURITIES, MODES
 
     if not is_person(person):
         raise AdoptionRefused(f"{person!r} is not a person; adopting a solution is a person's act")
@@ -574,90 +904,92 @@ def adopt(factory, title: str, *, source, intent: str, person: str, persona: str
         raise AdoptionRefused(f"persona must be one of {', '.join(PERSONAS)}, got {persona!r}")
     if intent not in INTENTS:
         raise AdoptionRefused(f"intent must be one of {', '.join(INTENTS)}, got {intent!r}")
-    from kernel.profiles import PROFILES
-    from kernel.store import MATURITIES, MODES
-
     if profile is not None and profile not in PROFILES:
         raise AdoptionRefused(f"profile must be one of {', '.join(PROFILES)}, got {profile!r}")
     if maturity not in MATURITIES or mode not in MODES:
         raise AdoptionRefused(f"maturity must be one of {MATURITIES} and mode one of {MODES}")
-    kind, location = check_source(source)
-    base_url = _base_url(base_url)
-    label = _label(kind, location)
 
-    # Fetch before the project exists: an unreachable source leaves nothing half-adopted.
-    factory.home.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".adopting-", dir=factory.home))
-    try:
-        branch, baseline_rev = _mirror(staging / "repo.git", location, timeout=timeout)
-        project = factory.new_project(title, maturity=maturity, mode=mode, source_kind="adopted", profile=profile)
-        os.replace(staging / "repo.git", project.path("repo.git"))
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
 
-    at = factory.clock.stamp()
-    adopted = {"source": label, "source_kind": kind, "intent": intent, "default_branch": branch,
-               "baseline": baseline_rev, "base_url": base_url, "adopted_by": {"person": person, "persona": persona},
-               "at": at, "upstream_push": "disabled: remote.upstream.pushurl is not a transport",
-               "last_upstream": baseline_rev, "last_sync": None}
-    project.write("adopted.json", adopted)
-    project.update_meta(intent=intent, upstream=label, baseline=baseline_rev)
-    project.log("adopted", {"source": label, "source_kind": kind, "intent": intent, "branch": branch,
-                            "baseline": baseline_rev, "base_url": base_url, "person": person, "persona": persona,
-                            "upstream_push": "disabled"})
-
-    with tempfile.TemporaryDirectory(prefix="gf-adopt-") as tmp:
-        work = Path(tmp) / "w"
-        _git(Path(tmp), "-c", "core.autocrlf=false", "clone", "-q", str(project.path("repo.git")), "w")
-        files = [f for f in _git(work, "ls-files", "-z").split("\0") if f]
-        inv = inventory(work, files, base_url=base_url)
-        inv["revision"] = baseline_rev
-        project.write("inventory.json", inv)
-        project.log("inventory_taken", {"revision": baseline_rev, "files": inv["files"],
-                                        "languages": [x["language"] for x in inv["languages"]],
-                                        "test_command": " ".join(inv["test_command"]["command"])
-                                        if inv["test_command"]["detected"] else None,
-                                        "readme": inv["readme"]["file"], "dockerfile": inv["dockerfile"]["present"],
-                                        "endpoints": len(inv["endpoints"]["found"]),
-                                        "endpoints_scanned": inv["endpoints"]["scanned"]})
+def _take(bare: Path, location: str, *, base_url: str | None, timeout: int,
+          which: Callable[[str], str | None]) -> dict[str, Any]:
+    """Everything adoption reads from the upstream, before the project exists: the mirror, a
+    checkout of the baseline with its inventory and characterisation, and the kernel's surface on
+    main. The checkout goes through the credential-free path too, so an LFS filter never reaches
+    the owner's credential helper or a prompt."""
+    branch, baseline = _mirror(bare, location, timeout=timeout)
+    with tempfile.TemporaryDirectory(prefix="gf-adopt-", ignore_cleanup_errors=True) as tmp:
+        scratch = Path(tmp)
+        _net(scratch, "clone", "-q", "-c", "core.autocrlf=false", str(bare), "w", timeout=timeout)
+        work = scratch / "w"
+        files = [f for f in _git_read(work, "ls-files", "-z").split("\0") if f]
+        inv = inventory(work, files, base_url=base_url) | {"revision": baseline}
         character = characterise(work, inv["tests"], timeout=timeout, which=which)
-    character.update(revision=baseline_rev, at=factory.clock.stamp())
+        surface = _own_surface(bare, scratch, baseline, timeout=timeout)
+    return {"branch": branch, "baseline": baseline, "inventory": inv, "character": character, "surface": surface}
+
+
+def _propose(project: Any, title: str, inv: dict[str, Any]) -> dict[str, Any]:
+    """The work profile: a person's choice at creation stands; otherwise it is proposed by rule from
+    the title and the README, and an uncertain proposal is kept as uncertain, with its candidates."""
+    from kernel.profiles import propose_profile
+
+    if project.meta.get("profile"):
+        return {"profile": project.meta["profile"], "by": "person at creation"}
+    proposal = propose_profile(f"{title}\n{inv['readme'].get('first_paragraph') or ''}")
+    out = {"profile": proposal["profile"], "by": "rule", "from": "the README and the title",
+           "keywords": proposal["basis"], "confidence": proposal["confidence"]}
+    if proposal["confidence"] != "clear":
+        out |= {"candidates": proposal["candidates"], "why": proposal["uncertain_because"]}
+    return out
+
+
+def _record_source(project: Any, taken: dict[str, Any], req: _Request, profile: dict[str, Any]) -> None:
+    branch, baseline, surface = taken["branch"], taken["baseline"], taken["surface"]
+    project.write("adopted.json", {
+        "source": req.label, "source_kind": req.kind, "intent": req.intent, "default_branch": branch,
+        "baseline": baseline, "main": surface["revision"], "base_url": req.base_url,
+        "adopted_by": {"person": req.person, "persona": req.persona}, "at": project.factory.clock.stamp(),
+        "upstream_push": "disabled: remote.upstream.pushurl is not a transport", "profile": profile,
+        "last_upstream": baseline, "last_sync": None})
+    project.update_meta(intent=req.intent, upstream=req.label, baseline=baseline)
+    project.log("adopted", {"source": req.label, "source_kind": req.kind, "intent": req.intent, "branch": branch,
+                            "baseline": baseline, "base_url": req.base_url, "person": req.person,
+                            "persona": req.persona, "upstream_push": "disabled"})
+    project.log("surface_compiled", {"revision": surface["revision"], "over": baseline,
+                                     "removed_upstream_surface": surface["removed"],
+                                     "why": "the gate's verifier and the builder cells run under the kernel's own "
+                                            "surface, never one the upstream wrote (under any name a file system "
+                                            "opens it by), and git-lfs is never sent to an address the upstream "
+                                            "chose (.lfsconfig)"})
+
+
+def _record_baseline(project: Any, taken: dict[str, Any]) -> None:
+    inv, baseline = taken["inventory"], taken["baseline"]
+    project.write("inventory.json", inv)
+    project.log("inventory_taken", {"revision": baseline, "files": inv["files"],
+                                    "languages": [x["language"] for x in inv["languages"]],
+                                    "test_command": " ".join(inv["test_command"]["command"])
+                                    if inv["test_command"]["detected"] else None,
+                                    "readme": inv["readme"]["file"], "dockerfile": inv["dockerfile"]["present"],
+                                    "endpoints": len(inv["endpoints"]["found"]),
+                                    "endpoints_scanned": inv["endpoints"]["scanned"]})
+    character = dict(taken["character"], revision=baseline, at=project.factory.clock.stamp())
     project.write("baseline.json", character)
-    project.log("characterised", {"revision": baseline_rev, "verdict": character["verdict"],
+    project.log("characterised", {"revision": baseline, "verdict": character["verdict"],
                                   "meaning": CHARACTERISATION, "reason": character["reason"],
                                   "runs": [{k: r.get(k) for k in ("runner", "verdict", "counts", "exit")}
                                            for r in character["runs"]]})
 
-    if profile is None:
-        proposal = propose_profile(f"{title}\n{inv['readme'].get('first_paragraph') or ''}")
-        choose(project, proposal["profile"], basis={"by": "rule", "from": "the README and the title",
-                                                    "keywords": proposal["basis"]})
 
-    Canon(project).write_brief(_brief(title, intent=intent, source_label=label, branch=branch,
-                                      baseline_rev=baseline_rev, inv=inv, character=character, base_url=base_url,
-                                      person=person, persona=persona))
-    spec = as_is_spec(title, inv=inv, baseline_rev=baseline_rev, base_url=base_url, maturity=maturity,
-                      source_label=label)
-    from kernel.spec import render_spec_md
-
-    project.write("spec.json", spec)
-    write_text(project.path("spec.md"), render_spec_md(spec))
-    project.log("as_is_spec_written", {"requirements": len(spec["requirements"]),
-                                       "criteria": sum(len(r["acceptance"]) for r in spec["requirements"]),
-                                       "provenance": OBSERVED, "contract_provenance": "vendor-proposed",
-                                       "why": "the contract's vocabulary (tools/contract_check.py) has no observed "
-                                              "tier: the compiler enters observed requirements as vendor-proposed "
-                                              "and notes that they are observed"})
-    contract = compile_project(project)
-
-    # The as-is tasks are the existing code: nothing to build until a change reopens one. Factory
-    # default checks a person accepted earlier stay pending: they are real work, not observed.
+def _as_is_tasks(project: Any, spec: dict[str, Any], contract: dict[str, Any], baseline: str) -> None:
+    """The as-is tasks are the existing code: nothing to build until a change reopens one. Factory
+    default checks a person accepted earlier stay pending: they are real work, not observed."""
     observed = {r["id"] for r in spec["requirements"]}
     state = project.read("tasks.json", {}) or {}
     as_is, pending = [], []
     for t in contract["tasks"]:
         if {c.rsplit("-AC-", 1)[0] for c in t["criteria"]} <= observed:
-            state[t["id"]] = {"status": "merged", "revision": baseline_rev, "rounds": [], "adopted": True,
+            state[t["id"]] = {"status": "merged", "revision": baseline, "rounds": [], "adopted": True,
                               "note": "the existing code at adoption; not built or gated by the factory"}
             as_is.append(t["id"])
         else:
@@ -666,31 +998,117 @@ def adopt(factory, title: str, *, source, intent: str, person: str, persona: str
     project.log("adoption_tasks", {"as_is": as_is, "pending": pending,
                                    "note": "as-is tasks hold the existing code; no merge or gate is claimed for them"})
 
-    if base_url:
+
+def _write_as_is(project: Any, taken: dict[str, Any], req: _Request) -> dict[str, Any]:
+    from kernel.compile import compile_project
+    from kernel.spec import render_spec_md
+
+    spec = as_is_spec(req.title, inv=taken["inventory"], baseline_rev=taken["baseline"], base_url=req.base_url,
+                      maturity=req.maturity, source_label=req.label)
+    project.write("spec.json", spec)
+    write_text(project.path("spec.md"), render_spec_md(spec))
+    project.log("as_is_spec_written", {"requirements": len(spec["requirements"]),
+                                       "criteria": sum(len(r["acceptance"]) for r in spec["requirements"]),
+                                       "provenance": OBSERVED, "contract_provenance": "vendor-proposed",
+                                       "why": "the contract's vocabulary (tools/contract_check.py) has no observed "
+                                              "tier: the compiler enters observed requirements as vendor-proposed "
+                                              "and notes that they are observed"})
+    _as_is_tasks(project, spec, compile_project(project), taken["baseline"])
+    return spec
+
+
+def _stage(project: Any, spec: dict[str, Any], req: _Request) -> None:
+    if req.base_url:
         for r in spec["requirements"]:
             for c in r["acceptance"]:
                 if c["kind"] == "probe":
                     write_json(project.holdouts_dir / f"{c['id']}.json",
                                {"criterion": c["id"], "kind": "probe", "steps": [{"method": "GET", "path": ""}],
                                 "author_role": "kernel: adoption, by rule"})
-    project.update_meta(stage=7 if intent == "monitor" else 5)
-    if intent != "monitor":
+    project.update_meta(stage=7 if req.intent == "monitor" else 5)
+    if req.intent != "monitor":
         why = "nothing is built until a change arrives through the change loop or a person's workspace"
-    elif base_url:
-        why = f"monitor: probes against the running service at {base_url}"
+    elif req.base_url:
+        why = f"monitor: probes against the running service at {req.base_url}"
     else:
         why = "monitor: upstream drift only; probes not measured, because no base_url was given"
-    project.log("adoption_staged", {"intent": intent, "stage": project.meta["stage"], "why": why})
-    if intent == "monitor" and base_url:
+    project.log("adoption_staged", {"intent": req.intent, "stage": project.meta["stage"], "why": why})
+
+
+def _hold(project: Any, taken: dict[str, Any], req: _Request) -> None:
+    """Record an adoption whose upstream was read: the source, the inventory and the baseline, the
+    profile, the brief, the as-is spec and contract, the as-is tasks and the stage."""
+    from kernel.canon import Canon
+    from kernel.profiles import choose
+
+    profile = _propose(project, req.title, taken["inventory"])
+    _record_source(project, taken, req, profile)
+    _record_baseline(project, taken)
+    if profile["by"] == "rule":
+        choose(project, profile["profile"], basis={k: v for k, v in profile.items() if k != "profile"})
+    Canon(project).write_brief(_brief(req.title, intent=req.intent, source_label=req.label, branch=taken["branch"],
+                                      baseline_rev=taken["baseline"], inv=taken["inventory"],
+                                      character=taken["character"], base_url=req.base_url, person=req.person,
+                                      persona=req.persona, profile=profile))
+    spec = _write_as_is(project, taken, req)
+    _stage(project, spec, req)
+
+
+def _roll_back(project: Any) -> None:
+    """Remove a project whose adoption failed after it was created, so nothing is left
+    half-adopted. What cannot be removed is marked failed, and is never taken as adopted."""
+    shutil.rmtree(project.holdouts_dir, ignore_errors=True)
+    shutil.rmtree(project.dir, ignore_errors=True)
+    if project.path("project.json").exists():
+        with contextlib.suppress(OSError):
+            project.update_meta(adoption="failed", stage=1)
+
+
+def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, persona: str,
+          base_url: str | None = None, profile: str | None = None, maturity: str = "production",
+          mode: str = "mixed", timeout: int = 600, which: Callable[[str], str | None] = shutil.which) -> Any:
+    """Adopt an existing solution as a project. Returns the project.
+
+    Everything that reads the upstream runs before the project exists, so an unreachable or
+    unreadable source leaves nothing; a failure after the project exists removes it again."""
+    _check_request(person, persona, intent, profile, maturity, mode)
+    kind, location = check_source(source)
+    req = _Request(title=title, kind=kind, label=_label(kind, location), intent=intent, base_url=_base_url(base_url),
+                   person=person, persona=persona, maturity=maturity)
+    factory.home.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".adopting-", dir=factory.home))
+    try:
+        taken = _take(staging / "repo.git", location, base_url=req.base_url, timeout=timeout, which=which)
+        project = factory.new_project(title, maturity=maturity, mode=mode, source_kind="adopted", profile=profile)
+        try:
+            os.replace(staging / "repo.git", project.path("repo.git"))
+            _hold(project, taken, req)
+        except BaseException:
+            _roll_back(project)
+            raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    if intent == "monitor" and req.base_url:
         probe(project)
     return project
 
 
 # -- monitoring -------------------------------------------------------------------------------------
 
-def probe(project, *, timeout: float = 10.0) -> dict:
+def _server_error(result: dict[str, Any]) -> dict[str, Any]:
+    """A probe the service answered with a server error (5xx) failed: an answer is not health."""
+    if result.get("verdict") != "passed":
+        return result
+    errors = [s for s in result.get("trail") or [] if isinstance(s.get("status"), int) and s["status"] >= 500]
+    if not errors:
+        return result
+    return result | {"verdict": "failed", "failed_step": errors[0]["step"], "observed": {"status": errors[0]["status"]},
+                     "reason": f"status {errors[0]['status']}: a server error is not a healthy answer"}
+
+
+def probe(project: Any, *, timeout: float = 10.0) -> dict[str, Any]:
     """One probe round against the adopted service: every probe scenario of the project at its
-    base_url. A failing probe opens (or adds to) an incident card."""
+    base_url. A failing probe, a server error included, opens (or adds to) an incident card."""
     from kernel.operate import _append, load_scenarios, open_incident, run_scenario
 
     adopted = project.read("adopted.json") or {}
@@ -699,7 +1117,7 @@ def probe(project, *, timeout: float = 10.0) -> dict:
     if not base_url:
         return {"verdict": "not applicable", "reason": "no base_url was given at adoption", "at": at}
     scenarios = load_scenarios(project, ("probe",))
-    results = [run_scenario(base_url, s, timeout=timeout) for s in scenarios]
+    results = [_server_error(run_scenario(base_url, s, timeout=timeout)) for s in scenarios]
     failed = [r for r in results if r["verdict"] != "passed"]
     verdict = "not measured" if not results else ("failed" if failed else "passed")
     result = {"environment": "production", "slot": "adopted", "base_url": base_url, "at": at, "scenarios": results,
@@ -718,57 +1136,106 @@ def probe(project, *, timeout: float = 10.0) -> dict:
 
 # -- sync -------------------------------------------------------------------------------------------
 
-def sync(project, *, timeout: int = 300) -> dict:
-    """Fetch the upstream again and record the drift since the baseline. When the upstream moved
-    since the last look, open a change card for people to review. `main` is not moved."""
+def _upstream_head(bare: Path, branch: str) -> str | None:
+    return _git(bare, "rev-parse", "--verify", "-q", f"refs/remotes/upstream/{branch}^{{commit}}", check=False) or None
+
+
+def _drift(bare: Path, adopted: dict[str, Any], head: str, *, at: str) -> dict[str, Any]:
+    """The drift of the upstream's head from the baseline. Commit messages and file names are the
+    upstream's own bytes: what is not UTF-8 is replaced."""
+    branch, baseline = adopted["default_branch"], adopted["baseline"]
+    new = int(_git_read(bare, "rev-list", "--count", f"{baseline}..{head}"))
+    rewritten = int(_git_read(bare, "rev-list", "--count", f"{head}..{baseline}"))
+    files = [f for f in _git_read(bare, "diff", "--name-only", baseline, head).splitlines() if f]
+    commits = [line for line in _git_read(bare, "log", "--format=%h %s", "-n", "20", f"{baseline}..{head}").splitlines()
+               if line]
+    return {"verdict": "passed", "branch": branch, "baseline": baseline, "upstream": head, "new_commits": new,
+            "rewritten": rewritten, "files_changed": len(files), "files": files[:200], "commits": commits,
+            "moved_since_last_sync": head != (adopted.get("last_upstream") or baseline), "at": at, "card": None}
+
+
+def _drift_card(project: Any, adopted: dict[str, Any], drift: dict[str, Any]) -> str:
     from kernel.change import submit
 
+    new, rewritten, files = drift["new_commits"], drift["rewritten"], drift["files"]
+    history = (f", and {rewritten} baseline commit(s) are no longer upstream (history was rewritten)"
+               if rewritten else "")
+    lines = ["Upstream changed: review", "",
+             f"The upstream {adopted['source']} moved on {drift['branch']}: {new} commit(s) since the baseline "
+             f"{drift['baseline'][:12]}{history}; {drift['files_changed']} file(s) differ.",
+             "Nothing was merged: main stays at what the factory holds until a person decides.", ""]
+    lines += [f"- {c}" for c in drift["commits"][:20]]
+    if files:
+        lines += ["", "Files: " + ", ".join(files[:30]) + (" ..." if len(files) > 30 else "")]
+    card = submit(project, persona="developer", person="upstream sync", text="\n".join(lines))
+    project.log("upstream_change_opened", {"card": card["id"], "upstream": drift["upstream"], "new_commits": new})
+    return str(card["id"])
+
+
+def _branch_gone(project: Any, adopted: dict[str, Any], *, at: str) -> dict[str, Any]:
+    """The tracked branch is gone upstream after a fetch that worked: most often the default branch
+    was renamed. A change card says so once per new default branch; the factory keeps tracking the
+    old name until a person decides."""
+    from kernel.change import submit
+
+    bare, branch, baseline = project.path("repo.git"), adopted["default_branch"], adopted["baseline"]
+    try:
+        now = _default_branch(bare, "upstream")
+    except AdoptionRefused:
+        now = None
+    head = _upstream_head(bare, now) if now and now != branch else None
+    gone = {"verdict": "not measured", "branch": branch, "default_branch_now": now if head else None, "at": at,
+            "card": None, "reason": f"not measured: the tracked branch {branch} is no longer upstream"
+                                    + (f"; the upstream's default branch is now {now}" if head else "")}
+    told = (adopted.get("branch_gone") or {}).get("default_branch_now")
+    if head and told != now:
+        ahead = int(_git_read(bare, "rev-list", "--count", f"{baseline}..{head}"))
+        text = "\n".join(["Upstream changed: review", "",
+                          f"The upstream {adopted['source']} no longer has the branch {branch} that the factory "
+                          f"tracks: its default branch is now {now}, {ahead} commit(s) ahead of the baseline "
+                          f"{baseline[:12]}.",
+                          f"The factory keeps tracking {branch} until a person decides; nothing was merged and main "
+                          "is not moved."])
+        gone["card"] = submit(project, persona="developer", person="upstream sync", text=text)["id"]
+        adopted["branch_gone"] = {k: gone[k] for k in ("branch", "default_branch_now", "card", "at")}
+    project.log("upstream_branch_gone", {k: gone[k] for k in ("branch", "default_branch_now", "card")})
+    adopted["last_sync"] = {"at": at, "verdict": "not measured", "reason": gone["reason"], "card": gone["card"]}
+    project.write("adopted.json", adopted)
+    return gone
+
+
+def sync(project: Any, *, timeout: int = 300) -> dict[str, Any]:
+    """Fetch the upstream again and record the drift since the baseline. When the upstream moved
+    since the last look, open a change card for people to review. `main` is not moved."""
     adopted = project.read("adopted.json")
     if not adopted:
         raise ValueError(f"{project.pid} was not adopted: there is no upstream to sync")
-    bare, branch, baseline = project.path("repo.git"), adopted["default_branch"], adopted["baseline"]
-    before = adopted.get("last_upstream") or baseline
-    at = project.factory.clock.stamp()
+    bare, at = project.path("repo.git"), project.factory.clock.stamp()
     try:
         _net(bare, "fetch", "-q", "--prune", "upstream", timeout=timeout)
-        head = _git(bare, "rev-parse", f"refs/remotes/upstream/{branch}")
     except RuntimeError as exc:
-        out = {"verdict": "not measured", "reason": f"not measured: the upstream could not be fetched ({exc})",
-               "at": at}
         project.log("upstream_sync_failed", {"error": str(exc)[:300]})
-        return out
-    new = int(_git(bare, "rev-list", "--count", f"{baseline}..{head}"))
-    rewritten = int(_git(bare, "rev-list", "--count", f"{head}..{baseline}"))
-    files = [f for f in _git(bare, "diff", "--name-only", baseline, head).splitlines() if f]
-    commits = [line for line in _git(bare, "log", "--format=%h %s", "-n", "20", f"{baseline}..{head}").splitlines()
-               if line]
-    moved = head != before
-    drift = {"verdict": "passed", "branch": branch, "baseline": baseline, "upstream": head, "new_commits": new,
-             "rewritten": rewritten, "files_changed": len(files), "files": files[:200], "commits": commits,
-             "moved_since_last_sync": moved, "at": at, "card": None}
+        return {"verdict": "not measured", "reason": f"not measured: the upstream could not be fetched ({exc})",
+                "at": at}
+    head = _upstream_head(bare, adopted["default_branch"])
+    if head is None:
+        return _branch_gone(project, adopted, at=at)
+    drift = _drift(bare, adopted, head, at=at)
     project.log("upstream_synced", {k: drift[k] for k in ("branch", "baseline", "upstream", "new_commits",
                                                             "rewritten", "files_changed", "moved_since_last_sync")}
-                | {"files": files[:50]})
-    if moved and (new or rewritten):
-        lines = ["Upstream changed: review", "",
-                 f"The upstream {adopted['source']} moved on {branch}: {new} commit(s) since the baseline "
-                 f"{baseline[:12]}" + (f", and {rewritten} baseline commit(s) are no longer upstream (history was "
-                                       "rewritten)" if rewritten else "") + f"; {len(files)} file(s) differ.",
-                 "Nothing was merged: main stays at what the factory holds until a person decides.", ""]
-        lines += [f"- {c}" for c in commits[:20]]
-        if files:
-            lines += ["", "Files: " + ", ".join(files[:30]) + (" ..." if len(files) > 30 else "")]
-        card = submit(project, persona="developer", person="upstream sync", text="\n".join(lines))
-        drift["card"] = card["id"]
-        project.log("upstream_change_opened", {"card": card["id"], "upstream": head, "new_commits": new})
+                | {"files": drift["files"][:50]})
+    if drift["moved_since_last_sync"] and (drift["new_commits"] or drift["rewritten"]):
+        drift["card"] = _drift_card(project, adopted, drift)
     adopted.update(last_upstream=head, last_sync={k: drift[k] for k in ("upstream", "new_commits", "rewritten",
                                                                        "files_changed", "at", "card")})
     project.write("adopted.json", adopted)
     return drift
 
 
-def is_adopted(project) -> bool:
-    return project.meta.get("source_kind") == "adopted" and project.path("adopted.json").exists()
+def is_adopted(project: Any) -> bool:
+    meta = project.meta
+    return (meta.get("source_kind") == "adopted" and meta.get("adoption") != "failed"
+            and project.path("adopted.json").exists())
 
 
 __all__ = ["INTENTS", "AdoptionRefused", "adopt", "sync", "probe", "inventory", "detect_tests", "check_source",

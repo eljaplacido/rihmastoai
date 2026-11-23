@@ -5,13 +5,15 @@ The chain, from a need to a running product
     rihmasto new "Title" --source "idea text or a path" --mode mixed --maturity demo --requested-by Aino
     rihmasto intake <pid> --source-file request.md --requested-by Aino
     rihmasto run <pid>                  advance until a person is needed
+    rihmasto tick                       carry out decided concepts (a validated one becomes a project); runs none
     rihmasto status [<pid>]
     rihmasto answer <pid> <Q-id> "text" --person Aino --persona business_owner
     rihmasto assume <pid> <Q-id> --person Aino --persona business_owner
     rihmasto decide <pid> <C-id> <verdict> --person Ilkka --persona it [--reason ...]
     rihmasto change <pid> "text" --person Tester --persona end_user
     rihmasto apply <pid> <C-id>         carry a triaged (and, if needed, accepted) change back
-    rihmasto deliver <pid> [--new]      deliver on the paved road for the project's maturity
+    rihmasto deliver <pid> [--new]      deliver on the paved road for the project's maturity (build and deliver
+                                        ask the autonomy cap first)
     rihmasto operate <pid>              one operations round: probes, incidents
     rihmasto learn                      lessons across projects, proposals, model reliability
     rihmasto lanes                      prepare the analyst lane and show the pool
@@ -87,10 +89,11 @@ def _model() -> Any:
     return GnomonModel(ensure_analyst_lane(load_routing()), timeout=1200)
 
 
-def _source(args: Args) -> str:
+def _source(args: Args) -> dict[str, Any]:
+    """The request as intake takes it: a request file's contents are its text, never a path to read."""
     if getattr(args, "source_file", None):
-        return Path(args.source_file).read_text(encoding="utf-8")
-    return str(args.source)
+        return {"source": Path(args.source_file).read_text(encoding="utf-8"), "literal": True}
+    return {"source": str(args.source)}
 
 
 def _print(obj: Any) -> None:
@@ -164,6 +167,7 @@ def _chain_parsers(sub: Any) -> None:
         "--new", action="store_true", help="start a new release even if this revision was delivered")
     _add(sub, "operate", "pid")
     _add(sub, "learn")
+    _add(sub, "tick", about="carry out decided concept cards: a validated concept becomes a project")
     _add(sub, "resurface", "pid").add_argument("--reason", default="routing changed")
     _add(sub, "lanes")
     _add(sub, "doctor")
@@ -264,12 +268,12 @@ def build_parser() -> argparse.ArgumentParser:
 def _new(factory: Factory, args: Args) -> None:
     p = factory.new_project(args.title, maturity=args.maturity, mode=args.mode,
                             profile=None if args.profile == "auto" else args.profile)
-    out = _kernel("intake").intake(p, _source(args), model=_model(), requested_by=args.requested_by)
+    out = _kernel("intake").intake(p, **_source(args), model=_model(), requested_by=args.requested_by)
     _print({"project": p.pid, **{k: v for k, v in out.items() if k != "readings"}})
 
 
 def _intake(factory: Factory, args: Args) -> None:
-    out = _kernel("intake").intake(factory.project(args.pid), _source(args), model=_model(),
+    out = _kernel("intake").intake(factory.project(args.pid), **_source(args), model=_model(),
                                    requested_by=args.requested_by)
     _print({k: v for k, v in out.items() if k != "readings"})
 
@@ -422,14 +426,16 @@ HANDLERS: dict[str, Handler] = {
     "change": _change, "learn": _learn, "lanes": _lanes, "doctor": _doctor, "demo": _demo,
     "adopt": _adopt, "sync": _sync,
     "run": lambda f, a: _print(_kernel("pipeline").advance(f.project(a.pid), model=_model())),
+    "tick": lambda f, a: _print(_kernel("pipeline").tick(f)),
     "spec": lambda f, a: _print(
         {"requirements": len(_kernel("spec").make_spec(f.project(a.pid), model=_model())["requirements"])}),
-    "build": lambda f, a: _print(_kernel("dispatch").build(f.project(a.pid))),
+    "build": lambda f, a: _print(_kernel("dispatch").build(autonomy.cleared_to_build(f.project(a.pid)))),
     "status": lambda f, a: _print(status(f, a.pid)),
     "decide": lambda f, a: _print(Canon(f.project(a.pid)).decide(a.card, a.verdict, person=a.person,
                                                                  persona=a.persona, reason=a.reason)),
     "apply": lambda f, a: _print(_kernel("change").apply_change(f.project(a.pid), a.card, model=_model())),
-    "deliver": lambda f, a: _print(_kernel("deliver").deliver(f.project(a.pid), new=a.new)),
+    "deliver": lambda f, a: _print(_kernel("deliver").deliver(autonomy.cleared_to_deliver(f.project(a.pid)),
+                                                              new=a.new)),
     "operate": lambda f, a: _print(_kernel("operate").tick(f.project(a.pid))),
     "resurface": lambda f, a: _print(
         {"revision": _kernel("compile").update_repo_surface(f.project(a.pid), reason=a.reason)}),

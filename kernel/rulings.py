@@ -6,7 +6,9 @@ scenario assumed an empty store, while other scenarios on the same deployment ha
 it. A person decides on a `holdout_ruling` card:
 
 - **product_defect:** the failure becomes a defect in the change loop. A regression criterion
-  is added, the task reopens, and a new revision is built and delivered.
+  is added, the task reopens, and a new revision is built and delivered. The criterion is one
+  the builder sees, so it says only that a held-out check of the requirement failed on that
+  release: never the scenario's request, what it expected or what it observed.
 - **scenario_defect:** the holdout author, never the builder, rewrites that scenario. The
   reason and the person are recorded, and the same revision is delivered again.
 
@@ -98,6 +100,21 @@ def open_ruling(project, release_no, release: dict) -> dict | None:
     return card
 
 
+def defect_regression(card: dict) -> tuple[str, dict]:
+    """The change text and the regression criterion a product-defect ruling files. They say only
+    that a holdout failed, on which release, and the requirement it covers: never the scenario's
+    request, what it expected or what it observed (FR-B4-AC-2), because the regression criterion is
+    a visible test criterion the builder's envelope shows. The scenario stays in the custody and the
+    ruling card, for the person who ruled."""
+    release, crits = card["refs"].get("release"), list(card["refs"].get("criteria") or [])
+    reqs = sorted({str(c).rsplit("-AC-", 1)[0] for c in crits}) or list(card["refs"].get("requirements") or [])
+    text = (f"A held-out end-to-end check of {', '.join(reqs)} failed on release {release}, and a person ruled it a "
+            f"product defect (ruling {card['id']}; held-out criteria {', '.join(crits)}).")
+    then = (f"{reqs[0] if reqs else 'the requirement'} holds as its statement says: an end-to-end check the factory "
+            f"holds out failed against release {release}")
+    return text, {"given": "-", "when": "-", "then": then}
+
+
 def apply_rulings(project, *, model) -> list:
     """Carry out every decided ruling once. Returns what was done."""
     from kernel.change import apply_change, submit, triage
@@ -111,20 +128,15 @@ def apply_rulings(project, *, model) -> list:
         d = card["decision"]
         crits = card["refs"]["criteria"]
         if d["verdict"] == "product_defect":
-            text = "Holdout " + ", ".join(crits) + f" failed on release {card['refs']['release']}: " + card["body"][:600]
+            text, regression = defect_regression(card)
             change = submit(project, persona=d["persona"], person=d["person"], text=text, kind_hint="defect")
             triage(project, change["id"], model=model)
             # The factory knows which requirement's scenario failed: that is not a model's guess.
             from kernel.store import write_json
 
             changed = canon.get_card(change["id"])
-            first = card["payload"]["failing"][0]
-            req = first.get("request") or {}
-            changed["payload"]["triage"].update(
-                requirements=card["refs"]["requirements"], by="ruling",
-                regression={"given": "-", "when": f"{req.get('method', '')} {req.get('path', '')}".strip() or "-",
-                            "then": f"the holdout scenario for {first['criterion']} passes: expected "
-                                    f"{json.dumps(first.get('expected'))}"})
+            changed["payload"]["triage"].update(requirements=card["refs"]["requirements"], by="ruling",
+                                                regression=regression)
             write_json(canon.dir / "inbox" / f"{change['id']}.json", changed)
             out = apply_change(project, change["id"], model=model)
             done.append({"card": card["id"], "verdict": "product_defect", "change": change["id"], **out})

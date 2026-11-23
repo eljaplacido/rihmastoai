@@ -13,8 +13,15 @@ validation, IT's deploy gate, an unconfigured road, or an open security finding 
 release. It says which card it waits on (an open finding has no card: it says which findings).
 Calling it again after the person decides carries on from there.
 
-Each pass first carries out the decided update cards (`kernel.observations.apply_updates`), so a
-trial a person approved is recorded before anything moves (FR-V2-AC-2).
+A paused project runs nothing, not even its intake or its spec, until a person resumes it
+(FR-J3). Building, a ruling's or a change's rebuild and delivery each ask the autonomy cap first
+(FR-K4). A user validation decided `fix` or `change` hands the release to the change loop: one
+change card in the decider's name and words; a fix is carried out at once, a change once a
+business owner accepts its card (FR-R3-AC-2).
+
+Each pass (of a project that is not paused) first carries out the decided update cards
+(`kernel.observations.apply_updates`), so a trial a person approved is recorded before anything
+moves (FR-V2-AC-2).
 
 An adopted solution (`rihma adopt`) had no intake. Until a change is applied to it, it says what
 it waits for by its intent (FR-B1-AC-3): to monitor, `monitoring` with the last probe result; to
@@ -28,6 +35,7 @@ line and the cockpit: a validated concept becomes a project without any project 
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from kernel.canon import Canon
 from kernel.compile import author_holdouts, compile_project
@@ -73,6 +81,9 @@ def _advance(project, *, model, lanes=None, cell_runner=None, verifier_runner=No
              max_steps: int = 12) -> dict:
     history: list = []
     for _ in range(max_steps):
+        held = _paused(project, history)
+        if held is not None:
+            return held
         _apply_updates(project, history)
         idle = adopted_state(project)
         if idle is not None:
@@ -89,6 +100,23 @@ def _advance(project, *, model, lanes=None, cell_runner=None, verifier_runner=No
         if isinstance(step, dict):
             return step
     return {"state": "progress", "stage": project.meta["stage"], "history": history}
+
+
+def _paused(project: Project, history: list[Any]) -> dict[str, Any] | None:
+    """A paused project runs nothing until a person resumes it: no intake, spec, compile, build or
+    delivery, and no decided card is carried out (FR-J3). None when it is not paused."""
+    from kernel.safestop import paused
+
+    if not paused(project):
+        return None
+    pause = project.meta["pause"]
+    why = f"paused by {pause.get('requested_by')}" + (f": {pause['reason']}" if pause.get("reason") else "")
+    return {"state": "paused", "stage": project.meta.get("stage"), "history": history, "why": why,
+            "stopped_at": pause.get("stopped_at")}
+
+
+def _capped(project: Project, exc: Exception, history: list[Any]) -> dict[str, Any]:
+    return {"state": "capped", "stage": project.meta["stage"], "why": str(exc), "history": history}
 
 
 def _apply_updates(project, history: list) -> None:
@@ -108,7 +136,8 @@ def _shape(project, model, history: list) -> dict | str | None:
         if need:  # a concept a person validated: intake starts from the need as it arrived
             from kernel.intake import intake
 
-            intake(project, need["text"], model=model, requested_by=need.get("requested_by"))
+            # The need is text from outside (a signal): never a path to read (literal=True).
+            intake(project, need["text"], model=model, requested_by=need.get("requested_by"), literal=True)
             history.append("intake from the validated need")
             return AGAIN
         return {"state": "failed", "stage": 1, "why": "no intake yet: run `factory intake` with a source",
@@ -141,9 +170,8 @@ def _shape(project, model, history: list) -> dict | str | None:
 
 
 def _gatekeep(project, canon: Canon, history: list) -> dict | None:
-    """Escalations a person decided are carried out; an open one, a stop or a pause holds the run."""
+    """Escalations a person decided are carried out; an open one or a stop holds the run."""
     from kernel.dispatch import resolve_escalations
-    from kernel.safestop import paused
 
     if resolve_escalations(project):
         history.append("escalations resolved")
@@ -152,24 +180,19 @@ def _gatekeep(project, canon: Canon, history: list) -> dict | None:
     escalations = canon.cards(kind="escalation")
     if escalations:
         return _waiting(5, [c["id"] for c in escalations], "a task did not pass its gate") | {"history": history}
-    if paused(project):
-        pause = project.meta["pause"]
-        why = f"paused by {pause.get('requested_by')}" + (f": {pause['reason']}" if pause.get("reason") else "")
-        return {"state": "paused", "stage": project.meta["stage"], "history": history, "why": why,
-                "stopped_at": pause.get("stopped_at")}
     return None
 
 
 def _build(project, canon: Canon, history: list, **runners) -> dict | str | None:
     """Build every task still to build, cell by cell, within the autonomy cap."""
-    from kernel.autonomy import AutonomyCapped, require
+    from kernel.autonomy import AutonomyCapped, cleared_to_build
 
     if project.meta.get("built"):
         return None
     try:
-        require(project, 3, "building")
+        cleared_to_build(project)
     except AutonomyCapped as exc:
-        return {"state": "capped", "stage": project.meta["stage"], "why": str(exc), "history": history}
+        return _capped(project, exc, history)
     out = build(project, **runners)
     history.append({"build": out["results"]})
     if out["all_merged"]:
@@ -181,14 +204,41 @@ def _build(project, canon: Canon, history: list, **runners) -> dict | str | None
 
 
 def _deliver(project, model, canon: Canon, history: list, deliver_kwargs: dict | None) -> dict | str:
-    """Rulings first, then the holdouts nobody wrote yet, then the delivery the maturity decides."""
-    from kernel.autonomy import LANDING_LEVEL, AutonomyCapped, require
+    """Within the cap: rulings first, then the holdouts nobody wrote yet, then the delivery the
+    maturity decides. A ruling leads to a rebuild or a new delivery, so it waits below level 3 as
+    building does; landing asks for the landing's own level."""
+    from kernel.autonomy import AutonomyCapped, cleared_to_build, cleared_to_deliver
 
     try:
-        from kernel.deliver import LANDING, deliver
+        from kernel.deliver import deliver
     except ImportError:
         return {"state": "done", "stage": project.meta["stage"], "why": "built; delivery module not installed",
                 "history": history}
+    try:
+        cleared_to_build(project)
+    except AutonomyCapped as exc:
+        return _capped(project, exc, history)
+    step = _rule(project, model, canon, history)
+    if step is not None:
+        return step
+    try:
+        cleared_to_deliver(project)
+    except AutonomyCapped as exc:
+        return _capped(project, exc, history)
+    kwargs = dict(deliver_kwargs or {})
+    if project.meta.get("redeliver"):
+        kwargs["new"] = True
+        project.update_meta(redeliver=False)
+    out = deliver(project, **kwargs)
+    history.append({"deliver": out.get("state")})
+    if out.get("state") == "failed" and out.get("handoff"):
+        return _handoff(project, model, out, history)
+    return _delivered(project, out, history)
+
+
+def _rule(project: Project, model: Any, canon: Canon, history: list[Any]) -> dict[str, Any] | str | None:
+    """Carry out the rulings people decided, wait on an open one, and write the holdouts the author
+    never managed to write before delivery."""
     from kernel.rulings import apply_rulings
 
     ruled = apply_rulings(project, model=model)
@@ -205,18 +255,68 @@ def _deliver(project, model, canon: Canon, history: list, deliver_kwargs: dict |
             history.append({"holdouts_authored_late": missing})
     except Exception as exc:  # the delivery records the holdouts as not measured; the error is kept
         project.log("holdouts_not_authored", {"error": str(exc), "when": "before delivery"})
-    landing = LANDING[project.meta["maturity"]]
+    return None
+
+
+def _handoff(project: Project, model: Any, out: dict[str, Any], history: list[Any]) -> dict[str, Any] | str:
+    """A user validation decided fix or change: the release goes to the change loop (FR-R3-AC-2).
+    Its change card (see `_handoff_card`) is carried out at once for a fix, a defect that needs no
+    decision, and for a change once a business owner or product owner accepted it. A card rejected
+    or deferred, or one already carried out, leaves the release failed and says why."""
+    from kernel.change import apply_change
+
+    card, handoff = _handoff_card(project, model, out)
+    stage, extra = project.meta["stage"], {"history": history, "release": out.get("release")}
+    decision = card.get("decision") or {}
+    said = f"user validation decided {handoff['verdict']}"
+    if handoff.get("applied") or decision.get("verdict") not in (None, "accept"):
+        why = (f"the change loop carried it out as {card['id']}" if handoff.get("applied") else
+               f"its change card {card['id']} was decided {decision['verdict']} by {decision.get('person')}")
+        return {"state": "failed", "stage": stage, "why": f"{said}: {why}", **extra}
+    if card["payload"]["triage"].get("needs_decision") and decision.get("verdict") != "accept":
+        return _waiting(stage, [card["id"]], f"{said}: a business owner or product owner accepts its change "
+                                             "card before the spec is amended") | extra
     try:
-        require(project, LANDING_LEVEL.get(landing, 4), f"delivering to {landing}")
-    except AutonomyCapped as exc:
-        return {"state": "capped", "stage": project.meta["stage"], "why": str(exc), "history": history}
-    kwargs = dict(deliver_kwargs or {})
-    if project.meta.get("redeliver"):
-        kwargs["new"] = True
-        project.update_meta(redeliver=False)
-    out = deliver(project, **kwargs)
-    history.append({"deliver": out.get("state")})
-    return _delivered(project, out, history)
+        applied = apply_change(project, card["id"], model=model)
+    except ValueError as exc:  # the amendment changed nothing, or the compiler refused it
+        return {"state": "failed", "stage": stage, "why": f"{said}: {card['id']} was not applied: {exc}", **extra}
+    _save_handoff(project, out["release"], handoff | {"applied": True})
+    history.append({"handoff": {"card": card["id"], "class": applied["class"], "changed": applied["changed"]}})
+    return AGAIN
+
+
+def _handoff_card(project: Project, model: Any, out: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The change card a validation's hand-off goes to, opened once: in the name, persona and words
+    of the person who decided the validation, a fix as a defect and a change as a change request,
+    and recorded on the release (``handoff.change``)."""
+    from kernel.change import submit, triage
+
+    canon, n = Canon(project), out["release"]
+    handoff = dict((project.read(f"releases/{n}.json") or {}).get("handoff") or out["handoff"])
+    if not handoff.get("change"):
+        d = canon.get_card(handoff["card"])["decision"]
+        text = str(d.get("reason") or "").strip() or f"Release {n} needs a {handoff['verdict']} after user validation"
+        card = submit(project, persona=d["persona"], person=d["person"], text=text,
+                      kind_hint="defect" if handoff["verdict"] == "fix" else "change_request")
+        handoff["change"] = card["id"]
+        _save_handoff(project, n, handoff)
+        project.log("handoff_opened", {"release": n, "validation": handoff["card"], "card": card["id"],
+                                       "verdict": handoff["verdict"], "person": d["person"]})
+    card = canon.get_card(handoff["change"])
+    if not card["payload"].get("triage"):
+        triage(project, card["id"], model=model)
+        card = canon.get_card(card["id"])
+    return card, handoff
+
+
+def _save_handoff(project: Project, n: int, handoff: dict[str, Any]) -> None:
+    """Keep the hand-off's progress on its release record, under the delivery's lock."""
+    from kernel.filelock import locked
+
+    with locked(project.path("releases", ".deliver.lock")):
+        rel = project.read(f"releases/{n}.json") or {}
+        rel["handoff"] = handoff
+        project.write(f"releases/{n}.json", rel)
 
 
 def _delivered(project, out: dict, history: list) -> dict:

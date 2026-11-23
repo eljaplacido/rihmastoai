@@ -1139,6 +1139,13 @@
           "check": {
             "kind": "test"
           }
+        },
+        {
+          "id": "FR-P3-AC-2",
+          "then": "nothing the analyst drafted is dropped silently: the spec records each requirement left out (beyond the maturity's limit, with no statement or with no usable criterion), each criterion left out (beyond three, or with no then) and each source left out (one naming no question in the canon, which the requirement then no longer keeps), each with its reason; spec.md lists them and the ledger counts them",
+          "check": {
+            "kind": "test"
+          }
         }
       ]
     },
@@ -4134,6 +4141,19 @@
           "tests/test_embed_server.py",
           "tests/test_embeds_fix.py",
           "docs/guides/embeds.md"
+        ]
+      }
+    },
+    {
+      "id": "V-86",
+      "title": "Governance fixes: decisions on changes hold, hints never skip one, the cap guards every build and delivery path, needs are text, a pause runs nothing, validations reach the change loop, withdrawals and stable task ids; the spec records what the analyst's draft lost",
+      "criteria": [
+        "FR-P3-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/spec.py",
+          "tests/test_governance_fix.py"
         ]
       }
     }

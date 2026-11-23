@@ -164,11 +164,13 @@ def _keep_source(project: Any, kind: str, text: str, requested_by: str | None) -
 
 
 def intake(project, source: str, *, model, requested_by: str | None = None,
-           perspectives=PERSPECTIVES) -> dict:
-    """Run the panel on ``source`` and settle each question by the project's mode."""
+           perspectives=PERSPECTIVES, literal: bool = False) -> dict:
+    """Run the panel on ``source`` and settle each question by the project's mode. With ``literal``
+    the source is the request's own text, never a path to read: a need that arrived from outside
+    (a validated concept) or the contents of a request file."""
     meta = project.meta
     mode, maturity = meta["mode"], meta["maturity"]
-    kind, text = load_source(source)
+    kind, text = ("idea", source.strip()) if literal else load_source(source)
     if not text:
         raise ValueError("the request is empty")
     from kernel.profiles import choose, profile_of, propose_profile

@@ -31,22 +31,26 @@ def cell(project) -> list:
 
 def gates(project) -> dict:
     """The factory's own judgement of the work, from the gate records: rounds judged and passed,
-    the first-round pass rate over tasks that reached a gate, merges and escalations. This,
-    not a Gnomon run's harness outcome, says whether the work was good."""
+    the first-round pass rate over tasks whose first gate was measured, merges and escalations.
+    A first round the gate could not measure (a verifier with no usable answer) is counted beside
+    the rate, never in it, as a pass rate over runs leaves out what was not measured. This, not a
+    Gnomon run's harness outcome, says whether the work was good."""
     rounds = passed = 0
-    first = {}
+    first: dict[str, str] = {}
     for rec in project.ledger().of_kind("gate"):
         pl = rec["event"]["payload"]
         rounds += 1
         passed += 1 if pl.get("verdict") == "passed" else 0
         if pl.get("round") == 0:
-            first[pl["task"]] = pl.get("verdict") == "passed"
+            first[pl["task"]] = pl.get("verdict") or "not measured"
     merged = {r["event"]["payload"]["task"] for r in project.ledger().of_kind("merged")}
     escalated = len(project.ledger().of_kind("escalated"))
-    n_first = len(first)
-    return {"rounds": rounds, "rounds_passed": passed, "tasks_gated": n_first,
-            "first_round_passed": sum(first.values()),
-            "first_round_rate": (sum(first.values()) / n_first) if n_first else None,
+    measured = [v for v in first.values() if v != "not measured"]
+    n_passed = sum(1 for v in measured if v == "passed")
+    return {"rounds": rounds, "rounds_passed": passed, "tasks_gated": len(measured),
+            "first_round_passed": n_passed,
+            "first_round_rate": (n_passed / len(measured)) if measured else None,
+            "first_round_not_measured": len(first) - len(measured),
             "merged": len(merged), "escalated": escalated}
 
 
@@ -65,7 +69,8 @@ def floor(factory) -> dict:
         runs += rows
         costs += [r["cost"] for r in rows]
         g = gates(project)
-        for k in ("rounds", "rounds_passed", "tasks_gated", "first_round_passed", "merged", "escalated"):
+        for k in ("rounds", "rounds_passed", "tasks_gated", "first_round_passed", "first_round_not_measured",
+                  "merged", "escalated"):
             totals[k] += g[k]
         projects.append({"id": project.pid, "stage": stage, "runs": len(rows), "gates": g, **pass_rate(rows)})
     gate_total: dict[str, Any] = dict(totals)

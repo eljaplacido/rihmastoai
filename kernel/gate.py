@@ -3,18 +3,22 @@ the builder (FR-G6).
 
 The signals for one task:
 - **tests:** the product's whole suite, run by the kernel. Exit 0 is passed.
-- **trace:** every visible criterion of the task is named by a test.
-- **fail-first:** each criterion's tests fail at the base revision. A test that passes
-  before the change proves nothing.
+- **trace:** every visible criterion of the task is named by a test that the kernel saw run. A
+  test that was skipped, marked as an expected failure or never collected names nothing.
+- **fail-first:** each criterion's tests fail at the base revision. A test that passes, is
+  skipped or never runs before the change proves nothing.
 - **verifier:** a read-only role on another model family tries to break the change. An
-  in-scope finding is an objection.
+  in-scope finding is an objection. An answer with no findings list is not measured.
 
-Each signal keeps its native value beside its named verdict. The combined verdict uses
-FR-G3's precedence. *Warranted* means the combined verdict is passed.
+A change that touches what a cell may not write (the surface, the contract, the factory's files)
+is a violation, and the verifier does not run: it would run under the surface the change rewrote.
+Each signal keeps its native value beside its named verdict. The combined verdict uses FR-G3's
+precedence. *Warranted* means the combined verdict is passed.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -25,10 +29,67 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kernel.lanes import protected_paths
 from kernel.model import ModelError, extract_json, run_gnomon_task
 from kernel.verdicts import combine_verdicts
 
-TEST_LINE = re.compile(r"^(test\w*) \(([\w.]+)\)\s*\.\.\.\s*(ok|FAIL|ERROR|skipped.*|expected failure|unexpected success)$")
+# The outcomes of a test that ran to its end; the others (skipped, expected failure, unexpected
+# success) are a test that did not show its behaviour.
+RAN = ("ok", "FAIL", "ERROR")
+FAILING = ("FAIL", "ERROR")
+SEVERITIES = ("high", "medium", "low")  # of a verifier's finding
+_WORST = {"ok": 0, "skipped": 1, "expected failure": 2, "unexpected success": 3, "FAIL": 4, "ERROR": 4}
+
+# The suite runs through unittest's own discovery and text runner, as `python -m unittest discover
+# -s tests -v [-k pattern]` does, and every outcome is also written to a file by test id. A test
+# with a docstring (two lines in -v output) or one that writes to stderr mid-line is seen as surely
+# as any other. An error outside a test (a module that cannot be imported, a failing setUpClass)
+# keeps its scope, the module or class it hit. Code under test can still lie about itself; fail-first
+# and the verifier are there for that.
+_RUNNER = r'''
+import json, sys, unittest
+
+
+class Result(unittest.TextTestResult):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.seen = []
+
+    def note(self, test, outcome):
+        kind, scope = type(test).__name__, None
+        if kind == "_FailedTest":
+            scope = test._testMethodName
+        elif kind == "_ErrorHolder":
+            text = str(getattr(test, "description", ""))
+            scope = text[text.find("(") + 1:text.rfind(")")] if "(" in text else text
+        self.seen.append({"id": test.id(), "name": getattr(test, "_testMethodName", "") or "",
+                          "outcome": outcome, "scope": scope})
+
+    def addSubTest(self, test, subtest, err):
+        super().addSubTest(test, subtest, err)
+        if err is not None:
+            self.note(test, "FAIL" if issubclass(err[0], test.failureException) else "ERROR")
+
+
+def noting(name, outcome):
+    def add(self, test, *rest):
+        getattr(unittest.TextTestResult, name)(self, test, *rest)
+        self.note(test, outcome)
+    return add
+
+
+for name, outcome in (("addSuccess", "ok"), ("addFailure", "FAIL"), ("addError", "ERROR"), ("addSkip", "skipped"),
+                      ("addExpectedFailure", "expected failure"), ("addUnexpectedSuccess", "unexpected success")):
+    setattr(Result, name, noting(name, outcome))
+out, pattern = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else "")
+loader = unittest.TestLoader()
+if pattern:
+    loader.testNamePatterns = [pattern if "*" in pattern else "*%s*" % pattern]
+result = unittest.TextTestRunner(verbosity=2, resultclass=Result).run(loader.discover("tests"))
+with open(out, "w", encoding="utf-8") as fh:
+    json.dump({"ran": result.testsRun, "seen": result.seen}, fh)
+sys.exit(5 if result.testsRun == 0 and not result.skipped else 0 if result.wasSuccessful() else 1)
+'''
 
 
 @dataclass
@@ -63,28 +124,54 @@ def _python() -> str:
 
 
 def run_suite(repo_dir: Path, *, pattern: str | None = None, timeout: int = 600) -> dict:
-    """Run the unittest suite in ``repo_dir``; return exit code and each test's outcome."""
+    """Run the unittest suite in ``repo_dir``; return the exit code, each test's outcome by name
+    (``tests``, the worst when two share a name) and every outcome the runner saw (``seen``)."""
     env = dict(os.environ)
     env["DATA_DIR"] = tempfile.mkdtemp(prefix="gate-data-")
     env.pop("TRAFFIC_LOG", None)
-    cmd = [_python(), "-m", "unittest", "discover", "-s", "tests", "-v"]
-    if pattern:
-        cmd += ["-k", pattern]
+    report = Path(env["DATA_DIR"] + "-outcomes.json")
+    cmd = [_python(), "-c", _RUNNER, str(report), pattern or ""]
     try:
         proc = subprocess.run(cmd, cwd=repo_dir, capture_output=True, text=True, timeout=timeout,
                               env=env, encoding="utf-8", errors="replace")
+        seen = _read_outcomes(report)
     except subprocess.TimeoutExpired:
-        return {"exit": None, "timeout": timeout, "tests": {}, "ran": 0}
+        return {"exit": None, "timeout": timeout, "tests": {}, "ran": 0, "seen": []}
     finally:
         shutil.rmtree(env["DATA_DIR"], ignore_errors=True)
-    tests = {}
-    for line in proc.stderr.splitlines():
-        m = TEST_LINE.match(line.strip())
-        if m:
-            tests[m.group(1)] = m.group(3).split()[0]
-    ran = re.search(r"^Ran (\d+) tests?", proc.stderr, re.MULTILINE)
-    return {"exit": proc.returncode, "tests": tests, "ran": int(ran.group(1)) if ran else 0,
+        report.unlink(missing_ok=True)
+    tests: dict[str, str] = {}
+    for rec in seen["seen"]:
+        name, outcome = rec["name"], rec["outcome"]
+        if name and _WORST.get(outcome, 4) >= _WORST.get(tests.get(name, "ok"), 4):
+            tests[name] = outcome
+    return {"exit": proc.returncode, "tests": tests, "ran": seen["ran"], "seen": seen["seen"],
             "tail": proc.stderr.strip().splitlines()[-3:]}
+
+
+def _read_outcomes(path: Path) -> dict:
+    """The runner's outcome file. A run that never wrote one (it crashed, or a test ended the
+    process) saw nothing: no test ran as far as the kernel can tell."""
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        doc = None
+    if not isinstance(doc, dict) or not isinstance(doc.get("seen"), list):
+        return {"ran": 0, "seen": []}
+    seen = [r | {"name": str(r.get("name") or ""), "outcome": str(r.get("outcome") or "ERROR")}
+            for r in doc["seen"] if isinstance(r, dict) and isinstance(r.get("id"), str)]
+    return {"ran": doc["ran"] if isinstance(doc.get("ran"), int) else 0, "seen": seen}
+
+
+def _naming(run: dict, criterion_id: str) -> dict[str, str]:
+    """The tests in a run whose names name the criterion: test id to outcome (the worst one)."""
+    pat = token(criterion_id)
+    out: dict[str, str] = {}
+    for rec in run.get("seen", []):
+        if rec.get("scope") is None and pat.search(rec["name"]) \
+                and _WORST.get(rec["outcome"], 4) >= _WORST.get(out.get(rec["id"], "ok"), 4):
+            out[rec["id"]] = rec["outcome"]
+    return out
 
 
 def token(criterion_id: str) -> re.Pattern:
@@ -111,60 +198,113 @@ def collect_test_names(repo_dir: Path) -> set:
     return names
 
 
-def signal_tests(repo_dir: Path) -> Signal:
-    res = run_suite(repo_dir)
+def signal_tests(repo_dir: Path, *, run: dict | None = None) -> Signal:
+    """The whole suite, run by the kernel (``run``: a run already made at this revision)."""
+    res = dict(run if run is not None else run_suite(repo_dir))
+    res.pop("seen", None)  # every outcome stays in ``tests``; the runner's records stay out of the round
     if res["exit"] is None:
         return Signal("tests", "not measured", res, f"the suite did not finish in {res['timeout']}s")
     if res["ran"] == 0:
         return Signal("tests", "not measured", res, "no tests ran")
-    failing = sorted(n for n, o in res["tests"].items() if o in ("FAIL", "ERROR"))
+    failing = sorted(n for n, o in res["tests"].items() if o in FAILING)
     verdict = "passed" if res["exit"] == 0 else "failed"
     return Signal("tests", verdict, res, f"{res['ran']} ran" + (f"; failing: {', '.join(failing[:8])}" if failing else ""))
 
 
-def signal_trace(repo_dir: Path, contract: dict, task_id: str) -> Signal:
-    names = collect_test_names(repo_dir)
-    missing = [cid for cid in visible_criteria(contract, task_id) if not tests_naming(names, cid)]
-    native = {"criteria": visible_criteria(contract, task_id), "unnamed": missing}
+def signal_trace(repo_dir: Path, contract: dict, task_id: str, *, run: dict | None = None) -> Signal:
+    """Every visible criterion is named by a test, and the kernel saw one of those tests run at
+    this revision (``run``). A criterion whose tests were all skipped, marked as expected failures
+    or never collected is not measured: nothing executed shows it."""
+    run = run if run is not None else run_suite(repo_dir)
+    crits = visible_criteria(contract, task_id)
+    names = collect_test_names(repo_dir) | {r["name"] for r in run.get("seen", []) if r.get("scope") is None}
+    missing = [cid for cid in crits if not tests_naming(names, cid)]
+    unrun = _not_run(run, names, [cid for cid in crits if cid not in missing])
+    native: dict[str, Any] = {"criteria": crits, "unnamed": missing} | ({"not_run": unrun} if unrun else {})
     if missing:
         return Signal("trace", "failed", native, "no test names " + ", ".join(missing))
-    return Signal("trace", "passed", native, "every visible criterion is named by a test")
+    if unrun:
+        return Signal("trace", "not measured", native, "no test naming it ran: " + "; ".join(
+            f"{c}: " + ", ".join(f"{n} {o}" for n, o in sorted(v.items())[:3]) for c, v in unrun.items()))
+    return Signal("trace", "passed", native, "every visible criterion is named by a test that ran")
 
 
-def signal_fail_first(repo_dir: Path, base: str, contract: dict, task_id: str) -> Signal:
+def _not_run(run: dict, names: set, crits: list) -> dict[str, dict[str, str]]:
+    """Per criterion that no naming test ran to its end in ``run``: its tests and what became of
+    each (skipped, an expected failure, never ran)."""
+    out = {}
+    for cid in crits:
+        outcomes = _naming(run, cid)
+        if not any(o in RAN for o in outcomes.values()):
+            out[cid] = {i.rsplit(".", 1)[-1]: o for i, o in outcomes.items()} or {
+                n: "never ran" for n in tests_naming(names, cid)}
+    return out
+
+
+def signal_fail_first(repo_dir: Path, base: str, contract: dict, task_id: str, *,
+                      run: dict | None = None) -> Signal:
     """Copy the head's tests onto the base revision and run each criterion's tests there:
-    they must fail. A test that already passes at base cannot show the change did anything."""
+    they must fail. A test that passes, is skipped or never runs at base cannot show the change
+    did anything; ``run`` is the suite's run at head, which says which tests to look for."""
     crits = visible_criteria(contract, task_id)
     if not crits:
         return Signal("fail_first", "not applicable", {}, "the task has no visible criteria")
-    passed_at_base = _passing_at(repo_dir, base, crits)
-    if passed_at_base is None:
+    run = run if run is not None else run_suite(repo_dir)
+    ids = {cid: sorted(_naming(run, cid)) for cid in crits}
+    at_base = _passing_at(repo_dir, base, crits, ids)
+    if at_base is None:
         return Signal("fail_first", "not measured", {"base": base}, "could not check out the base")
+    passed_at_base, unseen = at_base
+    for cid in crits:  # no test naming it ran at head: there is nothing to show failing at base
+        if not ids[cid] and cid not in passed_at_base:
+            unseen.setdefault(cid, ["no test naming it ran at head"])
     native: dict[str, Any] = {"base": base, "criteria": crits, "passed_at_base": passed_at_base}
+    if unseen:
+        native["unseen_at_base"] = unseen
+    if passed_at_base:
+        refused = _template_check(repo_dir, base, passed_at_base, ids, native, unseen)
+        if refused is not None:
+            return refused
+    if unseen:
+        return Signal("fail_first", "not measured", native, "tests that did not run before the change, so cannot "
+                      "be shown to fail there: " + "; ".join(f"{c}: {', '.join(v[:3])}" for c, v in unseen.items()))
     if not passed_at_base:
         return Signal("fail_first", "passed", native, "every criterion's tests fail at base")
-    # A criterion can already hold at the task's base because earlier tasks built it. What must
-    # be shown is that its tests can fail at all: they must fail on the bare paved-road template
-    # (the product's first commit). If they pass even there, they test nothing.
-    root = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"], cwd=repo_dir, capture_output=True,
-                          text=True).stdout.split()
-    template = root[0] if root else None
-    vacuous = _passing_at(repo_dir, template, list(passed_at_base)) if template and template != base else None
-    native.update(template=template, passed_on_template=vacuous)
-    if vacuous is None or vacuous:
-        bad = vacuous if vacuous else passed_at_base
-        return Signal("fail_first", "failed", native,
-                      "tests that pass without the behaviour (" + ("on the bare template" if vacuous else "at base")
-                      + "): " + "; ".join(f"{c}: {', '.join(v[:3])}" for c, v in bad.items()))
     native["already_met_at_base"] = sorted(passed_at_base)
     return Signal("fail_first", "passed", native,
                   "tests fail on the bare template; " + ", ".join(sorted(passed_at_base))
                   + " already held at base (built by earlier tasks)")
 
 
-def _passing_at(repo_dir: Path, revision: str, crits: list) -> dict | None:
-    """Copy the head's tests onto ``revision`` and return, per criterion, its tests that pass
-    there. None if the revision cannot be checked out."""
+def _template_check(repo_dir: Path, base: str, passed_at_base: dict, ids: dict, native: dict,
+                    unseen: dict) -> Signal | None:
+    """A criterion can already hold at the task's base because earlier tasks built it. What must
+    be shown is that its tests can fail at all: they must fail on the bare paved-road template
+    (the product's first commit). If they pass even there, they test nothing: the refusal. A test
+    that does not run on the template is added to ``unseen``."""
+    root = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"], cwd=repo_dir, capture_output=True,
+                          text=True).stdout.split()
+    template = root[0] if root else None
+    on_template = _passing_at(repo_dir, template, list(passed_at_base), ids) if template and template != base else None
+    vacuous = on_template[0] if on_template is not None else None
+    native.update(template=template, passed_on_template=vacuous)
+    if on_template is not None:
+        for cid, names in on_template[1].items():
+            unseen[cid] = sorted(set(unseen.get(cid, [])) | set(names))
+            native["unseen_at_base"] = unseen
+    if vacuous is None or vacuous:
+        bad = vacuous if vacuous else passed_at_base
+        return Signal("fail_first", "failed", native,
+                      "tests that pass without the behaviour (" + ("on the bare template" if vacuous else "at base")
+                      + "): " + "; ".join(f"{c}: {', '.join(v[:3])}" for c, v in bad.items()))
+    return None
+
+
+def _passing_at(repo_dir: Path, revision: str, crits: list, ids: dict) -> tuple[dict, dict] | None:
+    """Copy the head's tests onto ``revision`` and return, per criterion, its tests that do not
+    fail there (passed, skipped, or an expected failure), and its head tests (``ids``) that never
+    ran there and were not stopped by an error in their own module or class. None if the revision
+    cannot be checked out."""
     tmp = Path(tempfile.mkdtemp(prefix="gate-base-"))
     try:
         subprocess.run(["git", "worktree", "add", "-q", "--detach", str(tmp / "b"), revision], cwd=repo_dir,
@@ -172,14 +312,19 @@ def _passing_at(repo_dir: Path, revision: str, crits: list) -> dict | None:
         base_dir = tmp / "b"
         shutil.rmtree(base_dir / "tests", ignore_errors=True)
         shutil.copytree(Path(repo_dir) / "tests", base_dir / "tests")
-        passing_by = {}
+        passing_by, unseen_by = {}, {}
         for cid in crits:
             res = run_suite(base_dir, pattern=cid.replace("-", "_"))
-            named = {n: o for n, o in res["tests"].items() if token(cid).search(n)}
-            passing = sorted(n for n, o in named.items() if o == "ok")
+            outcomes = _naming(res, cid)
+            scopes = [r["scope"] for r in res.get("seen", []) if r.get("scope")]
+            passing = sorted({i.rsplit(".", 1)[-1] for i, o in outcomes.items() if o not in FAILING})
+            unseen = sorted({i.rsplit(".", 1)[-1] for i in ids.get(cid, []) if i not in outcomes
+                             and not any(i == s or i.startswith(s + ".") for s in scopes)})  # its module or class
             if passing:
                 passing_by[cid] = passing
-        return passing_by
+            if unseen:
+                unseen_by[cid] = unseen
+        return passing_by, unseen_by
     except subprocess.CalledProcessError:
         return None
     finally:
@@ -188,7 +333,18 @@ def _passing_at(repo_dir: Path, revision: str, crits: list) -> dict | None:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def signal_protected(repo_dir: Path, base: str, head: str) -> Signal | None:
+    """A violation when the change touches a protected path; None when it does not."""
+    touched = protected_paths(repo_dir, base, head)
+    if not touched:
+        return None
+    return Signal("protected", "violation", {"paths": touched},
+                  "the change touches what a cell may not: " + ", ".join(touched[:10]))
+
+
 def verifier_prompt(contract: dict, task_id: str, base: str) -> str:
+    """Open, P8 in docs/code-quality.md (here and in change_verifier_prompt): a `git diff` the read-only
+    verifier cannot run. Listing the changed files is a prompt change for the owner's review."""
     task = next(t for t in contract["tasks"] if t["id"] == task_id)
     crit = {c["id"]: c for r in contract["requirements"] for c in r["acceptance"]}
     reqs = sorted({cid.rsplit("-AC-", 1)[0] for cid in task["criteria"]})
@@ -222,6 +378,29 @@ def signal_verifier(repo_dir: Path, contract: dict, task_id: str, base: str, *, 
     return _verifier_signal(repo_dir, verifier_prompt(contract, task_id, base), runner=runner)
 
 
+def read_findings(text: str) -> tuple[list | None, str]:
+    """The verifier's findings from its answer, read strictly: one JSON object whose `findings` is
+    a list of objects, each with a severity of high, medium or low. Anything else (prose, findings
+    as an object or under another key, an item that is not an object, an unknown severity) is
+    (None, why): the verifier gave no usable verdict, and its signal is not measured."""
+    try:
+        doc = extract_json(text)
+    except ModelError as exc:
+        return None, str(exc)
+    findings = doc.get("findings") if isinstance(doc, dict) else None
+    if not isinstance(findings, list):
+        return None, "the answer holds no findings list"
+    out = []
+    for f in findings:
+        if not isinstance(f, dict):
+            return None, f"a finding is not an object: {str(f)[:80]}"
+        severity = str(f.get("severity", "")).strip().lower()
+        if severity not in SEVERITIES:
+            return None, f"a finding has no severity of {', '.join(SEVERITIES)}: {f.get('severity')!r}"
+        out.append(f | {"severity": severity})
+    return out, ""
+
+
 def _verifier_signal(repo_dir: Path, prompt: str, *, runner=None) -> Signal:
     try:
         if runner is not None:
@@ -230,11 +409,14 @@ def _verifier_signal(repo_dir: Path, prompt: str, *, runner=None) -> Signal:
         else:
             record = run_gnomon_task(repo_dir, prompt, role="verifier", timeout=1200)
             text = record.get("output") or ""
-        findings = extract_json(text).get("findings") or []
-    except (ModelError, AttributeError) as exc:
+    except ModelError as exc:
         return Signal("verifier", "not measured", {"error": str(exc)}, "the verifier gave no usable answer")
-    findings = [f for f in findings if isinstance(f, dict)]
-    blocking = [f for f in findings if f.get("in_scope", True) and f.get("severity") == "high"]
+    findings, why = read_findings(text if isinstance(text, str) else "")
+    if findings is None:
+        return Signal("verifier", "not measured", {"error": why, "model": record.get("model"),
+                                                   "bucket": record.get("bucket")},
+                      f"the verifier gave no usable answer: {why}")
+    blocking = [f for f in findings if f.get("in_scope", True) and f["severity"] == "high"]
     native = {"findings": findings, "model": record.get("model"), "bucket": record.get("bucket")}
     if blocking:
         return Signal("verifier", "failed", native, f"{len(blocking)} high in-scope finding(s)")
@@ -243,19 +425,26 @@ def _verifier_signal(repo_dir: Path, prompt: str, *, runner=None) -> Signal:
 
 def judge(repo_dir: Path, contract: dict, task_id: str, base: str, head: str, *,
           verifier: bool = True, verifier_runner=None) -> GateResult:
-    signals = [signal_tests(repo_dir), signal_trace(repo_dir, contract, task_id),
-               signal_fail_first(repo_dir, base, contract, task_id)]
-    if verifier:
+    guard = signal_protected(repo_dir, base, head)
+    run = run_suite(repo_dir)
+    signals = [signal_tests(repo_dir, run=run), signal_trace(repo_dir, contract, task_id, run=run),
+               signal_fail_first(repo_dir, base, contract, task_id, run=run)]
+    if guard is not None:  # the verifier would run under the surface the change rewrote: it does not run
+        signals.append(guard)
+    elif verifier:
         signals.append(signal_verifier(repo_dir, contract, task_id, base, runner=verifier_runner))
     return _conclude(GateResult(task=task_id, base=base, head=head, signals=signals))
 
 
 def _conclude(result: GateResult) -> GateResult:
-    """The combined verdict (FR-G3) and every objection, from the signals."""
+    """The combined verdict (FR-G3) and every objection, from the signals. Evidence that could not
+    be read is an objection too, so the next round and the person deciding see what was missing."""
     result.verdict = combine_verdicts([s.verdict for s in result.signals])
     for s in result.signals:
         if s.verdict in ("failed", "violation"):
             result.objections.append(f"{s.name}: {s.detail}")
+        elif s.verdict == "not measured":
+            result.objections.append(f"{s.name} (not measured): {s.detail}")
         if s.name == "verifier":
             for f in s.native.get("findings", []):
                 if f.get("in_scope", True) and f.get("severity") == "high":
@@ -302,8 +491,9 @@ def judge_change(repo_dir: Path, contract: dict, base: str, head: str, *, label:
     still run, and trace and fail-first are not applicable: no criterion is claimed."""
     if task_id is not None:
         return judge(repo_dir, contract, task_id, base, head, verifier_runner=verifier_runner)
+    prompt = change_verifier_prompt(contract, base, author)
     signals = [signal_tests(repo_dir),
                Signal("trace", "not applicable", {"criteria": []}, "the change names no criterion"),
                Signal("fail_first", "not applicable", {}, "the change names no criterion"),
-               _verifier_signal(repo_dir, change_verifier_prompt(contract, base, author), runner=verifier_runner)]
+               signal_protected(repo_dir, base, head) or _verifier_signal(repo_dir, prompt, runner=verifier_runner)]
     return _conclude(GateResult(task=label, base=base, head=head, signals=signals))

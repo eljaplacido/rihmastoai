@@ -142,7 +142,8 @@ html.signed-out .shell { grid-template-columns: 1fr; }
 .sb-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: 0 var(--s1) var(--s2); }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--text); min-width: 0; }
 .brand:hover { text-decoration: none; }
-.brand-mark { width: 28px; height: 28px; flex: none; }
+.brand-mark { width: 32px; height: 32px; flex: none; display: block; border-radius: 8px;
+  box-shadow: 0 0 0 1px var(--border); }
 .brand-mark .hy { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; }
 .brand-mark .hy.br { stroke-width: 1.6; opacity: 0.85; }
 .brand-mark .node { fill: var(--accent); opacity: 0.8; }

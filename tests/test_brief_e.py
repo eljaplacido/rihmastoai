@@ -234,7 +234,8 @@ class PhaseMachineTest(FactoryTestCase):
             sig = signal_tests(Path(tmp))
         self.assertEqual((sig.name, sig.verdict, sig.detail), ("tests", "not measured", "no tests ran"))
         self.assertEqual(sig.native["ran"], 0)
-        self.assertNotEqual(sig.native["exit"], 0)  # unittest exits non-zero, and that is not read as failed
+        if sys.version_info >= (3, 12):     # unittest exits 5 when no test ran (3.11 exits 0); never read as failed
+            self.assertNotEqual(sig.native["exit"], 0)
 
     def test_FR_E3_AC_2_not_measured_work_goes_back_for_more_rounds_then_to_a_person_who_can_send_it_again(self):
         p = self.new(mode="assume", maturity="demo")

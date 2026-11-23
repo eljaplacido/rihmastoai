@@ -144,6 +144,7 @@ def render_interface(spec: dict) -> str:
 
 _QID = re.compile(r"^Q-\d+$")
 _REQ_ID = re.compile(r"^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$")
+_GENERATED = re.compile(r"R-\d+")  # an id the kernel gives, never one kept from the customer
 
 
 def _provenance(sources, canon: Canon, requested_by) -> tuple[str, str | None]:
@@ -159,55 +160,113 @@ def _provenance(sources, canon: Canon, requested_by) -> tuple[str, str | None]:
     return "vendor-proposed", None
 
 
-def normalize(project, raw: dict) -> dict:
-    """Give the analyst's draft fixed ids and rule-based provenance; drop what cannot be used."""
-    meta, canon = project.meta, Canon(project)
-    requested_by = (project.read("source.json", {}) or {}).get("requested_by")
-    reqs: list[dict[str, Any]] = []
-    for item in (raw.get("requirements") or [])[:MAX_REQUIREMENTS[meta["maturity"]]]:
-        if not isinstance(item, dict) or not str(item.get("statement", "")).strip():
-            continue
-        sources = [str(s).strip() for s in (item.get("sources") or []) if str(s).strip()]
-        sources = [s for s in sources if s in ("request", "proposed") or _QID.match(s)] or ["proposed"]
-        given = str(item.get("id") or "").strip().upper()
-        taken = {r["id"] for r in reqs}
-        if _REQ_ID.match(given) and given not in taken and not re.fullmatch(r"R-\d+", given):
-            rid = given  # the customer's own id, kept so tests and the contract use their names
+def _requirement_id(item: dict[str, Any], reqs: list[dict[str, Any]]) -> str:
+    """The customer's own id when the draft keeps one (so tests and the contract use their names),
+    otherwise the next R-n."""
+    given = str(item.get("id") or "").strip().upper()
+    if _REQ_ID.match(given) and given not in {r["id"] for r in reqs} and not _GENERATED.fullmatch(given):
+        return given
+    return f"R-{1 + sum(1 for r in reqs if _GENERATED.fullmatch(r['id']))}"
+
+
+def _sources(item: dict[str, Any], rid: str, known: set[str], dropped: list[dict[str, Any]]) -> list[str]:
+    """A requirement's sources: the request, a question the canon holds, or "proposed". A source
+    naming no question in the canon, or nothing a source can be, is dropped and recorded."""
+    sources: list[str] = []
+    for s in (str(x).strip() for x in (item.get("sources") or [])):
+        if s in ("request", "proposed") or s in known:
+            sources.append(s)
+        elif s:
+            why = "names no question in the canon" if _QID.match(s) else "is not the request, a question or proposed"
+            dropped.append({"what": "source", "requirement": rid, "source": s[:80], "why": why})
+    return sources or ["proposed"]
+
+
+def _criteria_of(item: dict[str, Any], rid: str, dropped: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """At most three criteria, each with a then; the first is a visible test when none is. What is
+    left out is recorded."""
+    criteria: list[dict[str, Any]] = []
+    for n, ac in enumerate(item.get("acceptance") or [], 1):
+        if n > 3:
+            then = str(ac.get("then", "")).strip()[:200] if isinstance(ac, dict) else ""
+            dropped.append({"what": "criterion", "requirement": rid, "item": n, "then": then,
+                            "why": "beyond the three criteria a requirement may have"})
+        elif not isinstance(ac, dict) or not str(ac.get("then", "")).strip():
+            dropped.append({"what": "criterion", "requirement": rid, "item": n, "why": "it has no then"})
         else:
-            n_gen = 1 + sum(1 for r in reqs if re.fullmatch(r"R-\d+", r["id"]))
-            rid = f"R-{n_gen}"
-        prov, by = _provenance(sources, canon, requested_by)
-        criteria: list[dict[str, Any]] = []
-        for ac in (item.get("acceptance") or [])[:3]:
-            if not isinstance(ac, dict) or not str(ac.get("then", "")).strip():
-                continue
             kind = ac.get("kind") if ac.get("kind") in KINDS else "test"
             criteria.append({"id": f"{rid}-AC-{len(criteria) + 1}", "given": str(ac.get("given", "")).strip(),
                              "when": str(ac.get("when", "")).strip(), "then": str(ac["then"]).strip(),
                              "kind": kind})
-        if not criteria:
+    if criteria and not any(c["kind"] == "test" for c in criteria):
+        criteria[0]["kind"] = "test"  # every requirement gets at least one visible check
+    return criteria
+
+
+def _requirement(item: Any, n: int, reqs: list[dict[str, Any]], canon: Canon, requested_by: str | None,
+                 dropped: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The draft's ``n``-th requirement with a kernel id, rule-based provenance and usable criteria,
+    or None (recorded in ``dropped``) when it has no statement or no usable criterion."""
+    statement = str(item.get("statement", "")).strip() if isinstance(item, dict) else ""
+    if not statement:
+        dropped.append({"what": "requirement", "item": n, "why": "it has no statement"})
+        return None
+    rid = _requirement_id(item, reqs)
+    lost: list[dict[str, Any]] = []  # kept only when the requirement is: its own drop says it all
+    sources = _sources(item, rid, {q["id"] for q in canon.questions()}, lost)
+    criteria = _criteria_of(item, rid, lost)
+    if not criteria:
+        dropped.append({"what": "requirement", "item": n, "statement": statement[:200],
+                        "why": "it has no usable acceptance criterion"})
+        return None
+    dropped.extend(lost)
+    prov, by = _provenance(sources, canon, requested_by)
+    req = {"id": rid, "statement": statement, "sources": sources,
+           "priority": item.get("priority") if item.get("priority") in ("must", "should", "could") else "must",
+           "provenance": prov, "acceptance": criteria}
+    if by:
+        req["decided_by"] = by
+    return req
+
+
+def normalize(project, raw: dict) -> dict:
+    """Give the analyst's draft fixed ids and rule-based provenance. What cannot be used is dropped,
+    never silently: the spec's ``dropped`` list names each requirement, criterion and source left out
+    and why (FR-P3-AC-2)."""
+    meta, canon = project.meta, Canon(project)
+    requested_by = (project.read("source.json", {}) or {}).get("requested_by")
+    limit = MAX_REQUIREMENTS[meta["maturity"]]
+    reqs: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    for n, item in enumerate(raw.get("requirements") or [], 1):
+        if n > limit:
+            statement = str(item.get("statement", "")).strip()[:200] if isinstance(item, dict) else ""
+            dropped.append({"what": "requirement", "item": n, "statement": statement,
+                            "why": f"beyond the {limit} requirements a {meta['maturity']} spec may have"})
             continue
-        if not any(c["kind"] == "test" for c in criteria):
-            criteria[0]["kind"] = "test"  # every requirement gets at least one visible check
-        req = {"id": rid, "statement": str(item["statement"]).strip(), "sources": sources,
-               "priority": item.get("priority") if item.get("priority") in ("must", "should", "could") else "must",
-               "provenance": prov, "acceptance": criteria}
-        if by:
-            req["decided_by"] = by
-        reqs.append(req)
+        req = _requirement(item, n, reqs, canon, requested_by, dropped)
+        if req is not None:
+            reqs.append(req)
     if not reqs:
         raise ValueError("the analyst's draft holds no usable requirement")
+    spec = {"title": str(raw.get("title") or meta["title"]).strip(), "summary": str(raw.get("summary", "")).strip(),
+            "users": [str(u) for u in (raw.get("users") or [])][:8], "maturity": meta["maturity"],
+            "stack": "python-stdlib-http", "look": look_of(canon), "interface": _interface(raw, reqs),
+            "requirements": reqs, "out_of_scope": [str(o) for o in (raw.get("out_of_scope") or [])][:12]}
+    if dropped:
+        spec["dropped"] = dropped
+    return spec
+
+
+def _interface(raw: dict[str, Any], reqs: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """The draft's HTTP interface, or (when it gives none that can be used) the endpoints its
+    criteria name."""
     interface = []
     for e in raw.get("interface") or []:
         if isinstance(e, dict) and str(e.get("method", "")).upper() in METHODS and str(e.get("path", "")).startswith("/"):
             interface.append({"method": str(e["method"]).upper(), "path": str(e["path"]).strip(),
                               "purpose": str(e.get("purpose", "")).strip()})
-    if not interface:
-        interface = interface_from_criteria(reqs)
-    return {"title": str(raw.get("title") or meta["title"]).strip(), "summary": str(raw.get("summary", "")).strip(),
-            "users": [str(u) for u in (raw.get("users") or [])][:8], "maturity": meta["maturity"],
-            "stack": "python-stdlib-http", "look": look_of(canon), "interface": interface, "requirements": reqs,
-            "out_of_scope": [str(o) for o in (raw.get("out_of_scope") or [])][:12]}
+    return interface or interface_from_criteria(reqs)
 
 
 def render_spec_md(spec: dict) -> str:
@@ -223,6 +282,13 @@ def render_spec_md(spec: dict) -> str:
         lines.append("")
     if spec.get("out_of_scope"):
         lines += ["## Out of scope", ""] + [f"- {o}" for o in spec["out_of_scope"]] + [""]
+    if spec.get("dropped"):
+        lines += ["## Dropped from the analyst's draft", ""]
+        for d in spec["dropped"]:
+            where = d.get("requirement") or f"requirement {d.get('item')}"
+            what = d.get("source") or d.get("statement") or d.get("then") or ""
+            lines.append(f"- {d['what']} ({where}{', ' + what if what else ''}): {d['why']}")
+        lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -237,5 +303,6 @@ def make_spec(project, *, model, feedback: str | None = None) -> dict:
     write_text(project.path("spec.md"), render_spec_md(spec))
     project.update_meta(stage=4)
     project.log("spec_written", {"requirements": len(spec["requirements"]),
-                                 "criteria": sum(len(r["acceptance"]) for r in spec["requirements"])})
+                                 "criteria": sum(len(r["acceptance"]) for r in spec["requirements"]),
+                                 "dropped": len(spec.get("dropped", []))})
     return spec

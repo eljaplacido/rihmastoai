@@ -227,7 +227,15 @@ class Browser:
     def wait(self, expression: str, what: str, timeout: float = 20.0):
         end = time.monotonic() + timeout
         while True:
-            value = self.eval(expression)
+            try:
+                value = self.eval(expression)
+            except RuntimeError:
+                # While a page navigates, the document can be briefly empty (documentElement is
+                # null), so a waited-for expression may throw; that is not yet, not a failure.
+                if time.monotonic() > end:
+                    raise
+                time.sleep(0.05)
+                continue
             if value:
                 return value
             if time.monotonic() > end:

@@ -46,6 +46,43 @@ template is still to come. A mobile prototype ships as a phone-first web app, fo
 By default, Rihma proposes a profile from the request, by rule and with no model: the profile
 whose keywords the request names most. Nothing standing out means `web_service`.
 
+Keywords are matched on word boundaries (`kernel.profiles.keyword_pattern`): the word or phrase
+itself, or its plural (`model` finds "models"), and for a stem marked `*`, every word it begins
+(the Finnish `palvelu*` finds "palvelun"). A keyword is never found inside another word: `train`
+does not find "trainees", and `ml` does not find "html". Before 23 Nov 2026 a long keyword matched
+anywhere in the text, which proposed `ml_pipeline` for Rihmasto's own README.
+
+**When the rule is not sure.** A best score under two keywords, or within one keyword of the
+runner-up, makes the proposal **uncertain**: it names its top candidates (at most four) and says
+why. What happens then (built):
+
+- **Intake** records the confidence and the candidates in the `profile_chosen` basis and, when the
+  request's keywords point to more than one profile, adds the question "Which kind of work is
+  this?" with the candidates as options. It has no proposed answer, so it goes to a person in every
+  mode, `assume` included. A request whose keywords point to one profile, or to none, keeps that
+  profile (or `web_service`), recorded as uncertain, without a question: there is nothing to choose
+  between.
+- **The spec waits for it.** The question is **blocking**, in every mode: the spec is shaped for a
+  profile, so the run stops at stage 2 and waits on the question's card ("blocking questions are
+  open"); no spec is written on the rule's guess while the question is open. Before the fix of
+  23 Nov 2026 it was not blocking, so in `assume` mode the spec was written straight after intake
+  and the answer came too late.
+- **The answer decides.** When a person answers that question naming a profile (its label or its
+  id), the profile is chosen in their name before the spec is written (`profile_chosen` with
+  `{"by": <person>, "question": <id>}`), so the spec's guidance is for the kind of work a person
+  said.
+- **A late answer changes nothing silently.** An answer recorded after a spec exists (only a
+  question an earlier version left open, not blocking, can get one) never changes the profile at a
+  later spec, a plan redo included: the plan in review was shaped for the profile it has. The
+  ledger records it once, as `profile_answer_late`, with the profile it named and the profile
+  kept.
+- **Adoption** records the uncertainty in `adopted.json`, the ledger and the brief
+  ([../brownfield.md](../brownfield.md)).
+- **The cockpit's** new-project dialog says when the proposal is unsure and asks the person to pick
+  ("Let Rihma propose"); `POST /api/profiles/propose` returns the `confidence`, the
+  `uncertain_because` and the `candidates`. Showing every candidate in the dialog, not only the
+  runner-up, is still to come.
+
 ```bash
 rihma new "Shipment webhook" --profile auto --maturity explore --requested-by "<your name>" \
     --source "When the carrier posts a shipment event to our webhook, update the stock system."

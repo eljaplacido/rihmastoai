@@ -173,13 +173,16 @@ def intake(project, source: str, *, model, requested_by: str | None = None,
     kind, text = ("idea", source.strip()) if literal else load_source(source)
     if not text:
         raise ValueError("the request is empty")
-    from kernel.profiles import choose, profile_of, propose_profile
+    from kernel.profiles import add_profile_question, choose, profile_of, propose_profile
 
     canon = Canon(project)
     _keep_source(project, kind, text, requested_by)
+    proposal = None
     if not meta.get("profile"):  # a person's choice stands; otherwise propose one by rule
         proposal = propose_profile(text)
-        choose(project, proposal["profile"], basis={"by": "rule", "keywords": proposal["basis"]})
+        unsure = {"confidence": "uncertain", "candidates": proposal["candidates"],
+                  "why": proposal["uncertain_because"]} if proposal["confidence"] == "uncertain" else {}
+        choose(project, proposal["profile"], basis={"by": "rule", "keywords": proposal["basis"], **unsure})
     profile = profile_of(project)
 
     readings, added = {}, []
@@ -228,6 +231,11 @@ def intake(project, source: str, *, model, requested_by: str | None = None,
                                   options=["neutral: the paved road's default look", "warm", "night (dark only)"],
                                   rationale="Asked once at setup, so screens are not rebuilt around the wrong look.")
         added.append({"id": look["id"], "perspective": "end_user", "text": look["text"], "proposed": "neutral"})
+    # A proposal the rule is unsure of, where the request's words point to more than one kind of work,
+    # asks a person which it is, with the top candidates (FR-DF4-AC-2). Words pointing to one profile
+    # or none keep it, and its basis says it is uncertain.
+    if proposal and proposal["confidence"] == "uncertain" and sum(n > 0 for n in proposal["scores"].values()) > 1:
+        add_profile_question(canon, proposal)
     project.write("readings.json", readings)
     asked, assumed = [], []
     for q in canon.questions("open"):

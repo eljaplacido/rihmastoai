@@ -2,7 +2,7 @@
    page, project, view of the open project, or open card. The focus stays inside while it is open
    and goes back where it was when it closes. */
 
-import { S, $, h, fill, api, plural, link, PAGES, VIEWS, FACTORY_VIEWS, KIND_LABEL, icon } from "./core.js";
+import { S, $, h, fill, api, plural, link, closeModal, PAGES, VIEWS, FACTORY_VIEWS, KIND_LABEL, icon } from "./core.js";
 
 const PAL = { items: [], shown: [], active: 0, opener: null };
 
@@ -17,6 +17,14 @@ function cardHref(pid, c) {
 const PAGE_HREF = { home: "#/home", square: "#/square", catalogue: "#/catalogue", projects: "#/projects", inbox_all: "#/inbox",
   floor: "#/floor", jobs: "#/jobs", settings: "#/settings" };
 
+// Every view of the open project: first the ones its stage and the lens bring forward (its tabs), then the
+// rest, so a view the tabs leave out (the ledger, the cell) is still one jump away, at every width. The plan
+// is a view only while its approval is open, as in the tabs.
+function projectViews(pv) {
+  const first = (pv && pv.views) || [];
+  return first.concat(Object.keys(VIEWS).filter((v) => !first.includes(v) && (v !== "plan" || (pv && pv.planOpen))));
+}
+
 function items() {
   const out = Object.entries(PAGES).map(([k, v]) => ({ group: "Page", label: v.label, icon: v.icon, href: PAGE_HREF[k],
     sub: { home: "the dashboard for your lens", square: "the delivery square", catalogue: "every capability",
@@ -27,7 +35,7 @@ function items() {
   const cur = S.route && S.route.name === "project" ? S.project : null;
   if (cur) {
     const pid = cur.meta.id;
-    const views = cur.meta.factory ? FACTORY_VIEWS : ((S.projectViews && S.projectViews.views) || Object.keys(VIEWS));
+    const views = cur.meta.factory ? FACTORY_VIEWS : projectViews(S.projectViews);
     views.forEach((v) => out.push({ group: "View", icon: VIEWS[v].icon, label: VIEWS[v].label, sub: cur.meta.title, href: link(pid, v) }));
     (cur.open_cards || []).forEach((c) => out.push({ group: "Open card", icon: "inbox",
       label: c.id + " · " + (KIND_LABEL[c.kind] || c.kind) + ": " + c.title, sub: cur.meta.title, href: cardHref(pid, c) }));
@@ -100,8 +108,12 @@ function close(restore) {
 function go(i) {
   const it = PAL.shown[i];
   if (!it) return;
-  if (location.hash === it.href) { close(); return; }
+  const overModal = $("#modal").open;
+  if (location.hash === it.href && !overModal) { close(); return; }
   close(false);
+  // a jump leaves the page: a dialog open under the palette (New project) closes with it
+  if (overModal) closeModal();
+  if (location.hash === it.href) return;   // the dialog gives the focus back to the control that opened it
   S.jumped = true;
   location.hash = it.href;
 }

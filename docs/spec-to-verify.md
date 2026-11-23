@@ -213,6 +213,25 @@ These states feed the Evidence view directly.
 - `.gnomon/` itself is protected by Gnomon's surface rule. `gnomon check` always judges by
   the base revision's surface.
 
+### 9. Fixes from the live runs (23 Nov 2026)
+
+Live runs found four places where the chain let a wrong thing through. Each is now closed by a
+mechanism, not a prompt alone (FR-DF1 to FR-DF4); all of it is built and covered by
+`tests/test_dogfood_fix.py`.
+
+| Link | What went wrong | What enforces it now |
+|---|---|---|
+| Spec | The analyst wrote "localhost-only", which contradicts the paved road | The spec prompt states the road's platform facts ([paved-roads.md](paved-roads.md#the-roads-platform-facts)); the plan review names every requirement that contradicts them, by rule and clause by clause, in their common phrasings ("only accessible from localhost", "Set HOST to 127.0.0.1", "/health must not disclose the version"), and the plan then waits for a person at any maturity |
+| Spec | The profile was proposed from words inside other words, and the spec was written on the rule's guess while the profile question was open | Keywords match on word boundaries; the profile question blocks the spec in every mode, and an answer that arrives after a spec never changes the profile silently ([guides/profiles.md](guides/profiles.md)) |
+| Build | The builder bound 127.0.0.1 and replaced `/health`; every test passed | The envelope states the facts; the template's `tests/test_road_contract.py` checks them in the product's own suite, and it is a protected path the gate refuses a change to |
+| Delivery | The failed health check left `"logs": ""` | The release record keeps the container's log tail from both streams, its listening sockets and a diagnosis |
+| Holdouts | A scenario could not sign a request the spec requires signed | A step's `sign` names a secret of the environment's settings; the runner signs the exact body with HMAC-SHA256; no scenario holds a value, and custody is unchanged. A `sign` with a transport header (`Host`, `Content-Length`) or a prefix holding a line break is refused before anything is sent, and a scenario the runner cannot send is not measured while the others still run |
+| Change loop | A defect whose triage named no requirement got its regression criterion on R-1 | No default: a question card asks which requirement it breaks; until a person says, the change is not applied; an answer naming none, or an accept naming none, files a new requirement through the business decision; a product-defect ruling's requirement is taken as it is |
+
+Still to come: the docker road passing a secret's value to the product's container, and the
+pipeline showing the defect's question as what a hand-off waits on (today it reports the change
+as not applied, naming the question).
+
 ## What Gnomon needs upstream for this chain
 
 Several gaps listed earlier are already closed on `master`, and released in v0.6.6:

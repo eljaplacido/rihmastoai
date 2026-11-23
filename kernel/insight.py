@@ -41,6 +41,24 @@ def _main_test_names(project) -> list:
         return []
 
 
+def _releases(project) -> list:
+    """Every release record, in release order. Only a release that carries a requirement is shown as
+    carrying it: this walker once listed every release (FR-KG1-AC-6; kernel/graph_ask.py parity)."""
+    import json
+
+    folder = project.path("releases")
+    found = []
+    paths = [p for p in folder.glob("*.json") if p.stem.isdigit()] if folder.exists() else []
+    for path in sorted(paths, key=lambda p: int(p.stem)):
+        try:
+            rel = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(rel, dict) and isinstance(rel.get("release"), int):
+            found.append(rel)
+    return found
+
+
 def impact(project, requirement_ids) -> dict:
     from kernel.gate import tests_naming
 
@@ -60,16 +78,8 @@ def impact(project, requirement_ids) -> dict:
         touched = set(refs.get("requirements", [])) | ({refs["requirement"]} if refs.get("requirement") else set())
         if d["approving"] and (touched & set(rids) or refs.get("scope") == "release"):
             approvals.append({"id": d["id"], "card": d["card"], "kind": d["kind"], "person": d["person"]})
-    releases = []
-    for path in sorted(project.path("releases").glob("*.json")) if project.path("releases").exists() else []:
-        try:
-            import json
-
-            rel = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        releases.append({"release": rel.get("number", path.stem), "revision": rel.get("revision"),
-                         "state": rel.get("state")})
+    releases = [{"release": rel.get("release"), "revision": rel.get("revision"), "state": rel.get("state")}
+                for rel in _releases(project) if set(rel.get("requirements") or []) & set(rids)]
     unknown = [r for r in rids if r not in reqs]
     return {"requirements": [r for r in rids if r in reqs], "unknown_requirements": unknown,
             "criteria": criteria, "kinds": kinds, "tests": tests, "tasks_reopened": tasks,

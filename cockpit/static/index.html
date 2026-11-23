@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
+<meta name="rihmasto-access" content="single_operator">
 <title>Rihmasto.ai cockpit</title>
 <link rel="icon" type="image/png" href="/static/favicon.png">
 <link rel="stylesheet" href="/static/tokens.css">
@@ -19,7 +20,8 @@
         <img class="brand-mark" src="/static/rihmasto-mark.png" alt="" width="32" height="32">
         <span class="brand-text"><b>Rihmasto<span class="brand-tld">.ai</span></b><small>cockpit</small></span>
       </a>
-      <button type="button" class="icon-btn sb-collapse" id="sb-collapse" aria-label="Collapse the sidebar" aria-expanded="true" data-tip="Collapse the sidebar"><svg class="ic"><use href="#i-panel-left"/></svg></button>
+      <button type="button" class="icon-btn sb-collapse" id="sb-collapse" aria-label="Collapse the sidebar" aria-expanded="true" aria-controls="sidebar" data-tip="Collapse the sidebar"><svg class="ic"><use href="#i-panel-left"/></svg></button>
+      <button type="button" class="icon-btn sb-close" id="sb-close" aria-label="Close the navigation" data-tip="Close the navigation (Esc)"><svg class="ic"><use href="#i-x"/></svg></button>
     </div>
     <button type="button" class="btn primary sb-new" id="sb-new" data-control="new_project" data-tip="New project"><svg class="ic"><use href="#i-plus"/></svg><span class="lbl">New project</span></button>
     <nav class="sb-nav" id="sb-nav" aria-label="Pages"></nav>
@@ -28,7 +30,7 @@
   </aside>
   <div class="frame">
     <header class="topbar" id="topbar">
-      <button type="button" class="icon-btn tb-menu" id="tb-menu" aria-label="Open the navigation" data-tip="Navigation"><svg class="ic"><use href="#i-menu"/></svg></button>
+      <button type="button" class="icon-btn tb-menu" id="tb-menu" aria-label="Navigation" aria-controls="sidebar" aria-expanded="false" data-tip="Navigation"><svg class="ic"><use href="#i-menu"/></svg></button>
       <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
       <div class="lens-switch" id="lens-switch" role="radiogroup" aria-label="Lens" data-control="lens"></div>
       <div class="tb-right">
@@ -36,6 +38,7 @@
         <button type="button" class="icon-btn" id="density" aria-label="Density: comfortable" data-control="density" data-tip="Density"><svg class="ic"><use href="#i-rows"/></svg></button>
         <button type="button" class="icon-btn" id="theme" aria-label="Theme: system" data-control="theme" data-tip="Theme"><svg class="ic"><use href="#i-monitor"/></svg></button>
         <button type="button" class="btn tb-customize" id="customize" data-control="customize" aria-pressed="false"><svg class="ic"><use href="#i-sliders"/></svg><span class="lbl">Customize</span></button>
+        <span class="access-note" id="access-note" role="note" hidden><svg class="ic" aria-hidden="true"><use href="#i-shield"/></svg><span class="an-text" id="access-note-text"></span></span>
         <button type="button" class="person-chip" id="person-chip" aria-haspopup="dialog" aria-expanded="false" data-control="persona"><span class="avatar" id="pc-avatar" aria-hidden="true">?</span><span class="pc-text"><b id="pc-name">Set your name</b><small id="pc-persona">Persona</small></span><svg class="ic chev"><use href="#i-chevron-down"/></svg></button>
       </div>
     </header>
@@ -65,6 +68,7 @@
 </aside>
 <div class="popover" id="person-pop" role="dialog" aria-labelledby="pp-h" hidden>
   <h2 id="pp-h" class="pop-h">Who is deciding</h2>
+  <p class="access-pop muted small" id="access-pop" hidden></p>
   <div class="field"><label for="person">Your name</label><input id="person" name="person" autocomplete="name" placeholder="for example Aino" maxlength="200" spellcheck="false"></div>
   <fieldset class="persona-list"><legend>Persona</legend><div id="persona-list" role="radiogroup" aria-label="Persona"></div></fieldset>
   <p class="muted small" id="persona-note"></p>

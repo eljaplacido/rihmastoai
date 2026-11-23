@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:rihmasto:schema:pack-status:v1",
+  "title": "Rihmasto capability pack status (rihma.pack-status/1)",
+  "description": "Whether a pack version may run (kernel/bundle.py). Sigstore signatures cannot be revoked, so revocation runs through this document, which expires: an expired status is not trusted. A withdrawal is a named person's ledgered act. pack_guard in the image answers 503 unless the status is valid, unexpired and names the pack beside it.",
+  "$comment": "The whole document is signed as a blob (pack-status.json.sigstore.json) when cosign can sign; nothing in it is hashed apart.",
+  "type": "object",
+  "required": ["format", "pack", "version", "content_sha256", "state", "reason", "decided_by", "issued_at",
+               "expires_at", "revoked_key_ids"],
+  "properties": {
+    "format": {"const": "rihma.pack-status/1"},
+    "pack": {"type": "string"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "state": {"enum": ["valid", "suspended", "superseded", "withdrawn"]},
+    "reason": {"type": "string"},
+    "decided_by": {
+      "anyOf": [
+        {"type": "null"},
+        {"type": "object", "required": ["person", "persona", "at"],
+         "properties": {"person": {"type": "string"}, "persona": {"enum": ["it", "compliance", "product_owner"]},
+                        "at": {"type": "string"}},
+         "additionalProperties": false}
+      ]
+    },
+    "issued_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"},
+    "expires_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T"},
+    "revoked_key_ids": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

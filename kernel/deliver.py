@@ -39,6 +39,15 @@ findings, until a clean scan arrives or a person with the it or compliance perso
 risk. In demo and preview the gate's verdict is only recorded. "Not measured: no security scan"
 never holds a release; it is recorded too.
 
+An image built on a docker road that names a `registry` is tagged for it on the deploying host and
+never pushed by Rihmasto: every external write goes through Gnomon's integration lane (D-0015),
+which is planned, so IT pushes the tag with its own tools. A person with the it persona then pins
+the release by the digest the registry gave it (`pin_image`, `rihmasto pack pin`), read from the
+deploying host's docker: the release, the site's deploy package and the capability pack name that
+digest, and the road runs the image by it from then on (FR-PT1). Every gate card (the demo's
+acceptance, staging's validation, production's deploy gate) carries the governance map of the road
+its environment runs on (kernel/evidence_pack.py).
+
 Holdout scenarios write their own data. They run against a twin of the environment, deployed
 from the same revision and stopped afterwards, so the slot end users try never holds holdout
 data (FR-H9). A road that cannot host a twin runs them in the shared slot and says so.
@@ -49,11 +58,12 @@ from __future__ import annotations
 import re
 import traceback
 
-from kernel import operate
+from kernel import holdouts, operate
 from kernel.canon import Canon
+from kernel.custody import custody_safe
 from kernel.filelock import locked
 from kernel.lanes import _git
-from kernel.roads import PavedRoads, RoadError, slot_state, validate_package
+from kernel.roads import PavedRoads, Road, RoadError, slot_state, validate_package
 from kernel.store import MATURITIES, Project, read_json, write_json
 
 LANDING = {"explore": "preview", "demo": "demo", "pilot": "staging", "production": "production"}
@@ -70,19 +80,13 @@ CANDIDATE_STEPS = ("deploy_candidate:production", "shadow:production", "canary:p
 # canary decides on error rates.
 CONTINUES = ("passed", "differs", "not applicable", "not measured")
 # A failed holdout's reason quotes what its scenario expected. The release record and the ruling card
-# keep it for the person who rules; anywhere else (the ledger, the one-line status) it is held out.
-_HELD_DETAIL = re.compile(r"(holdout \S+ failed at step \S+?):[^\n]*")
-HELD = "[held out]"
+# keep it for the person who rules; anywhere else (the ledger, the one-line status) it is held out by
+# kernel.custody.custody_safe, imported above (kernel/status.py and kernel/recipes.py import it from here).
 # Where a release lands for people to try or validate (stage 6), and where an open security
 # finding holds it.
 TRYING_ENVS = ("preview", "demo", "staging")
 GATED_ENVS = ("staging", "production")
 NO_TWIN = "holdouts ran in the shared slot: this road has no twin"
-
-
-def custody_safe(reason):
-    """A release's reason with what a holdout scenario expected left out: the criterion and the step stay."""
-    return _HELD_DETAIL.sub(lambda m: f"{m.group(1)}: {HELD}", reason) if isinstance(reason, str) else reason
 
 
 def delivery_plan(maturity: str) -> list:
@@ -208,6 +212,55 @@ def deliver(project, *, roads=None, docker=None, az=None, new: bool = False) -> 
         raise FileNotFoundError("no product repository: compile the project before delivering it")
     with locked(project.path("releases", ".deliver.lock")):
         return _Delivery(project, roads, docker, az).run(new=new)
+
+
+def pin_image(project, *, person: str, persona: str, release: int | None = None, docker=None) -> dict:
+    """IT pushed the release's image, tagged for its registry at build, with its own tools; pin the
+    release by the digest the registry gave it. The digest is read from the deploying host's docker
+    (`RepoDigests`, which a push sets): a local read, so Rihmasto writes nothing to the registry
+    (D-0015). Recorded as `image_pinned` with the person. A tag not pushed yet is said, not pinned."""
+    from kernel.canon import DecisionRefused
+    from kernel.people import is_person
+    from kernel.roads import DockerCLI
+
+    if not is_person(person):
+        raise DecisionRefused(f"{person!r} is not a person")
+    if persona != "it":
+        raise DecisionRefused(f"a {persona} may not pin an image: it may, for the registry it named")
+    with locked(project.path("releases", ".deliver.lock")):
+        rel = read_json(release_path(project, release)) if release else latest_release(project)
+        if not isinstance(rel, dict):
+            raise LookupError("no release to pin")
+        pinned, waiting = {}, {}
+        for road, art in sorted((rel.get("artifacts") or {}).items()):
+            push = art.get("push") if isinstance(art, dict) else None
+            if not isinstance(push, dict) or art.get("digest"):
+                continue
+            seen = (docker or DockerCLI())("image", "inspect", "--format", "{{json .RepoDigests}}", push["tag"],
+                                           check=False)
+            found = re.search(re.escape(push["repository"]) + r"@(sha256:[0-9a-f]{64})", seen)
+            if found is None:
+                waiting[road] = f"{push['tag']} has no digest from {push['registry']} yet: push it first"
+                continue
+            digest = found.group(1)
+            rel["artifacts"][road] = pinned[road] = dict(art, ref=f"{push['repository']}@{digest}", digest=digest,
+                                                         tag=push["tag"], registry=push["registry"])
+            project.log("image_pinned", {"release": rel["release"], "road": road, "tag": push["tag"],
+                                         "digest": digest, "by": person, "persona": persona})
+        if pinned:
+            write_json(release_path(project, rel["release"]), rel)
+    return {"release": rel["release"], "pinned": {r: a["ref"] for r, a in pinned.items()}, "not_pinned": waiting}
+
+
+def pack_command(factory, args, show) -> None:
+    """`rihmasto pack pin <pid> --person P --persona it [--release N]`: once IT pushed the tag, pin it."""
+    from kernel.canon import DecisionRefused
+
+    if len(args.words) != 1:
+        raise ValueError("say it as: rihmasto pack pin <pid> --person <name> --persona it")
+    if not (args.person and args.persona):
+        raise DecisionRefused("a pin is signed: give --person and --persona")
+    show(pin_image(factory.project(args.words[0]), person=args.person, persona=args.persona, release=args.release))
 
 
 class _Delivery:
@@ -479,8 +532,24 @@ class _Delivery:
         for env in rel["environments"]:
             road = self.road(env)
             if road.name not in rel["artifacts"]:
-                rel["artifacts"][road.name] = road.build(self.project, rel["revision"])
+                rel["artifacts"][road.name] = self.pin(road, road.build(self.project, rel["revision"]))
         return {"outcome": "passed", "native": {"artifacts": dict(rel["artifacts"])}}
+
+    def pin(self, road: Road, artifact: dict) -> dict:
+        """Tag an image for the registry IT names on its docker road, on the deploying host only.
+        Rihmasto pushes nothing (D-0015): IT pushes the tag with its own tools, and `pin_image` then pins
+        the release by the digest the registry gave it. Until then the pack pins the local image id and
+        says a site cannot pull it by digest."""
+        registry, docker = str(road.cfg.get("registry") or "").rstrip("/"), getattr(road, "docker", None)
+        if artifact.get("type") != "image" or not registry or docker is None:
+            return artifact
+        tag = f"{registry}/{str(artifact['ref']).rsplit('/', 1)[-1]}"
+        repository = tag.rsplit(":", 1)[0] if ":" in tag.rsplit("/", 1)[-1] else tag
+        docker("tag", artifact["ref"], tag)
+        self.log("image_tagged", road=road.name, tag=tag, pushed_by="it, with its own tools")
+        return dict(artifact, push={"registry": registry, "tag": tag, "repository": repository,
+                                    "by": "it, with its own tools: Rihmasto writes nothing to a registry (D-0015)",
+                                    "then": f"rihmasto pack pin {self.project.pid} --person <name> --persona it"})
 
     def deploy(self, env: str, slot: str) -> dict:
         security, held = self.security(env)
@@ -548,8 +617,9 @@ class _Delivery:
         if not state:
             return {"outcome": "failed", "native": {"why": f"nothing runs in {env}"}}
         twin = self.twin(env)
-        try:
-            report = operate.run_holdouts(self.project, twin["base_url"] if twin else state["base_url"])
+        try:  # a signed step is signed with the secrets this environment's road names (FR-DF2)
+            report = operate.run_holdouts(self.project, twin["base_url"] if twin else state["base_url"],
+                                          secrets=holdouts.environment_secrets(self.road(env)))
         finally:
             if twin is not None:
                 self.road(env).stop(self.project, env, "twin")
@@ -613,7 +683,8 @@ class _Delivery:
                     "then decide: accept (it may go on), fix (something is broken), change (it should work "
                     "differently) or keep (keep what runs now and stop this release).")
         else:
-            road, pkg = self.package("production", "candidate")
+            env = "production"
+            road, pkg = self.package(env, "candidate")
             problems = validate_package(pkg)
             title = f"Deploy release {n} to production?"
             body = (f"Release {n} (revision {rel['rev12']}) passed staging ({held}) and its user validation. "
@@ -622,10 +693,19 @@ class _Delivery:
                     "rollback. Refusing stops the release.")
             payload.update(road=road.name, kind=road.kind, artifact=pkg["artifact"]["ref"], rules=pkg["rules"],
                            package=rel["packages"]["production:candidate"], package_problems=problems)
-        card = self.canon.card(kind, title, body=body, refs={"release": n, "requirements": rel["requirements"]},
-                               payload=payload, blocking=True)
+        governance, line = self.governance(env)
+        payload["governance"] = governance
+        card = self.canon.card(kind, title, body=f"{body} {line}", payload=payload, blocking=True,
+                               refs={"release": n, "requirements": rel["requirements"]})
         rel["cards"].append({"step": step, "card": card["id"], "kind": kind, "decision": None, "opened": self.now()})
         return card
+
+    def governance(self, env: str) -> tuple[list, str]:
+        """The governance map where ``env`` runs this release (by its road's kind), and the card's line."""
+        from kernel.evidence_pack import governance_line, governance_map
+
+        gmap = governance_map(self.road(env).kind, self.rel["artifacts"])
+        return gmap, f"Governance there: {governance_line(gmap)}."
 
     def shadow(self, env: str) -> dict:
         n = self.rel["release"]

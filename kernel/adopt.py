@@ -23,7 +23,8 @@ credentials) and makes it a project:
   declares (only when a `base_url` is given), and whether there is a Dockerfile. Only regular
   files inside the checkout are read: a symlink is never followed.
 - **Characterisation baseline.** A detected Python suite runs once in a temporary checkout,
-  with a timeout. Its counts are evidence of *existing behaviour, not a spec*. Other toolchains
+  with a per-suite timeout (`SUITE_TIMEOUT`, apart from git's): a suite still running then is
+  "not measured: timed out". Its counts are evidence of *existing behaviour, not a spec*. Other toolchains
   run only when their tool is on PATH, offline; otherwise the baseline says "not measured:
   toolchain not run by the kernel". It is "passed" only when at least one test passed: zero
   tests, every test skipped, an unreadable summary or a missing dependency are "not measured".
@@ -87,6 +88,9 @@ VENDORED = ("node_modules/", "vendor/", ".venv/", "venv/", "site-packages/", "di
 MAX_SCAN_BYTES = 512 * 1024
 MAX_OUTPUT_BYTES = 4 * 1024 * 1024
 MAX_ENDPOINTS = 200
+# Each detected suite's run is bounded by its own limit, apart from git's (FR-DF5): a baseline whose
+# suite runs longer says "not measured: timed out" and adoption goes on, rather than waiting.
+SUITE_TIMEOUT = 300
 SURFACE_COMMIT = "The kernel's own .gnomon/ surface over the adopted baseline"
 # Top-level names an adopted main holds only as the kernel wrote them: the `.gnomon/` surface the
 # builder and the verifier run under, Gnomon's machine-local directories (its sessions, inbox,
@@ -760,8 +764,9 @@ def run_baseline(root: Path, test: dict, *, timeout: int,
     started = time.monotonic()
     try:
         code, stdout, stderr = _run(argv, cwd=root, env=env, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return base | {"verdict": "not measured", "reason": f"not measured: the suite did not finish in {timeout}s"}
+    except subprocess.TimeoutExpired:  # stopped at its limit, with every process it started (FR-DF5)
+        return base | {"verdict": "not measured", "limit_s": timeout,
+                       "reason": f"not measured: timed out: the suite did not finish in {timeout}s"}
     except OSError as exc:
         return base | {"verdict": "not measured", "reason": f"not measured: the command could not start ({exc})"}
     finally:
@@ -911,7 +916,7 @@ def _check_request(person: str, persona: str, intent: str, profile: str | None, 
 
 
 def _take(bare: Path, location: str, *, base_url: str | None, timeout: int,
-          which: Callable[[str], str | None]) -> dict[str, Any]:
+          which: Callable[[str], str | None], suite_timeout: int = 0) -> dict[str, Any]:
     """Everything adoption reads from the upstream, before the project exists: the mirror, a
     checkout of the baseline with its inventory and characterisation, and the kernel's surface on
     main. The checkout goes through the credential-free path too, so an LFS filter never reaches
@@ -923,7 +928,7 @@ def _take(bare: Path, location: str, *, base_url: str | None, timeout: int,
         work = scratch / "w"
         files = [f for f in _git_read(work, "ls-files", "-z").split("\0") if f]
         inv = inventory(work, files, base_url=base_url) | {"revision": baseline}
-        character = characterise(work, inv["tests"], timeout=timeout, which=which)
+        character = characterise(work, inv["tests"], timeout=suite_timeout or SUITE_TIMEOUT, which=which)
         surface = _own_surface(bare, scratch, baseline, timeout=timeout)
     return {"branch": branch, "baseline": baseline, "inventory": inv, "character": character, "surface": surface}
 
@@ -1066,11 +1071,13 @@ def _roll_back(project: Any) -> None:
 
 def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, persona: str,
           base_url: str | None = None, profile: str | None = None, maturity: str = "production",
-          mode: str = "mixed", timeout: int = 600, which: Callable[[str], str | None] = shutil.which) -> Any:
+          mode: str = "mixed", timeout: int = 600, which: Callable[[str], str | None] = shutil.which,
+          suite_timeout: int = SUITE_TIMEOUT) -> Any:
     """Adopt an existing solution as a project. Returns the project.
 
     Everything that reads the upstream runs before the project exists, so an unreachable or
-    unreadable source leaves nothing; a failure after the project exists removes it again."""
+    unreadable source leaves nothing; a failure after the project exists removes it again.
+    ``timeout`` bounds each git call; ``suite_timeout`` bounds each detected test suite's run."""
     _check_request(person, persona, intent, profile, maturity, mode)
     kind, location = check_source(source)
     req = _Request(title=title, kind=kind, label=_label(kind, location), intent=intent, base_url=_base_url(base_url),
@@ -1078,7 +1085,8 @@ def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, pe
     factory.home.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".adopting-", dir=factory.home))
     try:
-        taken = _take(staging / "repo.git", location, base_url=req.base_url, timeout=timeout, which=which)
+        taken = _take(staging / "repo.git", location, base_url=req.base_url, timeout=timeout, which=which,
+                      suite_timeout=suite_timeout)
         project = factory.new_project(title, maturity=maturity, mode=mode, source_kind="adopted", profile=profile)
         try:
             os.replace(staging / "repo.git", project.path("repo.git"))

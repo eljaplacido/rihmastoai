@@ -1,0 +1,31 @@
+# Gnomon run state (audit chains and sessions are evidence: archive them, don't commit them here)
+.gnomon-audit/
+.gnomon-sessions/
+.verify/
+
+# A machine's own model routing, merged over kernel/routing.json (docs/guides/local-models.md)
+kernel/routing.local.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Secrets never live in this repository
+.env
+.env.*
+!.env.example
+
+# Gnomon scratch output (tool results spilled to disk) and other machine-local state (0.6.6)
+.gnomon-out/
+.gnomon-jobs/
+.gnomon-loops/
+.gnomon-shadow/
+.gnomon-trials/
+.gnomon-inbox/
+.gnomon-proposals/
+var/
+.claude/
+
+# The local list of names that must never reach the public repository (tools/release_export.py)
+.release-denylist

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Bandit",
+          "version": "1.7.9",
+          "rules": [
+            {"id": "B602", "name": "subprocess_popen_with_shell_equals_true",
+             "properties": {"tags": ["security", "external/cwe/cwe-78"]}},
+            {"id": "B105", "name": "hardcoded_password_string",
+             "properties": {"tags": ["security", "CWE-259"]}},
+            {"id": "B101", "name": "assert_used",
+             "properties": {"tags": ["security", "CWE-703"]}}
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "B602",
+          "level": "error",
+          "message": {"text": "subprocess call with shell=True identified, security issue."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "app/routes.py"},
+                                              "region": {"startLine": 14, "startColumn": 5}}}]
+        },
+        {
+          "ruleId": "B105",
+          "level": "warning",
+          "message": {"text": "Possible hardcoded password: 'hunter2'"},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "app/settings.py"},
+                                              "region": {"startLine": 3}}}]
+        },
+        {
+          "ruleId": "B101",
+          "level": "note",
+          "message": {"text": "Use of assert detected."},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "tests/test_items.py"},
+                                              "region": {"startLine": 9}}}]
+        }
+      ]
+    }
+  ]
+}

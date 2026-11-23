@@ -1,0 +1,8 @@
+{
+  "_comment": "Prices per million tokens, copied from the provider's price list by a person. A model missing here, or without both prices, makes a run's cost 'not measured', never zero (FR-L4-AC-2). Local models cost no API money; their tokens are reported as local spend, separately from cloud spend (FR-L4-AC-1).",
+  "_owner_todo": "Fill input/output (and cached, if billed differently) for deepseek-v4-pro and glm-5.3 from the OpenCode Go price list, with the date you read it.",
+  "currency": "USD",
+  "models": {
+    "qwen3.6-35b": {"local": true, "where": "local llama-server"}
+  }
+}

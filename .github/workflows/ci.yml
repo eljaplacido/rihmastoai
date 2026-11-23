@@ -1,0 +1,47 @@
+# The checks every change must pass (CONTRIBUTING.md): the test suite, the contract check and the
+# contract trace. Standard-library Python only: nothing is installed, and no secret is used.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: ${{ matrix.os }}, Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Configure git for the tests
+        run: |
+          git config --global user.name "Rihmasto CI"
+          git config --global user.email "ci@example.invalid"
+          git config --global init.defaultBranch main
+          git config --global core.autocrlf false
+
+      - name: Test suite
+        run: python -m unittest discover -s tests
+
+      - name: Contract check
+        run: python tools/contract_check.py contract/contract.json
+
+      - name: Contract trace
+        run: python tools/contract_trace.py contract/contract.json

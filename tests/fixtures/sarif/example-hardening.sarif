@@ -1,0 +1,43 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Example Hardening Scanner",
+          "version": "2.3.0",
+          "rules": [
+            {"id": "TB-HDR-001", "shortDescription": {"text": "Security headers missing"},
+             "defaultConfiguration": {"level": "warning"},
+             "relationships": [{"target": {"id": "693", "toolComponent": {"name": "CWE"}}}]},
+            {"id": "TB-TLS-002", "shortDescription": {"text": "TLS 1.0 accepted"}},
+            {"id": "TB-CFG-003", "shortDescription": {"text": "Debug mode on"}}
+          ]
+        }
+      },
+      "taxonomies": [{"name": "CWE", "taxa": [{"id": "16"}, {"id": "693"}, {"id": "326"}]}],
+      "results": [
+        {
+          "ruleId": "TB-HDR-001",
+          "message": {"text": "Content-Security-Policy is not set on /"},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "deploy/nginx.conf"},
+                                              "region": {"startLine": 40}}}]
+        },
+        {
+          "ruleId": "TB-TLS-002",
+          "kind": "pass",
+          "message": {"text": "TLS 1.0 is refused"}
+        },
+        {
+          "ruleId": "TB-CFG-003",
+          "level": "error",
+          "message": {"text": "DEBUG=True in production settings"},
+          "taxa": [{"id": "16", "toolComponent": {"name": "CWE"}}],
+          "suppressions": [{"kind": "inSource", "justification": "staging only"}],
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "app/settings.py"},
+                                              "region": {"startLine": 1}}}]
+        }
+      ]
+    }
+  ]
+}

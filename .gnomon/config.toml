@@ -1,0 +1,49 @@
+# Gnomon Factory's own Gnomon surface: the rules this repository is built under.
+# Part of the surface hash. Compiled from docs/spec-to-verify.md (link 5), by hand for M0.
+# Cells run on Linux (a GPU box, WSL2 or a container): exec = "os" refuses shell on Windows.
+
+[defaults]
+edit_format = "str_replace"
+sandbox = "confined"
+approval = "on_write"
+max_context_tokens = 98304        # the fallback window, a local llama-server's n_ctx (measured 2026-11-22)
+compaction = "summary"
+
+[context]
+policy = "sliding_window"
+retain_after = 2048
+reserve_output = 8192
+
+[resilience]
+attempts = 3
+backoff_ms = 500
+request_timeout_ms = 300000       # long local generations; a timeout is an apparatus failure, not a task result
+transport_grace_ms = 60000
+
+# The local model: an OpenAI-compatible server on the machine the cells run on (llama.cpp's
+# llama-server listens on 8080 by default). Point it at your own server; Gnomon has no local
+# overlay for this file, and any byte changed here moves the surface hash.
+[endpoints.local]
+url = "http://127.0.0.1:8080/v1/chat/completions"
+kind = "openai"
+
+# Cloud tier, used only by escalation and by the verifier (a different model from the builder).
+[endpoints.go]
+url = "https://opencode.ai/zen/go/v1/chat/completions"
+kind = "openai"
+api_key_env = "OPENCODE_API_KEY"
+
+# Audit trail: hash-chained, metadata only (no prompt or response text).
+[audit]
+enabled = true
+dir = ".gnomon-audit"
+record = "metadata"
+chain = true
+
+# A builder that answers with a plan instead of doing the work is sent back once, under a
+# deadline (it applies to every role, so the message must also be safe for a question), with a message that names that failure (first real dispatch, T-004: one model
+# call, zero tool calls, a prose plan with fenced commands, accepted as answered).
+[turn]
+continue_after_answer = true
+continue_min_remaining = 0.25
+continue_message = "Your answer is saved. If your task asked a question and you answered it, reply with that answer again and stop. If your task asked you to change files and your answer only describes the change, nothing has been done yet: make the change now with your tools, run python3 -m unittest discover -s tests with bash, and fix what fails. About {minutes} minutes remain."

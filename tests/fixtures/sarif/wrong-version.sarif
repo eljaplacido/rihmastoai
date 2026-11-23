@@ -1,0 +1,9 @@
+{
+  "version": "2.0.0",
+  "runs": [
+    {
+      "tool": {"driver": {"name": "Old Scanner", "version": "0.9"}},
+      "results": [{"ruleId": "X1", "level": "error", "message": {"text": "anything"}}]
+    }
+  ]
+}

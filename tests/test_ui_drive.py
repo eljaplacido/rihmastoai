@@ -1,0 +1,478 @@
+"""The cockpit in a real browser (FR-T1-AC-17): headless Chrome over the DevTools protocol.
+
+The test builds a demo home (``kernel.demo``, what ``rihma demo`` builds), starts the cockpit on
+127.0.0.1 over it, and drives the page as a person does, with real mouse clicks and typing: sign in
+and say who is deciding, switch the lens, open the delivery square and validate a concept as a
+business owner, open a project and decide a card, Customize (resize a widget, Done), ask the
+assistant a where-is question and press Take me there (to the Releases view, whose capability pack
+is read and never built), and open Settings. After every step there is no console error, no
+uncaught exception, no failed request and no Content-Security-Policy violation.
+
+Standard library only: the DevTools protocol goes over a WebSocket client written here on a plain
+socket. It is skipped when Chrome is not installed (``RIHMA_CHROME`` names another browser binary)
+or git is missing for the demo. ``RIHMA_UI_SHOTS=<folder>`` also saves a screenshot per step.
+"""
+
+import base64
+import contextlib
+import hashlib
+import http.client
+import json
+import os
+import shutil
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import unittest
+from pathlib import Path
+from urllib.parse import urlsplit
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from cockpit.server import make_server  # noqa: E402
+from kernel import roads  # noqa: E402
+from kernel.canon import Canon  # noqa: E402
+from kernel.learn import factory_project  # noqa: E402
+from kernel.store import Factory  # noqa: E402
+
+PERSON = "Aino Virtanen"
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+# The page records every CSP violation it sees, from before its first script runs.
+CSP_LISTENER = ("window.__cspViolations = [];"
+                "document.addEventListener('securitypolicyviolation', (e) => window.__cspViolations.push("
+                "e.violatedDirective + ' blocked ' + (e.blockedURI || 'inline')"
+                " + ' at ' + (e.sourceFile || '?') + ':' + e.lineNumber));")
+
+
+def find_chrome() -> str | None:
+    """Chrome or Chromium on this machine, or None (then the test is skipped)."""
+    named = os.environ.get("RIHMA_CHROME")
+    if named:
+        return named if Path(named).is_file() else None
+    candidates = [Path(os.environ.get(v, "")) / "Google" / "Chrome" / "Application" / "chrome.exe"
+                  for v in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA") if os.environ.get(v)]
+    candidates.append(Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"))
+    for path in candidates:
+        if path.is_file():
+            return str(path)
+    for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
+        if shutil.which(name):
+            return shutil.which(name)
+    return None
+
+
+class WebSocket:
+    """A minimal WebSocket client (RFC 6455) for the DevTools protocol on loopback: text frames out,
+    masked; text frames in, possibly fragmented; pings answered."""
+
+    def __init__(self, url: str, timeout: float = 30.0) -> None:
+        parts = urlsplit(url)
+        self.sock = socket.create_connection((parts.hostname, parts.port), timeout=timeout)
+        key = base64.b64encode(os.urandom(16)).decode("ascii")
+        self.sock.sendall((f"GET {parts.path} HTTP/1.1\r\nHost: {parts.hostname}:{parts.port}\r\n"
+                           f"Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
+                           "Sec-WebSocket-Version: 13\r\n\r\n").encode("ascii"))
+        head = b""
+        while b"\r\n\r\n" not in head:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise ConnectionError("the DevTools endpoint closed during the handshake")
+            head += chunk
+        header, self.buf = head.split(b"\r\n\r\n", 1)
+        accept = base64.b64encode(hashlib.sha1((key + WS_GUID).encode("ascii")).digest())
+        if b" 101 " not in header.split(b"\r\n")[0] or accept not in header:
+            raise ConnectionError(f"no WebSocket upgrade: {header[:200]!r}")
+
+    def send(self, text: str, opcode: int = 0x1) -> None:
+        payload = text.encode("utf-8")
+        n = len(payload)
+        head = bytes([0x80 | opcode])
+        if n < 126:
+            head += bytes([0x80 | n])
+        elif n < 65536:
+            head += bytes([0x80 | 126]) + struct.pack("!H", n)
+        else:
+            head += bytes([0x80 | 127]) + struct.pack("!Q", n)
+        mask = os.urandom(4)
+        self.sock.sendall(head + mask + bytes(b ^ mask[i & 3] for i, b in enumerate(payload)))
+
+    def _exactly(self, n: int) -> bytes:
+        out = bytearray(self.buf[:n])
+        self.buf = self.buf[n:]
+        while len(out) < n:
+            chunk = self.sock.recv(max(65536, n - len(out)))
+            if not chunk:
+                raise ConnectionError("the DevTools endpoint closed")
+            out += chunk
+        if len(out) > n:
+            self.buf, out = bytes(out[n:]) + self.buf, out[:n]
+        return bytes(out)
+
+    def recv(self) -> str:
+        message = b""
+        while True:
+            b0, b1 = self._exactly(2)
+            n = b1 & 0x7F
+            if n == 126:
+                n = struct.unpack("!H", self._exactly(2))[0]
+            elif n == 127:
+                n = struct.unpack("!Q", self._exactly(8))[0]
+            payload = self._exactly(n)
+            opcode = b0 & 0x0F
+            if opcode == 0x8:
+                raise ConnectionError("the DevTools endpoint closed the connection")
+            if opcode == 0x9:
+                self.send(payload.decode("utf-8", "replace"), opcode=0xA)
+                continue
+            if opcode in (0x0, 0x1, 0x2):
+                message += payload
+                if b0 & 0x80:
+                    return message.decode("utf-8")
+
+    def close(self) -> None:
+        with contextlib.suppress(OSError):
+            self.sock.close()
+
+
+def _get_json(port: int, path: str):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        conn.request("GET", path)
+        return json.loads(conn.getresponse().read())
+    finally:
+        conn.close()
+
+
+class Browser:
+    """Headless Chrome with one page, driven over the DevTools protocol. Every console error, uncaught
+    exception, failed request and CSP violation is kept with the step it happened in."""
+
+    def __init__(self, chrome: str, profile: Path, width: int = 1440, height: int = 1000) -> None:
+        self.profile = profile
+        self.proc = subprocess.Popen(
+            [chrome, "--headless=new", "--remote-debugging-port=0", f"--user-data-dir={profile}", "--no-first-run",
+             "--no-default-browser-check", "--no-proxy-server", "--disable-extensions", "--hide-scrollbars",
+             "--disable-background-networking", "--disable-component-update", "--mute-audio", "about:blank"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.port, self.browser_path = self._devtools_port()
+        page = None
+        for _ in range(100):
+            try:
+                page = next((t for t in _get_json(self.port, "/json/list") if t.get("type") == "page"), None)
+            except OSError:  # listening, but not answering yet
+                page = None
+            if page:
+                break
+            time.sleep(0.1)
+        if page is None:
+            raise RuntimeError("Chrome opened no page")
+        self.ws = WebSocket(page["webSocketDebuggerUrl"])
+        self.n, self.step, self.problems = 0, "start", []
+        self.shots: Path | None = None                     # where a timed-out wait leaves a screenshot
+        for method in ("Page.enable", "Runtime.enable", "Log.enable"):
+            self.cmd(method)
+        self.cmd("Page.addScriptToEvaluateOnNewDocument", {"source": CSP_LISTENER})
+        self.cmd("Emulation.setDeviceMetricsOverride", {"width": width, "height": height, "deviceScaleFactor": 1,
+                                                        "mobile": False})
+
+    def _devtools_port(self) -> tuple[int, str]:
+        marker = self.profile / "DevToolsActivePort"
+        for _ in range(300):
+            if self.proc.poll() is not None:
+                raise RuntimeError(f"Chrome exited with {self.proc.returncode}")
+            try:
+                port, path = marker.read_text(encoding="utf-8").split("\n")[:2]
+                return int(port), path.strip()
+            except (OSError, ValueError):
+                time.sleep(0.1)
+        raise RuntimeError("Chrome did not open its DevTools port")
+
+    def _note(self, msg: dict) -> None:
+        method, params = msg.get("method"), msg.get("params") or {}
+        if method == "Runtime.exceptionThrown":
+            d = params.get("exceptionDetails") or {}
+            text = (d.get("exception") or {}).get("description") or d.get("text")
+            self.problems.append((self.step, "exception", text))
+        elif method == "Runtime.consoleAPICalled" and params.get("type") in ("error", "assert"):
+            text = " ".join(str(a.get("value", a.get("description", ""))) for a in params.get("args") or [])
+            self.problems.append((self.step, "console." + params["type"], text))
+        elif method == "Log.entryAdded":
+            e = params.get("entry") or {}
+            if e.get("level") == "error" or e.get("source") == "security":
+                self.problems.append((self.step, f"log:{e.get('source')}:{e.get('level')}", e.get("text")))
+
+    def cmd(self, method: str, params: dict | None = None) -> dict:
+        self.n += 1
+        self.ws.send(json.dumps({"id": self.n, "method": method, "params": params or {}}))
+        while True:
+            msg = json.loads(self.ws.recv())
+            if msg.get("id") == self.n:
+                if "error" in msg:
+                    raise RuntimeError(f"{method}: {msg['error']}")
+                return msg.get("result") or {}
+            self._note(msg)
+
+    def eval(self, expression: str):
+        out = self.cmd("Runtime.evaluate", {"expression": expression, "awaitPromise": True, "returnByValue": True})
+        if out.get("exceptionDetails"):
+            d = out["exceptionDetails"]
+            raise RuntimeError(f"the driver's script failed: {(d.get('exception') or {}).get('description') or d}")
+        return (out.get("result") or {}).get("value")
+
+    def wait(self, expression: str, what: str, timeout: float = 20.0):
+        end = time.monotonic() + timeout
+        while True:
+            value = self.eval(expression)
+            if value:
+                return value
+            if time.monotonic() > end:
+                if self.shots:
+                    self.shots.mkdir(parents=True, exist_ok=True)
+                    self.screenshot(self.shots / f"timeout-{self.step.replace(' ', '-')}.png")
+                raise AssertionError(f"[{self.step}] timed out waiting for {what}; problems so far: {self.problems}")
+            time.sleep(0.1)
+
+    def click(self, selector: str, text: str | None = None, what: str | None = None) -> None:
+        """A real mouse click at the centre of the first visible element that matches (and holds the
+        text), once it stands still (a drawer that slides in moves its buttons); it fails when another
+        element covers that point."""
+        find = (f"Array.from(document.querySelectorAll({json.dumps(selector)})).find((e) => e.getClientRects().length"
+                f" && (!{json.dumps(text)} || e.textContent.includes({json.dumps(text)})))")
+        box = self.wait(f"""(async () => {{ const el = {find}; if (!el) return null;
+            el.scrollIntoView({{block: "center", inline: "center"}});
+            const at = () => {{ const r = el.getBoundingClientRect();
+                                return [r.left, r.top, r.width, r.height].join(); }};
+            const before = at(); await new Promise((done) => setTimeout(done, 150));
+            if (at() !== before) return null;
+            const r = el.getBoundingClientRect();
+            const x = r.left + r.width / 2, y = r.top + r.height / 2, hit = document.elementFromPoint(x, y);
+            return {{x, y, ok: !!hit && (el === hit || el.contains(hit) || hit.contains(el)),
+                     hit: hit ? hit.tagName + "." + hit.className : null}}; }})()""",
+                        what or f"{selector} {text or ''}")
+        if not box["ok"]:
+            raise AssertionError(f"[{self.step}] {what or selector} is covered by {box['hit']}")
+        for kind in ("mousePressed", "mouseReleased"):
+            self.cmd("Input.dispatchMouseEvent", {"type": kind, "x": box["x"], "y": box["y"], "button": "left",
+                                                  "clickCount": 1})
+
+    def type(self, selector: str, text: str) -> None:
+        """Focus a field, clear it and type into it, as keyboard input."""
+        self.wait(f"(() => {{ const el = document.querySelector({json.dumps(selector)}); if (!el) return false;"
+                  " el.focus(); el.select && el.select(); return document.activeElement === el; })()", selector)
+        self.cmd("Input.insertText", {"text": text})
+
+    def screenshot(self, path: Path) -> None:
+        shot = self.cmd("Page.captureScreenshot", {"format": "png"})
+        path.write_bytes(base64.b64decode(shot["data"]))
+
+    def violations(self) -> list:
+        return self.eval("window.__cspViolations || ['the CSP listener did not run']") or []
+
+    def close(self) -> None:
+        try:
+            ws = WebSocket(f"ws://127.0.0.1:{self.port}{self.browser_path}", timeout=5)
+            ws.send(json.dumps({"id": 1, "method": "Browser.close"}))
+            ws.close()
+            self.proc.wait(10)
+        except (OSError, ConnectionError, subprocess.TimeoutExpired):
+            self.proc.kill()
+            self.proc.wait(10)
+        finally:
+            self.ws.close()
+            shutil.rmtree(self.profile, ignore_errors=True)
+
+
+class QuietRunner:
+    """The cockpit's job runner in this test: it starts nothing, and records what it was asked."""
+
+    def __init__(self) -> None:
+        self.started: list = []
+
+    def start(self, args: list, log_path) -> str:
+        self.started.append(list(args))
+        return f"J-{len(self.started):04d}"
+
+    def status(self, job_id: str) -> dict:
+        return {"state": "done", "code": 0}
+
+
+class UiDriveTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.chrome = find_chrome()
+        if cls.chrome is None:
+            raise unittest.SkipTest("Chrome is not installed (RIHMA_CHROME names another browser binary)")
+        if shutil.which("git") is None:
+            raise unittest.SkipTest("git is needed to build the demo home")
+        from kernel.demo import build_demo
+
+        cls.tmp = Path(tempfile.mkdtemp(prefix="rihma-ui-drive-")).resolve()
+        try:
+            build_demo(cls.tmp / "demo", echo=lambda line: None)
+        except Exception:
+            roads.stop_started()
+            roads.rmtree(cls.tmp)
+            raise
+        cls.factory = Factory(cls.tmp / "demo")
+        cls.runner = QuietRunner()
+        cls.server, cls.bootstrap = make_server(cls.factory, 0, runner=cls.runner)
+        cls.thread = threading.Thread(target=cls.server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+        cls.thread.start()
+        cls.shots = Path(os.environ["RIHMA_UI_SHOTS"]) if os.environ.get("RIHMA_UI_SHOTS") else None
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.thread.join(5)
+        roads.stop_started()
+        with contextlib.suppress(OSError):  # a file Chrome still holds: the OS clears the temp folder later
+            roads.rmtree(cls.tmp)
+
+    def setUp(self):
+        self.browser = Browser(self.chrome, self.tmp / f"chrome-{self.id().rsplit('.', 1)[-1][:12]}")
+        self.addCleanup(self.browser.close)
+        self.browser.shots = self.shots
+
+    def step(self, name: str) -> None:
+        """Start a step: the previous one must have left no problem behind."""
+        if self.browser.step != "start":                # about:blank opened before the CSP listener
+            self.check()
+        self.browser.step = name
+
+    def check(self) -> None:
+        b = self.browser
+        b.eval("1")                                    # drain the events that arrived meanwhile
+        time.sleep(0.3)
+        b.eval("1")
+        self.assertEqual(b.problems, [], f"console errors or failed requests during '{b.step}'")
+        self.assertEqual(b.violations(), [], f"CSP violations during '{b.step}'")
+        if self.shots:
+            self.shots.mkdir(parents=True, exist_ok=True)
+            b.screenshot(self.shots / f"{b.step.replace(' ', '-')}.png")
+
+    def project(self, title: str):
+        return next(p for p in self.factory.projects() if p.meta.get("title") == title)
+
+    def test_FR_T1_AC_17_a_person_drives_the_cockpit_in_chrome_with_no_console_error_or_csp_violation(self):
+        b = self.browser
+        self.step("sign in")
+        self.sign_in()
+        self.step("switch lens")
+        b.click('#lens-switch [data-lens="delivery"]', what="the Delivery lens")
+        b.wait("document.title.startsWith('Delivery') && !!document.querySelector('#grid .widget[data-type=\"live\"]')",
+               "the Delivery dashboard")
+        self.step("validate a concept")
+        self.validate_concept()
+        self.step("decide a card")
+        webhook = self.decide_a_card()
+        self.step("customize")
+        self.customize()
+        self.step("ask the assistant")
+        self.take_me_there(webhook)
+        self.step("settings")
+        b.click('#sb-foot a[href="#/settings"]', what="Settings")
+        note = "(document.querySelector('[aria-labelledby=\"embeds-h\"] .note.warning') || {}).textContent"
+        self.assertIn("http://127.0.0.1:8790", b.wait(note, "the embed address note"))
+        self.check()
+        self.assertEqual(self.runner.started, [])                  # nothing in the drive started a job
+        # the watch itself: an inline style and a console error made on purpose are both seen
+        b.step = "probe"
+        b.eval("document.body.setAttribute('style', 'outline: 0'); console.error('rihma probe'); true")
+        b.wait("window.__cspViolations.length > 0", "the probe's CSP violation")
+        self.assertIn("style-src", b.violations()[0])
+        self.assertIn(("probe", "console.error", "rihma probe"), b.problems)
+
+    def sign_in(self) -> None:
+        b = self.browser
+        b.cmd("Page.navigate", {"url": f"{self.server.origin}/#k={self.bootstrap}"})
+        b.wait("!document.documentElement.classList.contains('signed-out')"
+               " && !!document.querySelector('#grid .widget')", "the signed-in dashboard")
+        self.assertEqual(b.eval("location.hash"), "#/home")         # the one-use link left the address bar
+        self.assertTrue(b.eval("!!sessionStorage.getItem('gf.token')"))
+        b.click("#person-chip", what="the person chip")
+        b.type("#person", PERSON)
+        b.click('label[for="pp-business_owner"]', what="the business owner persona")
+        b.click("#pp-done", what="Done in the person menu")
+        b.wait(f"document.querySelector('#pc-name').textContent === {json.dumps(PERSON)}"
+               " && document.querySelector('#pc-persona').textContent === 'Business owner'", "the person chip")
+
+    def validate_concept(self) -> None:
+        b = self.browser
+        b.click('#sb-nav a[href="#/square"]', what="Square in the sidebar")
+        b.wait("!!document.querySelector('.concepts .concept')", "a concept on the square")
+        title = b.eval("document.querySelector('.concepts .concept .concept-h b').textContent")
+        b.type('.concepts .concept input[aria-label="Reason"]', "Worth a demo for the maintenance team")
+        b.click('.concepts [data-control="validate_concept"]', what="Validate")
+        b.wait(f"location.hash.startsWith('#/p/') && (document.querySelector('#view-title') || {{}}).textContent === "
+               f"{json.dumps(title)}", "the new project opened")
+        self.assertEqual(b.eval("window.scrollY"), 0)                 # a new page opens at its top
+        decision = next(c for c in Canon(factory_project(self.factory)).cards(state=None, kind="concept"))["decision"]
+        self.assertEqual((decision["verdict"], decision["person"], decision["persona"]),
+                         ("validate", PERSON, "business_owner"))
+        self.assertIn(title, [p.meta.get("title") for p in self.factory.projects()])
+
+    def decide_a_card(self):
+        b = self.browser
+        webhook = self.project("Shipment webhook to the stock system")
+        b.click('#sb-nav a[href="#/projects"]', what="Projects in the sidebar")
+        b.click(".proj-card", text="Shipment webhook", what="the webhook project")
+        b.wait(f"location.hash.startsWith('#/p/{webhook.pid}')", "the webhook project")
+        b.click(f'.tabs a[href="#/p/{webhook.pid}/inbox"]', what="the project's Inbox tab")
+        key = b.wait("(document.querySelector('.card.decision [data-key$=\":defer\"]') || {dataset: {}}).dataset.key",
+                     "a card to defer")
+        cid = key.split(":")[0]
+        b.type(f"#reason-{cid}", "Not before the stock system's own release")
+        b.click(f'[data-key="{key}"]', what=f"Defer on {cid}")
+        b.wait(f"!document.querySelector('[data-key=\"{key}\"]')", f"{cid} decided")
+        card = Canon(webhook).get_card(cid)
+        self.assertEqual((card["state"], card["decision"]["verdict"], card["decision"]["person"]),
+                         ("decided", "defer", PERSON))
+        return webhook
+
+    def customize(self) -> None:
+        b = self.browser
+        b.click('#sb-nav a[href="#/home"]', what="Home in the sidebar")
+        b.wait("!!document.querySelector('#grid .widget')", "the dashboard")
+        b.click("#customize", what="Customize")
+        b.wait("!document.querySelector('#cz-bar').hidden && !!document.querySelector('#grid .widget.cz')", "Customize")
+        wid, before = b.eval("(() => { const w = document.querySelector('#grid .widget.cz');"
+                             " return [w.dataset.wid, w.className.match(/size-(\\w+)/)[1]]; })()")
+        b.click(f'#grid .widget[data-wid="{wid}"] button[aria-label^="Size "]', what="the size button")
+        after = b.wait(f"(() => {{ const w = document.querySelector('#grid .widget[data-wid=\"{wid}\"]');"
+                       " const s = w && w.className.match(/size-(\\w+)/)[1];"
+                       f" return s !== {json.dumps(before)} && s; }})()", "the widget resized")
+        b.click("#cz-bar button", text="Done", what="Done")
+        b.wait("document.querySelector('#cz-bar').hidden"
+               " && !document.documentElement.classList.contains('customizing')", "Customize closed")
+        saved = [json.loads(p.read_text(encoding="utf-8"))
+                 for p in (self.factory.home / "_cockpit" / "layouts").rglob("delivery.json")]
+        self.assertEqual([(s["person"], s["persona"]) for s in saved], [(PERSON, "business_owner")])
+        sizes = [{"id": w["id"], "size": w["size"]} for w in saved[0]["layout"]["widgets"]]
+        self.assertIn({"id": wid, "size": after}, sizes)
+        self.assertEqual(b.eval("document.querySelector('.layout-kind').textContent"), "Your layout")
+
+    def take_me_there(self, webhook) -> None:
+        b = self.browser
+        b.click('#sb-nav a[href="#/projects"]', what="Projects in the sidebar")
+        b.click(".proj-card", text="Shipment webhook", what="the webhook project")
+        title = json.dumps(webhook.meta["title"])
+        b.wait(f"location.hash.startsWith('#/p/{webhook.pid}')"
+               f" && (document.querySelector('#view-title') || {{}}).textContent === {title}", "the project")
+        records, packs = len(webhook.ledger().records()), webhook.read("packs.json")
+        b.click("#assistant-fab", what="Ask Rihma")
+        b.type("#as-q", "Where are the releases?")
+        b.click("#as-send", what="Send")
+        b.click("#as-log .msg.bot button", text="Take me there", what="Take me there")
+        b.wait(f"location.hash === '#/p/{webhook.pid}/releases' && !!document.querySelector('.card.pack')",
+               "the Releases view with its capability pack")
+        self.assertIn("Capability pack v1.0.0", b.eval("document.querySelector('.card.pack').textContent"))
+        self.assertEqual((len(webhook.ledger().records()), webhook.read("packs.json")), (records, packs))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,241 @@
+"""Stages 3 and 4: from the brief to a spec of requirements with acceptance criteria.
+
+The analyst drafts the requirements. The kernel decides their ids and provenance by fixed rules,
+never the model (FR-A3):
+- a requirement resting on an answered question is customer-confirmed, decided by whoever
+  answered it;
+- one resting on the request itself is customer-endorsed, by whoever made the request;
+- one resting on an assumption is an assumption;
+- anything else is vendor-proposed.
+
+A spec is not made while blocking questions are open. The send-back list goes to the people
+who can answer (FR-A5).
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from kernel.canon import Canon
+from kernel.intake import MATURITY_MEANING, SendBack, _ask_json, blocking_open
+from kernel.people import is_person
+from kernel.store import write_text
+
+MAX_REQUIREMENTS = {"explore": 3, "demo": 5, "pilot": 7, "production": 8}
+KINDS = ("test", "holdout", "probe")
+
+STACK = """The product is built on the paved road: one Python 3 standard-library HTTP service
+(`app/server.py` gives `route(method, pattern)`, `load_data(name, default)` and `save_data(name, value)`).
+It serves a JSON API, plus plain HTML pages where people need a screen. Data is kept in JSON
+files. Tests call `handle(method, path, body)` directly. No third-party packages, no external
+database, no outbound network calls."""
+
+
+def spec_prompt(project, feedback: str | None = None) -> str:
+    meta, canon = project.meta, Canon(project)
+    n = MAX_REQUIREMENTS[meta["maturity"]]
+    previous = ""
+    if feedback:
+        old = project.read("spec.json") or {"requirements": []}
+        listing = "\n".join(f"- {r['id']}: {r['statement']}" for r in old["requirements"])
+        previous = f"""
+A person reviewed your previous plan and did not approve it. Their reason:
+<<<
+{feedback}
+>>>
+The previous plan's requirements were:
+{listing}
+Write a new plan that answers the reason. Keep what the reason does not touch.
+"""
+    from kernel.profiles import profile_of, spec_guidance
+
+    return f"""You turn a brief into a software specification for a factory that builds and verifies it.
+
+{canon.brief}
+{previous}
+Target maturity: **{meta['maturity']}**: {MATURITY_MEANING[meta['maturity']]}.
+{spec_guidance(profile_of(project))}
+The stack is fixed:
+{STACK}
+
+Write at most {n} requirements: the smallest set that delivers the goal at this maturity. If the
+request names its own requirement ids (for example FR-KRIT-001), keep the id of each requirement
+you take from it in "id"; otherwise leave "id" empty. Each requirement states one behaviour and
+lists its sources: "request" if the request says it, a
+question id (for example "Q-003") if an answer or assumption gave it, or "proposed" if neither
+did. Give each requirement one to three acceptance criteria with given / when / then. The
+"then" must be observable through the HTTP interface or a returned value.
+
+Give each criterion a kind:
+- "test": a unit test that calls handle() can check it. Use this for most criteria.
+- "holdout": an end-to-end scenario checked against the running service by someone other
+  than the builder. Use it for about one criterion in four, the ones that matter most to
+  users.
+- "probe": an operational property of the running service (for example "GET /health answers
+  in under 500 ms").
+
+Fix the product's HTTP interface in "interface": every endpoint with its method, path and
+purpose, with path parameters in braces (for example "POST /loans/{{id}}/return"). The builder
+and the people who write the end-to-end checks both work from this list, so every criterion
+must use exactly these paths.
+
+Answer with this JSON in a ```json block:
+{{"title": "...", "summary": "two sentences",
+  "users": ["who uses it"],
+  "interface": [{{"method": "GET", "path": "/items", "purpose": "list items"}}],
+  "requirements": [{{"id": "", "statement": "...", "sources": ["request"], "priority": "must",
+     "acceptance": [{{"given": "...", "when": "...", "then": "...", "kind": "test"}}]}}],
+  "out_of_scope": ["..."]}}
+"""
+
+
+METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+_ENDPOINT = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE)\s+(/[^\s,;)\"'`]*)")
+# Criteria written as calls to the product's handler: handle('POST', '/carriers/a/events', body).
+_HANDLE = re.compile(r"""handle\(\s*['"](GET|POST|PUT|PATCH|DELETE)['"]\s*,\s*['"](/[^'"]*)['"]""")
+
+
+def _generalise(path: str) -> str:
+    """'/loans/7/return' -> '/loans/{id}/return': a literal id in a criterion is an example."""
+    parts = [("{id}" if re.fullmatch(r"\d+|[0-9a-f]{8,}", seg) else seg) for seg in path.rstrip(".").split("/")]
+    return "/".join(parts) or "/"
+
+
+def interface_from_criteria(requirements) -> list:
+    seen, out = set(), []
+    for r in requirements:
+        for c in r.get("acceptance", []):
+            text = " ".join(str(c.get(k, "")) for k in ("given", "when", "then"))
+            for method, path in _ENDPOINT.findall(text) + _HANDLE.findall(text):
+                key = (method, _generalise(path.split("?")[0]))
+                if key not in seen:
+                    seen.add(key)
+                    out.append({"method": key[0], "path": key[1], "purpose": "named in the spec's criteria"})
+    return out
+
+
+def look_of(canon) -> str:
+    """The look chosen at intake: the first of the paved road's looks named in the answer."""
+    from kernel.design_road import LOOKS
+    from kernel.intake import LOOK_QUESTION
+
+    for q in canon.questions():
+        if q["text"] == LOOK_QUESTION and q.get("answer"):
+            text = str(q["answer"].get("text", "")).lower()
+            for look in LOOKS:
+                if look in text:
+                    return look
+    return "neutral"
+
+
+def interface_of(spec: dict) -> list:
+    """The product's fixed HTTP interface: the spec's own, or (for specs written before the
+    interface was part of the spec) the endpoints its criteria name."""
+    return spec.get("interface") or interface_from_criteria(spec.get("requirements", []))
+
+
+def render_interface(spec: dict) -> str:
+    rows = interface_of(spec)
+    if not rows:
+        return "(no endpoints named yet)"
+    return "\n".join(f"- {e['method']} {e['path']}: {e.get('purpose', '')}" for e in rows)
+
+
+_QID = re.compile(r"^Q-\d+$")
+_REQ_ID = re.compile(r"^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$")
+
+
+def _provenance(sources, canon: Canon, requested_by) -> tuple[str, str | None]:
+    answered = {q["id"]: q for q in canon.questions("answered")}
+    assumed = {q["id"] for q in canon.questions("assumed")}
+    for s in sources:
+        if s in answered and is_person(answered[s]["answer"]["by"]):
+            return "customer-confirmed", answered[s]["answer"]["by"]
+    if "request" in sources and is_person(requested_by or ""):
+        return "customer-endorsed", requested_by
+    if any(s in assumed for s in sources):
+        return "assumption", None
+    return "vendor-proposed", None
+
+
+def normalize(project, raw: dict) -> dict:
+    """Give the analyst's draft fixed ids and rule-based provenance; drop what cannot be used."""
+    meta, canon = project.meta, Canon(project)
+    requested_by = (project.read("source.json", {}) or {}).get("requested_by")
+    reqs: list[dict[str, Any]] = []
+    for item in (raw.get("requirements") or [])[:MAX_REQUIREMENTS[meta["maturity"]]]:
+        if not isinstance(item, dict) or not str(item.get("statement", "")).strip():
+            continue
+        sources = [str(s).strip() for s in (item.get("sources") or []) if str(s).strip()]
+        sources = [s for s in sources if s in ("request", "proposed") or _QID.match(s)] or ["proposed"]
+        given = str(item.get("id") or "").strip().upper()
+        taken = {r["id"] for r in reqs}
+        if _REQ_ID.match(given) and given not in taken and not re.fullmatch(r"R-\d+", given):
+            rid = given  # the customer's own id, kept so tests and the contract use their names
+        else:
+            n_gen = 1 + sum(1 for r in reqs if re.fullmatch(r"R-\d+", r["id"]))
+            rid = f"R-{n_gen}"
+        prov, by = _provenance(sources, canon, requested_by)
+        criteria: list[dict[str, Any]] = []
+        for ac in (item.get("acceptance") or [])[:3]:
+            if not isinstance(ac, dict) or not str(ac.get("then", "")).strip():
+                continue
+            kind = ac.get("kind") if ac.get("kind") in KINDS else "test"
+            criteria.append({"id": f"{rid}-AC-{len(criteria) + 1}", "given": str(ac.get("given", "")).strip(),
+                             "when": str(ac.get("when", "")).strip(), "then": str(ac["then"]).strip(),
+                             "kind": kind})
+        if not criteria:
+            continue
+        if not any(c["kind"] == "test" for c in criteria):
+            criteria[0]["kind"] = "test"  # every requirement gets at least one visible check
+        req = {"id": rid, "statement": str(item["statement"]).strip(), "sources": sources,
+               "priority": item.get("priority") if item.get("priority") in ("must", "should", "could") else "must",
+               "provenance": prov, "acceptance": criteria}
+        if by:
+            req["decided_by"] = by
+        reqs.append(req)
+    if not reqs:
+        raise ValueError("the analyst's draft holds no usable requirement")
+    interface = []
+    for e in raw.get("interface") or []:
+        if isinstance(e, dict) and str(e.get("method", "")).upper() in METHODS and str(e.get("path", "")).startswith("/"):
+            interface.append({"method": str(e["method"]).upper(), "path": str(e["path"]).strip(),
+                              "purpose": str(e.get("purpose", "")).strip()})
+    if not interface:
+        interface = interface_from_criteria(reqs)
+    return {"title": str(raw.get("title") or meta["title"]).strip(), "summary": str(raw.get("summary", "")).strip(),
+            "users": [str(u) for u in (raw.get("users") or [])][:8], "maturity": meta["maturity"],
+            "stack": "python-stdlib-http", "look": look_of(canon), "interface": interface, "requirements": reqs,
+            "out_of_scope": [str(o) for o in (raw.get("out_of_scope") or [])][:12]}
+
+
+def render_spec_md(spec: dict) -> str:
+    lines = [f"# Spec: {spec['title']}", "", spec.get("summary", ""), "",
+             f"Maturity: **{spec['maturity']}**. Stack: {spec['stack']}.", "",
+             "## Interface", "", render_interface(spec), ""]
+    for r in spec["requirements"]:
+        who = f", decided by {r['decided_by']}" if r.get("decided_by") else ""
+        lines += [f"## {r['id']} ({r['priority']}, {r['provenance']}{who})", "", r["statement"], "",
+                  f"Sources: {', '.join(r['sources'])}", ""]
+        for c in r["acceptance"]:
+            lines.append(f"- **{c['id']}** [{c['kind']}] given {c['given']}; when {c['when']}; then {c['then']}")
+        lines.append("")
+    if spec.get("out_of_scope"):
+        lines += ["## Out of scope", ""] + [f"- {o}" for o in spec["out_of_scope"]] + [""]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def make_spec(project, *, model, feedback: str | None = None) -> dict:
+    still_open = blocking_open(project)
+    if still_open:
+        project.log("send_back", {"questions": [q["id"] for q in still_open]})
+        raise SendBack(still_open)
+    raw = _ask_json(model, spec_prompt(project, feedback))
+    spec = normalize(project, raw)
+    project.write("spec.json", spec)
+    write_text(project.path("spec.md"), render_spec_md(spec))
+    project.update_meta(stage=4)
+    project.log("spec_written", {"requirements": len(spec["requirements"]),
+                                 "criteria": sum(len(r["acceptance"]) for r in spec["requirements"])})
+    return spec

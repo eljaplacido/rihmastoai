@@ -1,0 +1,26 @@
+# What tools/release_export.py leaves out of the public repository, one gitignore-style pattern a
+# line. A leading slash anchors a pattern at the repository root, a trailing slash matches folders
+# only, and `*`, `?` and `**` match as in .gitignore. The last pattern that matches a file or one of
+# its folders decides; a pattern starting with `!` takes a file back in.
+#
+# What is listed here stays in the private repository, untouched. Only the public snapshot leaves it out.
+
+# Earlier blueprint runs and their logs
+/blueprint/
+# Run evidence of the first milestone
+/evidence/
+# The original brief (tools/spec_coverage.py says so when it is absent)
+/intake/
+# The first milestone's run envelopes
+/envelopes/
+# Earlier design pages, the first milestone's operations log and the release checklist
+/docs/*.html
+/docs/m0-log.md
+/docs/release-checklist.md
+# The local denylist: never tracked, and never exported even if it were
+.release-denylist
+
+# Screenshots were taken over real data; new ones are made from the demo home
+cockpit/screenshots/
+# An internal review of the earlier cockpit
+docs/ux-review.md

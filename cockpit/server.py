@@ -1,0 +1,2319 @@
+"""The Rihma cockpit server: the page and a JSON API over the kernel, on loopback only (FR-T1, FR-M6).
+
+Besides the canon and the Inbox it serves the read models people decide with: a change's impact
+before it is decided (FR-P5), the canon's alignment findings (FR-S6), the Cell and Floor
+projections of Gnomon's runs (FR-M3), and where a project stands (``kernel.status``): each
+criterion's evidence, verified or only claimed (FR-O6); a one-line "now" with its state; the
+project's health with its reasons and forecast (FR-T1); what its running cell is doing, read from
+Gnomon's own audit trail (FR-T1); and the checklist people try a release with (FR-R1). Showing
+them changes nothing.
+
+It also carries three writes the kernel signs and checks like any decision: editing a requirement
+of a plan that waits on approval (``kernel.plan``, FR-P7), and pausing and resuming a project at
+its next safe point (``kernel.safestop``, FR-J3).
+
+The redesigned cockpit adds: every dashboard widget's read model in one answer (FR-T1-AC-11), a
+layout per person, persona and lens kept in the factory home's ``_cockpit/layouts/`` and never in
+a project ledger, a project's lens and stage-ordered views (FR-T1-AC-12), comments (FR-T1-AC-13),
+the delivery square's signals and concepts, the capability catalogue, embeds, the autonomy cap,
+capability packs and evidence exports downloaded once (FR-T1-AC-15), and the assistant, whose
+answers and proposals are checked by the kernel and which writes nothing (FR-V1-AC-5). Reading a
+capability pack shows the one last written and never builds one; building is its own signed POST
+(FR-T1-AC-16). An embed's snippet points at the embed server (``--embed-base`` or
+``RIHMA_EMBED_BASE``), never at this server, which serves no widget (FR-I1-AC-4).
+
+Start it on the machine that runs the kernel (for example a GPU box) and reach it from a workstation
+through an SSH tunnel:
+
+    python -m cockpit.server --home var --port 8787
+    ssh -L 8787:127.0.0.1:8787 gpu-box     # then open the printed link
+
+Sign-in works like Gnomon's dashboard. At start the server prints one link,
+``http://127.0.0.1:<port>/#k=<bootstrap>``. The page posts the bootstrap to ``/auth`` once and
+gets a session token, which it keeps in sessionStorage. The bootstrap cannot be used twice.
+
+Rules the server keeps:
+- it binds to 127.0.0.1 and refuses any other address;
+- every ``/api/*`` request needs ``Authorization: Bearer <token>``;
+- every POST also needs an ``Origin`` equal to the server's own origin, and a ``Host`` of
+  ``127.0.0.1:<port>`` is required on every request;
+- no cookies, no CORS headers, and a Content-Security-Policy with no inline script or style;
+- static files carry no data: every fact comes from the API, behind the token;
+- the server never decides anything. A decision is the Inbox's: it carries the person and the
+  persona who made it, and the kernel (``Canon``) accepts or refuses it.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hmac
+import json
+import os
+import re
+import secrets
+import subprocess
+import sys
+import threading
+import time
+import traceback
+from collections.abc import Mapping
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+from kernel import assistant as kassistant
+from kernel import autonomy as kautonomy
+from kernel import dashboard as kdash
+from kernel import embeds as kembeds
+from kernel import evidence_pack as kevidence
+from kernel import packs as kpacks
+from kernel import plan as kplan
+from kernel import profiles as kprofiles
+from kernel import signals as ksignals
+from kernel.canon import CARD_DECIDERS, CARD_VERDICTS, PERSPECTIVES, Canon, DecisionRefused
+from kernel.change import CLASSES, NEEDS_DECISION, WAY_BACK, submit, triage
+from kernel.insight import alignment, change_impact, impact
+from kernel.intake import MATURITY_MEANING, render_brief
+from kernel.learn import FACTORY_PID, factory_project, immune_memory, model_reliability
+from kernel.lenses import LENSES, lens_for, project_context
+from kernel.observations import TRIGGERS, apply_updates, observations
+from kernel.people import PERSONAS, is_person
+from kernel.pricing import load_prices
+from kernel.projections import cell, floor
+from kernel.safestop import MAY_PAUSE, request_pause, resume
+from kernel.spec import KINDS as CRITERION_KINDS
+from kernel.status import evidence, health, live, now, try_it
+from kernel.store import (
+    HOME_ENV,
+    MATURITIES,
+    MODES,
+    REPO_ROOT,
+    STAGES,
+    Factory,
+    Project,
+    read_json,
+    write_json,
+    write_text,
+)
+
+LOOPBACK = "127.0.0.1"
+DEFAULT_PORT = 8787
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+# The page's own files: a flat folder of HTML, scripts (ES modules) and stylesheets. A name is
+# served only when it has one of these extensions and exists in that folder; nothing else is.
+STATIC_EXT = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+}
+_STATIC_NAME = re.compile(r"[a-z][a-z0-9_-]{0,63}\.(?:html|js|css)\Z")
+MAX_BODY = 1 << 20
+SESSION_TTL = 12 * 3600      # seconds a session lives after its last use
+LINK_TTL = 600               # seconds an extra sign-in link stays valid
+LOG_TAIL_LINES = 20
+RECENT_EVENTS = 50
+
+CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+       "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+SECURITY_HEADERS = {
+    "Content-Security-Policy": CSP,
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "same-origin",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Cache-Control": "no-store",
+}
+
+# Labels and the "Cockpit by persona" table of docs/v1-design.md.
+PERSONA_INFO = {
+    "business_owner": ("Business owner", "goal, benefit against the baseline, decisions waiting, stale approvals",
+                       "decide, accept, change priority, request a change"),
+    "product_owner": ("Product owner", "brief, spec, questions, changes and decisions waiting",
+                      "approve, accept a validation, decide a change, answer questions, request a change"),
+    "concept_evaluator": ("Concept evaluator", "brief, opinions, assumptions due, spec",
+                          "answer, let the factory assume, challenge an assumption"),
+    "end_user": ("End-user tester", "what to try, the validation build, their own reports",
+                 "report an observation (UI gap, requirement, data, defect)"),
+    "it": ("IT / partner", "paved roads, deploy gates, environment drift, IT rules",
+           "configure a road, approve or refuse a deploy, file an infra change"),
+    "developer": ("Developer", "tasks and gate signals, the Cell (every Gnomon run), escalations",
+                  "answer escalations, approve gates within the autonomy rules"),
+    "operations": ("Operations", "Pulse (probes, service levels, shadow and canary), incidents",
+                   "acknowledge, roll back, open a defect"),
+    "stakeholder": ("Stakeholder", "goal, brief, questions", "answer questions, request a change"),
+    "compliance": ("Compliance", "what ran, which versions, who approved, and the evidence packs",
+                   "export evidence, set the autonomy cap, decide updates"),
+}
+
+# The cockpit's widget library: each widget answers one question from one read model of
+# GET /api/dashboard. A layout may only name these (the assistant reshapes within them too).
+WIDGETS = {
+    "kpi_strip": ("Key figures", "gauge", "How is the factory doing at a glance?"),
+    "square": ("Delivery square", "square", "Where is everything in the delivery square?"),
+    "pipeline": ("Pipeline", "pipeline", "Where is the work?"),
+    "decisions": ("Decisions waiting", "inbox", "What waits on me?"),
+    "catalogue": ("Capabilities", "catalogue", "Which capabilities do we have?"),
+    "live": ("Live agents", "pulse", "What are agents doing now?"),
+    "timeline": ("Task timeline", "timeline", "Where did the time go?"),
+    "gate_trend": ("Gate trend", "gate", "Is the factory getting the work right?"),
+    "coverage": ("Evidence coverage", "file-check", "How much is proven rather than claimed?"),
+    "activity": ("Activity", "activity", "What just happened, and who did it?"),
+    "models": ("Builder models", "cpu", "Which models do the work well?"),
+    "health": ("Project health", "heart", "Which projects are on track?"),
+    "updates": ("Updates", "bell", "What changed outside, and what should we try?"),
+    "autonomy": ("Autonomy", "gauge", "How far may the factory act alone?"),
+    "evidence_packs": ("Evidence packs", "file-check", "Can we show it was checked?"),
+    "spend": ("Spend", "coins", "What does the work cost?"),
+    "feed_health": ("Feed health", "plug", "Are the integration feeds fresh?"),
+    "eval_trend": ("Eval trend", "flask", "Do the evals still hold?"),
+    "try_it": ("Try it", "play", "What can people try right now?"),
+}
+# Read-only presets per lens; a person's first edit duplicates one into a personal layout.
+LENS_DEFAULTS = {
+    "business": [("kpi_strip", "L"), ("decisions", "M"), ("catalogue", "M"), ("square", "L"), ("health", "M"),
+                 ("activity", "M")],
+    "concept": [("decisions", "M"), ("square", "M"), ("coverage", "M"), ("pipeline", "M")],
+    "delivery": [("live", "M"), ("gate_trend", "M"), ("timeline", "L"), ("decisions", "M"), ("activity", "M")],
+    "operations": [("health", "M"), ("updates", "M"), ("decisions", "M"), ("activity", "M"), ("spend", "L")],
+    "compliance": [("evidence_packs", "L"), ("autonomy", "M"), ("coverage", "M"), ("activity", "M"), ("updates", "M")],
+    "insight": [("kpi_strip", "L"), ("gate_trend", "M"), ("models", "M"), ("coverage", "M"), ("spend", "M"),
+                ("pipeline", "L")],
+}
+# The view a preset shows first: a list where the widget is a list of things, else its chart.
+LIST_FIRST = {"decisions", "catalogue", "live", "activity", "health", "updates", "evidence_packs", "try_it"}
+MAX_WIDGETS = 24
+LAYOUT_VIEWS = ("chart", "table", "list")
+EXPORT_TTL = 600             # seconds a one-time download link stays valid
+PROMOTERS = ("product_owner", "business_owner")   # kernel/canon.py promote_comment
+# Who builds a capability pack from the cockpit: the people who export evidence. Building records a
+# new version (packs.json and the ledger) when the content changed, so it is a signed write.
+PACK_BUILDERS = tuple(kevidence.EXPORTERS)
+SIGNAL_ID = r"(?P<sid>S-\d{1,9})"
+CARD_ID = r"(?P<cid>C-\d{1,9})"
+
+MODE_MEANING = {
+    "socratic": "every question goes to a person; nothing is assumed",
+    "assume": "the factory answers each question itself, as an assumption with a due date",
+    "mixed": "blocking questions go to a person and the rest are assumed (the default)",
+}
+
+# The factory's own canon (kernel/learn.py) is shown under the factory's name.
+FACTORY_TITLE = "Rihma itself"
+
+# Four bands over the seven stages, for readers who do not think in stages (FR-T1-AC-3).
+BANDS = (("decide", "Decide", (1, 2)), ("shape", "Shape", (3, 4)), ("deliver", "Deliver", (5, 6)),
+         ("run", "Run", (7,)))
+# The last stage each maturity runs ("Maturity levels" in docs/v1-design.md).
+MATURITY_LAST_STAGE = {"explore": 4, "demo": 5, "pilot": 6, "production": 7}
+
+_REQ_ID = re.compile(r"[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+\Z")
+# A requirement id in a path: R-2, or a customer's own id such as FR-P7 (kept by kernel/spec.py).
+RID = r"(?P<rid>[A-Z][A-Z0-9]{0,15}(?:-[A-Z0-9]{1,15}){1,6})"
+MAX_CRITERIA = 40
+
+# The evidence states of kernel.status.evidence, strongest first (FR-O6).
+EVIDENCE_STATES = ("verified", "held_out", "claimed", "failing", "not_measured")
+
+# Who acted on a ledger event. People own intent and decisions; agents are their delegates: a model
+# in a role, or the kernel's own rule. The model is shown where the ledger records one.
+AGENT_ROLE = {
+    "intake_done": "analyst", "question_added": "analyst", "opinion_added": "analyst", "spec_written": "analyst",
+    "holdouts_authored": "holdout author", "cell_ran": "builder",
+}
+PERSON_KEYS = ("person", "by", "chosen_by", "stopped_by", "accepted_as_is_by")
+
+PID = r"(?P<pid>" + re.escape(FACTORY_PID) + r"|[a-z0-9][a-z0-9-]{0,80})"
+ROUTES = [
+    ("GET", r"/api/meta", "get_meta"),
+    ("GET", r"/api/personas", "get_personas"),
+    ("GET", r"/api/projects", "get_projects"),
+    ("GET", rf"/api/projects/{PID}", "get_project"),
+    ("GET", rf"/api/projects/{PID}/inbox", "get_inbox"),
+    ("GET", rf"/api/projects/{PID}/impact", "get_impact"),
+    ("GET", rf"/api/projects/{PID}/alignment", "get_alignment"),
+    ("GET", rf"/api/projects/{PID}/cell", "get_cell"),
+    ("GET", rf"/api/projects/{PID}/evidence", "get_evidence"),
+    ("GET", rf"/api/projects/{PID}/now", "get_now"),
+    ("GET", rf"/api/projects/{PID}/health", "get_health"),
+    ("GET", rf"/api/projects/{PID}/plan", "get_plan"),
+    ("GET", rf"/api/projects/{PID}/live", "get_live"),
+    ("GET", rf"/api/projects/{PID}/try", "get_try"),
+    ("GET", r"/api/floor", "get_floor"),
+    ("GET", r"/api/jobs", "get_jobs"),
+    # the dashboard, the delivery square, the catalogue and the capability layer
+    ("GET", r"/api/dashboard", "get_dashboard"),
+    ("GET", r"/api/catalogue", "get_catalogue"),
+    ("GET", r"/api/square", "get_square"),
+    ("GET", r"/api/signals", "get_signals"),
+    ("GET", r"/api/profiles", "get_profiles"),
+    ("GET", r"/api/inbox", "get_inbox_all"),
+    ("GET", r"/api/ui-map", "get_ui_map"),
+    ("GET", r"/api/layout", "get_layout"),
+    ("GET", r"/api/autonomy", "get_autonomy"),
+    ("GET", r"/api/embeds", "get_embeds"),
+    ("GET", r"/api/exports/(?P<token>[A-Za-z0-9_-]{16,64})", "get_export"),
+    ("GET", rf"/api/projects/{PID}/timeline", "get_timeline"),
+    ("GET", rf"/api/projects/{PID}/context", "get_context"),
+    ("GET", rf"/api/projects/{PID}/comments", "get_comments"),
+    ("GET", rf"/api/projects/{PID}/pack", "get_pack"),
+    ("GET", rf"/api/projects/{PID}/attestation", "get_attestation"),
+    ("POST", r"/api/signals", "post_signal"),
+    ("POST", rf"/api/signals/{SIGNAL_ID}/triage", "post_signal_triage"),
+    ("POST", rf"/api/concepts/{CARD_ID}/edit", "post_concept_edit"),
+    ("POST", r"/api/profiles/propose", "post_profile_propose"),
+    ("POST", r"/api/assistant", "post_assistant"),
+    ("POST", r"/api/embeds", "post_embed"),
+    ("POST", r"/api/embeds/(?P<eid>E-\d{1,9})/revoke", "post_embed_revoke"),
+    ("POST", rf"/api/projects/{PID}/comments", "post_comment"),
+    ("POST", rf"/api/projects/{PID}/comments/(?P<cmid>CM-\d{{1,9}})/promote", "post_comment_promote"),
+    ("POST", rf"/api/projects/{PID}/evidence", "post_evidence_export"),
+    ("POST", rf"/api/projects/{PID}/pack/build", "post_pack_build"),
+    ("PUT", r"/api/layout", "put_layout"),
+    ("PUT", r"/api/autonomy", "put_autonomy"),
+    ("PUT", rf"/api/projects/{PID}/autonomy", "put_project_autonomy"),
+    ("POST", r"/api/projects", "post_project"),
+    ("POST", rf"/api/projects/{PID}/cards/(?P<cid>C-\d{{1,9}})/decide", "post_decide"),
+    ("POST", rf"/api/projects/{PID}/questions/(?P<qid>Q-\d{{1,9}})/answer", "post_answer"),
+    ("POST", rf"/api/projects/{PID}/questions/(?P<qid>Q-\d{{1,9}})/assume", "post_assume"),
+    ("POST", rf"/api/projects/{PID}/assumptions/(?P<aid>A-\d{{1,9}})/settle", "post_settle"),
+    ("POST", rf"/api/projects/{PID}/changes", "post_change"),
+    ("POST", rf"/api/projects/{PID}/advance", "post_advance"),
+    ("POST", rf"/api/projects/{PID}/plan/requirements/{RID}", "post_plan_requirement"),
+    ("POST", rf"/api/projects/{PID}/pause", "post_pause"),
+    ("POST", rf"/api/projects/{PID}/resume", "post_resume"),
+    ("POST", r"/api/links", "post_link"),
+]
+ROUTES = [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ROUTES]
+# Writes that record nothing (the assistant only proposes; a profile proposal is a rule over text).
+# They run outside the write lock, so a slow model call never holds up a decision.
+UNLOCKED = {"post_assistant", "post_profile_propose"}
+
+
+class FileResponse:
+    """A file the API hands over as a download (an exported evidence pack), never as JSON."""
+
+    def __init__(self, path: Path, ctype: str = "application/zip"):
+        self.path = Path(path)
+        self.ctype = ctype
+
+
+class ApiError(Exception):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+# -- background jobs ------------------------------------------------------------------------------
+
+class SubprocessRunner:
+    """Runs ``python <args>`` from the repository root as a child process, never through a shell.
+
+    The child gets the factory home in ``GNOMONFACTORY_HOME`` and writes its output to the log.
+    """
+
+    def __init__(self, home: str | Path):
+        self.home = Path(home)
+        self._procs: dict = {}
+        self._lock = threading.Lock()
+        self._n = 0
+
+    def start(self, args: list, log_path) -> str:
+        if isinstance(args, (str, bytes)) or not all(isinstance(a, str) for a in args):
+            raise TypeError("args must be a list of strings, never a shell string")
+        log_path = Path(log_path)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ)
+        env[HOME_ENV] = str(self.home)
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUNBUFFERED"] = "1"
+        with open(log_path, "ab") as log:
+            proc = subprocess.Popen([sys.executable, *args], cwd=str(REPO_ROOT), stdin=subprocess.DEVNULL,
+                                    stdout=log, stderr=subprocess.STDOUT, env=env, shell=False)
+        with self._lock:
+            self._n += 1
+            job_id = f"J-{self._n:04d}-{proc.pid}"
+            self._procs[job_id] = proc
+        return job_id
+
+    def status(self, job_id: str) -> dict:
+        with self._lock:
+            proc = self._procs.get(job_id)
+        if proc is None:
+            return {"state": "unknown", "code": None}
+        code = proc.poll()
+        if code is None:
+            return {"state": "running", "code": None}
+        return {"state": "done" if code == 0 else "failed", "code": code}
+
+
+# -- the server -----------------------------------------------------------------------------------
+
+class CockpitServer(ThreadingHTTPServer):
+    daemon_threads = True
+    # On Windows SO_REUSEADDR would let another socket take the same port.
+    allow_reuse_address = os.name != "nt"
+
+    def __init__(self, factory: Factory, port: int, runner=None, assistant_model=None,
+                 embed_base: str | None = None):
+        self.factory = factory
+        self.runner = runner if runner is not None else SubprocessRunner(factory.home)
+        # The assistant's model (kernel.model.Model), or None: then it answers from the cockpit map.
+        self.assistant_model = assistant_model
+        # Where websites reach the embed server: an embed's snippet points there, never at the cockpit.
+        self.embed_base = kembeds.embed_base(embed_base)
+        self.quiet = True
+        self.write_lock = threading.RLock()
+        self._auth_lock = threading.Lock()
+        self._heads_lock = threading.Lock()
+        self._jobs_lock = threading.Lock()
+        self._links: dict = {}       # bootstrap -> expiry (monotonic seconds) or None
+        self._sessions: dict = {}    # token -> expiry (monotonic seconds)
+        self._downloads: dict = {}   # one-time token -> (file name in exports, expiry)
+        self.jobs: list = []
+        # The cockpit's own files, never in a project's ledger: layouts per person, and exports.
+        self.cockpit_dir = factory.home / "_cockpit"
+        self.layouts_dir = self.cockpit_dir / "layouts"
+        self.exports_dir = self.cockpit_dir / "exports"
+        super().__init__((LOOPBACK, int(port)), CockpitHandler)
+        host, real_port = self.server_address[:2]
+        if host != LOOPBACK:
+            self.server_close()
+            raise RuntimeError(f"the cockpit bound to {host}, not {LOOPBACK}")
+        self.port = real_port
+        self.origin = f"http://{LOOPBACK}:{real_port}"
+        self.host_header = f"{LOOPBACK}:{real_port}"
+        if self.embed_base is not None and _origin_of(self.embed_base) == self.origin:
+            self.server_close()
+            raise ValueError("the embed base names this cockpit; it must name the embed server "
+                             "(python -m embed.server)")
+        self.heads_path = factory.home / "cockpit" / "heads.json"
+        self.jobs_dir = factory.home / "jobs"
+
+    # sign-in
+
+    def issue_link(self, ttl: float | None = LINK_TTL) -> str:
+        """A one-use bootstrap. The link printed at start has no expiry; extra links expire."""
+        bootstrap = secrets.token_urlsafe(32)
+        with self._auth_lock:
+            self._links[bootstrap] = None if ttl is None else time.monotonic() + ttl
+        return bootstrap
+
+    def redeem(self, bootstrap) -> str | None:
+        """Exchange a bootstrap for a session token, once."""
+        if not isinstance(bootstrap, str) or not bootstrap:
+            return None
+        now = time.monotonic()
+        with self._auth_lock:
+            match = next((k for k in self._links if hmac.compare_digest(k, bootstrap)), None)
+            if match is None:
+                return None
+            expiry = self._links.pop(match)
+            if expiry is not None and expiry < now:
+                return None
+            token = secrets.token_urlsafe(32)
+            self._sessions[token] = now + SESSION_TTL
+            return token
+
+    # one-time downloads (an exported evidence pack), served only from the exports folder
+
+    def offer_download(self, name: str) -> str:
+        token = secrets.token_urlsafe(24)
+        with self._auth_lock:
+            self._downloads[token] = (name, time.monotonic() + EXPORT_TTL)
+        return token
+
+    def take_download(self, token: str) -> Path | None:
+        with self._auth_lock:
+            match = next((k for k in self._downloads if hmac.compare_digest(k, token)), None)
+            if match is None:
+                return None
+            name, expiry = self._downloads.pop(match)
+        if expiry < time.monotonic():
+            return None
+        folder = self.exports_dir.resolve()
+        path = (folder / name).resolve()
+        if path.parent != folder or not path.is_file():
+            return None
+        return path
+
+    def session_ok(self, token) -> bool:
+        if not isinstance(token, str) or not token:
+            return False
+        now = time.monotonic()
+        with self._auth_lock:
+            for known in list(self._sessions):
+                if self._sessions[known] < now:
+                    del self._sessions[known]
+            match = next((k for k in self._sessions if hmac.compare_digest(k, token)), None)
+            if match is None:
+                return False
+            self._sessions[match] = now + SESSION_TTL
+            return True
+
+    # the ledger head the cockpit keeps (FR-L1-AC-4): truncation or a rewritten tail shows as broken
+
+    def check_ledger(self, project) -> dict:
+        store = project.ledger()
+        with self._heads_lock:
+            heads = read_json(self.heads_path, {}) or {}
+            kept = heads.get(project.pid)
+            for attempt in range(2):
+                records = store.records()
+                result = store.verify(head=kept)
+                partial = bool(records) and not isinstance(records[-1], dict)
+                if result.intact or not partial or attempt:
+                    break
+                time.sleep(0.05)  # a writer may be halfway through its line: read once more
+            head = _head_of(records)
+            if result.intact and head != kept:
+                heads[project.pid] = head
+                write_json(self.heads_path, heads)
+        recent = []
+        start = max(0, len(records) - RECENT_EVENTS)
+        for i, r in enumerate(records[start:], start):
+            event = r.get("event") if isinstance(r, dict) else None
+            if isinstance(event, dict):
+                recent.append({"seq": r.get("seq", i), "kind": event.get("kind"), "at": event.get("at"),
+                               "actor": _actor(event.get("kind"), event.get("payload"))})
+            else:
+                recent.append({"seq": i, "kind": "(unreadable record)", "at": None})
+        return {"intact": result.intact, "broken_seq": result.broken_seq, "tail_checked": result.tail_checked,
+                "head": head, "kept_head": kept, "records": len(records), "recent": recent}
+
+    # jobs
+
+    def start_job(self, kind: str, pid: str, args: list, by: dict) -> dict:
+        stamp = re.sub(r"[^0-9TZ]", "", self.factory.clock.stamp())
+        log_path = self.jobs_dir / f"{stamp}-{kind}-{pid}-{secrets.token_hex(2)}.log"
+        job_id = self.runner.start(list(args), log_path)
+        job = {"id": job_id, "kind": kind, "project": pid, "args": list(args), "log": str(log_path),
+               "started": self.factory.clock.stamp(), "by": by}
+        with self._jobs_lock:
+            self.jobs.append(job)
+        return job
+
+    def job_view(self, job: dict) -> dict:
+        try:
+            status = dict(self.runner.status(job["id"]) or {})
+        except Exception as exc:  # a runner that cannot tell is "unknown", never a crash
+            status = {"state": "unknown", "error": str(exc)}
+        out = {k: job[k] for k in ("id", "kind", "project", "args", "started", "by")}
+        out["log"] = Path(job["log"]).name
+        out["state"] = status.get("state", "unknown")
+        out["code"] = status.get("code")
+        out["log_tail"] = _tail(Path(job["log"]), LOG_TAIL_LINES)
+        return out
+
+    def running_job(self, pid: str) -> dict | None:
+        with self._jobs_lock:
+            jobs = list(self.jobs)
+        for job in jobs:
+            if job["project"] == pid and self.job_view(job)["state"] == "running":
+                return job
+        return None
+
+
+def _origin_of(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def _head_of(records: list) -> dict:
+    if not records:
+        return {"seq": -1, "hash": None}
+    last = records[-1] if isinstance(records[-1], dict) else {}
+    return {"seq": last.get("seq", len(records) - 1), "hash": last.get("hash")}
+
+
+def _actor(kind, payload) -> dict:
+    """Who acted on one ledger event: a person (an owner, with the persona when recorded) or an agent
+    (a delegate: a model role such as the builder, or the kernel), with the model where recorded."""
+    payload = payload if isinstance(payload, dict) else {}
+    model = payload.get("final_model") or payload.get("model")
+    model = model if isinstance(model, str) and model else None
+    if kind == "gnomon_run" or kind in AGENT_ROLE:
+        role = payload.get("role") if kind == "gnomon_run" else AGENT_ROLE[kind]
+        return {"type": "agent", "name": str(role or "agent").replace("_", " "), "model": model}
+    for key in PERSON_KEYS:
+        name = payload.get(key)
+        if isinstance(name, str) and is_person(name):
+            persona = payload.get("persona")
+            return {"type": "person", "name": name, "persona": persona if persona in PERSONAS else None}
+    return {"type": "agent", "name": "the kernel", "model": model}
+
+
+def _tail(path: Path, lines: int) -> list:
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - 16384))
+            data = fh.read()
+    except OSError:
+        return []
+    return data.decode("utf-8", errors="replace").splitlines()[-lines:]
+
+
+# -- request handling -----------------------------------------------------------------------------
+
+class CockpitHandler(BaseHTTPRequestHandler):
+    server: CockpitServer
+    server_version = "RihmaCockpit/1"
+    sys_version = ""
+
+    def log_message(self, fmt, *args):
+        if not self.server.quiet:
+            sys.stderr.write("%s - %s\n" % (self.log_date_time_string(), fmt % args))
+
+    # responses
+
+    def _send(self, status: int, body: bytes, ctype: str) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        for name, value in SECURITY_HEADERS.items():
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, status: int, obj) -> None:
+        body = (json.dumps(obj, ensure_ascii=False, indent=1) + "\n").encode("utf-8")
+        self._send(status, body, "application/json; charset=utf-8")
+
+    def _error(self, status: int, message: str) -> None:
+        self._json(status, {"error": message, "status": status})
+
+    # guards
+
+    def _host_ok(self) -> bool:
+        if self.headers.get("Host", "") != self.server.host_header:
+            self._error(403, f"open the cockpit at {self.server.origin}/")
+            return False
+        return True
+
+    def _origin_ok(self) -> bool:
+        return hmac.compare_digest(self.headers.get("Origin", ""), self.server.origin)
+
+    def _token_ok(self) -> bool:
+        auth = self.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return False
+        return self.server.session_ok(auth[len("Bearer "):].strip())
+
+    def _read_body(self) -> bytes | None:
+        """Read the whole request body before answering, so the socket closes cleanly."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self._error(400, "bad Content-Length")
+            return None
+        if length < 0 or length > MAX_BODY:
+            self.close_connection = True
+            self._error(413, "the request body is too large")
+            return None
+        return self.rfile.read(length) if length else b""
+
+    @staticmethod
+    def _parse(raw: bytes, ctype: str) -> dict:
+        if not raw:
+            return {}
+        if ctype.split(";")[0].strip().lower() != "application/json":
+            raise ApiError(415, "send JSON (Content-Type: application/json)")
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            raise ApiError(400, "the body is not valid JSON") from None
+        if not isinstance(data, dict):
+            raise ApiError(400, "the body must be a JSON object")
+        return data
+
+    # methods
+
+    def do_GET(self):
+        if not self._host_ok():
+            return
+        path = urlsplit(self.path).path
+        if path in ("/", "/index.html"):
+            return self._static("index.html")
+        if path.startswith("/static/"):
+            return self._static(path[len("/static/"):])
+        if path.startswith("/api/"):
+            if not self._token_ok():
+                return self._error(401, "sign in first: a valid session token is needed")
+            return self._api("GET", path, {})
+        self._error(404, "not found")
+
+    def do_POST(self):
+        self._write("POST")
+
+    def do_PUT(self):
+        self._write("PUT")
+
+    def _write(self, method: str):
+        """A POST or a PUT: the same guards (Host, Origin, bearer token, a JSON body), then the API.
+        Writes run one at a time under the write lock, except those that record nothing."""
+        raw = self._read_body()
+        if raw is None or not self._host_ok():
+            return
+        path = urlsplit(self.path).path
+        if not self._origin_ok():
+            return self._error(403, "refused: the Origin is not this cockpit")
+        if path != "/auth" or method != "POST":
+            if not path.startswith("/api/"):
+                return self._error(404, "not found")
+            if not self._token_ok():
+                return self._error(401, "sign in first: a valid session token is needed")
+        try:
+            body = self._parse(raw, self.headers.get("Content-Type", ""))
+        except ApiError as exc:
+            return self._error(exc.status, exc.message)
+        if path == "/auth":
+            token = self.server.redeem(body.get("bootstrap"))
+            if token is None:
+                return self._error(401, "this sign-in link was already used or is not valid")
+            return self._json(200, {"token": token, "expires_in": SESSION_TTL})
+        found = _route(method, path)
+        if found is not None and found[1] in UNLOCKED:
+            return self._api(method, path, body)
+        with self.server.write_lock:
+            self._api(method, path, body)
+
+    def _refuse_method(self):
+        self._read_body()
+        self._error(405, "method not allowed")
+
+    do_DELETE = do_PATCH = do_OPTIONS = _refuse_method
+
+    def _static(self, name: str) -> None:
+        if not _STATIC_NAME.match(name):
+            return self._error(404, "not found")
+        ctype = STATIC_EXT[name[name.rindex("."):]]
+        try:
+            body = (STATIC_DIR / name).read_bytes()
+        except OSError:
+            return self._error(404, "not found")
+        self._send(200, body, ctype)
+
+    def _api(self, method: str, path: str, body: dict) -> None:
+        found = _route(method, path)
+        if found is None:
+            allowed = any(p.match(path) for _, p, _ in ROUTES)
+            return self._error(405 if allowed else 404, "method not allowed" if allowed else "not found")
+        match, name = found
+        query = {k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()}
+        api = Api(self.server)
+        try:
+            status, out = getattr(api, name)(body=body, query=query, **match.groupdict())
+        except ApiError as exc:
+            return self._error(exc.status, exc.message)
+        # The kernel refuses in three families. A refusal is never a 500: DecisionRefused (a
+        # ValueError) and any PermissionError (AutonomyCapped, EmbedRefused, a holdout's re-authoring)
+        # are a 403 with the kernel's reason; a plain ValueError is input the kernel would not take, a 400.
+        except DecisionRefused as exc:
+            return self._error(403, str(exc))
+        except PermissionError as exc:
+            return self._error(403, str(exc))
+        except ValueError as exc:
+            return self._error(400, str(exc))
+        except Exception as exc:  # a bug, never a verdict: say so and keep serving
+            traceback.print_exc()
+            return self._error(500, f"internal error: {type(exc).__name__}")
+        if isinstance(out, FileResponse):
+            return self._file(status, out)
+        self._json(status, out)
+
+    def _file(self, status: int, out: "FileResponse") -> None:
+        body = out.path.read_bytes()
+        self.send_response(status)
+        self.send_header("Content-Type", out.ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Disposition", f'attachment; filename="{out.path.name}"')
+        for name, value in SECURITY_HEADERS.items():
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def _route(method: str, path: str):
+    for m, pattern, name in ROUTES:
+        match = pattern.match(path)
+        if match and m == method:
+            return match, name
+    return None
+
+
+# -- the API --------------------------------------------------------------------------------------
+
+def _text(body: dict, key: str, *, required: bool = False, limit: int = 20000) -> str:
+    value = body.get(key)
+    if value is None:
+        value = ""
+    if not isinstance(value, str):
+        raise ApiError(400, f"{key} must be text")
+    value = value.strip()
+    if required and not value:
+        raise ApiError(400, f"{key} is required")
+    if len(value) > limit:
+        raise ApiError(400, f"{key} is longer than {limit} characters")
+    return value
+
+
+def _who(body: dict) -> tuple[str, str]:
+    return _text(body, "person", limit=200), _text(body, "persona", limit=64)
+
+
+def _require_person(person: str, persona: str) -> None:
+    """For writes the kernel does not check itself before recording something."""
+    if not is_person(person):
+        raise ApiError(403, f"refused: {person!r} is not a person; a write needs a named person")
+    if persona not in PERSONAS:
+        raise ApiError(403, f"refused: persona must be one of {', '.join(PERSONAS)}")
+
+
+def _natural(path: Path):
+    return (0, int(path.stem), "") if path.stem.isdigit() else (1, 0, path.stem)
+
+
+def _count(label: str, value: int, total: int | None = None) -> dict:
+    return {"label": label, "value": value, "total": total}
+
+
+def _factory_label(pid: str, title):
+    return FACTORY_TITLE if pid == FACTORY_PID else title
+
+
+def _written_pack(project: Project) -> tuple[dict | None, dict | None]:
+    """(the capability pack as last written, the latest release), read only: it never builds a pack, so
+    it never records a version. ``kernel.packs.latest_pack`` reads it where the kernel has it; otherwise
+    the latest release's capability-pack.json is read directly."""
+    from kernel.deliver import releases
+
+    rels = releases(project)
+    latest = rels[-1] if rels else None
+    reader = getattr(kpacks, "latest_pack", None)
+    if callable(reader):
+        pack = reader(project)
+    else:
+        pack = project.read(f"releases/{latest['release']}/capability-pack.json") if latest else None
+    return (pack if isinstance(pack, dict) else None), latest
+
+
+class Api:
+    def __init__(self, server: CockpitServer):
+        self.server = server
+        self.factory = server.factory
+        self._impacts: dict = {}     # (pid, requirement ids) -> (impact, error), for this one request
+
+    # helpers
+
+    def _project(self, pid: str):
+        try:
+            return self.factory.project(pid)
+        except KeyError:
+            raise ApiError(404, f"no project {pid}") from None
+
+    @staticmethod
+    def _read(project, name: str, default, problems: list):
+        try:
+            value = project.read(name, default)
+        except (OSError, ValueError) as exc:
+            problems.append(f"{name}: {type(exc).__name__}")
+            return default
+        return default if value is None else value
+
+    @staticmethod
+    def _audit(project, action: str, target: str | None, person: str, persona: str, **extra) -> None:
+        """Note in the ledger that a write came through the cockpit, signed by its person and persona."""
+        project.log("cockpit_write", {"action": action, "target": target, "person": person, "persona": persona,
+                                      **extra})
+
+    @staticmethod
+    def _options(q: dict) -> list:
+        """The question's options: up to four short answers a person can pick, the panel's proposal
+        first (FR-A6). A question recorded before options existed offers its proposal alone."""
+        proposed = str((q.get("opinions") or {}).get(q.get("perspective")) or "").strip()
+        opts = [str(o).strip() for o in q.get("options") or [] if str(o).strip()]
+        if proposed:
+            opts = [proposed] + [o for o in opts if o != proposed]
+        return list(dict.fromkeys(opts))[:4]
+
+    @classmethod
+    def _question_view(cls, q: dict, canon: Canon) -> dict:
+        opinions = q.get("opinions") or {}
+        out = dict(q)
+        out["proposed"] = opinions.get(q["perspective"]) or None
+        out["options"] = cls._options(q)
+        out["recommended"] = out["options"][0] if out["proposed"] and out["options"] else None
+        out["opinions_side_by_side"] = [{"perspective": p, "opinion": opinions.get(p), "asked": p == q["perspective"]}
+                                        for p in PERSPECTIVES]
+        out["card_state"] = None
+        if q.get("card"):
+            try:
+                out["card_state"] = canon.get_card(q["card"])["state"]
+            except (KeyError, ValueError, OSError):
+                out["card_state"] = "missing"
+        return out
+
+    def _card_view(self, card: dict, canon: Canon) -> dict:
+        out = dict(card)
+        out["verdicts"] = list(CARD_VERDICTS[card["kind"]])
+        out["deciders"] = list(CARD_DECIDERS[card["kind"]])
+        if card["kind"] == "question" and (card.get("refs") or {}).get("question"):
+            try:
+                out["question"] = self._question_view(canon.question(card["refs"]["question"]), canon)
+            except KeyError:
+                out["question"] = None
+        if card["kind"] == "change":
+            out["impact"], error = self._change_impact(canon.project, card)
+            if error:
+                out["impact_error"] = error
+        return out
+
+    def _change_impact(self, project, card: dict):
+        """Impact if changed (FR-P5): what the triaged change would touch, shown before anyone
+        decides it. None until triage names requirements. Reading it records nothing."""
+        tri = (card.get("payload") or {}).get("triage") or {}
+        rids = tuple(sorted(set(tri.get("requirements") or [])))
+        if not rids:
+            return None, None
+        key = (project.pid, rids)
+        if key not in self._impacts:  # the impact depends on the requirements only
+            try:
+                self._impacts[key] = (change_impact(project, card["id"]), None)
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                self._impacts[key] = (None, f"{type(exc).__name__}: {exc}")
+        return self._impacts[key]
+
+    @staticmethod
+    def _stage_summary(meta: dict, canon: Canon, spec, contract, tasks: list, releases: list,
+                       evidence_counts: dict | None = None) -> dict:
+        """The seven stages with a count where one means something, grouped in four bands (FR-T1-AC-3)."""
+        stage = meta.get("stage", 1)
+        last = MATURITY_LAST_STAGE.get(meta.get("maturity"), 7)
+        questions = canon.questions()
+        blocking = [q for q in questions if q.get("blocking")]
+        source = contract if isinstance(contract, dict) and contract.get("requirements") else spec
+        reqs = source.get("requirements") if isinstance(source, dict) else None
+        reqs = [r for r in reqs or [] if isinstance(r, dict) and r.get("provenance") != "withdrawn"]
+        validations = canon.cards(state=None, kind="validation")
+        counts = {
+            1: _count("blocking open", sum(q["status"] == "open" for q in blocking), len(blocking)),
+            2: _count("questions open", sum(q["status"] == "open" for q in questions), len(questions)),
+            3: _count("requirements", len(reqs)),
+            4: _count("criteria", sum(len(r.get("acceptance") or []) for r in reqs)),
+            5: _count("tasks merged", sum(t["status"] == "merged" for t in tasks), len(tasks)),
+            6: _count("validations open", sum(c["state"] == "open" for c in validations), len(validations)),
+            7: _count("releases", len(releases)),
+        }
+        band_of = {n: band for band, _, stages in BANDS for n in stages}
+        stages = []
+        for n, name in STAGES.items():
+            state = "done" if n < stage else "now" if n == stage else "off" if n > last else "ahead"
+            row = {"stage": n, "name": name, "band": band_of[n], "state": state, "count": counts[n]}
+            if n == 5 and evidence_counts is not None:
+                # Build and verify: what a gate proved, apart from what a test only claims (FR-O6).
+                row["evidence"] = {k: evidence_counts.get(k, 0) for k in ("verified", "claimed")}
+            stages.append(row)
+        return {"current": stage, "last": last, "stages": stages,
+                "bands": [{"id": band, "label": label, "stages": list(ns)} for band, label, ns in BANDS]}
+
+    @staticmethod
+    def _status(fn, project, problems: list | None = None):
+        """One of kernel.status's read models. A record it cannot read (a file of an unexpected
+        shape) is reported in the view's problems and shown as not known, never a crash of the
+        whole view; its own route still answers 500 with the error's name."""
+        try:
+            return fn(project)
+        except Exception as exc:  # noqa: BLE001 - reported, not hidden: the page shows "unreadable"
+            if problems is not None:
+                problems.append(f"{fn.__name__}: {type(exc).__name__}")
+            return None
+
+    @staticmethod
+    def _evidence_summary(rows) -> dict:
+        """Counts per evidence state, for the project and for each requirement (FR-O6)."""
+        counts = {s: 0 for s in EVIDENCE_STATES}
+        by_req: dict = {}
+        for row in rows or []:
+            state = row.get("state", "not_measured")
+            counts[state] = counts.get(state, 0) + 1
+            req = by_req.setdefault(row.get("requirement"), {s: 0 for s in EVIDENCE_STATES})
+            req[state] = req.get(state, 0) + 1
+        return {"counts": counts, "total": sum(counts.values()), "by_requirement": by_req}
+
+    # reads
+
+    def get_meta(self, **_):
+        return 200, {
+            "origin": self.server.origin,
+            "stages": {str(n): name for n, name in STAGES.items()},
+            "modes": {m: MODE_MEANING.get(m, "") for m in MODES},
+            "maturities": {m: MATURITY_MEANING.get(m, "") for m in MATURITIES},
+            "perspectives": list(PERSPECTIVES),
+            "classes": {c: {"way_back": WAY_BACK[c], "stage": STAGES[WAY_BACK[c]],
+                            "needs_decision": c in NEEDS_DECISION} for c in CLASSES},
+            "card_kinds": {k: {"verdicts": list(v), "deciders": list(CARD_DECIDERS[k])}
+                           for k, v in CARD_VERDICTS.items()},
+            "bands": [{"id": band, "label": label, "stages": list(ns)} for band, label, ns in BANDS],
+            "maturity_last_stage": dict(MATURITY_LAST_STAGE),
+            "factory": {"id": FACTORY_PID, "title": FACTORY_TITLE},
+            "may_pause": list(MAY_PAUSE),
+            "plan_editors": list(CARD_DECIDERS["approval"]),
+            "criterion_kinds": list(CRITERION_KINDS),
+            # the redesigned cockpit: lenses, the widget library and its presets, the theme's fixed sets
+            "lenses": {k: {"label": v["label"], "icon": v["icon"], "question": v["question"]} for k, v in LENSES.items()},
+            "persona_lens": {p: lens_for(p) for p in PERSONAS},
+            "widgets": {k: {"title": t, "icon": i, "question": q} for k, (t, i, q) in WIDGETS.items()},
+            "lens_defaults": {k: [{"type": t, "size": s} for t, s in v] for k, v in LENS_DEFAULTS.items()},
+            "layout": {"sizes": list(kassistant.SIZES), "views": list(LAYOUT_VIEWS), "max_widgets": MAX_WIDGETS,
+                       "theme": {k: list(v) for k, v in kassistant.THEME.items()},
+                       "font_scale": list(kassistant.FONT_SCALE)},
+            "profiles": kprofiles.public(),
+            "deliverables": dict(kprofiles.DELIVERABLES),
+            "catalogue_states": list(kdash.CATALOGUE_STATES),
+            "signal_channels": list(ksignals.CHANNELS),
+            "concept_editors": list(CARD_DECIDERS["concept"]),
+            "embed_kinds": list(kembeds.KINDS),
+            "embed_creators": list(kembeds.CREATORS),
+            **self._embed_base_view(),
+            "pack_builders": list(PACK_BUILDERS),
+            "comment_targets": list(Canon.COMMENT_TARGETS),
+            "comment_promoters": list(PROMOTERS),
+            "evidence_exporters": list(kevidence.EXPORTERS),
+            "autonomy": {"levels": {str(n): {"name": kautonomy.LEVELS[n], "meaning": kautonomy.MEANING[n]}
+                                    for n in kautonomy.LEVELS}, "setters": list(kautonomy.SETTERS)},
+            "update_triggers": {k: v["label"] for k, v in TRIGGERS.items()},
+            "assistant": "map" if self.server.assistant_model is None
+            else "gnomon" if type(self.server.assistant_model).__name__ == "GnomonModel" else "model",
+        }
+
+    def get_personas(self, **_):
+        out = []
+        for p in PERSONAS:
+            label, sees, can = PERSONA_INFO.get(p, (p.replace("_", " ").capitalize(), "", ""))
+            out.append({"id": p, "label": label, "sees": sees, "can": can, "lens": lens_for(p),
+                        "decides": [k for k, who in CARD_DECIDERS.items() if p in who]})
+        return 200, out
+
+    def get_projects(self, **_):
+        out = []
+        for project in self.factory.projects():
+            meta = project.meta
+            canon = Canon(project)
+            by_kind: dict = {}
+            for card in canon.cards(state="open"):
+                by_kind[card["kind"]] = by_kind.get(card["kind"], 0) + 1
+            stage = meta.get("stage", 1)
+            out.append({"id": project.pid, "title": _factory_label(project.pid, meta.get("title", project.pid)),
+                        "factory": project.pid == FACTORY_PID,
+                        "maturity": meta.get("maturity"), "mode": meta.get("mode"), "stage": stage,
+                        "stage_name": STAGES.get(stage, "?"), "open_cards": sum(by_kind.values()),
+                        "open_by_kind": by_kind, "stale_approvals": len(canon.decisions(stale=True)),
+                        "overdue_assumptions": len(canon.overdue()), "updated": meta.get("updated"),
+                        "profile": meta.get("profile") or kprofiles.DEFAULT_PROFILE,
+                        "paused": bool(meta.get("pause")), "now": self._status(now, project),
+                        "running": self._running(project),
+                        "last_cell": None if project.pid == FACTORY_PID else self._last_cell(project)})
+        out.sort(key=lambda row: not row["factory"])  # Rihma's own proposals first; the rest keep their order
+        return 200, out
+
+    def get_project(self, pid: str, **_):
+        project = self._project(pid)
+        canon = Canon(project)
+        meta = dict(project.meta)
+        meta["stage_name"] = STAGES.get(meta.get("stage"), "?")
+        meta["title"] = _factory_label(pid, meta.get("title", pid))
+        meta["factory"] = pid == FACTORY_PID
+        problems: list = []
+        overdue = {a["id"] for a in canon.overdue()}
+        assumptions = [dict(a, overdue=a["id"] in overdue) for a in canon.assumptions()]
+        decisions = canon.decisions()
+        open_cards = [{k: c.get(k) for k in ("id", "kind", "title", "blocking", "created", "refs")}
+                      for c in canon.cards(state="open")]
+        changes = [self._card_view(c, canon) for c in canon.cards(state=None, kind="change")]
+        contract = self._read(project, "contract.json", None, problems)
+        spec = self._read(project, "spec.json", None, problems)
+        tasks = self._tasks(contract, self._read(project, "tasks.json", {}, problems))
+        releases = self._releases(project, problems)
+        criteria = self._status(evidence, project, problems)
+        summary = self._evidence_summary(criteria)
+        return 200, {
+            "meta": meta,
+            "now": self._status(now, project, problems),
+            "health": self._status(health, project, problems),
+            "evidence": criteria or [],
+            "evidence_summary": summary,
+            "stage_summary": self._stage_summary(meta, canon, spec, contract, tasks, releases, summary["counts"]),
+            "goal": canon.goal,
+            "brief": canon.brief,
+            "readings": self._read(project, "readings.json", {}, problems),
+            "questions": [self._question_view(q, canon) for q in canon.questions()],
+            "assumptions": assumptions,
+            "decisions": decisions,
+            "stale": [d for d in decisions if d.get("stale")],
+            "open_cards": open_cards,
+            "changes": changes,
+            "spec": spec,
+            "contract": self._contract_summary(contract, spec),
+            "tasks": tasks,
+            "releases": releases,
+            "lessons": self._read(project, "lessons.json", [], problems),
+            "ledger": self.server.check_ledger(project),
+            "jobs": [self.server.job_view(j) for j in list(self.server.jobs) if j["project"] == pid][::-1],
+            "profile": kprofiles.public(meta.get("profile") or kprofiles.DEFAULT_PROFILE)
+            if (meta.get("profile") or kprofiles.DEFAULT_PROFILE) in kprofiles.PROFILES else None,
+            "autonomy": None if pid == FACTORY_PID else self._autonomy_of(project),
+            "running": self._running(project),
+            "last_cell": None if pid == FACTORY_PID else self._last_cell(project),
+            "problems": problems,
+        }
+
+    @staticmethod
+    def _contract_summary(contract, spec=None) -> dict | None:
+        if not isinstance(contract, dict):
+            return None
+        # The contract keeps no sources; the spec it was compiled from does (kernel/spec.py).
+        spec_reqs = spec.get("requirements") if isinstance(spec, dict) else None
+        sources = {r.get("id"): r.get("sources") or [] for r in spec_reqs or [] if isinstance(r, dict)}
+        reqs = []
+        for r in contract.get("requirements", []):
+            reqs.append({
+                "id": r.get("id"), "statement": r.get("statement"), "provenance": r.get("provenance"),
+                "group": r.get("group"), "decided_by": r.get("decided_by"), "decided_on": r.get("decided_on"),
+                "sources": sources.get(r.get("id")) or (["factory default"] if r.get("group") == "factory-default"
+                                                        else []),
+                "criteria": [{"id": c.get("id"), "kind": (c.get("check") or {}).get("kind"),
+                              "provenance": r.get("provenance"), "given": c.get("given"), "when": c.get("when"),
+                              "then": c.get("then")} for c in r.get("acceptance", [])],
+            })
+        return {"revision": contract.get("revision"), "counts": contract.get("counts"), "requirements": reqs,
+                "tasks": [{"id": t.get("id"), "title": t.get("title"), "criteria": t.get("criteria", []),
+                           "depends_on": t.get("depends_on", [])} for t in contract.get("tasks", [])]}
+
+    @staticmethod
+    def _tasks(contract, state) -> list:
+        state = state if isinstance(state, dict) else {}
+        planned = contract.get("tasks", []) if isinstance(contract, dict) else []
+        order = [t.get("id") for t in planned] + sorted(t for t in state if t not in {p.get("id") for p in planned})
+        titles = {t.get("id"): t for t in planned}
+        out = []
+        for tid in order:
+            s = state.get(tid) or {}
+            plan = titles.get(tid) or {}
+            rounds = []
+            for r in s.get("rounds") or []:
+                gate = r.get("gate") or None
+                rounds.append({"round": r.get("round"), "cell": r.get("cell") or {},
+                               "gate": None if gate is None else {
+                                   "verdict": gate.get("verdict"), "warranted": gate.get("warranted"),
+                                   "head": gate.get("head"), "objections": gate.get("objections") or [],
+                                   "signals": [{"name": sig.get("name"), "verdict": sig.get("verdict"),
+                                                "detail": sig.get("detail")} for sig in gate.get("signals") or []]}})
+            out.append({"id": tid, "title": plan.get("title"), "criteria": plan.get("criteria", []),
+                        "depends_on": plan.get("depends_on", []), "status": s.get("status", "pending"),
+                        "revision": s.get("revision"), "card": s.get("card"), "permitted_by": s.get("permitted_by"),
+                        "reopened_by": s.get("reopened_by"), "stopped_by": s.get("stopped_by"),
+                        "accepted_as_is_by": s.get("accepted_as_is_by"), "rounds": rounds})
+        return out
+
+    def _releases(self, project, problems: list) -> list:
+        folder = project.path("releases")
+        if not folder.is_dir():
+            return []
+        out = []
+        for path in sorted(folder.glob("*.json"), key=_natural):
+            data = self._read(project, f"releases/{path.name}", None, problems)
+            out.append({"name": path.stem, "data": data})
+        return out
+
+    def get_inbox(self, pid: str, query: dict, **_):
+        project = self._project(pid)
+        persona = query.get("persona", "")
+        if persona not in PERSONAS:
+            raise ApiError(400, f"persona must be one of {', '.join(PERSONAS)}")
+        canon = Canon(project)
+        cards = [self._card_view(c, canon) for c in canon.cards(state="open", persona=persona)]
+        return 200, {"persona": persona, "cards": cards}
+
+    def get_impact(self, pid: str, query: dict, **_):
+        """Impact if changed, for any requirements: ``?requirements=R-1,R-2`` (FR-P5)."""
+        project = self._project(pid)
+        rids = [r.strip() for r in query.get("requirements", "").split(",") if r.strip()]
+        if not rids:
+            raise ApiError(400, "name the requirements: ?requirements=R-1,R-2")
+        if len(rids) > 200 or not all(_REQ_ID.match(r) for r in rids):
+            raise ApiError(400, "requirements must be requirement ids such as R-1, separated by commas")
+        return 200, impact(project, rids)
+
+    def get_alignment(self, pid: str, **_):
+        """The canon's contradictions, listed rather than resolved silently (FR-S6)."""
+        return 200, alignment(self._project(pid))
+
+    def get_cell(self, pid: str, **_):
+        """Every Gnomon run of the project (FR-M3)."""
+        return 200, cell(self._project(pid))
+
+    def get_evidence(self, pid: str, **_):
+        """Each criterion's evidence state: verified, claimed, held out, failing or not measured (FR-O6)."""
+        return 200, evidence(self._project(pid))
+
+    def get_now(self, pid: str, **_):
+        """One line on what the project is doing, with its state (FR-T1)."""
+        return 200, now(self._project(pid))
+
+    def get_health(self, pid: str, **_):
+        """On track, at risk or off track, the reasons, and a forecast from the project's own history (FR-T1)."""
+        return 200, health(self._project(pid))
+
+    # the plan before building (FR-P7), the running cell (FR-T1) and what to try (FR-R1)
+
+    @staticmethod
+    def _plan_cards(canon: Canon, state: str | None) -> list:
+        return [c for c in canon.cards(state=state, kind="approval") if (c.get("refs") or {}).get("scope") == "plan"]
+
+    @staticmethod
+    def _plan_spec(spec, version: int) -> dict | None:
+        """The plan as people read it: each requirement with its criteria, provenance and owner."""
+        if not isinstance(spec, dict):
+            return None
+        reqs = []
+        for r in spec.get("requirements") or []:
+            if not isinstance(r, dict):
+                continue
+            reqs.append({"id": r.get("id"), "statement": r.get("statement"), "provenance": r.get("provenance"),
+                         "decided_by": r.get("decided_by"), "priority": r.get("priority"),
+                         "sources": r.get("sources") or [],
+                         "acceptance": [{k: c.get(k) for k in ("id", "given", "when", "then", "kind")}
+                                        for c in r.get("acceptance") or [] if isinstance(c, dict)]})
+        return {"title": spec.get("title"), "summary": spec.get("summary"), "version": version,
+                "requirements": reqs, "interface": spec.get("interface") or [],
+                "out_of_scope": spec.get("out_of_scope") or []}
+
+    def _plan_view(self, project) -> dict:
+        canon = Canon(project)
+        problems: list = []
+        version = int(project.meta.get("spec_version", 1))
+        spec = self._read(project, "spec.json", None, problems)
+        opened = self._plan_cards(canon, "open")
+        card = next((c for c in opened if c["refs"].get("spec_version") == version), opened[0] if opened else None)
+        history = []
+        for c in self._plan_cards(canon, None):
+            if c["state"] == "open":
+                continue
+            d = c.get("decision") or {}
+            history.append({"card": c["id"], "state": c["state"], "spec_version": c["refs"].get("spec_version"),
+                            "verdict": d.get("verdict"), "person": d.get("person"), "persona": d.get("persona"),
+                            "reason": d.get("reason"), "at": d.get("at"), "redone": bool(c["refs"].get("redone")),
+                            "closed": c.get("closed")})
+        return {"required": kplan.required(project), "card": self._card_view(card, canon) if card else None,
+                "approved": project.meta.get("plan_approved"), "compiled": project.path("contract.json").exists(),
+                "editors": list(CARD_DECIDERS["approval"]), "spec": self._plan_spec(spec, version),
+                "history": history, "problems": problems}
+
+    def get_plan(self, pid: str, **_):
+        """The plan that waits on a person before anything is built (FR-P7): whether this project needs
+        the approval, its open card, who approved it, and the spec's requirements with their criteria.
+        Reading it opens no card: the pipeline does that."""
+        return 200, self._plan_view(self._project(pid))
+
+    def get_live(self, pid: str, **_):
+        """What the project's running Gnomon cell is doing, read from Gnomon's own audit trail in the lane
+        it holds (``$GF_LANES``, else ``~/gf-lanes``); "not running" when no lane is held (FR-T1)."""
+        return 200, live(self._project(pid))
+
+    def get_try(self, pid: str, **_):
+        """The release to try and one plain check per criterion, with its evidence state (FR-R1)."""
+        return 200, try_it(self._project(pid))
+
+    def get_floor(self, **_):
+        """The factory's runs by phase and verdict, its spend, and each builder model's record (FR-M3, FR-F8)."""
+        out = floor(self.factory)
+        out["currency"] = load_prices().get("currency", "USD")
+        out["model_reliability"] = model_reliability(self.factory)
+        out["immune_memory"] = immune_memory(self.factory)
+        return 200, out
+
+    def get_jobs(self, query: dict, **_):
+        pid = query.get("project")
+        jobs = [j for j in list(self.server.jobs) if not pid or j["project"] == pid]
+        return 200, [self.server.job_view(j) for j in jobs][::-1]
+
+    # writes: each one signed by a person and a persona; the kernel decides whether it stands
+
+    def post_decide(self, pid: str, cid: str, body: dict, **_):
+        project = self._project(pid)
+        canon = Canon(project)
+        verdict = _text(body, "verdict", required=True, limit=64)
+        reason = _text(body, "reason")
+        person, persona = _who(body)
+        try:
+            card = canon.get_card(cid)
+        except KeyError:
+            raise ApiError(404, f"no card {cid}") from None
+        qid = (card.get("refs") or {}).get("question")
+        if card["kind"] == "question" and qid and card["state"] == "open":
+            # A question card is settled through the question, so the canon's question moves too.
+            if verdict == "answer":
+                return self._answer(project, qid, reason, person, persona)
+            if verdict == "assume":
+                return self._assume(project, qid, person, persona)
+        decision = canon.decide(cid, verdict, person=person, persona=persona, reason=reason)
+        self._audit(project, "decide", cid, person, persona, verdict=verdict)
+        out = {"decision": decision, "card": self._card_view(canon.get_card(cid), canon)}
+        # A decided concept (the factory's canon) or update card is carried out at once, as the kernel's
+        # loops would: a validated concept becomes a project, a trial is recorded for the operator.
+        if card["kind"] == "concept":
+            out["applied"] = ksignals.apply_concepts(self.factory)
+            made = next((a for a in out["applied"] if a.get("card") == cid and a.get("project")), None)
+            if made is not None:
+                out["project"] = made["project"]     # the page opens the new project at once
+        elif card["kind"] == "update":
+            out["applied"] = apply_updates(project)
+        return 200, out
+
+    def post_answer(self, pid: str, qid: str, body: dict, **_):
+        project = self._project(pid)
+        text = _text(body, "text", required=True)
+        person, persona = _who(body)
+        return self._answer(project, qid, text, person, persona)
+
+    def _answer(self, project, qid: str, text: str, person: str, persona: str):
+        if not text:
+            raise ApiError(400, "an answer needs text")
+        canon = Canon(project)
+        try:
+            options = self._options(canon.question(qid))
+            q = canon.answer(qid, text, person=person, persona=persona)
+        except KeyError:
+            raise ApiError(404, f"no question {qid}") from None
+        # An answer that is one of the options keeps which one it was (0 is the panel's proposal).
+        chosen = {"option": options.index(text)} if text in options else {}
+        self._audit(project, "answer", qid, person, persona, **chosen)
+        brief = render_brief(project)
+        return 200, {"question": self._question_view(q, canon), "brief": brief}
+
+    def post_assume(self, pid: str, qid: str, body: dict, **_):
+        project = self._project(pid)
+        person, persona = _who(body)
+        return self._assume(project, qid, person, persona)
+
+    def _assume(self, project, qid: str, person: str, persona: str):
+        """"Let the factory assume": the asking perspective's proposed answer becomes an assumption
+        with a due date, and the person who chose it is recorded on the question's card."""
+        canon = Canon(project)
+        try:
+            q = canon.question(qid)
+        except KeyError:
+            raise ApiError(404, f"no question {qid}") from None
+        if q["status"] != "open":
+            raise ApiError(403, f"refused: {qid} is {q['status']}, not open")
+        _require_person(person, persona)
+        proposed = str((q.get("opinions") or {}).get(q["perspective"]) or "").strip()
+        if not proposed:
+            raise ApiError(409, f"the {q['perspective']} perspective proposed no answer to {qid}: answer it instead")
+        if not q.get("card"):
+            canon.ask(qid)  # put it to a person first, so the choice is a signed decision on its card
+        assumption = canon.assume(qid, proposed, chosen_by=person, persona=persona)
+        self._audit(project, "assume", qid, person, persona, assumption=assumption["id"])
+        brief = render_brief(project)
+        return 200, {"assumption": assumption, "question": self._question_view(canon.question(qid), canon),
+                     "brief": brief}
+
+    def post_settle(self, pid: str, aid: str, body: dict, **_):
+        project = self._project(pid)
+        confirmed = body.get("confirmed")
+        if not isinstance(confirmed, bool):
+            raise ApiError(400, "confirmed must be true or false")
+        correction = _text(body, "correction")
+        if not confirmed and not correction:
+            raise ApiError(400, "a refuted assumption needs the correction")
+        person, persona = _who(body)
+        canon = Canon(project)
+        try:
+            a = canon.settle_assumption(aid, confirmed=confirmed, person=person, persona=persona,
+                                        correction=correction)
+        except KeyError:
+            raise ApiError(404, f"no assumption {aid}") from None
+        self._audit(project, "settle", aid, person, persona, confirmed=confirmed)
+        render_brief(project)
+        return 200, {"assumption": a}
+
+    def post_change(self, pid: str, body: dict, **_):
+        project = self._project(pid)
+        person, persona = _who(body)
+        _require_person(person, persona)
+        text = _text(body, "text", required=True)
+        hint = _text(body, "hint", limit=64) or None
+        if hint is not None and hint not in CLASSES:
+            raise ApiError(400, f"hint must be one of {', '.join(CLASSES)}")
+        try:
+            card = submit(project, persona=persona, person=person, text=text, kind_hint=hint)
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
+        result = triage(project, card["id"], model=None)
+        canon = Canon(project)
+        return 201, {"card": self._card_view(canon.get_card(card["id"]), canon), "triage": result}
+
+    def post_project(self, body: dict, **_):
+        title = _text(body, "title", required=True, limit=200)
+        source = _text(body, "source", required=True, limit=200_000)
+        mode = _text(body, "mode", limit=32) or "mixed"
+        maturity = _text(body, "maturity", limit=32) or "demo"
+        requested_by = _text(body, "requested_by", limit=200)
+        persona = _text(body, "persona", limit=64) or "business_owner"
+        profile = _text(body, "profile", limit=64) or None
+        if mode not in MODES:
+            raise ApiError(400, f"mode must be one of {', '.join(MODES)}")
+        if maturity not in MATURITIES:
+            raise ApiError(400, f"maturity must be one of {', '.join(MATURITIES)}")
+        if profile is not None and profile not in kprofiles.PROFILES:
+            raise ApiError(400, f"profile must be one of {', '.join(kprofiles.PROFILES)}")
+        _require_person(requested_by, persona)
+        try:
+            project = self.factory.new_project(title, maturity=maturity, mode=mode, profile=profile)
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
+        self._audit(project, "new_project", project.pid, requested_by, persona)
+        source_file = self.server.jobs_dir / f"{project.pid}.source.md"
+        write_text(source_file, source if source.endswith("\n") else source + "\n")
+        job = self.server.start_job("intake", project.pid,
+                                    ["-m", "kernel.cli", "intake", project.pid, "--source-file", str(source_file),
+                                     "--requested-by", requested_by],
+                                    {"person": requested_by, "persona": persona})
+        return 201, {"project": project.meta, "job": self.server.job_view(job)}
+
+    def post_advance(self, pid: str, body: dict, **_):
+        project = self._project(pid)
+        person, persona = _who(body)
+        running = self.server.running_job(pid)
+        if running is not None:
+            raise ApiError(409, f"job {running['id']} is still running for {pid}")
+        job = self.server.start_job("run", project.pid, ["-m", "kernel.cli", "run", project.pid],
+                                    {"person": person or None, "persona": persona or None})
+        return 202, {"job": self.server.job_view(job)}
+
+    @staticmethod
+    def _criteria_in(raw) -> list:
+        """Criteria as a person typed them: given, when, then and the kind of check."""
+        if not isinstance(raw, list) or len(raw) > MAX_CRITERIA:
+            raise ApiError(400, f"acceptance must be a list of at most {MAX_CRITERIA} criteria")
+        out = []
+        for ac in raw:
+            if not isinstance(ac, dict):
+                raise ApiError(400, "each criterion must be an object with given, when, then and kind")
+            row = {}
+            for key in ("given", "when", "then"):
+                row[key] = _text(ac, key, limit=2000)
+            kind = ac.get("kind") or "test"
+            if kind not in CRITERION_KINDS:
+                raise ApiError(400, f"a criterion's kind must be one of {', '.join(CRITERION_KINDS)}")
+            row["kind"] = kind
+            out.append(row)
+        if not any(row["then"] for row in out):
+            raise ApiError(400, "a requirement needs at least one criterion with a 'then'")
+        return out
+
+    def post_plan_requirement(self, pid: str, rid: str, body: dict, **_):
+        """A person changes a requirement before the plan is approved (FR-P7). The kernel refuses a
+        non-person, a persona that may not edit the plan, and a plan already compiled. The edit makes
+        the person the requirement's owner, and the plan's approval card is reissued for the edit."""
+        project = self._project(pid)
+        person, persona = _who(body)
+        statement = _text(body, "statement", limit=4000) or None
+        acceptance = None if body.get("acceptance") is None else self._criteria_in(body.get("acceptance"))
+        if statement is None and acceptance is None:
+            raise ApiError(400, "send the new statement, the criteria, or both")
+        if not project.path("spec.json").exists():
+            raise ApiError(409, f"{pid} has no plan yet: its spec is not written")
+        try:
+            req = kplan.edit_requirement(project, rid, person=person, persona=persona, statement=statement,
+                                         acceptance=acceptance)
+        except DecisionRefused:
+            raise
+        except KeyError:
+            raise ApiError(404, f"no requirement {rid} in the plan") from None
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
+        self._audit(project, "edit_requirement", rid, person, persona)
+        if kplan.required(project):
+            kplan.open_card(project)  # the kernel reissues the card for the edited plan, as the pipeline would
+        return 200, {"requirement": req, "plan": self._plan_view(project)}
+
+    def post_pause(self, pid: str, body: dict, **_):
+        """Ask the project to stop at its next safe point (FR-J3), signed with person and persona."""
+        project = self._project(pid)
+        if pid == FACTORY_PID:
+            raise ApiError(400, "Rihma itself has no pipeline to pause")
+        person, persona = _who(body)
+        reason = _text(body, "reason", limit=2000)
+        held = project.meta.get("pause")
+        if held:
+            raise ApiError(409, f"{pid} is already paused by {held.get('requested_by')}")
+        state = request_pause(project, person=person, persona=persona, reason=reason)
+        self._audit(project, "pause", pid, person, persona)
+        return 200, {"pause": state, "now": now(project)}
+
+    def post_resume(self, pid: str, body: dict, **_):
+        """Lift a pause (FR-J3), signed with person and persona; the next Advance carries on."""
+        project = self._project(pid)
+        person, persona = _who(body)
+        if not project.meta.get("pause"):
+            raise ApiError(409, f"{pid} is not paused")
+        resume(project, person=person, persona=persona)
+        self._audit(project, "resume", pid, person, persona)
+        return 200, {"now": now(project)}
+
+    def post_link(self, **_):
+        bootstrap = self.server.issue_link(LINK_TTL)
+        return 201, {"url": f"{self.server.origin}/#k={bootstrap}", "expires_in": LINK_TTL}
+
+    # -- the dashboard and the capability layer (the redesigned cockpit) ---------------------------
+    # Every read below is a read: it records nothing and appends to no ledger.
+
+    def _products(self) -> list:
+        return [p for p in self.factory.projects() if not p.pid.startswith("_")]
+
+    def _factory_canon(self):
+        return factory_project(self.factory)
+
+    def _running(self, project) -> bool:
+        """Whether a Gnomon cell is running for the project now (kernel.status.live), never a guess."""
+        if project.pid == FACTORY_PID:
+            return False
+        try:
+            lv = live(project)
+        except Exception:  # noqa: BLE001 - not readable is not running
+            return False
+        return bool(lv.get("running")) and not lv.get("ended")
+
+    @staticmethod
+    def _last_cell(project) -> dict | None:
+        """The last cell's outcome from the ledger: the task, round, Gnomon's bucket and when."""
+        cells = project.ledger().of_kind("cell_ran")
+        if not cells:
+            return None
+        pl = cells[-1]["event"]["payload"]
+        return {"task": pl.get("task"), "round": pl.get("round"), "bucket": pl.get("bucket"),
+                "at": cells[-1]["event"].get("at")}
+
+    def _factory_if_any(self):
+        """The factory's own canon when it exists; reading never creates it."""
+        try:
+            return self.factory.project(FACTORY_PID)
+        except KeyError:
+            return None
+
+    def _autonomy_of(self, project=None) -> dict:
+        """kernel.autonomy.describe, read-only: the factory's policy file is read, never created."""
+        policy = read_json(self.factory.projects_dir / FACTORY_PID / "policy.json", {}) or {}
+        cap = int(policy.get("autonomy_cap", kautonomy.DEFAULT_CAP))
+        if project is not None and project.meta.get("autonomy_cap") is not None:
+            cap = min(cap, int(project.meta["autonomy_cap"]))
+        return {"cap": cap, "name": kautonomy.LEVELS[cap], "meaning": kautonomy.MEANING[cap],
+                "levels": [{"level": n, "name": kautonomy.LEVELS[n], "meaning": kautonomy.MEANING[n], "allowed": n <= cap}
+                           for n in kautonomy.LEVELS]}
+
+    def _stamp(self) -> str:
+        return self.factory.clock.stamp()
+
+    def _decision_items(self) -> list:
+        """Every open card a person must decide across the factory: the queue's kinds, plus concepts
+        to validate (the factory's canon) and updates to try, with their age."""
+        now_t = self.factory.clock.now()
+        items = []
+        fp = self._factory_if_any()
+        sources = [(p, False) for p in self._products()] + ([(fp, True)] if fp is not None else [])
+        for p, is_factory in sources:
+            for c in Canon(p).cards(state="open"):
+                kind = c["kind"]
+                if kind == "question" and not c.get("blocking"):
+                    continue
+                if kind == "change" and not ((c.get("payload") or {}).get("triage") or {}).get("needs_decision"):
+                    continue
+                if is_factory and kind not in ("concept", "approval"):
+                    continue
+                age = None
+                if c.get("created"):
+                    try:
+                        age = round((now_t - kdash._when(c["created"])).total_seconds() / 3600, 1)
+                    except ValueError:
+                        age = None
+                items.append({"project": p.pid, "project_title": _factory_label(p.pid, p.meta.get("title", p.pid)),
+                              "card": c["id"], "kind": kind, "title": c["title"],
+                              "deciders": list(c.get("deciders") or CARD_DECIDERS[kind]),
+                              "verdicts": list(CARD_VERDICTS[kind]), "age_hours": age,
+                              "blocking": bool(c.get("blocking")), "payload": self._card_payload(c)})
+        items.sort(key=lambda i: -(i["age_hours"] or 0))
+        return items
+
+    @staticmethod
+    def _card_payload(c: dict) -> dict:
+        """The parts of a card's payload a dashboard shows: a concept's fields, an update's renderings."""
+        pl = c.get("payload") or {}
+        if c["kind"] == "concept":
+            return {k: pl.get(k) for k in ("title", "text", "profile", "profile_basis", "maturity", "mode",
+                                           "raised_by", "signal")}
+        if c["kind"] == "update":
+            return {k: pl.get(k) for k in ("trigger", "facts", "views", "who", "observation")}
+        return {}
+
+    def _attestation_of(self, project) -> dict:
+        """What an evidence export would attest, computed read-only: the ledger's chain, the Gnomon runs'
+        chains, the decisions, and the capability pack (the latest one written, or the release's
+        acceptance as it stands). Nothing is built or written."""
+        led = project.ledger()
+        records = led.records()
+        check = led.verify()
+        events = [r.get("event") or {} for r in records if isinstance(r, dict)]
+        decisions = [e.get("payload") or {} for e in events if e.get("kind") == "decision"]
+        runs = [e.get("payload") or {} for e in events if e.get("kind") == "gnomon_run"]
+        try:
+            pack, latest = _written_pack(project)
+        except (KeyError, TypeError, ValueError):
+            pack, latest = None, None
+        if latest is not None and (pack is None or pack.get("release") != latest.get("release")):
+            pack = {"version": None, "release": latest["release"], "acceptance": kpacks.acceptance(project, latest)}
+        ev = evidence(project) if project.path("contract.json").exists() else []
+        files = {"capability-pack.json": pack or {"note": "no release yet, so no capability pack"},
+                 "evidence.json": ev, "decisions.json": decisions,
+                 "gnomon-runs.json": [{"chain": r.get("chain")} for r in runs],
+                 "ledger-check.json": {"intact": getattr(check, "intact", None),
+                                       "broken_seq": getattr(check, "broken_seq", None), "records": len(records)}}
+        att = kevidence.attestation(files)
+        acc = (pack or {}).get("acceptance") or {}
+        return {"project": project.pid, "title": project.meta.get("title"), **att,
+                "pack": None if pack is None else {"version": pack.get("version"), "release": pack.get("release"),
+                                                   "valid": acc.get("valid"),
+                                                   "not_valid_because": acc.get("not_valid_because") or []},
+                "decisions": len(decisions), "gates": sum(1 for e in events if e.get("kind") == "gate"),
+                "runs": len(runs), "ledger": files["ledger-check.json"], "criteria": len(ev),
+                "exports": sum(1 for e in events if e.get("kind") == "evidence_exported")}
+
+    def get_dashboard(self, **_):
+        """Every widget's read model in one answer (FR-T1-AC-11): the dashboard is a view of these."""
+        f = self.factory
+        products = self._products()
+        fl = floor(f)
+        problems: list = []
+
+        def safe(name, fn, default=None):
+            try:
+                return fn()
+            except Exception as exc:  # noqa: BLE001 - reported per widget, never a crash of the dashboard
+                problems.append(f"{name}: {type(exc).__name__}")
+                return default
+
+        pipe = safe("pipeline", lambda: kdash.pipeline(f), {"bands": [], "total": 0})
+        meta_of = {p.pid: p.meta for p in products}
+        for band in pipe.get("bands", []):
+            for st in band["stages"]:
+                for chip in st["projects"]:
+                    m = meta_of.get(chip["id"], {})
+                    chip["profile"] = m.get("profile") or kprofiles.DEFAULT_PROFILE
+                    chip["paused"] = bool(m.get("pause"))
+        rows = []
+        for p in products:
+            rows.append({"project": p.pid, "title": p.meta.get("title"), "stage": p.meta.get("stage", 1),
+                         "maturity": p.meta.get("maturity"),
+                         "profile": p.meta.get("profile") or kprofiles.DEFAULT_PROFILE,
+                         "now": self._status(now, p, problems), "health": self._status(health, p, problems),
+                         "live": safe("live", lambda p=p: live(p), {"running": False, "why": "not read"}),
+                         "last_cell": safe("last_cell", lambda p=p: self._last_cell(p))})
+        timelines = {}
+        for p in products:
+            if p.path("contract.json").exists() and len(timelines) < 8:
+                tl = safe("timeline", lambda p=p: kdash.timeline(p))
+                if tl is not None:
+                    timelines[p.pid] = dict(tl, title=p.meta.get("title"))
+        decisions = safe("decisions", self._decision_items, [])
+        queue = safe("queue", lambda: kdash.queue(f), {"items": [], "count": 0})
+        gate_trend = safe("gate_trend", lambda: kdash.gate_trend(f), {"series": [], "rounds": 0, "pass_rate": None})
+        coverage = safe("coverage", lambda: kdash.coverage(f), {"projects": [], "total": {}, "proven_share": None})
+        catalogue = safe("catalogue", lambda: kdash.catalogue(f), {"items": [], "counts": {}})
+        square = safe("square", lambda: ksignals.square(f), None)
+        updates = safe("updates", self._updates, [])
+        packs = [safe("evidence_packs", lambda p=p: self._attestation_of(p)) for p in products]
+        tries = []
+        for p in products:
+            t = safe("try_it", lambda p=p: try_it(p))
+            if t is not None:
+                by_ev: dict = {}
+                for it in t.get("items", []):
+                    by_ev[it["evidence"]] = by_ev.get(it["evidence"], 0) + 1
+                tries.append({"project": p.pid, "title": p.meta.get("title"), "url": t.get("url"),
+                              "release": t.get("release"), "env": t.get("env"), "checks": len(t.get("items", [])),
+                              "by_evidence": by_ev})
+        reliability = safe("models", lambda: model_reliability(f), {})
+        g = fl["gates"]
+        cov_total = coverage.get("total") or {}
+        n_criteria = sum(cov_total.values())
+        proven = cov_total.get("verified", 0) + cov_total.get("held_out", 0)
+        counts = catalogue.get("counts") or {}
+        done = sum(1 for r in rows if (r["now"] or {}).get("state") == "done")
+        oldest = max((d["age_hours"] for d in decisions if d["age_hours"] is not None), default=None)
+        kpis = {
+            "in_flight": {"value": len(products) - done, "of": len(products), "provenance": "observed",
+                          "basis": "projects not yet done, of all projects"},
+            "decisions": {"value": len(decisions), "oldest_hours": oldest, "provenance": "observed",
+                          "basis": "open cards waiting on a person, across projects"},
+            "first_round": {"value": g.get("first_round_rate"), "num": g.get("first_round_passed", 0),
+                            "of": g.get("tasks_gated", 0), "provenance": "derived",
+                            "basis": "tasks that passed their gate on the first round, of tasks gated",
+                            "series": [{"at": s["at"], "rate": s["passed"] / (s["passed"] + s["not_passed"])}
+                                       for s in gate_trend.get("series", []) if s["passed"] + s["not_passed"]]},
+            "proven": {"value": coverage.get("proven_share"), "num": proven, "of": n_criteria,
+                       "provenance": "derived",
+                       "basis": "criteria verified or held out, of all criteria in compiled contracts"},
+            "in_use": {"value": counts.get("in_use", 0), "of": len(catalogue.get("items") or []),
+                       "provenance": "observed", "basis": "capabilities in use, of all in the catalogue"},
+        }
+        return 200, {
+            "generated_at": self._stamp(),
+            "kpis": kpis,
+            "pipeline": pipe,
+            "queue": queue,
+            "decisions": decisions,
+            "gate_trend": gate_trend,
+            "gates": g,
+            "timelines": timelines,
+            "activity": safe("activity", lambda: kdash.activity(f), []),
+            "coverage": coverage,
+            "catalogue": catalogue,
+            "square": square,
+            "projects": rows,
+            "models": reliability,
+            "updates": updates,
+            "autonomy": safe("autonomy", self._autonomy_view, None),
+            "evidence_packs": [x for x in packs if x is not None],
+            "spend": {**fl["spend"], "currency": load_prices().get("currency", "USD"),
+                      "runs": fl["overall"].get("runs")},
+            "try_it": tries,
+            "feed_health": {"measured": False, "why": "no feed probe has reported yet: an integration's freshness "
+                                                      "probe writes it once the feed runs"},
+            "eval_trend": {"measured": False, "why": "no eval run is recorded over time yet: a model or agent "
+                                                     "release's evals appear here once they are re-measured"},
+            "problems": problems,
+        }
+
+    def _updates(self) -> list:
+        """The updates inbox: every update card on every project (open first), with the observation's
+        three renderings, and observations that opened no card (inform only)."""
+        out = []
+        for p in self._products():
+            for c in Canon(p).cards(state=None, kind="update"):
+                pl = c.get("payload") or {}
+                out.append({"project": p.pid, "project_title": p.meta.get("title"), "card": c["id"],
+                            "state": c["state"], "title": c["title"], "trigger": pl.get("trigger"),
+                            "label": TRIGGERS.get(pl.get("trigger"), {}).get("label"), "views": pl.get("views"),
+                            "who": pl.get("who") or list(CARD_DECIDERS["update"]), "decision": c.get("decision"),
+                            "created": c.get("created"), "verdicts": list(CARD_VERDICTS["update"])})
+        for obs in observations(self.factory):
+            touched = obs.get("touched") or []
+            for t in touched:
+                if t.get("card") is None:
+                    out.append({"project": t.get("project"), "project_title": None, "card": None, "state": "inform",
+                                "title": (t.get("views") or {}).get("business"), "trigger": obs.get("trigger"),
+                                "label": obs.get("label"), "views": t.get("views"), "who": [], "decision": None,
+                                "created": obs.get("at"), "verdicts": []})
+            if not touched and obs.get("views"):
+                out.append({"project": None, "project_title": None, "card": None, "state": "inform",
+                            "title": obs["views"].get("business"), "trigger": obs.get("trigger"),
+                            "label": obs.get("label"), "views": obs.get("views"), "who": [], "decision": None,
+                            "created": obs.get("at"), "verdicts": []})
+        out.sort(key=lambda u: u["created"] or "", reverse=True)
+        out.sort(key=lambda u: {"open": 0, "inform": 1}.get(u["state"], 2))
+        return out
+
+    def _autonomy_view(self) -> dict:
+        fac = self._autonomy_of()
+        projects = []
+        for p in self._products():
+            d = self._autonomy_of(p)
+            projects.append({"project": p.pid, "title": p.meta.get("title"), "cap": d["cap"], "name": d["name"],
+                             "own": p.meta.get("autonomy_cap")})
+        history = []
+        for p in [x for x in [self._factory_if_any()] if x is not None] + self._products():
+            for r in p.ledger().of_kind("autonomy_cap_set"):
+                pl = r["event"]["payload"]
+                history.append({"project": None if p.pid == FACTORY_PID else p.pid,
+                                **{k: pl.get(k) for k in ("scope", "from", "to", "by", "persona", "reason")},
+                                "at": r["event"].get("at")})
+        history.sort(key=lambda x: x["at"] or "", reverse=True)
+        return {"factory": fac, "projects": projects, "setters": list(kautonomy.SETTERS), "history": history[:20]}
+
+    def get_catalogue(self, **_):
+        """The capability catalogue (FR-T1-AC-14): what each capability is, what it delivers, how far it is."""
+        cat = kdash.catalogue(self.factory)
+        return 200, {**cat, "states": list(kdash.CATALOGUE_STATES), "profiles": kprofiles.public(),
+                     "deliverables": dict(kprofiles.DELIVERABLES)}
+
+    def _people_by_corner(self) -> dict:
+        """Who works in each corner of the delivery square, from the decisions and signals people signed."""
+        corner_of = {"stakeholder": "needs", "business_owner": "concept", "product_owner": "concept",
+                     "concept_evaluator": "concept", "developer": "factory", "end_user": "testing",
+                     "operations": "production", "it": "production", "compliance": "production"}
+        people: dict = {k: {} for k in ("needs", "concept", "factory", "testing", "production")}
+        for s in ksignals.signals(self.factory):
+            if s.get("person") and is_person(s["person"]):
+                people["needs"].setdefault(s["person"], "stakeholder")
+        for p in self._products():
+            for c in Canon(p).cards(state=None, kind="change"):
+                pl = c.get("payload") or {}
+                if pl.get("source") == "end_user" and is_person(pl.get("person")) and "embed" not in str(pl.get("person")):
+                    people["testing"].setdefault(pl["person"], "end_user")
+        for p in self.factory.projects():
+            for d in Canon(p).decisions():
+                corner = corner_of.get(d.get("persona"))
+                if corner and is_person(d.get("person")):
+                    people[corner].setdefault(d["person"], d["persona"])
+        return {k: [{"name": n, "persona": v} for n, v in list(d.items())[:8]] for k, d in people.items()}
+
+    def get_square(self, **_):
+        """The delivery square at a glance (kernel.signals.square), with what sits in each corner."""
+        f = self.factory
+        sq = ksignals.square(f)
+        fp = self._factory_if_any()          # read, never created here
+        concepts = [dict(self._card_payload(c), card=c["id"], created=c.get("created"), card_title=c["title"],
+                         body=c.get("body"), deciders=list(CARD_DECIDERS["concept"]))
+                    for c in (Canon(fp).cards(kind="concept") if fp is not None else [])]
+        feedback, production = [], []
+        for p in self._products():
+            for c in Canon(p).cards(state=None, kind="change"):
+                pl = c.get("payload") or {}
+                if pl.get("source") == "end_user":
+                    feedback.append({"project": p.pid, "project_title": p.meta.get("title"), "card": c["id"],
+                                     "title": c["title"], "state": c["state"], "triaged": bool(pl.get("triage")),
+                                     "person": pl.get("person"), "created": c.get("created")})
+            if p.meta.get("stage") == 7:
+                production.append({"project": p.pid, "title": p.meta.get("title"), "now": self._status(now, p),
+                                   "health": self._status(health, p),
+                                   "profile": p.meta.get("profile") or kprofiles.DEFAULT_PROFILE})
+        feedback.sort(key=lambda x: x["created"] or "", reverse=True)
+        feedback.sort(key=lambda x: x["state"] != "open")
+        return 200, {**sq, "signals_list": ksignals.signals(f)[::-1][:50], "concepts": concepts,
+                     "feedback": feedback[:40], "production": production, "people": self._people_by_corner(),
+                     "channels": list(ksignals.CHANNELS)}
+
+    def get_signals(self, query: dict, **_):
+        state = query.get("state") or None
+        if state is not None and state not in ksignals.STATES:
+            raise ApiError(400, f"state must be one of {', '.join(ksignals.STATES)}")
+        return 200, {"signals": ksignals.signals(self.factory, state), "channels": list(ksignals.CHANNELS),
+                     "states": list(ksignals.STATES)}
+
+    def get_profiles(self, **_):
+        return 200, {"profiles": kprofiles.public(), "deliverables": dict(kprofiles.DELIVERABLES),
+                     "default": kprofiles.DEFAULT_PROFILE}
+
+    def post_profile_propose(self, body: dict, **_):
+        """The profile Rihma proposes for a request, by rule over its words. It records nothing."""
+        text = _text(body, "text", required=True, limit=200_000)
+        return 200, kprofiles.propose_profile(text)
+
+    def get_inbox_all(self, query: dict, **_):
+        """Every open card the persona may decide, across every project and the factory's own canon."""
+        persona = query.get("persona", "")
+        if persona not in PERSONAS:
+            raise ApiError(400, f"persona must be one of {', '.join(PERSONAS)}")
+        cards = []
+        for p in self.factory.projects():
+            canon = Canon(p)
+            for c in canon.cards(state="open", persona=persona):
+                view = self._card_view(c, canon)
+                view["project"] = p.pid
+                view["project_title"] = _factory_label(p.pid, p.meta.get("title", p.pid))
+                cards.append(view)
+        return 200, {"persona": persona, "cards": cards, "count": len(cards)}
+
+    def get_ui_map(self, **_):
+        return 200, kassistant.ui_map()
+
+    def get_timeline(self, pid: str, **_):
+        """Each task's rounds with start, end and verdict, merges and escalations (kernel.dashboard)."""
+        return 200, kdash.timeline(self._project(pid))
+
+    def get_context(self, pid: str, query: dict, **_):
+        """The lens this persona starts in (or the one asked for) and the views in the order the project's
+        stage and that lens bring them forward, with the project's work profile (FR-T1-AC-12)."""
+        project = self._project(pid)
+        persona = query.get("persona", "")
+        if persona not in PERSONAS:
+            raise ApiError(400, f"persona must be one of {', '.join(PERSONAS)}")
+        lens = query.get("lens") or None
+        if lens is not None and lens not in LENSES:
+            raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
+        ctx = project_context(project, persona, lens)
+        ctx["default_lens"] = lens_for(persona)
+        return 200, ctx
+
+    # layouts: per person, persona and lens, in the cockpit's own folder, never in a project ledger
+
+    def _layout_path(self, person: str, persona: str, lens: str) -> Path:
+        import hashlib
+
+        key = hashlib.sha256(person.strip().encode("utf-8")).hexdigest()[:20]
+        return self.server.layouts_dir / key / persona / f"{lens}.json"
+
+    @staticmethod
+    def _preset(lens: str) -> dict:
+        return {"v": 1, "lens": lens, "widgets": [{"id": f"{t}-{i + 1}", "type": t, "size": s,
+                                                   "view": "list" if t in LIST_FIRST else "chart", "filter": {}}
+                                                  for i, (t, s) in enumerate(LENS_DEFAULTS[lens])]}
+
+    def _layout_for(self, person: str, persona: str, lens: str) -> tuple:
+        if person and is_person(person) and persona in PERSONAS:
+            saved = read_json(self._layout_path(person, persona, lens))
+            if isinstance(saved, dict) and isinstance(saved.get("layout"), dict):
+                return saved["layout"], False
+        return self._preset(lens), True
+
+    @staticmethod
+    def _who_lens(query: dict) -> tuple:
+        persona = query.get("persona", "")
+        if persona not in PERSONAS:
+            raise ApiError(400, f"persona must be one of {', '.join(PERSONAS)}")
+        lens = query.get("lens") or lens_for(persona)
+        if lens not in LENSES:
+            raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
+        return (query.get("person") or "").strip(), persona, lens
+
+    def get_layout(self, query: dict, **_):
+        person, persona, lens = self._who_lens(query)
+        layout, preset = self._layout_for(person, persona, lens)
+        return 200, {"layout": layout, "preset": preset, "default": self._preset(lens), "lens": lens,
+                     "persona": persona}
+
+    @staticmethod
+    def _check_layout(layout, lens: str) -> dict:
+        """A layout is versioned JSON within fixed boundaries: known widget types, at most 24 widgets,
+        sizes and views from fixed sets, a small filter object, and theme values from fixed sets."""
+        if not isinstance(layout, dict) or layout.get("v") != 1:
+            raise ApiError(400, "a layout is an object with v: 1")
+        if layout.get("lens", lens) != lens:
+            raise ApiError(400, "the layout's lens is not the lens it is saved for")
+        widgets = layout.get("widgets")
+        if not isinstance(widgets, list):
+            raise ApiError(400, "widgets must be a list")
+        if len(widgets) > MAX_WIDGETS:
+            raise ApiError(400, f"a layout holds at most {MAX_WIDGETS} widgets")
+        clean, ids = [], set()
+        for w in widgets:
+            if not isinstance(w, dict):
+                raise ApiError(400, "each widget is an object with id, type, size, view and filter")
+            wtype = w.get("type")
+            if wtype not in WIDGETS:
+                raise ApiError(400, f"unknown widget type {str(wtype)[:40]!r}")
+            wid = w.get("id")
+            if not isinstance(wid, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", wid) or wid in ids:
+                raise ApiError(400, "each widget needs a unique id of letters, digits, - or _")
+            ids.add(wid)
+            size = w.get("size", "M")
+            if size not in kassistant.SIZES:
+                raise ApiError(400, f"size must be one of {', '.join(kassistant.SIZES)}")
+            view = w.get("view", "chart")
+            if view not in LAYOUT_VIEWS:
+                raise ApiError(400, f"view must be one of {', '.join(LAYOUT_VIEWS)}")
+            filt = w.get("filter") or {}
+            plain = (str, int, float, bool, type(None))
+            if not isinstance(filt, dict) or len(json.dumps(filt)) > 400 or \
+                    not all(isinstance(k, str) and isinstance(v, plain) for k, v in filt.items()):
+                raise ApiError(400, "filter is a small object of plain values")
+            clean.append({"id": wid, "type": wtype, "size": size, "view": view, "filter": filt})
+        out = {"v": 1, "lens": lens, "widgets": clean}
+        theme = layout.get("theme")
+        if theme is not None:
+            why = kassistant.check_theme(theme)
+            if why:
+                raise ApiError(400, f"theme: {why}")
+            out["theme"] = dict(theme)
+        return out
+
+    def put_layout(self, query: dict, body: dict, **_):
+        """Save a person's layout for a persona and a lens (FR-T1-AC-11). It is the cockpit's own file
+        under the factory home's _cockpit/layouts/, never written into any project's ledger."""
+        _, persona, lens = self._who_lens(query)
+        person = _text(body, "person", limit=200)
+        if not is_person(person):
+            raise ApiError(403, f"refused: {person!r} is not a person; a layout belongs to a named person")
+        layout = self._check_layout(body.get("layout"), lens)
+        write_json(self._layout_path(person, persona, lens), {"person": person, "persona": persona, "lens": lens,
+                                                               "saved": self._stamp(), "layout": layout})
+        return 200, {"layout": layout, "preset": False, "lens": lens, "persona": persona}
+
+    # signals and concepts: the delivery square's front corner
+
+    def post_signal(self, body: dict, **_):
+        person, persona = _who(body)
+        _require_person(person, persona)
+        text = _text(body, "text", required=True, limit=ksignals.MAX_TEXT)
+        channel = _text(body, "channel", limit=32) or "manual"
+        source = _text(body, "source", limit=200) or "the cockpit"
+        try:
+            s = ksignals.receive(self.factory, text, channel=channel, source=source, person=person)
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
+        self._audit(self._factory_canon(), "log_signal", s["id"], person, persona)
+        return 201, {"signal": s}
+
+    def post_signal_triage(self, sid: str, body: dict, **_):
+        person, persona = _who(body)
+        _require_person(person, persona)
+        try:
+            s = ksignals.triage(self.factory, sid, model=None)
+        except KeyError:
+            raise ApiError(404, f"no signal {sid}") from None
+        except ValueError as exc:
+            raise ApiError(409, str(exc)) from None
+        self._audit(self._factory_canon(), "triage_signal", sid, person, persona, state=s["state"])
+        return 200, {"signal": s}
+
+    def post_concept_edit(self, cid: str, body: dict, **_):
+        person, persona = _who(body)
+        fields = {}
+        for k in ("title", "profile", "maturity", "mode"):
+            if body.get(k) not in (None, ""):
+                fields[k] = _text(body, k, limit=200)
+        if not fields:
+            raise ApiError(400, "send a title, profile, maturity or mode to change")
+        try:
+            card = ksignals.edit_concept(self.factory, cid, person=person, persona=persona, **fields)
+        except KeyError:
+            raise ApiError(404, f"no concept {cid}") from None
+        except DecisionRefused:
+            raise
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
+        self._audit(self._factory_canon(), "edit_concept", cid, person, persona, fields=sorted(fields))
+        return 200, {"card": card}
+
+    # comments: people talk about the work without deciding anything
+
+    def get_comments(self, pid: str, query: dict, **_):
+        canon = Canon(self._project(pid))
+        kind, tid = query.get("kind"), query.get("id")
+        target = {"kind": kind, "id": tid} if kind and tid else None
+        return 200, {"comments": canon.comments(target), "targets": list(Canon.COMMENT_TARGETS),
+                     "promoters": list(PROMOTERS)}
+
+    def post_comment(self, pid: str, body: dict, **_):
+        project = self._project(pid)
+        person, persona = _who(body)
+        target = body.get("target")
+        text = _text(body, "text", limit=4000)
+        if not isinstance(target, dict):
+            raise ApiError(400, f"target is an object: one of {', '.join(Canon.COMMENT_TARGETS)} with an id")
+        try:
+            c = Canon(project).comment({"kind": target.get("kind"), "id": str(target.get("id") or "")[:80]}, text,
+                                       person=person, persona=persona)
+        except DecisionRefused:
+            raise
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
+        self._audit(project, "comment", c["id"], person, persona)
+        return 201, {"comment": c}
+
+    def post_comment_promote(self, pid: str, cmid: str, body: dict, **_):
+        project = self._project(pid)
+        person, persona = _who(body)
+        if not is_person(person):
+            raise DecisionRefused(f"{person!r} is not a person")
+        try:
+            card = Canon(project).promote_comment(cmid, person=person, persona=persona)
+        except KeyError:
+            raise ApiError(404, f"no comment {cmid}") from None
+        except DecisionRefused:
+            raise
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
+        result = triage(project, card["id"], model=None)
+        self._audit(project, "promote_comment", cmid, person, persona, card=card["id"])
+        canon = Canon(project)
+        return 201, {"card": self._card_view(canon.get_card(card["id"]), canon), "triage": result}
+
+    # autonomy: the ladder, capped by a person with a reason
+
+    def get_autonomy(self, **_):
+        return 200, {**self._autonomy_view(),
+                     "levels": {str(n): {"name": kautonomy.LEVELS[n], "meaning": kautonomy.MEANING[n]}
+                                for n in kautonomy.LEVELS}}
+
+    def _set_cap(self, target, body: dict):
+        person, persona = _who(body)
+        level = body.get("level")
+        if isinstance(level, bool) or not isinstance(level, int):
+            raise ApiError(400, "level is a whole number from 1 to 4")
+        reason = _text(body, "reason", limit=2000)
+        try:
+            return kautonomy.set_cap(target, level, person=person, persona=persona, reason=reason)
+        except DecisionRefused:
+            raise
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
+
+    def put_autonomy(self, body: dict, **_):
+        out = self._set_cap(self.factory, body)
+        person, persona = _who(body)
+        self._audit(self._factory_canon(), "set_autonomy_cap", "factory", person, persona, level=out["cap"])
+        return 200, {**out, "autonomy": self._autonomy_view()}
+
+    def put_project_autonomy(self, pid: str, body: dict, **_):
+        project = self._project(pid)
+        if pid == FACTORY_PID:
+            raise ApiError(400, "set the factory's cap with PUT /api/autonomy")
+        out = self._set_cap(project, body)
+        person, persona = _who(body)
+        self._audit(project, "set_autonomy_cap", pid, person, persona, level=out["cap"])
+        return 200, {**out, "autonomy": self._autonomy_view()}
+
+    # capability packs and evidence packs
+
+    def get_pack(self, pid: str, **_: object) -> tuple[int, dict]:
+        """The capability pack as last written, with its YAML view: reading never builds one, so it never
+        records a version. ``pack`` is null while the latest release has none (build it with POST
+        .../pack/build). 404 while the project has no release."""
+        project = self._project(pid)
+        try:
+            pack, latest = _written_pack(project)
+        except (KeyError, TypeError) as exc:
+            raise ApiError(409, f"the release record could not be read: {type(exc).__name__}") from None
+        if latest is None:
+            raise ApiError(404, f"{pid} has no release yet, so no capability pack")
+        return 200, self._pack_view(project, pack, latest)
+
+    @staticmethod
+    def _pack_view(project: Project, pack: dict | None, latest: dict) -> dict:
+        current = pack is not None and pack.get("release") == latest.get("release")
+        return {"pack": pack, "yaml": kpacks.render_yaml(pack) if pack else None,
+                "history": project.read("packs.json", []) or [], "latest_release": latest.get("release"),
+                "current": current, "builders": list(PACK_BUILDERS),
+                "note": None if current else f"release {latest.get('release')} has no capability pack yet: building "
+                                             f"one records its version in packs.json and the ledger"}
+
+    def post_pack_build(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """Build the latest release's capability pack: an explicit write, signed by a person whose persona
+        exports evidence. The kernel keeps the version while the content is the same; a new content is a
+        new version, in packs.json and the ledger."""
+        project = self._project(pid)
+        person, persona = _who(body)
+        _require_person(person, persona)
+        if persona not in PACK_BUILDERS:
+            raise DecisionRefused(f"a {persona} may not build a capability pack; {', '.join(PACK_BUILDERS)} may")
+        try:
+            pack = kpacks.build_pack(project)
+        except LookupError:
+            raise ApiError(404, f"{pid} has no release yet, so no capability pack") from None
+        except (KeyError, TypeError) as exc:
+            raise ApiError(409, f"the release record could not be read: {type(exc).__name__}") from None
+        self._audit(project, "build_pack", f"release {pack['release']}", person, persona, version=pack["version"])
+        return 200, self._pack_view(project, pack, {"release": pack["release"]})
+
+    def get_attestation(self, pid: str, **_):
+        """What an evidence export would attest, read-only: attestable, chain broken or insufficient
+        evidence, never 'compliant', with the control table."""
+        return 200, self._attestation_of(self._project(pid))
+
+    def post_evidence_export(self, pid: str, body: dict, **_):
+        """Export the evidence pack into _cockpit/exports/ and hand back a one-time download path."""
+        project = self._project(pid)
+        person, persona = _who(body)
+        path = kevidence.export(project, self.server.exports_dir, person=person, persona=persona)
+        token = self.server.offer_download(path.name)
+        self._audit(project, "export_evidence", path.name, person, persona)
+        return 201, {"file": path.name, "download": f"/api/exports/{token}", "expires_in": EXPORT_TTL,
+                     "attestation": self._attestation_of(project)}
+
+    def get_export(self, token: str, **_):
+        path = self.server.take_download(token)
+        if path is None:
+            raise ApiError(404, "this download link was already used, has expired, or names no export")
+        return 200, FileResponse(path)
+
+    # embeds: a chat window for a website, with exactly one capability
+
+    def _embed_base_view(self) -> dict:
+        """Where an embed's snippet points: the embed server's configured address, or the local embed
+        server for testing while none is set. Never the cockpit, which serves no widget."""
+        return {"embed_base": self.server.embed_base, "embed_base_local": kembeds.LOCAL_EMBED_BASE,
+                "embed_base_env": kembeds.EMBED_BASE_ENV}
+
+    def get_embeds(self, **_):
+        items = [kembeds.public(e) for e in kembeds.embeds(self.factory)]
+        for e in items:
+            e.pop("key", None)
+        return 200, {"embeds": items[::-1], "kinds": list(kembeds.KINDS), "creators": list(kembeds.CREATORS),
+                     **self._embed_base_view()}
+
+    def post_embed(self, body: dict, **_):
+        person, persona = _who(body)
+        kind = _text(body, "kind", limit=32)
+        origins = body.get("origins")
+        if isinstance(origins, str):
+            origins = [o for o in re.split(r"[\s,]+", origins) if o]
+        if not isinstance(origins, list) or len(origins) > 20 or not all(isinstance(o, str) for o in origins):
+            raise ApiError(400, "origins is a list of up to 20 website addresses")
+        project_id = _text(body, "project", limit=100) or None
+        try:
+            e = kembeds.create(self.factory, kind=kind, origins=origins, person=person, persona=persona,
+                               project_id=project_id, label=_text(body, "label", limit=80),
+                               brief=_text(body, "brief", limit=600))
+        except KeyError:
+            raise ApiError(404, f"no project {project_id}") from None
+        except DecisionRefused:
+            raise
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
+        key = e.pop("key")
+        self._audit(self._factory_canon(), "create_embed", e["id"], person, persona)
+        return 201, {"embed": kembeds.public(e), "key": key, "snippet": kembeds.snippet(e, self.server.embed_base, key),
+                     "shown_once": True, **self._embed_base_view()}
+
+    def post_embed_revoke(self, eid: str, body: dict, **_):
+        person, persona = _who(body)
+        try:
+            e = kembeds.revoke(self.factory, eid, person=person, persona=persona)
+        except KeyError:
+            raise ApiError(404, f"no embed {eid}") from None
+        self._audit(self._factory_canon(), "revoke_embed", eid, person, persona)
+        return 200, {"embed": kembeds.public(e)}
+
+    # the assistant: answers and proposals, never an action
+
+    def post_assistant(self, body: dict, **_):
+        """Ask the cockpit assistant (kernel.assistant). The server adds what the person may reshape: the
+        widget library and their current layout. The answer may propose actions; it takes none, and
+        this route writes nothing. A proposal runs only when the person confirms it, through the
+        route its click would use."""
+        question = _text(body, "question", required=True, limit=2000)
+        persona = _text(body, "persona", limit=64)
+        if persona not in PERSONAS:
+            raise ApiError(400, f"persona must be one of {', '.join(PERSONAS)}")
+        pid = _text(body, "project", limit=100) or None
+        if pid is not None:
+            self._project(pid)
+        lens = _text(body, "lens", limit=32) or lens_for(persona)
+        if lens not in LENSES:
+            raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
+        layout, _ = self._layout_for(_text(body, "person", limit=200), persona, lens)
+        ui = {"widgets": list(WIDGETS), "layout": layout}
+        try:
+            out = kassistant.ask(self.factory, question, persona=persona, project_id=pid,
+                                 view=_text(body, "view", limit=64) or None, ui=ui,
+                                 model=self.server.assistant_model)
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
+        out["lens"] = lens
+        return 200, out
+
+
+# -- entry points ---------------------------------------------------------------------------------
+
+def make_server(factory: Factory, port: int = 0, *, runner=None, host: str = LOOPBACK, assistant_model=None,
+                embed_base: str | None = None):
+    """Build the cockpit server on 127.0.0.1 (port 0: any free port) and its first one-use
+    sign-in bootstrap. Any other host is refused. ``assistant_model`` is the assistant's model
+    (a ``kernel.model.Model``); without one the assistant answers from the cockpit's map.
+    ``embed_base`` is the embed server's public address, which embed snippets point at; without
+    one they point at the local embed server, for testing."""
+    if host != LOOPBACK:
+        raise ValueError(f"the cockpit binds to {LOOPBACK} only, not {host!r}; reach it through an SSH tunnel")
+    server = CockpitServer(factory, port, runner, assistant_model=assistant_model, embed_base=embed_base)
+    return server, server.issue_link(ttl=None)
+
+
+def configured_embed_base(flag: str | None, environ: Mapping[str, str]) -> str | None:
+    """The embed server's public address from --embed-base, else $RIHMA_EMBED_BASE; None when neither
+    is set. A value that is not https://host[:port][/path] (or loopback http) is a ValueError."""
+    return kembeds.embed_base(flag) or kembeds.embed_base(environ.get(kembeds.EMBED_BASE_ENV))
+
+
+def embed_base_note(base: str | None) -> str:
+    if base:
+        return f"Embed snippets point at the embed server: {base}"
+    return (f"Embed snippets point at the local embed server ({kembeds.LOCAL_EMBED_BASE}), for testing: set "
+            f"--embed-base https://<your embed server> or {kembeds.EMBED_BASE_ENV} for websites.")
+
+
+def gnomon_found() -> bool:
+    """Whether ``kernel.model.gnomon_cmd()`` names a Gnomon that exists on this machine."""
+    import shutil
+
+    from kernel.model import gnomon_cmd
+
+    cmd = gnomon_cmd()
+    if not cmd:
+        return False
+    if len(cmd) > 1 and cmd[1].endswith(".js"):
+        return Path(cmd[1]).exists() and (Path(cmd[0]).exists() or shutil.which(cmd[0]) is not None)
+    return Path(cmd[0]).exists() or shutil.which(cmd[0]) is not None
+
+
+def assistant_model_for(choice: str | None):
+    """The assistant's model for ``--assistant``: 'gnomon' asks Gnomon in the analyst lane as the
+    assistant role; 'map' answers from the cockpit map. By default Gnomon when it is found.
+    Returns (model or None, a one-line note)."""
+    if choice == "map":
+        return None, "The assistant answers from the cockpit map (--assistant map)."
+    if choice is None and not gnomon_found():
+        return None, "The assistant answers from the cockpit map: Gnomon was not found (set GNOMON_CMD to use it)."
+    from kernel.lanes import ensure_analyst_lane, load_routing
+    from kernel.model import GnomonModel
+
+    try:
+        lane = ensure_analyst_lane(load_routing())
+    except (OSError, ValueError, RuntimeError) as exc:
+        return None, f"The assistant answers from the cockpit map: the analyst lane could not be prepared ({exc})."
+    return GnomonModel(lane, timeout=180), f"The assistant asks Gnomon in the analyst lane ({lane})."
+
+
+def main(argv: list | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="python -m cockpit.server",
+                                     description="The Rihma cockpit, on 127.0.0.1 only.")
+    parser.add_argument("--home", help=f"the factory home (default: ${HOME_ENV} or var/)")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"port on 127.0.0.1 (default {DEFAULT_PORT})")
+    parser.add_argument("--host", default=LOOPBACK, help=f"must be {LOOPBACK}; any other address is refused")
+    parser.add_argument("--quiet", action="store_true", help="do not log requests")
+    parser.add_argument("--assistant", choices=("map", "gnomon"), default=None,
+                        help="the assistant's model: gnomon (the default when Gnomon is found) or map")
+    parser.add_argument("--embed-base", metavar="URL", default=None,
+                        help="the embed server's public address that embed snippets point at "
+                             f"(default ${kembeds.EMBED_BASE_ENV}; unset: the local embed server, for testing)")
+    args = parser.parse_args(argv)
+    if args.host != LOOPBACK:
+        print(f"refused: the cockpit binds to {LOOPBACK} only. From another machine use a tunnel: "
+              f"ssh -L {args.port}:127.0.0.1:{args.port} <host>", file=sys.stderr)
+        return 2
+    try:
+        embed_base = configured_embed_base(args.embed_base, os.environ)
+    except ValueError as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+    factory = Factory(args.home)
+    model, note = assistant_model_for(args.assistant)
+    try:
+        server, bootstrap = make_server(factory, args.port, assistant_model=model, embed_base=embed_base)
+    except ValueError as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"could not listen on {LOOPBACK}:{args.port}: {exc}", file=sys.stderr)
+        return 1
+    server.quiet = args.quiet
+    print(f"Rihma cockpit for {factory.home}", flush=True)
+    print(note, flush=True)
+    print(embed_base_note(embed_base), flush=True)
+    print(f"Open this link once to sign in: {server.origin}/#k={bootstrap}", flush=True)
+    print(f"From another machine: ssh -L {server.port}:127.0.0.1:{server.port} <this host>, then open the link.",
+          flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

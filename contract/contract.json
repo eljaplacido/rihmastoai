@@ -1,0 +1,4141 @@
+{
+  "schema": "gnomonfactory.contract/1",
+  "contract": "gnomon-factory",
+  "source": {
+    "brief": "intake/gnomon-factory-brief.md",
+    "spec": "specs/001-initial/ (Solution Factory run under review: blueprint/)",
+    "generated_by": "hand-compiled from the brief for milestone M0 (See); requirement ids and provenance are the brief's; amended by A-0001, A-0002 and A-0003 and A-0004; v1 increment from docs/v1-design.md (D-0009, D-0011)"
+  },
+  "requirements": [
+    {
+      "id": "FR-O1",
+      "group": "O. Spec to verify",
+      "statement": "A requirements spec is compiled into a machine-readable, content-hashed contract; a confirmed criterion with no check fails compilation, naming path, expected and got.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-O1-AC-1",
+          "given": "a customer-confirmed criterion with no check and no signed verification plan entry",
+          "when": "the contract is checked",
+          "then": "the check fails and names the criterion's path, what was expected and what it got",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O1-AC-2",
+          "given": "the same contract with its keys reordered, and a copy with one character changed",
+          "when": "the revision is computed",
+          "then": "the reordered contract has the same revision and the changed one a different revision",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O1-AC-3",
+          "given": "a contract whose declared revision does not match its content",
+          "when": "the contract is checked",
+          "then": "the check fails on the revision",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-O2",
+      "group": "O. Spec to verify",
+      "statement": "The contract compiler has no model inside; it recomputes counts, rejects unknown keys, and traces every criterion to a task and every task to a criterion.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-O2-AC-1",
+          "then": "a contract with an unknown key fails, naming the key",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O2-AC-2",
+          "then": "declared counts that differ from the recomputed counts fail",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O2-AC-3",
+          "then": "a criterion no task serves fails, and a task serving no criterion fails",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O2-AC-4",
+          "then": "an unreadable contract or an unknown schema version is not measured (exit 4), never passed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O2-AC-5",
+          "then": "the product compiler has no model: the same spec compiles to the same contract revision, and that contract passes the contract check",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-O6",
+      "group": "O. Spec to verify",
+      "statement": "A criterion counts as verified only on observed evidence; in M0, the trace reports each criterion as named by a test or not measured.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-O6-AC-1",
+          "given": "the contract and the test tree",
+          "when": "the trace runs",
+          "then": "each criterion is listed with the tests whose names contain its id, and a criterion no test names is not measured, never passed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O6-AC-2",
+          "then": "a criterion's tests must fail on the bare paved-road template; one already met at the task's base by earlier work passes as already met, and a test that passes even on the template is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O6-AC-3",
+          "then": "every criterion shows its evidence state: verified only with a passing gate at the merged revision and a test on main naming it; claimed when a test names it but no gate proved it; held out or failing from releases; otherwise not measured",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O6-AC-4",
+          "then": "the cockpit returns every criterion's evidence state, and the project view counts each state",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-O8",
+      "group": "O. Spec to verify",
+      "statement": "The spec-to-verify chain applies to Gnomon Factory itself: its own contract and .gnomon/ surface govern its development from the first milestone.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-O8-AC-1",
+          "given": "this repository's .gnomon/policy.toml",
+          "when": "it is read",
+          "then": "contract/, specs/ and intake/ are write-protected for every role, and [verify] declares test_must_fail_first, protects and exit_on_fail",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O8-AC-2",
+          "given": "this repository's contract",
+          "when": "it is checked and traced",
+          "then": "it passes the contract check, and every customer-confirmed criterion in it is named by at least one test",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O8-AC-3",
+          "given": "this repository's surface and the Gnomon build pinned for cells (D-0003)",
+          "when": "preflight runs gnomon doctor and a smoke task that needs a tool under that build",
+          "then": "doctor exits 0, the smoke task's surface hash matches, it made at least one tool call, and the engine reported no declared key it does not read; any of these failing fails preflight, and an engine that cannot run is not measured",
+          "check": {
+            "kind": "probe",
+            "command": "python3 tools/preflight.py --gnomon \"node ~/src/gnomonharness-master/packages/gnomon-cli/gnomon.js\""
+          }
+        },
+        {
+          "id": "FR-O8-AC-4",
+          "given": "scripted models and builder cells, real products delivered on loopback, and named test personas",
+          "when": "the system scenarios run",
+          "then": "the system's features hold together end to end in scripted scenarios: idea to accepted release, end-user feedback to a new pack version, signals to validated projects, autonomy and governance, the ops-agent profile, apparatus recovery, and holdout custody across every surface",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O8-AC-5",
+          "given": "this repository's code and its recorded quality baseline (tools/quality_baseline.json)",
+          "when": "tools/quality.py --gate runs",
+          "then": "the factory's own code passes its quality gate: no third-party imports in the runtime packages, no bare except, no mutable defaults, LF only, and no count above its recorded baseline",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O8-AC-6",
+          "given": "the trust core (kernel/ledger.py, kernel/ledgerstore.py, kernel/store.py, kernel/people.py, kernel/verdicts.py) and the typed modules tests/test_typing.py lists, and an interpreter with mypy named by RIHMA_QA_PYTHON",
+          "when": "mypy runs on them with the quality gate's fixed settings (no config file, Python 3.11), following imports silently",
+          "then": "mypy reports no error on the listed modules, and no error in strict mode on the trust core; without mypy the check is skipped as not measured, never passed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O8-AC-7",
+          "given": "a contract whose customer-confirmed requirement is decided by, or whose verification plan is signed by, a name the kernel does not count as a person (the assistant, a bot, the system, the kernel, the factory, a model or an agent)",
+          "when": "tools/contract_check.py judges it",
+          "then": "it fails rule R-HUMAN: the kernel and the contract checker share one definition of a person (kernel.people.is_person), with no list of their own",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-G3",
+      "group": "G. Gate and evidence",
+      "statement": "Named verdicts with precedence: passed, failed, regressed, not applicable, not measured, violation, escalate; a failure outranks not measured, all-not-applicable means not measured, and nothing maps to passed by configuration.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-G3-AC-1",
+          "then": "combining verdicts gives failed if any is failed or regressed; else violation if any is violation; else escalate if any is escalate; else not measured if any is not measured or all are not applicable (an empty set included); else passed. Only passed and not applicable can combine into passed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-G3-AC-2",
+          "then": "a translation table that maps any non-zero native exit to passed is rejected",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-G3-AC-3",
+          "then": "a translation table whose values are not all named verdicts is rejected",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-C1",
+      "group": "C. Work envelopes, cells and the Gnomon integration",
+      "statement": "Each unit of work is an envelope with these fields: goal, contract revision, base revision, requirement references, read and write scope, role, budget (tokens, wall time, steps), stop condition, required evidence and parent. Nested envelopes inherit limits and can never widen them.",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: the criteria cover what the kernel does; what it does not do is recorded in contract/deferred/c.json",
+      "acceptance": [
+        {
+          "id": "FR-C1-AC-1",
+          "then": "a builder envelope is written from the contract task it serves: it names the goal as each served requirement's id and statement, the contract revision, the base revision the cell starts from, the task's write scope, and as required evidence each visible criterion with a test named by its id that must fail first; another task, revision, base or scope gives an envelope that names those instead",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C1-AC-2",
+          "then": "the dispatcher runs the envelope as Gnomon's task file, `gnomon task --task-file <envelope> --role builder --json --deadline <wall seconds>`, so the role and the wall-time budget travel with it; the role is defined on the lane's surface with its step limits (max_steps, max_steps_total), and the task file is removed after the run",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-C2",
+      "group": "C. Work envelopes, cells and the Gnomon integration",
+      "statement": "Each run's Gnomon task record, audit chain head, surface hash and build identity are recorded.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-C2-AC-1",
+          "given": "a Gnomon task record and its audit JSONL",
+          "when": "the adapter ingests them",
+          "then": "one ledger event carries the surface hash, harness build, role, model, audit chain head and the verdict with its native values",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C2-AC-2",
+          "given": "an audit JSONL whose hash chain is broken",
+          "when": "the adapter ingests it",
+          "then": "the run is reported as tampered and its verdict is not measured",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C2-AC-3",
+          "then": "a product lane's surface grants nothing beyond Gnomon's defaults: no verify command, push and history rewriting denied, writes limited to the task scope",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C2-AC-4",
+          "then": "a lane has one holder at a time; a second lease on a held lane is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C2-AC-5",
+          "then": "an audit trail in Gnomon 0.6.6's shape (the kinds skill_use, think_cap, inbox_item and proposal_decision, a trim with its basis, numbers JavaScript writes differently from Python) re-verifies intact with Gnomon's own canonical JSON as JavaScript writes it, a rewritten record still breaks the chain, and every record is counted by kind, a kind the adapter does not know listed and never dropped",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C2-AC-6",
+          "then": "the run's ledger event carries its context window and where the window came from, the trims by reason with pre_call, and how many trims rested on a measured ratio and how many on the safety factor",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C2-AC-7",
+          "then": "a lane keeps every machine-local directory Gnomon 0.6.6 ignores (.gnomon-inbox, .gnomon-proposals and .gnomon-out among them) out of the product's commits, and an endpoint's max_context_tokens in the routing compiles onto its own [endpoints.<name>] block while [defaults] stays the fallback",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-C3",
+      "group": "C. Work envelopes, cells and the Gnomon integration",
+      "statement": "Six roles, each a Gnomon surface: scout (read, map, reproduce); builder (writes inside a lease, tests that fail first); verifier (read-only, different model, holdouts); assembler (walks seams end to end); repairer (known failure classes, with a sweep); triager (clusters signals, drafts amendments).",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: the criteria cover what the kernel does; what it does not do is recorded in contract/deferred/c.json",
+      "acceptance": [
+        {
+          "id": "FR-C3-AC-1",
+          "then": "every product lane's compiled surface defines the builder and the verifier as Gnomon roles: the builder writes only inside the scope the surface is compiled with; the verifier has read tools only (no write, edit or bash), no fallback, and a model from another family than the builder's; a routing that puts the verifier on the builder's family is refused when loaded",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C3-AC-2",
+          "then": "the dispatcher runs the builder as `gnomon task --role builder` in a lane leased to its task, and the gate runs the review as `gnomon task --role verifier` in that same leased lane with the verifier's read-only prompt; each runs under its own role's block on the lane's surface, and the lease is released afterwards",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C3-AC-3",
+          "then": "a builder's change reaches main only when the tests naming its criteria fail without it and the verifier raises no high, in-scope finding: tests that already pass at the base revision, or a high in-scope finding, keep it off main as an objection; a low or out-of-scope finding does not",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-C4",
+      "group": "C. Work envelopes, cells and the Gnomon integration",
+      "statement": "Live progress and permission requests stream from Gnomon's ACP interface to the factory, so approvals can be answered from the cockpit.",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: the criteria cover what the kernel does; what it does not do is recorded in contract/deferred/c.json",
+      "acceptance": [
+        {
+          "id": "FR-C4-AC-1",
+          "then": "while the dispatcher's builder cell runs in a lane leased to its task, the project's live view reports that cell (task, lane, role, model, tool steps so far and the last action) from the Gnomon audit trail the cell writes; each appended step shows on the next read, an ended session reads as ended, and once the lane is released nothing runs for the project",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C4-AC-2",
+          "then": "while the dispatcher builds, the cockpit's live view of the project returns the running cell's progress and its project list marks the project as running; when the build is done both say nothing runs",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-C5",
+      "group": "C. Work envelopes, cells and the Gnomon integration",
+      "statement": "Gnomon exit buckets, verify outcomes and stop reasons map to factory verdicts, with the native values stored beside the translation.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-C5-AC-1",
+          "then": "exit 0 with verify passed is passed; failed, regressed or passed_unverified is failed; unrunnable, skipped or declined is not measured; exit 2 is a violation; exit 10 is an apparatus failure; the native values travel with each verdict",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C5-AC-2",
+          "then": "an unknown native value raises instead of defaulting to any verdict",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C5-AC-3",
+          "then": "exit codes 12 and 13 on the apparatus_failure bucket are apparatus failures; every Gnomon 0.6.6 stop reason on a bucket and code it can carry maps without raising; under exit_on_fail or --require-verify the record's bucket and code decide the verdict, and the process exit, verify_exit, verify_rounds and verify_reason travel as native values",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-C6",
+      "group": "C. Work envelopes, cells and the Gnomon integration",
+      "statement": "Apparatus failures go to reflexes and are excluded from every success rate.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-C6-AC-1",
+          "then": "a pass rate over runs excludes apparatus failures from numerator and denominator and reports their count separately",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-C6-AC-2",
+          "then": "the Gnomon command is found on PATH as the shell finds it (npm's gnomon.cmd shim on Windows included), and a command that cannot be started is a model error the dispatcher treats as an apparatus failure, never an unhandled crash",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-L1",
+      "group": "L. Ledger and audit",
+      "statement": "One insert-only, hash-chained ledger records runs, artifacts, verdicts, decisions and prices.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-L1-AC-1",
+          "then": "each appended event carries prev and hash (sha256 over canonical JSON), and verify reports an untouched ledger as intact",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-L1-AC-2",
+          "then": "changing any stored event makes verify report the first broken sequence number; a change to the last event, or the end of the chain cut off, is caught only against a head (AC-4)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-L1-AC-3",
+          "then": "the ledger offers append, read and head only; there is no update or delete",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-L1-AC-4",
+          "then": "append returns the stored record and head reports the new head (an empty ledger's head is sequence -1); verify given a head reports a ledger shorter than it as broken at the first missing sequence number, and one whose record at the head's sequence number has another hash as broken there; a malformed head blames no record; verify without a head says the end of the chain was not checked",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-L4",
+      "group": "L. Ledger and audit",
+      "statement": "The kernel prices every model call from a price table kept in the policy repository.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-L4-AC-1",
+          "then": "given per-call token counts and a price table, a run's cost is computed with local and cloud spend separate",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-L4-AC-2",
+          "then": "a model missing from the price table makes the cost not measured, never zero",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-L2",
+      "group": "L. Ledger and audit",
+      "statement": "Only the kernel writes state, and only by appending a transition.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-L2-AC-1",
+          "then": "a project's ledger file only grows: each append adds one line, the stored record, whose sequence number follows the last, and leaves every earlier byte as it was; the store offers no update or delete; writers appending at once, each with its own store, never share a sequence number and the chain verifies intact",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-L2-AC-2",
+          "then": "each state change the kernel makes (a question added, a card opened, a question answered, a card decided, a comment, a pause requested and lifted, an autonomy cap set) changes the project's files together with an appended transition of that kind, the earlier ledger bytes kept, and a person's change names that person; a change the kernel refuses (a non-person, a persona that may not decide) raises DecisionRefused and changes no file of the project",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-L3",
+      "group": "L. Ledger and audit",
+      "statement": "Ledger heads can be signed and anchored externally.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-L3-AC-1",
+          "then": "the cockpit keeps each project's last verified ledger head in the factory home (cockpit/heads.json), outside the project's folder, and moves it forward on an honest append; a last record rewritten with a self-consistent hash still verifies without a head, but the cockpit reports the ledger broken at the kept head's sequence number and keeps the old head",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-L3-AC-2",
+          "then": "a release's capability pack names the project ledger's head hash it was built at (provenance.ledger_head) and says it is not signed (signature null, 'not signed: no signer configured'); that head verifies the history up to it, and a history rewritten consistently from its start no longer holds it; a later ledger record changes the head a rebuilt pack names but not the pack's version or content hash",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-M3",
+      "group": "M. Cockpit and observation",
+      "statement": "Cockpit views are projections of the ledger; M0 delivers the Cell and Floor projections.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-M3-AC-1",
+          "then": "the Cell projection lists each run's id, role, model, verdict with native values, surface hash, chain status and priced cost",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M3-AC-2",
+          "then": "the Floor projection counts runs per phase and verdict, and never averages not-measured runs into a pass rate",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M3-AC-3",
+          "then": "the cockpit returns the Cell projection of a project and the Floor projection of the factory, with an unmeasured cost as null, never zero",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M3-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the Floor's headline is the gate's judgement (first-round pass rate over gated tasks, merges, escalations); each Gnomon run's harness outcome is counted beside it, never in its place"
+        },
+        {
+          "id": "FR-M3-AC-6",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the dashboard widgets' read models (pipeline flow, decision queue with ages, gate trend, task timeline, activity with person or agent, evidence coverage) answer from the records, and an empty factory says not measured, never zero"
+        },
+        {
+          "id": "FR-M3-AC-5",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the cockpit's Floor returns the gate headline, with the harness outcomes and their note beside it"
+        }
+      ]
+    },
+    {
+      "id": "FR-S1",
+      "group": "S. Canon",
+      "statement": "The canon holds the goal, epics, decisions, assumptions, open questions and status; agents write proposals to an inbox and notes to an exchange.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-S1-AC-1",
+          "then": "a new project has a canon with goal, brief, questions, assumptions, decisions, an inbox and an exchange",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-S1-AC-2",
+          "then": "every canon change is appended to the project's hash-chained ledger, which verifies intact against its head",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-S1-AC-3",
+          "then": "reading the factory's own canon never creates it: a reader gets nothing while it does not exist, and only a writer creates it",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-S4",
+      "group": "S. Canon",
+      "statement": "Every assumption has a due date.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-S4-AC-1",
+          "then": "every assumption has a due date, and an open assumption past its due date is listed as overdue",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-S3",
+      "group": "S. Canon",
+      "statement": "Agents write only proposals for humans (an inbox that empties) and notes to each other (an exchange folder deleted once concluded). Nothing becomes true without the gate. A transcript is evidence, not truth.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-S3-AC-1",
+          "then": "what agents file (a builder's failed task, an outside observation, a coding agent's change over MCP) waits in the Inbox as open cards with nothing decided; a decision signed by an agent, a model, the assistant or the factory is refused; the Inbox empties only as named people decide",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-S3-AC-2",
+          "then": "a builder cell that answers done with a test that checks nothing is not merged: main does not move and its criterion stays not measured; a criterion becomes verified only through a passing gate and a merge",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-S3-AC-3",
+          "then": "ingesting a Gnomon run that claims success adds one ledger event and changes no decision, question, assumption, spec, contract, task state or evidence state; a rewritten trail is tampered and not measured whatever it claims",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-M6",
+      "group": "M. Cockpit",
+      "statement": "The Inbox is the only write path; every decision is signed with a person and a persona.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-M6-AC-1",
+          "then": "a decision attributed to a non-person (factory, model, agent and the like) is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M6-AC-2",
+          "then": "a decision by a persona not allowed to decide that kind of card, or with a verdict that kind does not take, is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M6-AC-3",
+          "then": "every decision made through the cockpit is recorded in the canon and the ledger with the person and persona who made it",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-A6",
+      "group": "A. Intake",
+      "statement": "Intake runs in socratic, assume or mixed mode, and a person may let the factory assume any open question.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-A6-AC-1",
+          "then": "in socratic mode every panel question becomes an open Inbox question and nothing is assumed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A6-AC-2",
+          "then": "in assume mode every question becomes an assumption with a due date and no question card is opened",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A6-AC-3",
+          "then": "in mixed mode blocking questions go to the Inbox and the rest are assumed; a person can turn an open question into an assumption",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A6-AC-4",
+          "then": "through the cockpit a person can answer an open question or let the factory assume it, and the brief is regenerated",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A6-AC-5",
+          "then": "each panel question offers two to four options a person can pick, the panel's proposal first",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A6-AC-6",
+          "then": "the cockpit returns each question's options with the proposal first, and an option chosen there is recorded as the signed answer",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-A7",
+      "group": "A. Intake",
+      "statement": "A panel of perspectives (business, end user, IT and security, operations, delivery) reads every request; differing opinions are kept, not averaged.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-A7-AC-1",
+          "then": "every perspective of the panel is asked, and each question records the perspective that asked it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A7-AC-2",
+          "then": "differing opinions from perspectives on one question are kept side by side on that question",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-A5",
+      "group": "A. Intake",
+      "statement": "When intake is incomplete it produces a send-back list instead of inventing answers.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-A5-AC-1",
+          "then": "the spec is not made while blocking questions are open, and the open blocking questions are returned",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-A3",
+      "group": "A. Intake",
+      "statement": "Every requirement records its provenance tier, decided by rule, not by a model.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-A3-AC-1",
+          "then": "a requirement resting on an answered question is customer-confirmed by its answerer; on the request, customer-endorsed by the requester; on an assumption, an assumption; otherwise vendor-proposed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A3-AC-2",
+          "then": "a requirement id given in the customer's own material is kept as the requirement's id, so the contract and tests use the customer's names",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-A2",
+      "group": "A. Intake",
+      "statement": "The factory accepts a vague explanation of what should be built and turns it into the same contract through classification and guided questions. Solution Factory is the model for this. Answers are signed, so each resulting requirement records who confirmed it.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "notes": "Partly built: refusing a brief too ambiguous to classify, with reasons, is not built; contract/deferred/a.json records what exists and what is missing.",
+      "acceptance": [
+        {
+          "id": "FR-A2-AC-1",
+          "then": "a vague idea is classified by rule (its kind of source, and a work profile with the keywords it rests on) and turned into guided questions with options, the panel's proposal first; a blocking question goes to a person and the run waits on its card instead of writing a spec",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A2-AC-2",
+          "then": "an answer is signed by a named person (one given as the factory is refused), and the contract compiled from the answered idea passes the contract checker, each requirement resting on that answer customer-confirmed and naming who confirmed it and when",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A2-AC-3",
+          "then": "an empty request, or a folder with nothing to read, is refused with its reason before any panel is asked, and intake writes nothing",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-A4",
+      "group": "A. Intake",
+      "statement": "A change request becomes a contract amendment. The factory computes exactly which tasks it reopens.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-A4-AC-1",
+          "then": "for an amendment touching 14 of 20 requirements, the impact shown before the decision lists the 14 tasks that trace to them, and applying it reopens exactly those tasks, each naming its requirement, while the other 6 keep their merged state",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A4-AC-2",
+          "then": "after an amendment the next build rebuilds only the reopened task, and every other merged task keeps the revision it was merged at",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A4-AC-3",
+          "then": "an applied amendment is a new contract revision committed to the product's main, the spec it amended is kept as a version, and the ledger records the changed requirements with the new revision",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-O3",
+      "group": "O. Spec to verify",
+      "statement": "Checks come in two custodies: visible tests and holdout scenarios kept apart from the build.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-O3-AC-1",
+          "then": "holdout scenarios are stored outside the project folder and the product repository, and no envelope shows a holdout criterion",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O3-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a holdout rewrite after a scenario-defect ruling sees the person's reason and what the earlier scenarios met on the running service (never the code), for the rewritten criteria only; scenarios never guess seeded ids"
+        },
+        {
+          "id": "FR-O3-AC-3",
+          "then": "a person's reason on a holdout ruling, and the reason a holdout rewrite records, are kept in the holdout custody; the canon and the ledger (so the evidence pack) hold only the reason's sha256, its length and a pointer to the custody, the holdout author still receives the reason, and decisions on every other card kind keep their reason unchanged",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O3-AC-4",
+          "then": "the holdout prompt explains reusing a value from the previous step's response once, and keeps every instruction it gave before",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-O4",
+      "group": "O. Spec to verify",
+      "statement": "From the contract, check plan and envelope, the kernel compiles each cell's Gnomon surface (.gnomon/policy.toml, .gnomon/roles.toml): write scope from the envelope; the contract, specs and CI write-protected through [governance.paths]; [verify] with a contract preset, test_must_fail_first, protects, exit_on_fail, record_detail and the finish gate.",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: the criteria cover what the kernel does; the rest is recorded in contract/deferred/o.json",
+      "acceptance": [
+        {
+          "id": "FR-O4-AC-1",
+          "given": "a product compiled from its spec",
+          "when": "its repository's first commit is read",
+          "then": "it carries the .gnomon/policy.toml and roles.toml the kernel compiled; the builder's write_allow is the write scope every contract task and its envelope name, the contract, the surface and factory/ lie outside it, and no other role may write",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O4-AC-2",
+          "given": "a product whose surface the kernel recompiled from changed routing",
+          "when": "the next cell is dispatched",
+          "then": "the cell's lane starts at the kernel's recompile commit on main and runs under that surface, and each recompile is in the ledger with its reason",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-O5",
+      "group": "O. Spec to verify",
+      "statement": "After each run, `gnomon check --base <rev>` judges the change by the base revision's rules; the kernel then traces each criterion through test reports at the head and base revisions.",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: the criteria cover what the kernel does; the rest is recorded in contract/deferred/o.json",
+      "acceptance": [
+        {
+          "id": "FR-O5-AC-1",
+          "given": "a task with two visible criteria and a cell that left a test naming each",
+          "when": "the gate judges the cell's head",
+          "then": "each criterion's head tests run at the base revision one criterion at a time; only the criterion whose tests pass there (and on the bare template) is named in the fail-first objection, and a change whose tests all fail at base passes fail-first",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O5-AC-2",
+          "given": "a task with two visible criteria and a cell that left a test naming only one",
+          "when": "the gate judges the cell's head",
+          "then": "the whole suite runs at head and each visible criterion is traced to the tests that name it: the criterion no test names fails the trace and is named in the objection and the escalation, and each test's outcome at head is kept in the gate's record",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-O7",
+      "group": "O. Spec to verify",
+      "statement": "The contract changes only through an amendment signed in the Inbox; the kernel then recompiles surfaces and reopens exactly the tasks whose criteria changed.",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: the criteria cover what the kernel does; the rest is recorded in contract/deferred/o.json",
+      "acceptance": [
+        {
+          "id": "FR-O7-AC-1",
+          "given": "a change request filed against a compiled product",
+          "when": "it is applied before, without, or after a decision",
+          "then": "the contract changes only after a named person with a deciding persona accepts the card in the Inbox: undecided, rejected, or decided by a non-person or a persona that may not decide, the contract revision, the product's main and the spec stay as they were; once accepted, the new revision names the person and the product's main carries it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O7-AC-2",
+          "given": "a product whose tasks are all merged",
+          "when": "an accepted amendment changes one requirement",
+          "then": "only that requirement's task goes back to pending, every other task keeps its merged revision, and the next build rebuilds only the reopened task",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-O7-AC-3",
+          "given": "a builder cell that rewrites the product's contract.json to drop its own criteria",
+          "when": "the gate judges it",
+          "then": "neither the kernel's contract nor the criteria its gate traces change: the dropped criterion is still required, and the rewrite stays on the cell's branch when the gate fails",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-G1",
+      "group": "G. Gate and evidence",
+      "statement": "A change advances only with two independent signals bound to its revision: warranted (evidence) and permitted (policy or a person).",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-G1-AC-1",
+          "then": "a task merges into the product only when tests, trace, fail-first and the verifier all pass and a permission is recorded, at the same revision",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-G2",
+      "group": "G. Gate and evidence",
+      "statement": "An acceptance criterion counts as met only when an executing test names it, the factory saw the test run, and the test failed on the revision before the change.",
+      "provenance": "vendor-proposed",
+      "notes": "Partly built: the gate finds a criterion's test by its name in the test files, not among the tests it saw execute, so a skipped or never-collected test still counts. What is missing is in contract/deferred/g.json.",
+      "acceptance": [
+        {
+          "id": "FR-G2-AC-1",
+          "then": "the gate runs the product's suite itself and records each test's outcome it saw; a cell that reports every test passing while a criterion's test fails gets a failed tests signal naming that test, an objection, and no merge",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-G2-AC-2",
+          "then": "the gate copies the head's tests onto the revision before the change, runs each criterion's tests there and records that revision; a test that fails there lets fail-first pass, and a test that passes there and on the bare template fails the gate with an objection naming it, and nothing merges",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-G2-AC-3",
+          "then": "a criterion is verified only while a test on main names it and a gate passed for its task: a test pushed to main past the gate leaves its criterion claimed, and once the verifying test leaves main the criterion is not measured",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-G8",
+      "group": "G. Gate and evidence",
+      "statement": "Objections are preserved with provenance.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-G8-AC-1",
+          "then": "a task that still fails after the bounded repair rounds becomes an escalation card carrying every objection",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-G8-AC-2",
+          "then": "a person's decision on an escalation is carried out: retry reopens the task, accept as is merges it with the person as the permission and the gate's verdict kept, stop halts the build",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-I3",
+      "group": "I. Production loop",
+      "statement": "Triage classifies each signal and routes it back to its stage.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-I3-AC-1",
+          "then": "a submitted change is classified into exactly one class and given the stage it returns to",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-I3-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "feedback that mixes several requests is split into one change card per part, each with its own class and way back, keeping the person and persona who gave it; a part is never split again"
+        }
+      ]
+    },
+    {
+      "id": "FR-P4",
+      "group": "P. Upstream",
+      "statement": "A requirement change goes through a business decision and then back into the chain.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-P4-AC-1",
+          "then": "a change request or new requirement is applied only after a business decision accepts it",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "id": "FR-P1",
+      "statement": "Business needs arrive as signals from the operation (chats, feeds, monitoring, forms, meetings, embeds); a signal about an existing project becomes a change there, a new need becomes a concept that a business or product owner validates into a project.",
+      "acceptance": [
+        {
+          "id": "FR-P1-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a signal naming an existing project becomes a change card there; a new need becomes a concept card only a business or product owner may edit or decide; validation creates the project with its profile and intake starts from the need"
+        }
+      ]
+    },
+    {
+      "id": "FR-P2",
+      "group": "P. Upstream",
+      "statement": "Stage 2, the concept factory: agents produce question lists, a UI concept and functional requirements, each with a state (confirmed, proposed, assumed) and a source, plus open questions; SMEs and end users test the concept, and the PM approves the package. Acceptance: the user flow is understood without guidance, and the content comes from the business, not from a consultant.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "notes": "partly built: the criteria cover what exists; what is not built is recorded in contract/deferred/pq.json",
+      "acceptance": [
+        {
+          "id": "FR-P2-AC-1",
+          "then": "every requirement the analyst drafts keeps a state decided by rule (customer-confirmed, customer-endorsed, assumption, vendor-proposed) and its sources (the request, a question id, or 'proposed'); a source that is none of these, such as a consultant's notes, is not kept, so content the business neither asked for nor confirmed is vendor-proposed, never confirmed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-P2-AC-2",
+          "then": "while the package waits for approval, the cockpit shows every requirement with its state, owner and sources; the approval card names each requirement's state and only a business owner, product owner or developer may decide it; and every question shows its state: answered with who answered, assumed with who chose it and the assumption's due date, or open with whether it blocks",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-P3",
+      "group": "P. Upstream",
+      "statement": "Stage 3 reports what carried into the build brief and what was dropped. Open requirements are decided by the process owner before building, never by the factory.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "notes": "partly built: the criteria cover what exists; what is not built is recorded in contract/deferred/pq.json",
+      "acceptance": [
+        {
+          "id": "FR-P3-AC-1",
+          "then": "a question put to a person is settled only by a named person: the factory cannot assume it on its own, a non-person is refused and nothing is recorded; while a blocking one is open the pipeline waits on its card and writes no spec, and after a person answers, the spec is written with the requirement resting on the answer confirmed by that person",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-P5",
+      "group": "P. Upstream",
+      "statement": "When an approval is withdrawn or a requirement amended, later approvals resting on it become stale.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-P5-AC-1",
+          "then": "applying a change marks every approval resting on a changed requirement as stale",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-P5-AC-2",
+          "then": "before a change is decided, its impact is shown: the requirements, their criteria and the tests naming them, the tasks that would reopen, the approvals that would go stale and the releases carrying them, and nothing is changed by showing it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-P5-AC-3",
+          "then": "the cockpit returns a change card's impact before the decision, and showing it changes nothing",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-K2",
+      "group": "K. Antifragility",
+      "statement": "An incident closes only when it has left a lesson behind.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-K2-AC-1",
+          "then": "a defect is closed only with a regression criterion added to the contract and recorded as a lesson",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-T1",
+      "group": "T. Cockpit for every party",
+      "statement": "The cockpit serves more than technical monitoring: each persona has its own view and actions.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-T1-AC-1",
+          "then": "each persona's inbox shows only the cards that persona may decide, with only that kind's verdicts; a refused decision records nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-T1-AC-2",
+          "then": "the cockpit binds to loopback only, its sign-in link works once, and a write without a valid session token or from a foreign origin is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-T1-AC-3",
+          "then": "the project view summarises each stage with its count and groups the seven stages into four bands: Decide, Shape, Deliver and Run",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-T1-AC-4",
+          "then": "each project says in one line what it is doing, with its state: working, waiting on you, done or failed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-T1-AC-5",
+          "then": "each project's health is on track, at risk or off track, every reason names its record, and the forecast comes from the project's own history or says not measured",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-T1-AC-7",
+          "then": "live shows what the running cell does from Gnomon's own audit trail: the task, lane, role, model, tool steps so far and the last action",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-T1-AC-6",
+          "then": "the projects list and the project view carry each project's now state and line, and the project view carries its health",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-T1-AC-9",
+          "check": {
+            "kind": "test"
+          },
+          "then": "each persona starts in its own lens (business, concept, delivery, operations, insight) and may switch; within a project the current stage brings its views forward first"
+        },
+        {
+          "id": "FR-T1-AC-10",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a person may comment on a requirement, criterion, task, release or card without deciding anything; a non-person is refused; only a product owner or business owner promotes a comment into a change card, once"
+        },
+        {
+          "id": "FR-T1-AC-8",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the cockpit returns the live view of a project's running cell read from a Gnomon audit trail, and says when none runs"
+        },
+        {
+          "id": "FR-T1-AC-14",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the capability catalogue lists every capability with its state (in use, pilot, trying, building, shaping, proposed), profile, deliverable and pack validity"
+        },
+        {
+          "id": "FR-T1-AC-11",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the dashboard route returns every widget's read model and writes nothing; a layout with its theme is kept per person, persona and lens, and unknown widgets, more than 24 widgets, theme values outside the fixed sets and a non-person are refused, with nothing written to any project ledger"
+        },
+        {
+          "id": "FR-T1-AC-12",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the context route gives the persona's default lens and the stage-ordered views with the profile; an explicit lens overrides the default"
+        },
+        {
+          "id": "FR-T1-AC-13",
+          "check": {
+            "kind": "test"
+          },
+          "then": "comments through the cockpit are signed and listed by target; a stakeholder may comment but not promote, and a product owner's promotion makes a change card"
+        },
+        {
+          "id": "FR-T1-AC-15",
+          "check": {
+            "kind": "test"
+          },
+          "then": "through the cockpit a signal is triaged into a concept an owner validates into a project at once; an embed's key is returned once and never listed; the autonomy cap is set only by an allowed persona with a reason; an evidence pack is downloadable once from the exports folder; an update is applied when decided; and a refusal is a 403 or a 400, never a 500"
+        },
+        {
+          "id": "FR-T1-AC-16",
+          "check": {
+            "kind": "test"
+          },
+          "then": "reading a project's capability pack through the cockpit never builds one: it shows the pack as last written (or that the latest release has none) and records nothing, not even the factory's own canon; building is an explicit POST signed by a person whose persona exports evidence, and keeps the version while the content is the same"
+        },
+        {
+          "id": "FR-T1-AC-17",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a person drives the cockpit over a demo home in headless Chrome: signs in, switches the lens, validates a concept on the square as a business owner, decides a card in a project, resizes a widget in Customize and saves it, asks the assistant a where-is question and is taken there, and opens Settings, with no console error, failed request or CSP violation at any step; skipped when Chrome is not installed"
+        }
+      ]
+    },
+    {
+      "id": "FR-T2",
+      "group": "T. Cockpit for every party",
+      "statement": "Visibility follows the delivery square: customer views never show internal or commercial data, and IT sees environments and technical decisions, not commercial data or estimates.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-T2-AC-1",
+          "then": "an embed, the view a customer's users and business people reach, answers from its title, public brief and the conversation only: no spec, criterion, question, assumption, decision, comment, price, estimate or run record reaches its model or its reply",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-T2-AC-2",
+          "then": "IT's inbox holds environment and technical decisions only (roads, deploy gates, trust, incidents, updates); no approval, validation, change, concept, escalation or holdout ruling is put to IT, and IT's decision on one is refused",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-T3",
+      "group": "T. Cockpit for every party",
+      "statement": "Tools are views: boards and digests are generated into where each party already works (Teams, Jira, Azure Boards, Planner or the cockpit); an integration is built only after the agreement has worked by hand, and every sync ends in a proposal, never directly in the canon.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-T3-AC-1",
+          "then": "whatever another tool sends in (a board feed or a chat as a signal, a coding agent over MCP, a website's embed) ends as an open card for a person: a change on the project it names or a concept in the factory's Inbox; no decision, answer, assumption, spec or contract changes",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-T3-AC-2",
+          "then": "the factory's reads reach a developer's coding agent over MCP as views of the kernel's read models (now, health, evidence, what waits on the persona), and reading through them writes nothing in the factory home",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "id": "FR-V1",
+      "statement": "The cockpit has an assistant: it answers where something is and how the work is going from the records, navigates, and proposes actions a person confirms; it never acts itself.",
+      "acceptance": [
+        {
+          "id": "FR-V1-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a 'where is' question is answered from the cockpit's own map of views and controls, with no model"
+        },
+        {
+          "id": "FR-V1-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the assistant's proposals pass the Inbox rules (card exists and is open, verdict allowed, persona may decide) or are dropped with the reason; sources outside the snapshot are flagged; the assistant writes nothing"
+        },
+        {
+          "id": "FR-V1-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a route the cockpit does not have is never followed, and a model that gives no usable answer falls back to the map with a note"
+        },
+        {
+          "id": "FR-V1-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the assistant role runs through Gnomon in the toolless analyst lane"
+        },
+        {
+          "id": "FR-V1-AC-6",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the assistant may propose reshaping the cockpit (layout operations on known widgets, theme settings from fixed tokens) and a website chat embed, each checked against those boundaries and the persona; anything outside them is dropped with the reason, and it writes nothing"
+        },
+        {
+          "id": "FR-V1-AC-5",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the assistant route answers 'where is' from the map with no model; an injected model's proposals come back checked and the route writes nothing; every view in the cockpit map is routable and every control is on the page"
+        }
+      ]
+    },
+    {
+      "id": "FR-I1",
+      "group": "I. Production loop",
+      "statement": "End-user feedback re-enters the factory.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-I1-AC-1",
+          "then": "an end-user tester's feedback submitted through the cockpit becomes a change card with a triage class",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-I1-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "an embed (a chat on a website) files end-user feedback as a change card, or a business need as a signal, only from its allowed origins with its key; its key is stored as a hash, it is rate limited, revocable, and its chat never sees the canon"
+        },
+        {
+          "id": "FR-I1-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a separate embed server serves only the widget and the chat route: CORS for allowed origins only, the key required, rate limited, nothing else served, and loopback unless IT fronts it with a proxy; the widget inserts text as text"
+        },
+        {
+          "id": "FR-I1-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "an embed's snippet points at the embed server, never at the cockpit: at the address the cockpit is given (--embed-base or RIHMA_EMBED_BASE), checked as https or loopback http; without one the snippet says to set it and points at the local embed server for testing; the cockpit serves no widget, refuses an embed base naming itself, and reading the embeds creates nothing"
+        },
+        {
+          "id": "FR-I1-AC-5",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a website chat turn never waits on the factory's own model work: the embed's model runs in a lane of its own, waits at most seconds for it, has a timeout of at most a minute and keeps no task records; on a busy lane, a timeout or any model failure the message is filed without a model reply"
+        }
+      ]
+    },
+    {
+      "id": "FR-K3",
+      "group": "K. Antifragility",
+      "statement": "Changes to the factory itself are proposed by the factory and decided by people.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-K3-AC-1",
+          "then": "a lesson recurring in two projects becomes a proposal, and only after a person accepts it does every new project's contract carry it as a default check",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "id": "FR-V2",
+      "statement": "An observation from outside (a model release, a CVE, eval drift, a compliance deadline, low use) is rendered for a developer, an expert and a business reader, and opens an update card within the autonomy cap.",
+      "acceptance": [
+        {
+          "id": "FR-V2-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "one observation yields developer JSON, an expert sentence and a business proposal; at level 2 or more it opens an update card a named person decides; at level 1 it only informs"
+        },
+        {
+          "id": "FR-V2-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "each pass of the pipeline records the update cards people decided, once each; tick carries out decided concept cards and advances no project"
+        }
+      ]
+    },
+    {
+      "id": "FR-F8",
+      "group": "F. Scheduling",
+      "statement": "Each role, model and work class carries a reliability belief computed from evidence.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-F8-AC-1",
+          "then": "each builder model's cells, escalations, first-round warranted rate and rounds to pass are computed from the product ledgers",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-F8-AC-2",
+          "then": "a gate round a person submitted from their own workspace is never counted for a builder model (nor as an unknown model); it is reported apart, per person",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-Q2",
+      "group": "Q. Customer IT",
+      "statement": "Every infrastructure change appears on the board as a card from IT.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-Q2-AC-1",
+          "then": "an infrastructure change from IT becomes a road card that only the IT persona can decide",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-Q3",
+      "group": "Q. Customer IT",
+      "statement": "IT's requirements (for example network egress rules, TLS versions, identity and secret handling) enter the contract with provenance it-confirmed. They are proved by probes or dry runs like any other criterion.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "notes": "partly built: the criteria cover what exists; what is not built is recorded in contract/deferred/pq.json",
+      "acceptance": [
+        {
+          "id": "FR-Q3-AC-1",
+          "then": "an IT person's answer to the IT and security perspective's question is recorded with the it persona, and the requirement resting on it enters the contract customer-confirmed and decided by that person (assumed instead, it would be an assumption); the compiled contract passes the contract checker",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-Q3-AC-2",
+          "then": "a probe criterion of an IT requirement compiles to a probe check in the contract and the check plan, its scenario is kept in the holdout custody, and it runs against the release on staging: it passes when the service keeps IT's rule, and a revision that breaks the rule fails the release at the holdouts step, naming the criterion and its failing step",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-N1",
+      "group": "N. Interfaces",
+      "statement": "A factory API with read models and a server-sent event stream. Its only write path is a signed decision.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-N1-AC-1",
+          "then": "every read route of the cockpit's API (GET, behind the session token) answers 200 from the records of a seeded factory for every project, the factory's own canon included, and leaves every file under the factory home as it was; the capability pack's route, which records a pack version on its first read, is the one exception (contract/deferred/ln.json)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-N1-AC-2",
+          "then": "every write route that records state is signed: the same valid request is refused with a 403 and changes no file under the factory home when its person is not a person, and is taken from a named person, whose name the ledger record of it carries (a layout: its own file, outside every ledger); the sign-in link, the assistant and the profile proposal change no file, and advance, which takes no person, is the one unsigned write (contract/deferred/ln.json)",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-N2",
+      "group": "N. Interfaces",
+      "statement": "A factory command-line tool for operators.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-N2-AC-1",
+          "then": "the pipeline takes an idea to a built product, stopping at each human gate and continuing after the decision",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-N2-AC-2",
+          "then": "the doctor command prints JSON with Python, Gnomon (found, version, supported at 0.6.5 or later, recommended at 0.6.6), git, docker (optional), whether the lanes root is writable, whether each endpoint's key variable is set (never its value) and the factory home, and exits 1 when Gnomon is missing, its version unreadable or older than 0.6.5",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-N2-AC-3",
+          "then": "the CLI covers every capability feature: security, packs, evidence, embeds, autonomy, signals, concepts, observations, updates, square and catalogue, with writes signed by a person and persona",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-N3",
+      "group": "N. Interfaces",
+      "provenance": "vendor-proposed",
+      "statement": "A headless MCP server gives developers the factory's reads and proposals from their own tools; decisions stay with people in the cockpit.",
+      "acceptance": [
+        {
+          "id": "FR-N3-AC-1",
+          "then": "the server speaks MCP over stdio: initialize, tools/list, tools/call and resources/read work end to end in a subprocess test",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-N3-AC-2",
+          "then": "writes are proposals signed with the server's person and persona (a change card, a comment, a signal); the tool list holds no decide, answer, approve, pause or deploy tool, and the server refuses to start for a non-person",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-N3-AC-3",
+          "then": "holdout scenario content and anything outside the factory home never appear in tool or resource output",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-N4",
+      "group": "N. Interfaces",
+      "provenance": "vendor-proposed",
+      "statement": "A newcomer can learn, install, try and contribute from the repository alone.",
+      "acceptance": [
+        {
+          "id": "FR-N4-AC-1",
+          "then": "`rihma demo` builds a demo factory home with no model keys, no network beyond loopback and no Gnomon; the dashboard read models show its projects, and every decision in it is made by a demo-* persona",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-N4-AC-2",
+          "then": "every relative link in the README, CONTRIBUTING, SECURITY and docs resolves to a file in the repository, and every `rihma` subcommand the README and the getting-started guide name exists in the command line's parser",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-A8",
+      "group": "A. Intake",
+      "statement": "The maturity chosen at intake decides which stages run, which gates apply and where the result lands.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-A8-AC-1",
+          "then": "the maturity decides the delivery plan: explore previews, demo adds holdouts and the owner's acceptance, pilot adds staging and user validation, production adds IT's deploy gate, shadow and canary",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-A8-AC-2",
+          "then": "delivery refuses a paved road that is not configured and opens a road card for IT; nothing is deployed",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "id": "FR-A9",
+      "statement": "A work profile (web service, integration, mobile prototype, ML or data pipeline, agent or assistant, harness engineering, ops agent) shapes intake, spec guidance, roads and the cockpit around the same governance core; it is proposed by rule and chosen by a person.",
+      "acceptance": [
+        {
+          "id": "FR-A9-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a profile is proposed by rule from the request, a person's choice stands, and the profile adds its own questions, drops the look question when there are no screens, and guides the spec"
+        }
+      ]
+    },
+    {
+      "id": "FR-Q4",
+      "group": "Q. Customer IT",
+      "statement": "The deploy package holds the image, the environment settings and the road's rules.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-Q4-AC-1",
+          "then": "the deploy package for a road holds the image or process reference, the environment settings and the road's rules; the Azure package is rendered, validated and holds no secret value",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-H3",
+      "group": "H. Delivery",
+      "statement": "Staging runs holdout scenarios; validated means they passed.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-H3-AC-1",
+          "then": "at pilot and production a release is validated only when every holdout scenario passes against staging; a failure is recorded with its first failing step and the release stops",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-H3-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a failing holdout opens a ruling card a person decides: a product defect becomes a defect with a regression criterion for the requirement whose scenario failed; a scenario defect is rewritten by the holdout author with the reason and the person recorded, and the same revision is delivered again"
+        }
+      ]
+    },
+    {
+      "id": "FR-Q5",
+      "group": "Q. Customer IT",
+      "statement": "The deployment gate belongs to customer IT, per environment.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-Q5-AC-1",
+          "then": "a production deployment waits on a deploy-gate card decided by IT; a refusal stops it and an approval lets it continue",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "id": "FR-Q6",
+      "statement": "Every release has a capability pack: a manifest pinned by hash whose version changes when its content does, valid only while its acceptance holds; and an evidence pack can be exported for review.",
+      "acceptance": [
+        {
+          "id": "FR-Q6-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the capability pack pins the contract and product revisions, keeps its version for the same content, never claims a signature or SBOM it does not have, and says why it is not valid when it is not"
+        },
+        {
+          "id": "FR-Q6-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the evidence pack holds the capability pack, contract, decisions, gates, holdout scores (never scenarios), Gnomon runs and the ledger with its chain check, a manifest of hashes, and its export is recorded with the person"
+        },
+        {
+          "id": "FR-Q6-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "each capability pack declares the workload classes it uses, the site mode (connected, restricted or air-gapped, from the factory policy set by IT or compliance, connected by default) and the fallback ladder L1 to L4 filtered by that mode; the declarations are hashed apart from the acceptance, so a change to them changes the version, and the newest pack is read without writing anything"
+        },
+        {
+          "id": "FR-Q6-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a release exports as one offline bundle folder or zip with the capability pack as JSON and YAML, the contract and product source at the pinned revision, the image reference (an image only when docker has it locally), SHA256SUMS for every file, and a signature only when cosign really signed, otherwise it says why it is not signed"
+        }
+      ]
+    },
+    {
+      "id": "FR-H7",
+      "group": "H. Delivery",
+      "statement": "A candidate is shadow-tested against the current release on recorded production traffic.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-H7-AC-1",
+          "then": "shadow replays recorded requests against the candidate and the current release and reports every differing response",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-H4",
+      "group": "H. Delivery",
+      "statement": "Canary releases are judged automatically and rolled back without a person.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-H4-AC-1",
+          "then": "a canary whose error rate exceeds the current release's is aborted and rolled back with no person involved, the rollback recorded and an incident opened; a healthy one is promoted",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-H1",
+      "group": "H. Delivery",
+      "statement": "CI builds only the revision the gate passed, and re-runs the evidence.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-H1-AC-1",
+          "then": "a release builds and runs the revision whose gate passed and merged it: the release, its artifact, the checkout it was built from and the running product all name that hash, and a later change its gate refused stays on its cell branch and is not in the build",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-H2",
+      "group": "H. Delivery",
+      "statement": "Each release carries signed provenance linking requirement, evidence, policy and approval.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-H2-AC-1",
+          "then": "a delivered release's record names its product revision, its contract revision and the contract's requirement ids, the road rules of each environment it deployed to, and every card it waited on with the verdict, person and persona that decided it; each of those decisions is in the ledger naming the release and its requirements",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-H2-AC-2",
+          "then": "the release's capability pack pins the same product and contract revisions and artifact, lists every contract criterion with its evidence state and carries the autonomy cap in force; it holds no signature and says it is not signed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-H2-AC-3",
+          "then": "the evidence for a criterion a passed gate proved names that gate's task, round and the released revision, and the ledger's merge record for that revision names the policy that permitted it; a holdout criterion names the release it passed against",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-H5",
+      "group": "H. Delivery",
+      "statement": "Production is kept in its approved state by a reconciler. Rolling back code never implies rolling back data.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-H5-AC-1",
+          "then": "when a promoted release fails to start in production, the factory restores the last promoted release there with no person involved, records the rollback in the ledger and opens an incident, and production's data is as it was",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-H5-AC-2",
+          "then": "rolling production back to an earlier release restores its code only: records written while the newer release served are still served by the restored one, from the same data folder",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-H6",
+      "group": "H. Delivery",
+      "statement": "Every release can be rebuilt and rechecked from the ledger, artifacts and pinned revisions with the factory's kernel absent.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-H6-AC-1",
+          "then": "with the kernel not importable, a copy of the product repository and the project ledger alone are enough to read a delivered release's pinned product and contract revisions, check that revision out to the same tree the release was built from, match the contract in it to the pinned contract hash and run the product's own test suite to a pass",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-H6-AC-2",
+          "then": "that kernel-free recheck recomputes the ledger's hash chain with sha256 over canonical JSON and agrees with the kernel's verify: an untouched ledger is intact, and one whose release_started record was edited to pin another revision is broken at that record and pins nothing",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-I2",
+      "group": "I. Production loop",
+      "statement": "Production telemetry, errors and probe failures re-enter the factory.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-I2-AC-1",
+          "then": "a failing production probe opens one incident card per release and environment, not one per probe run",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-S6",
+      "group": "S. Canon",
+      "provenance": "vendor-proposed",
+      "statement": "The canon's contradictions are listed for people, never resolved silently.",
+      "acceptance": [
+        {
+          "id": "FR-S6-AC-1",
+          "then": "alignment lists an assumption taken over a recorded dissent, a requirement resting on a refuted assumption, an overdue assumption and a stale approval not given again",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-S6-AC-2",
+          "then": "the cockpit returns a project's alignment findings, and an empty list when the canon has no contradiction",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-E1",
+      "group": "E. Phases",
+      "provenance": "vendor-proposed",
+      "statement": "Each contract moves through these phases: intake, shape, explore, build, challenge, assemble, gate, release, observe.",
+      "notes": "partly built: the kernel carries the owner's seven stages, not the nine phases; what is not built is recorded in contract/deferred/e.json",
+      "acceptance": [
+        {
+          "id": "FR-E1-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a project starts at stage 1 of seven fixed, ordered, named stages, and the paved road moves it forward only as each stage's output exists: to 2 once intake has run, to 4 once the spec is written, to 5 once the contract is compiled; a blocked step (no intake yet, a blocking question open) leaves the stage where it is"
+        },
+        {
+          "id": "FR-E1-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "once every contract task has merged through its gate, a pilot or production project moves to stage 6 (user validation) and an explore or demo project stays at 5; while a task is escalated the project does not leave stage 5"
+        },
+        {
+          "id": "FR-E1-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a change carried back into a built project recompiles its contract and returns the project to stage 5 with the changed requirement's task reopened; once it merges again the project moves on as before"
+        }
+      ]
+    },
+    {
+      "id": "FR-E2",
+      "group": "E. Phases",
+      "provenance": "vendor-proposed",
+      "statement": "Phase transitions fire on distinct kinds of evidence, never on a count of agreeing agents.",
+      "acceptance": [
+        {
+          "id": "FR-E2-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a task leaves the build stage only on the gate's distinct kinds of evidence (the kernel-run suite, the criterion trace, fail-first at the base, the independent verifier) combined by precedence, not by majority: three passing kinds and one failing kind keep the change off main, and a builder that reports success with a verifier that finds nothing does not merge a change no test names"
+        },
+        {
+          "id": "FR-E2-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the concept stage ends only on a person's answer to each blocking question: when every panel perspective agrees with a blocking question's proposed answer, the paved road still waits at stage 2 on that question's card and writes no spec, however often it runs; once a person answers, the spec is written and the project moves to stage 4"
+        }
+      ]
+    },
+    {
+      "id": "FR-E3",
+      "group": "E. Phases",
+      "provenance": "vendor-proposed",
+      "statement": "\"Insufficient evidence\" is a valid outcome. It returns work to explore.",
+      "notes": "partly built: insufficient evidence is the verdict not measured, and it returns work to the build stage's repair loop, not to an explore phase; see contract/deferred/e.json",
+      "acceptance": [
+        {
+          "id": "FR-E3-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a signal whose evidence cannot be read (a verifier with no usable answer, a suite that runs no tests) is not measured, neither passed nor failed; a gate with such a signal and no failing one is not measured, recorded so in the ledger with the signal that gave it, and the task does not merge"
+        },
+        {
+          "id": "FR-E3-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a not-measured gate sends the work back: the task is built again for further rounds, and when they run out a person decides on a blocking escalation card while the paved road waits at stage 5; a person's retry sends it back once more, and with readable evidence it merges"
+        }
+      ]
+    },
+    {
+      "id": "FR-E4",
+      "group": "E. Phases",
+      "provenance": "vendor-proposed",
+      "statement": "Assemble owns every seam: the interfaces between parts are fixed where every party can see them.",
+      "acceptance": [
+        {
+          "id": "FR-E4-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the product's HTTP interface is fixed in the spec and shown identically to the builder's envelope and the holdout author's prompt, without naming any holdout criterion; a spec without one gets the endpoints its criteria name"
+        },
+        {
+          "id": "FR-E4-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "criteria written as calls to the product's handler (handle('POST', '/path', body)) name the interface as well as 'POST /path' does; a query string is not part of the path"
+        }
+      ]
+    },
+    {
+      "id": "FR-F5",
+      "group": "F. Scheduling",
+      "provenance": "vendor-proposed",
+      "statement": "Write leases give one writer per path scope.",
+      "acceptance": [
+        {
+          "id": "FR-F5-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a task that finds every lane taken waits for a free one, up to a limit, instead of failing, and never shares a lane"
+        }
+      ]
+    },
+    {
+      "id": "FR-F3",
+      "group": "F. Scheduling",
+      "statement": "A lane with heavily overlapping write scopes is capped at one cell.",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: the cap holds for every lane, because tasks on the shared write scope are chained and a build runs one cell at a time; write-scope overlap is not measured (contract/deferred/f.json)",
+      "acceptance": [
+        {
+          "id": "FR-F3-AC-1",
+          "then": "every task a product's contract compiles to writes the same scope and depends on the task before it, so only one task on that scope is ready at a time; a task that waits on a person holds back every later one",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-F3-AC-2",
+          "then": "building a project runs one builder cell at a time: even with several tasks ready and free lanes in the pool, each cell starts only after the task before it has merged, and it takes the first lane",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-F7",
+      "group": "F. Scheduling",
+      "statement": "A prompt that cannot fit the local model window goes to the cloud tier before it starts. Otherwise escalation happens only on stall, failed verification or deadline share. Each escalation is charged to its lane.",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: only the last sentence, with the lane read as the project's task and round; no window check before a cell starts and no compiled escalation policy (contract/deferred/f.json)",
+      "acceptance": [
+        {
+          "id": "FR-F7-AC-1",
+          "then": "when Gnomon escalates a builder cell to another model, the escalation and the model the cell ended on are recorded against that cell's task and round, and the task timeline shows that round as escalated; a round that did not escalate is recorded as not escalated, under its own model",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-F7-AC-2",
+          "then": "the Gnomon run a cell just made is ingested against that cell's task and round, with the model it ended on, its tokens and its cost as the price table prices it; an older run left in the lane is not charged again",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-U1",
+      "group": "U. Product design",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "statement": "Products' screens follow the paved road's design system, which builder agents can read (after Astryx's agent-ready cheat sheet).",
+      "acceptance": [
+        {
+          "id": "FR-U1-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "intake asks the look once and the spec records it, neutral by default; the product template ships the design system, the agent cheat sheet and the look, the container carries the look, and the builder's envelope points to the cheat sheet"
+        }
+      ]
+    },
+    {
+      "id": "FR-P7",
+      "group": "P. Upstream",
+      "provenance": "vendor-proposed",
+      "statement": "At pilot and production, a person approves the plan before anything is built (after Kiro, Cursor Plan Mode and Copilot Workspace).",
+      "acceptance": [
+        {
+          "id": "FR-P7-AC-1",
+          "then": "at pilot nothing is compiled or built until a person approves the plan, one card per plan version; at demo there is no plan gate unless the owner turns it on",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-P7-AC-2",
+          "then": "a rejected plan is drawn again with the person's reason in front of the analyst, and a new card follows",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-P7-AC-3",
+          "then": "a person may edit a requirement before approving and becomes its owner, the card is reissued for the edited plan, and after approval edits go through the change loop",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-P7-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the cockpit returns the plan and its open card; a person's edit through the cockpit is recorded and makes them the requirement's owner; a non-person or a persona that may not edit is refused with nothing recorded"
+        }
+      ]
+    },
+    {
+      "id": "FR-J3",
+      "group": "J. Self-healing",
+      "provenance": "vendor-proposed",
+      "statement": "Safe stop is a first-class state, shown in the cockpit with its reason.",
+      "acceptance": [
+        {
+          "id": "FR-J3-AC-1",
+          "then": "a person may ask a project to pause; it stops at the next safe point between tasks or repair rounds, records where, says so in its now line, and resumes only when a person resumes",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-J3-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "pause and resume through the cockpit are signed with person and persona, refused for a persona that may not pause, and the project's now line says paused"
+        }
+      ]
+    },
+    {
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "id": "FR-K4",
+      "statement": "Autonomy levels per class of change: the factory acts alone only up to the level a person's policy allows (answer, suggest, prepare, deliver), capped for the whole factory and lowerable per project; the kernel enforces it. Built in part: levels per factory and per project, not yet per class of change.",
+      "acceptance": [
+        {
+          "id": "FR-K4-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "only a business owner, IT or compliance sets the cap, with a reason; below 3 nothing is built, below 4 nothing lands on staging or production; a project never exceeds the factory's cap"
+        }
+      ]
+    },
+    {
+      "id": "FR-R1",
+      "group": "R. User validation",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "statement": "Stage 6 runs before production: end users do real tasks against the running release.",
+      "acceptance": [
+        {
+          "id": "FR-R1-AC-1",
+          "then": "testers get a checklist against the running release, one item per criterion in plain given, when, check-that form, each with its evidence state",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-R1-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the cockpit returns the try-it checklist with the release url, and a tester's report on an item becomes a change card that names the criterion"
+        }
+      ]
+    },
+    {
+      "id": "FR-R2",
+      "group": "R. User validation",
+      "statement": "Each observation is classified (UI gap, requirement, data, defect), linked to a requirement and an owner, and routed: UI or concept gaps to stage 2, requirement changes to a business decision, defects to build.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-R2-AC-1",
+          "then": "a tester's observation through the cockpit is a change card signed by the tester, classified by rule and given its way back: a defect to build (stage 5), a requirement change to the spec (stage 4), a new need or a question to stage 2, requirement changes and new needs behind a business decision; an observation with no person or an agent's name is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-R2-AC-2",
+          "then": "when the analyst triages an observation it is linked to the requirements it names that the spec holds, never to one the spec lacks; triage by rule links none",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-R2-AC-3",
+          "then": "a defect goes back to build with no business decision: a regression criterion joins the linked requirement and the task serving it reopens; a requirement change is applied only after a business owner or product owner accepts it",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-R3",
+      "group": "R. User validation",
+      "statement": "The business decides to accept, fix, change or keep, with the test report in front of it.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-R3-AC-1",
+          "then": "at pilot, once every holdout passed on staging, the release waits on a validation card offering accept, fix, change or keep, with the holdout report (verdict, scenarios, passed, failed) and the staging address on it; only a business owner or product owner may decide it, never another persona or a non-person",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-R3-AC-2",
+          "then": "the decision steers the release and is recorded with its person: keep stops it with no hand-off and it is not retried, change stops it and names the card for the change loop, accept lets it finish",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-J2",
+      "group": "J. Self-healing",
+      "provenance": "vendor-proposed",
+      "statement": "Reflexes need no model: retries with backoff, safe stop, rollback.",
+      "acceptance": [
+        {
+          "id": "FR-J2-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "an apparatus failure such as an endpoint error is retried with growing pauses before anyone is asked; only then does the task escalate, saying it was an apparatus failure, not the work"
+        },
+        {
+          "id": "FR-J2-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a model endpoint that fails stops the pipeline cleanly with an apparatus-failure state recorded in the ledger, nothing half-written, and running again resumes"
+        }
+      ]
+    },
+    {
+      "id": "FR-G6",
+      "group": "G. Gate and evidence",
+      "provenance": "vendor-proposed",
+      "statement": "The verifier is pinned apart from the builder: another model family, never a fallback into the builder's.",
+      "acceptance": [
+        {
+          "id": "FR-G6-AC-1",
+          "then": "each role falls back to another model when its endpoint fails, the verifier never falls back and never shares a family with the builder or its fallback, and an existing product's surface is recompiled by a recorded kernel commit",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-X1",
+      "group": "B. Brownfield adoption",
+      "provenance": "vendor-proposed",
+      "statement": "An existing solution enters the factory from its git repository to be monitored, maintained or improved: the factory mirrors it without ever pushing upstream or handling credentials, takes an inventory and a characterisation baseline by rule, holds it to an as-is spec of observed behaviour, and watches the upstream for drift.",
+      "acceptance": [
+        {
+          "id": "FR-X1-AC-1",
+          "then": "a local git repository is adopted with an inventory by rule, a characterisation baseline (or \"not measured\" with the reason), an as-is spec with observed provenance, and a compiled contract; the upstream is never pushed to",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-X1-AC-2",
+          "then": "sync records drift and opens a change card when upstream moved",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-X1-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the pipeline gives an adopted solution a state by its intent instead of asking for an intake: to monitor, monitoring with the last probe result; to maintain or improve, waiting for a change, a workspace submission or a person; a change applied to it goes round the normal loop of build, gate and delivery"
+        }
+      ]
+    },
+    {
+      "id": "FR-W1",
+      "group": "T. Cockpit for every party",
+      "provenance": "vendor-proposed",
+      "statement": "A person works in a real terminal beside the cockpit's chat (Gnomon, Claude Code, OpenCode or a shell), in a workspace of their own; the person is then a cell, and their commits meet the same gate as an agent's.",
+      "acceptance": [
+        {
+          "id": "FR-W1-AC-1",
+          "then": "a workspace is a branch with a context file and an MCP config for the person; it returns the terminal command and launches nothing by itself",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-W1-AC-2",
+          "then": "a person's workspace commits pass the same gate as a cell's and merge, or are escalated; the gate record names the person; an empty submission is refused",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-H8",
+      "group": "G. Gate and evidence",
+      "provenance": "vendor-proposed",
+      "statement": "Security findings from any scanner that writes SARIF 2.1.0 enter the ledger, and a security gate holds open findings at a blocking level until they are fixed or a named person accepts the risk until a date.",
+      "acceptance": [
+        {
+          "id": "FR-H8-AC-1",
+          "then": "a SARIF file from any scanner becomes findings in the ledger; the security gate blocks on open findings at a blocking level; a person's risk acceptance with expiry lets it pass until the expiry; evidence and capability packs name the scan, or say \"not measured\"",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-H8-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "before a release enters staging or production delivery asks the security gate: an open finding at a blocking level holds the release, waiting with a reason that names the findings, until a clean scan arrives or a person accepts the risk; in demo and preview the gate's verdict is recorded in the release step and holds nothing; \"not measured: no security scan\" never holds a release and is recorded"
+        }
+      ]
+    },
+    {
+      "id": "FR-M1",
+      "group": "M. Cockpit and observation",
+      "statement": "Visualise how the factory and the agents inside it work, plus monitoring and observation views.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "acceptance": [
+        {
+          "id": "FR-M1-AC-1",
+          "given": "a project whose tasks builder cells built and the gate judged, one merged and one sent to a person",
+          "when": "its task timeline is read",
+          "then": "each task shows every round in order with the model that built it, its start and end, the gate's verdict and signals, and when the task merged or went to a person; a round whose gate has not ruled yet has no end and no verdict",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M1-AC-2",
+          "then": "the activity view shows the recorded events of every project newest first, one line per event saying what happened (a cell finished, a gate passed or failed, a merge, an escalation, a decision), counted from the ledger; a shorter view keeps the newest",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M1-AC-3",
+          "then": "the cockpit returns a project's task timeline as the kernel computes it from the ledger, answers 404 for a project that does not exist, and reading it records nothing",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-M2",
+      "group": "M. Cockpit and observation",
+      "statement": "One visual grammar across all views: shape and colour show who decides (agent, deterministic code, person), fill shows assurance, an icon shows state, and the line style shows the channel.",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: the grammar's who-decides class is built; the rest is recorded in contract/deferred/m.json",
+      "acceptance": [
+        {
+          "id": "FR-M2-AC-1",
+          "then": "every event the activity view shows is classed by who decided it: a named person with the persona they acted as, an agent in its role (builder, analyst) with the model the ledger records, or the kernel, whose gate, merge, escalation and compile are never attributed to a model or a person",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-M4",
+      "group": "M. Cockpit and observation",
+      "statement": "Every number opens its method and the ledger records it was counted from; numbers carry provenance: observed, derived or proxy.",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: the dashboard's headline figures carry provenance, method and counts; the rest is recorded in contract/deferred/m.json",
+      "acceptance": [
+        {
+          "id": "FR-M4-AC-1",
+          "then": "each headline figure of the dashboard carries its provenance (observed for a count, derived for a ratio), a sentence saying how it was counted, and the numerator and denominator it came from, which match the gate and evidence records and move when the records do",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-M4-AC-2",
+          "then": "a derived figure with nothing to count is null with a denominator of 0, never 0, while an observed count of nothing is 0",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-M7",
+      "group": "M. Cockpit and observation",
+      "statement": "Alerts include a stalled cell, the approval queue over its target, budget burn over forecast, gate flapping, an invariant breach, quota contention, a canary abort and the recurrence of a closed failure class.",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: the canary abort alert is built; the other seven are recorded in contract/deferred/m.json",
+      "acceptance": [
+        {
+          "id": "FR-M7-AC-1",
+          "then": "a canary abort raises an alert with no person involved: one blocking incident card for the release and environment, open only to operations, IT or a developer, listed in the decision queue and counted in the project's now line as waiting on them, with the stopped release among the project's health reasons",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-I4",
+      "group": "I. Production loop",
+      "statement": "Four loops with separate authority: operational healing (reflexes; must work with every model offline), engineering repair (gate, plus a person outside pre-approved classes), product adaptation (the product owner decides), and factory learning (paired evaluation, then human promotion).",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: these criteria cover what exists; the rest is recorded in contract/deferred/ijk.json",
+      "acceptance": [
+        {
+          "id": "FR-I4-AC-1",
+          "then": "with every model endpoint offline the operational loop still runs with no person: a release whose canary shows more errors is rolled back with the current release kept, a failing production probe opens its incident, and no model is asked",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-I4-AC-2",
+          "then": "a reported defect is a pre-approved class: it re-enters the contract with a regression criterion and no person's decision, and its repair merges when the gate warrants it, permitted by policy; a repair the gate refuses waits on an escalation card that a developer, business owner or product owner decides, never operations",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-I4-AC-3",
+          "then": "a change request or new requirement changes the spec only after a business owner or product owner accepts its change card; a developer, operations, IT or an end user may not decide it, and a rejected change is never applied",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-J1",
+      "group": "J. Self-healing",
+      "statement": "The factory heals itself under change, error or disruption where it safely can.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "notes": "partly built: these criteria cover what exists; the rest is recorded in contract/deferred/ijk.json",
+      "acceptance": [
+        {
+          "id": "FR-J1-AC-1",
+          "then": "a release that passed its canary but cannot start on production's data is reverted with no person: the last green release is deployed again on the same data and checked healthy, and an incident card records the rollback",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-J1-AC-2",
+          "then": "a lane whose holder died mid-task is free again at once without anyone releasing it, while a living holder's lane is never shared",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-J1-AC-3",
+          "then": "when reverting to the last green release itself fails, the factory does not pretend: the release is recorded failed with the rollback's error, no slot claims to serve production, and a blocking incident card tells a person the rollback failed",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-K1",
+      "group": "K. Antifragility",
+      "statement": "The factory becomes stronger from failures (antifragile).",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-22",
+      "notes": "partly built: these criteria cover what exists; the rest is recorded in contract/deferred/ijk.json",
+      "acceptance": [
+        {
+          "id": "FR-K1-AC-1",
+          "then": "a check learned from a defect that recurred in two products, once a person accepts it, is in every new product's contract and builder envelope; that product's gate refuses work with no test naming it and accepts work whose test for it fails before the behaviour and passes after",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-K1-AC-2",
+          "then": "lessons are one class when their content words match, whatever their order or case, so the same failure in two products is one class across products and a different failure is another; only a class shared by two products is proposed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-K1-AC-3",
+          "then": "a change the factory proposes to itself is promoted only by a person: it changes nothing until approved, the factory may not approve it, and a proposal a person rejects is never applied nor proposed again, even when its lesson recurs",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-D1",
+      "group": "D. Workspace and artifacts",
+      "statement": "A typed workspace holds every hand-off between cells. Each artifact is pinned to a revision and supersedes or links other artifacts. Artifact types: finding, failure record, patch, open question, objection, decision, seam contract, signal and lesson.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-D1-AC-1",
+          "then": "the hand-off between a builder cell and the gate is pinned to revisions: each repair round's patch is a commit the product repository keeps, recorded in the ledger (cell_ran) with its head; the gate's objections are recorded (gate) against that same head; and the next round's envelope names the contract and base revisions and carries those objections word for word",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-D2",
+      "group": "D. Workspace and artifacts",
+      "statement": "A ledger of paths tried keeps history out of each cell's context.",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-D2-AC-1",
+          "then": "every repair round of a task is appended to the project's hash-chained ledger with its head, verdict and objections, while each round's envelope carries only the previous round's objections: older rounds stay in the ledger, out of the cell's context",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-D2-AC-2",
+          "then": "after a person decides retry on an escalation, the task's next build starts from an envelope with no objections at all, while the ledger still holds every round of the earlier attempt and verifies intact",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-D2-AC-3",
+          "then": "a person's workspace gets a task's earlier rounds by reference, not in its context: its context file names the escalation card but none of its objections, and the project ledger served by the workspace's MCP server holds the gate record with them",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-B4",
+      "group": "B. Shaping and Cynefin routing",
+      "statement": "Holdout acceptance scenarios are written outside the build and kept out of reach of building agents.",
+      "provenance": "vendor-proposed",
+      "notes": "partly built: custody holds through a build; a product-defect ruling still copies the failing step's expectations into a visible criterion (contract/deferred/b.json)",
+      "acceptance": [
+        {
+          "id": "FR-B4-AC-1",
+          "then": "holdout scenarios are written by the holdout author role, asked through Gnomon in the analyst lane, which holds no product code and gives the role no tools; its prompt carries the spec and its interface and none of the product's code, even once the product is built; each stored scenario names holdout_author as its author, and the product's surface has no holdout author role",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-B4-AC-2",
+          "then": "through a build of every task, no builder envelope names a holdout or probe criterion or carries any of its scenario, and no file in a builder's lane, no commit of the product repository on any branch and no file of a person's workspace holds a scenario; the build leaves the custody unchanged",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-Y1",
+      "group": "Y. Capability gateway",
+      "provenance": "vendor-proposed",
+      "statement": "A capability gateway serves capabilities by workload, with declared fallback, quotas and an audit of every request.",
+      "acceptance": [
+        {
+          "id": "FR-Y1-AC-1",
+          "given": "a gateway config whose workloads each declare a class, a data class floor and a fallback ladder over OpenAI-compatible upstreams, and a site mode",
+          "when": "a client calls POST /v1/chat/completions naming a workload, not a model, in its model field",
+          "then": "the gateway (on loopback unless it is behind a proxy) sends the workload's model upstream and climbs the declared ladder in order: L1 the same workload on another upstream, L2 a smaller model whose answer carries a degraded header and field, L3 a cloud upstream only when the site mode and the request's data class allow it (never when air-gapped; a request cannot lower its workload's data class), L4 a queued request answered 202 with an honest \"no answer yet\" and retried; GET /v1/models lists the workloads; a wrong config is refused with the path of the wrong value; a capability pack's declared workloads become gateway workloads",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-Y1-AC-2",
+          "given": "a batch and an interactive workload with per-class concurrency limits and a per-workload token bucket, and a cloud upstream whose key is named by an environment variable",
+          "when": "requests arrive and are answered, degraded, deferred, failed or refused",
+          "then": "a batch request over its class's concurrency limit or its workload's bucket is refused 429 with Retry-After while interactive requests pass; every request is one record in a hash-chained JSONL audit that kernel.ledger's check verifies and a restart continues, with the workload, level, upstream, model, latency, token counts and status but no prompt or answer unless content_capture is set; the key is read from the environment, refused in the config, never sent along a redirect, and absent from the audit and the logs",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-Q8",
+      "group": "T. Cockpit for every party",
+      "provenance": "vendor-proposed",
+      "statement": "Proven capabilities become recipes; a new need is matched to a recipe first and tried in a sandbox before anything is built.",
+      "acceptance": [
+        {
+          "id": "FR-Q8-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a recipe is saved only from a delivered project whose latest capability pack is intact and valid, by a product owner, business owner or IT; a need is matched to recipes by rule (shared keywords and the profile its words name); a new project from a recipe starts from its spec with each parameter as a question, answered or put to a person, and its plan waits for a person"
+        },
+        {
+          "id": "FR-Q8-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a sandbox trial runs an explore release as a local preview with its holdouts (scores only), is stopped automatically when its time limit passes, says its result in plain words, and its outcome (promote or discard) waits for the named person; a decision by anyone else is not applied"
+        }
+      ]
+    },
+    {
+      "id": "FR-F9",
+      "group": "F. Scheduling",
+      "provenance": "vendor-proposed",
+      "statement": "The factory measures how each model and endpoint fits each workload class, and reports it.",
+      "acceptance": [
+        {
+          "id": "FR-F9-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "fit rows per role, model, endpoint and workload class come only from records (the ledgers' Gnomon runs and gate rounds, and imported gnomon eval reports); nothing is estimated, and what was not measured or not mapped is said"
+        },
+        {
+          "id": "FR-F9-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the fit report maps use cases to workload classes, recommends one candidate per workload class by a fixed rule, and says what would change each recommendation"
+        }
+      ]
+    },
+    {
+      "id": "FR-Z1",
+      "group": "Z. Prompts and context",
+      "provenance": "vendor-proposed",
+      "statement": "Model-facing prompts are compact, consistent and cache-friendly: each role reads only instructions it can follow, each rule once, and the parts that repeat between calls come first, word for word, so an endpoint that caches prompt prefixes can reuse them.",
+      "acceptance": [
+        {
+          "id": "FR-Z1-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the analyst lane's system.md is a short prompt of its own (an analyst in Rihma, answering only from its task file, JSON in a fenced block when asked, no tools) and carries none of Gnomon's tool-use rules; the product lanes keep Gnomon's init prompt"
+        },
+        {
+          "id": "FR-Z1-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the product lane's system.md is role-neutral: it keeps every safety rule (read-only `.gnomon/`, `contract.json` and `factory/`, writes only inside the task's paths, LF line endings) and names nothing only the builder can do; each builder rule (a failing test first, the unittest check, the standard library only, the report) is said once, in the builder's envelope"
+        },
+        {
+          "id": "FR-Z1-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the intake perspectives' prompts share one prefix, word for word (the request verbatim and the common instructions), with the perspective-specific part last; a request longer than MAX_SOURCE_CHARS is cut with a note in the prompt saying how much was kept, a `request_cut` ledger event, and a line in the brief"
+        },
+        {
+          "id": "FR-Z1-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the cockpit assistant's prompt starts with its static catalogue (rules, views, controls, actions, the answer's shape) and ends with the snapshot; the snapshot fits a character budget by dropping whole items, least needed first, never slicing its JSON, and its `not_shown` names what was dropped; a layout too large to show is named, not sliced"
+        }
+      ]
+    },
+    {
+      "id": "FR-Q7",
+      "group": "H. Delivery",
+      "provenance": "vendor-proposed",
+      "statement": "A project's stage and its catalogue state follow what was actually delivered.",
+      "acceptance": [
+        {
+          "id": "FR-Q7-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a release that lands in preview, demo or staging puts the project at stage 6 and one promoted to production at stage 7 with released set, each move recorded in the ledger; the catalogue state comes from releases and what runs (in use while production runs, pilot while a release is validated or being validated on staging, trying while a demo is accepted or waits for acceptance or a preview is done, building at stage 5, shaping before); the square counts in production the projects whose production slot is current, and adopted solutions monitored where they run"
+        }
+      ]
+    },
+    {
+      "id": "FR-H9",
+      "group": "H. Delivery",
+      "provenance": "vendor-proposed",
+      "statement": "Holdouts never leave data in an environment end users use.",
+      "acceptance": [
+        {
+          "id": "FR-H9-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "holdouts run against a twin slot of the environment deployed from the same revision on its own data, which is stopped with its data afterwards, so the slot end users try holds none of it; the local-process and docker roads host a twin; a road that cannot host one runs them in the shared slot and the release records \"holdouts ran in the shared slot: this road has no twin\""
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Contract checker",
+      "criteria": [
+        "FR-O1-AC-1",
+        "FR-O1-AC-2",
+        "FR-O1-AC-3",
+        "FR-O2-AC-1",
+        "FR-O2-AC-2",
+        "FR-O2-AC-3",
+        "FR-O2-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "tools/contract_check.py",
+          "tests/test_contract_check.py"
+        ]
+      }
+    },
+    {
+      "id": "T-002",
+      "title": "Criterion trace",
+      "criteria": [
+        "FR-O6-AC-1",
+        "FR-O8-AC-2"
+      ],
+      "depends_on": [
+        "T-001"
+      ],
+      "scope": {
+        "write": [
+          "tools/contract_trace.py",
+          "tests/test_contract_trace.py"
+        ]
+      }
+    },
+    {
+      "id": "T-003",
+      "title": "Self-governance surface check",
+      "criteria": [
+        "FR-O8-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_self_governance.py"
+        ]
+      }
+    },
+    {
+      "id": "T-004",
+      "title": "Verdict vocabulary",
+      "criteria": [
+        "FR-G3-AC-1",
+        "FR-G3-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/verdicts.py",
+          "kernel/__init__.py",
+          "tests/test_verdicts.py"
+        ]
+      }
+    },
+    {
+      "id": "T-005",
+      "title": "Gnomon outcome mapping",
+      "criteria": [
+        "FR-C5-AC-1",
+        "FR-C5-AC-2"
+      ],
+      "depends_on": [
+        "T-004"
+      ],
+      "scope": {
+        "write": [
+          "adapters/gnomon_outcome.py",
+          "adapters/__init__.py",
+          "tests/test_gnomon_outcome.py"
+        ]
+      }
+    },
+    {
+      "id": "T-006",
+      "title": "Hash-chained ledger",
+      "criteria": [
+        "FR-L1-AC-1",
+        "FR-L1-AC-2",
+        "FR-L1-AC-3",
+        "FR-L1-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/ledger.py",
+          "tests/test_ledger.py"
+        ]
+      }
+    },
+    {
+      "id": "T-007",
+      "title": "Gnomon run adapter",
+      "criteria": [
+        "FR-C2-AC-1",
+        "FR-C2-AC-2"
+      ],
+      "depends_on": [
+        "T-005",
+        "T-006"
+      ],
+      "scope": {
+        "write": [
+          "adapters/gnomon_ingest.py",
+          "tests/test_gnomon_ingest.py",
+          "tests/fixtures/gnomon/**"
+        ]
+      }
+    },
+    {
+      "id": "T-008",
+      "title": "Pricing and success rates",
+      "criteria": [
+        "FR-L4-AC-1",
+        "FR-L4-AC-2",
+        "FR-C6-AC-1"
+      ],
+      "depends_on": [
+        "T-007"
+      ],
+      "scope": {
+        "write": [
+          "kernel/pricing.py",
+          "kernel/metrics.py",
+          "tests/test_pricing.py",
+          "tests/test_metrics.py"
+        ]
+      }
+    },
+    {
+      "id": "T-009",
+      "title": "Cell and Floor projections",
+      "criteria": [
+        "FR-M3-AC-1",
+        "FR-M3-AC-2"
+      ],
+      "depends_on": [
+        "T-008"
+      ],
+      "scope": {
+        "write": [
+          "kernel/projections.py",
+          "tests/test_projections.py"
+        ]
+      }
+    },
+    {
+      "id": "T-010",
+      "title": "Preflight",
+      "criteria": [
+        "FR-O8-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "tools/preflight.py",
+          "tests/test_preflight.py"
+        ]
+      }
+    },
+    {
+      "id": "T-011",
+      "title": "Verdict precedence, tightened",
+      "criteria": [
+        "FR-G3-AC-1",
+        "FR-G3-AC-3"
+      ],
+      "depends_on": [
+        "T-004"
+      ],
+      "scope": {
+        "write": [
+          "kernel/verdicts.py",
+          "tests/test_verdicts.py"
+        ]
+      }
+    },
+    {
+      "id": "V-01",
+      "title": "Canon, store and ledger store",
+      "criteria": [
+        "FR-S1-AC-1",
+        "FR-S1-AC-2",
+        "FR-S4-AC-1",
+        "FR-M6-AC-1",
+        "FR-M6-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/store.py",
+          "kernel/canon.py",
+          "kernel/ledgerstore.py",
+          "kernel/people.py",
+          "kernel/filelock.py",
+          "tests/test_canon.py"
+        ]
+      }
+    },
+    {
+      "id": "V-02",
+      "title": "Intake and spec",
+      "criteria": [
+        "FR-A6-AC-1",
+        "FR-A6-AC-2",
+        "FR-A6-AC-3",
+        "FR-A7-AC-1",
+        "FR-A7-AC-2",
+        "FR-A5-AC-1",
+        "FR-A3-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/intake.py",
+          "kernel/spec.py",
+          "kernel/model.py",
+          "tests/test_intake.py"
+        ]
+      }
+    },
+    {
+      "id": "V-60",
+      "title": "Brief section A measured: a vague idea to a signed contract (FR-A2), amendments that reopen exactly their tasks (FR-A4); FR-A1 deferred",
+      "criteria": [
+        "FR-A2-AC-1",
+        "FR-A2-AC-2",
+        "FR-A2-AC-3",
+        "FR-A4-AC-1",
+        "FR-A4-AC-2",
+        "FR-A4-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_a.py"
+        ]
+      }
+    },
+    {
+      "id": "V-03",
+      "title": "Compiler, scaffold and lanes",
+      "criteria": [
+        "FR-O2-AC-5",
+        "FR-O3-AC-1",
+        "FR-C2-AC-3",
+        "FR-C2-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/compile.py",
+          "kernel/scaffold.py",
+          "kernel/lanes.py",
+          "kernel/routing.json",
+          "tests/test_compile.py"
+        ]
+      }
+    },
+    {
+      "id": "V-04",
+      "title": "Gate and dispatch",
+      "criteria": [
+        "FR-G1-AC-1",
+        "FR-G8-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/gate.py",
+          "kernel/dispatch.py",
+          "tests/test_dispatch.py"
+        ]
+      }
+    },
+    {
+      "id": "V-05",
+      "title": "Change loop",
+      "criteria": [
+        "FR-I3-AC-1",
+        "FR-P4-AC-1",
+        "FR-P5-AC-1",
+        "FR-K2-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/change.py",
+          "tests/test_change.py"
+        ]
+      }
+    },
+    {
+      "id": "V-06",
+      "title": "Cockpit",
+      "criteria": [
+        "FR-T1-AC-1",
+        "FR-T1-AC-2",
+        "FR-M6-AC-3",
+        "FR-A6-AC-4",
+        "FR-I1-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "cockpit/**",
+          "tests/test_cockpit.py",
+          "docs/cockpit.md"
+        ]
+      }
+    },
+    {
+      "id": "V-07",
+      "title": "Learning, IT roads and customer ids",
+      "criteria": [
+        "FR-K3-AC-1",
+        "FR-F8-AC-1",
+        "FR-Q2-AC-1",
+        "FR-A3-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/learn.py",
+          "kernel/change.py",
+          "kernel/spec.py",
+          "tests/test_learn.py",
+          "tests/test_change.py",
+          "tests/test_intake.py"
+        ]
+      }
+    },
+    {
+      "id": "V-08",
+      "title": "CLI and pipeline",
+      "criteria": [
+        "FR-N2-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/cli.py",
+          "kernel/pipeline.py",
+          "tests/test_pipeline.py"
+        ]
+      }
+    },
+    {
+      "id": "V-52",
+      "title": "Every capability feature has a command: the CLI as small handlers selected by a table",
+      "criteria": [
+        "FR-N2-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "kernel/cli.py",
+          "tests/test_cli.py",
+          "tests/test_cli_capability.py",
+          "README.md",
+          "docs/getting-started.md",
+          "docs/guides/*.md"
+        ]
+      }
+    },
+    {
+      "id": "V-09",
+      "title": "Delivery and operation",
+      "criteria": [
+        "FR-A8-AC-1",
+        "FR-A8-AC-2",
+        "FR-Q4-AC-1",
+        "FR-H3-AC-1",
+        "FR-Q5-AC-1",
+        "FR-H7-AC-1",
+        "FR-H4-AC-1",
+        "FR-I2-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/roads.py",
+          "kernel/deliver.py",
+          "kernel/operate.py",
+          "tests/test_deliver.py",
+          "tests/test_operate.py",
+          "docs/paved-roads.md"
+        ]
+      }
+    },
+    {
+      "id": "V-67",
+      "title": "Brief section H, delivery: criteria for what is built, tested through the kernel; the rest deferred in contract/deferred/h.json",
+      "criteria": [
+        "FR-H1-AC-1",
+        "FR-H2-AC-1",
+        "FR-H2-AC-2",
+        "FR-H2-AC-3",
+        "FR-H5-AC-1",
+        "FR-H5-AC-2",
+        "FR-H6-AC-1",
+        "FR-H6-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_h.py"
+        ]
+      }
+    },
+    {
+      "id": "V-10",
+      "title": "Gate rules from the live runs",
+      "criteria": [
+        "FR-O6-AC-2",
+        "FR-G8-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/gate.py",
+          "kernel/dispatch.py",
+          "kernel/pipeline.py",
+          "tests/test_gate_rules.py"
+        ]
+      }
+    },
+    {
+      "id": "V-11",
+      "title": "Impact if changed, and alignment",
+      "criteria": [
+        "FR-P5-AC-2",
+        "FR-S6-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/insight.py",
+          "tests/test_insight.py"
+        ]
+      }
+    },
+    {
+      "id": "V-12",
+      "title": "Holdout rulings (from live run 1)",
+      "criteria": [
+        "FR-H3-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/rulings.py",
+          "kernel/pipeline.py",
+          "kernel/compile.py",
+          "kernel/operate.py",
+          "kernel/canon.py",
+          "tests/test_rulings.py"
+        ]
+      }
+    },
+    {
+      "id": "V-13",
+      "title": "The Rihma cockpit: stage rail, impact, alignment, Cell and Floor",
+      "criteria": [
+        "FR-T1-AC-3",
+        "FR-P5-AC-3",
+        "FR-S6-AC-2",
+        "FR-M3-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "cockpit/**",
+          "tests/test_cockpit.py",
+          "docs/cockpit.md"
+        ]
+      }
+    },
+    {
+      "id": "V-14",
+      "title": "One interface for builder and holdout author (from live run 1)",
+      "criteria": [
+        "FR-E4-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/spec.py",
+          "kernel/dispatch.py",
+          "kernel/compile.py",
+          "tests/test_compile.py"
+        ]
+      }
+    },
+    {
+      "id": "V-15",
+      "title": "Split mixed feedback (from live run 1)",
+      "criteria": [
+        "FR-I3-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/change.py",
+          "tests/test_triage_split.py"
+        ]
+      }
+    },
+    {
+      "id": "V-16",
+      "title": "Wait for a free lane (from live run 1)",
+      "criteria": [
+        "FR-F5-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/lanes.py",
+          "kernel/dispatch.py",
+          "tests/test_compile.py"
+        ]
+      }
+    },
+    {
+      "id": "V-17",
+      "title": "The design road for products",
+      "criteria": [
+        "FR-U1-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/design_road.py",
+          "kernel/scaffold.py",
+          "kernel/intake.py",
+          "kernel/spec.py",
+          "kernel/compile.py",
+          "kernel/dispatch.py",
+          "tests/test_compile.py",
+          "tests/test_intake.py"
+        ]
+      }
+    },
+    {
+      "id": "V-18",
+      "title": "Evidence, now, health and question options (UX research)",
+      "criteria": [
+        "FR-A6-AC-5",
+        "FR-O6-AC-3",
+        "FR-T1-AC-4",
+        "FR-T1-AC-5"
+      ],
+      "scope": {
+        "write": [
+          "kernel/status.py",
+          "kernel/canon.py",
+          "kernel/intake.py",
+          "tests/test_status.py",
+          "tests/factory_fakes.py"
+        ]
+      }
+    },
+    {
+      "id": "V-19",
+      "title": "Approve the plan before building",
+      "criteria": [
+        "FR-P7-AC-1",
+        "FR-P7-AC-2",
+        "FR-P7-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "kernel/plan.py",
+          "kernel/spec.py",
+          "kernel/pipeline.py",
+          "tests/test_plan.py"
+        ]
+      }
+    },
+    {
+      "id": "V-20",
+      "title": "Safe stop, live cell view and the try-it checklist",
+      "criteria": [
+        "FR-J3-AC-1",
+        "FR-T1-AC-7",
+        "FR-R1-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/safestop.py",
+          "kernel/status.py",
+          "kernel/dispatch.py",
+          "kernel/pipeline.py",
+          "tests/test_live.py"
+        ]
+      }
+    },
+    {
+      "id": "V-21",
+      "title": "Reflex with backoff (from live runs 2 and 3)",
+      "criteria": [
+        "FR-J2-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/dispatch.py",
+          "tests/test_gate_rules.py"
+        ]
+      }
+    },
+    {
+      "id": "V-22",
+      "title": "Cockpit UX pass (research-led)",
+      "criteria": [
+        "FR-O6-AC-4",
+        "FR-A6-AC-6",
+        "FR-T1-AC-6"
+      ],
+      "scope": {
+        "write": [
+          "cockpit/**",
+          "tests/test_cockpit.py",
+          "docs/cockpit.md"
+        ]
+      }
+    },
+    {
+      "id": "V-23",
+      "title": "Fallbacks per role (from the live 429s)",
+      "criteria": [
+        "FR-G6-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/routing.json",
+          "kernel/lanes.py",
+          "kernel/compile.py",
+          "kernel/cli.py",
+          "tests/test_compile.py"
+        ]
+      }
+    },
+    {
+      "id": "V-66",
+      "title": "Brief section G measured against the code: FR-G2's built part tested end to end; FR-G2's rest, FR-G4, FR-G5, FR-G7 and FR-G9 recorded as not built",
+      "criteria": [
+        "FR-G2-AC-1",
+        "FR-G2-AC-2",
+        "FR-G2-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_g.py"
+        ]
+      }
+    },
+    {
+      "id": "V-24",
+      "title": "Floor headline from the gate (found in the live screenshots)",
+      "criteria": [
+        "FR-M3-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/projections.py",
+          "tests/test_projections.py"
+        ]
+      }
+    },
+    {
+      "id": "V-25",
+      "title": "Dashboard read models",
+      "criteria": [
+        "FR-M3-AC-6"
+      ],
+      "scope": {
+        "write": [
+          "kernel/dashboard.py",
+          "tests/test_dashboard.py"
+        ]
+      }
+    },
+    {
+      "id": "V-26",
+      "title": "Lenses, comments and the cockpit assistant (kernel)",
+      "criteria": [
+        "FR-T1-AC-9",
+        "FR-T1-AC-10",
+        "FR-V1-AC-1",
+        "FR-V1-AC-2",
+        "FR-V1-AC-3",
+        "FR-V1-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/lenses.py",
+          "kernel/canon.py",
+          "kernel/assistant.py",
+          "kernel/lanes.py",
+          "kernel/routing.json",
+          "cockpit/ui_map.json",
+          "tests/test_assistant.py"
+        ]
+      }
+    },
+    {
+      "id": "V-27",
+      "title": "Holdout rewrites learn from the ruling (found in runs 2 and 3)",
+      "criteria": [
+        "FR-E4-AC-2",
+        "FR-O3-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/spec.py",
+          "kernel/compile.py",
+          "kernel/rulings.py",
+          "tests/test_compile.py"
+        ]
+      }
+    },
+    {
+      "id": "V-28",
+      "title": "Cockpit wave 2: plan, pause, live, try it, Floor from the gate",
+      "criteria": [
+        "FR-P7-AC-4",
+        "FR-J3-AC-2",
+        "FR-T1-AC-8",
+        "FR-R1-AC-2",
+        "FR-M3-AC-5"
+      ],
+      "scope": {
+        "write": [
+          "cockpit/server.py",
+          "cockpit/static/app.js",
+          "cockpit/static/app.css",
+          "cockpit/static/index.html",
+          "tests/test_cockpit.py",
+          "docs/cockpit.md"
+        ]
+      }
+    },
+    {
+      "id": "V-29",
+      "title": "The agentic capability layer: profiles, signals, embeds, autonomy, packs, evidence, observations, catalogue",
+      "criteria": [
+        "FR-A9-AC-1",
+        "FR-P1-AC-1",
+        "FR-I1-AC-2",
+        "FR-K4-AC-1",
+        "FR-Q6-AC-1",
+        "FR-Q6-AC-2",
+        "FR-V2-AC-1",
+        "FR-T1-AC-14",
+        "FR-J2-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/profiles.py",
+          "kernel/signals.py",
+          "kernel/embeds.py",
+          "kernel/autonomy.py",
+          "kernel/packs.py",
+          "kernel/evidence_pack.py",
+          "kernel/observations.py",
+          "kernel/dashboard.py",
+          "kernel/pipeline.py",
+          "kernel/canon.py",
+          "kernel/people.py",
+          "kernel/lenses.py",
+          "kernel/intake.py",
+          "kernel/spec.py",
+          "kernel/store.py",
+          "kernel/cli.py",
+          "tests/test_capability.py"
+        ]
+      }
+    },
+    {
+      "id": "V-30",
+      "title": "Assistant reshapes the cockpit within boundaries; evidence pack attestation",
+      "criteria": [
+        "FR-V1-AC-6",
+        "FR-Q6-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/assistant.py",
+          "kernel/evidence_pack.py",
+          "tests/test_assistant.py",
+          "tests/test_capability.py"
+        ]
+      }
+    },
+    {
+      "id": "V-31",
+      "title": "Embed server and widget",
+      "criteria": [
+        "FR-I1-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "embed/__init__.py",
+          "embed/server.py",
+          "embed/static/widget.js",
+          "tests/test_embed_server.py"
+        ]
+      }
+    },
+    {
+      "id": "V-32",
+      "title": "MCP server: the cockpit's reads and proposals, headless",
+      "criteria": [
+        "FR-N3-AC-1",
+        "FR-N3-AC-2",
+        "FR-N3-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "mcp/**",
+          "tests/test_mcp.py",
+          "docs/mcp.md"
+        ]
+      }
+    },
+    {
+      "id": "V-33",
+      "title": "Gnomon 0.6.6: chain and kinds, context, outcome codes, lanes, the command, doctor",
+      "criteria": [
+        "FR-C2-AC-5",
+        "FR-C2-AC-6",
+        "FR-C2-AC-7",
+        "FR-C5-AC-3",
+        "FR-C6-AC-2",
+        "FR-N2-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "adapters/gnomon_ingest.py",
+          "adapters/gnomon_outcome.py",
+          "kernel/lanes.py",
+          "kernel/model.py",
+          "kernel/doctor.py",
+          "kernel/cli.py",
+          "ops/gf-cell-run.sh",
+          "tests/test_gnomon_ingest.py",
+          "tests/test_gnomon_outcome.py",
+          "tests/test_gnomon_066.py",
+          "tests/test_doctor.py",
+          "tests/fixtures/gnomon-0.6.6/**",
+          "docs/gnomon-0.6.6-audit.md",
+          "docs/spec-to-verify.md",
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "V-40",
+      "title": "Brownfield adoption, workspaces beside the chat, and security findings from any scanner",
+      "criteria": [
+        "FR-X1-AC-1",
+        "FR-X1-AC-2",
+        "FR-W1-AC-1",
+        "FR-W1-AC-2",
+        "FR-H8-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "kernel/adopt.py",
+          "kernel/workspace.py",
+          "kernel/security.py",
+          "adapters/sarif.py",
+          "kernel/cli.py",
+          "kernel/dispatch.py",
+          "kernel/gate.py",
+          "kernel/compile.py",
+          "kernel/evidence_pack.py",
+          "kernel/packs.py",
+          "tests/test_adopt.py",
+          "tests/test_workspace.py",
+          "tests/test_security.py",
+          "tests/fixtures/sarif/**",
+          "docs/brownfield.md"
+        ]
+      }
+    },
+    {
+      "id": "V-41",
+      "title": "System scenarios: the features together, end to end, and the fixes they found",
+      "criteria": [
+        "FR-O8-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_system.py",
+          "tests/fixtures/system/**",
+          "kernel/deliver.py",
+          "kernel/insight.py",
+          "kernel/signals.py",
+          "kernel/status.py"
+        ]
+      }
+    },
+    {
+      "id": "V-43",
+      "title": "First open-source release: README, guides, contribution docs and a zero-key demo",
+      "criteria": [
+        "FR-N4-AC-1",
+        "FR-N4-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "README.md",
+          "CONTRIBUTING.md",
+          "SECURITY.md",
+          "pyproject.toml",
+          "docs/getting-started.md",
+          "docs/how-it-works.md",
+          "docs/guides/**",
+          "kernel/demo.py",
+          "kernel/cli.py",
+          "tests/test_demo.py",
+          "tests/test_docs.py"
+        ]
+      }
+    },
+    {
+      "id": "V-42",
+      "title": "Code-quality gate for the factory's own code: stdlib checker, ratchet baseline, coverage fallback",
+      "criteria": [
+        "FR-O8-AC-5"
+      ],
+      "scope": {
+        "write": [
+          "tools/quality.py",
+          "tools/quality_baseline.json",
+          "tools/covered.py",
+          "tests/test_quality.py",
+          "docs/code-quality.md"
+        ]
+      }
+    },
+    {
+      "id": "V-44",
+      "title": "Cockpit redesign: shell, lenses, customisable dashboard, square, catalogue, compliance, embeds, comments, assistant",
+      "criteria": [
+        "FR-T1-AC-11",
+        "FR-T1-AC-12",
+        "FR-T1-AC-13",
+        "FR-T1-AC-15",
+        "FR-V1-AC-5"
+      ],
+      "scope": {
+        "write": [
+          "cockpit/server.py",
+          "cockpit/ui_map.json",
+          "cockpit/static/index.html",
+          "cockpit/static/tokens.css",
+          "cockpit/static/app.css",
+          "cockpit/static/app.js",
+          "cockpit/static/core.js",
+          "cockpit/static/charts.js",
+          "cockpit/static/widgets.js",
+          "cockpit/static/dashboard.js",
+          "cockpit/static/project.js",
+          "cockpit/static/screens.js",
+          "cockpit/static/assistant.js",
+          "cockpit/static/palette.js",
+          "tests/test_cockpit.py",
+          "docs/cockpit.md"
+        ]
+      }
+    },
+    {
+      "id": "V-50",
+      "title": "The delivery lifecycle: stage and catalogue from releases, the security gate in delivery, holdouts in a twin slot, adopted projects and decided cards in the pipeline",
+      "criteria": [
+        "FR-Q7-AC-1",
+        "FR-H8-AC-2",
+        "FR-H9-AC-1",
+        "FR-X1-AC-3",
+        "FR-V2-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/deliver.py",
+          "kernel/roads.py",
+          "kernel/pipeline.py",
+          "kernel/dashboard.py",
+          "kernel/signals.py",
+          "kernel/operate.py",
+          "tests/test_deliver.py",
+          "tests/test_system.py",
+          "tests/test_lifecycle.py",
+          "docs/paved-roads.md"
+        ]
+      }
+    },
+    {
+      "id": "V-51",
+      "title": "Holdout custody and honest learning: ruling reasons held in custody, a compact holdout prompt, people's gate rounds apart from models, and a factory canon that reading never creates",
+      "criteria": [
+        "FR-O3-AC-3",
+        "FR-O3-AC-4",
+        "FR-F8-AC-2",
+        "FR-S1-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "kernel/canon.py",
+          "kernel/compile.py",
+          "kernel/rulings.py",
+          "kernel/learn.py",
+          "tests/test_rulings.py",
+          "tests/test_compile.py",
+          "tests/test_learn.py",
+          "tests/test_custody.py"
+        ]
+      }
+    },
+    {
+      "id": "V-53",
+      "title": "Compact, cache-friendly, non-contradicting prompts: the analyst lane's own prompt, a role-neutral product system.md, a shared intake prefix, the assistant's catalogue first and a budgeted snapshot",
+      "criteria": [
+        "FR-Z1-AC-1",
+        "FR-Z1-AC-2",
+        "FR-Z1-AC-3",
+        "FR-Z1-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/lanes.py",
+          "kernel/intake.py",
+          "kernel/assistant.py",
+          "tests/test_prompts.py",
+          "tests/test_intake.py",
+          "tests/test_assistant.py",
+          "docs/code-quality.md"
+        ]
+      }
+    },
+    {
+      "id": "V-55",
+      "title": "Cockpit and embed polish: embeds point at the embed server, reading a pack never writes, the cockpit driven in a real browser",
+      "criteria": [
+        "FR-I1-AC-4",
+        "FR-T1-AC-16",
+        "FR-T1-AC-17"
+      ],
+      "scope": {
+        "write": [
+          "cockpit/**",
+          "embed/server.py",
+          "kernel/embeds.py",
+          "tests/test_cockpit.py",
+          "tests/test_embed_server.py",
+          "tests/test_ui_drive.py",
+          "docs/cockpit.md",
+          "docs/guides/embeds.md"
+        ]
+      }
+    },
+    {
+      "id": "V-56",
+      "title": "Capability layer: recipes and sandbox trials, measured fit, pack declarations, offline bundles",
+      "criteria": [
+        "FR-Q8-AC-1",
+        "FR-Q8-AC-2",
+        "FR-F9-AC-1",
+        "FR-F9-AC-2",
+        "FR-Q6-AC-3",
+        "FR-Q6-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/recipes.py",
+          "kernel/fit.py",
+          "kernel/bundle.py",
+          "kernel/packs.py",
+          "tests/test_recipes.py",
+          "tests/test_fit.py",
+          "tests/test_bundle.py",
+          "tests/test_packs_declared.py",
+          "docs/guides/recipes-and-fit.md"
+        ]
+      }
+    },
+    {
+      "id": "V-57",
+      "title": "Capability gateway: workloads, a fallback ladder by site mode and data class, quotas and a content-free audit",
+      "criteria": [
+        "FR-Y1-AC-1",
+        "FR-Y1-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "gateway/**",
+          "tests/test_gateway.py",
+          "docs/guides/gateway.md"
+        ]
+      }
+    },
+    {
+      "id": "V-54",
+      "title": "Typing and hygiene: mypy clean on the listed modules and strict on the trust core; one definition of a person for the kernel and the contract checker",
+      "criteria": [
+        "FR-O8-AC-6",
+        "FR-O8-AC-7"
+      ],
+      "scope": {
+        "write": [
+          "kernel/ledger.py",
+          "kernel/ledgerstore.py",
+          "kernel/store.py",
+          "kernel/people.py",
+          "kernel/verdicts.py",
+          "kernel/metrics.py",
+          "kernel/pricing.py",
+          "kernel/projections.py",
+          "kernel/status.py",
+          "kernel/insight.py",
+          "kernel/plan.py",
+          "kernel/safestop.py",
+          "kernel/change.py",
+          "kernel/spec.py",
+          "kernel/scaffold.py",
+          "kernel/design_road.py",
+          "kernel/dispatch.py",
+          "kernel/gate.py",
+          "kernel/model.py",
+          "kernel/filelock.py",
+          "kernel/autonomy.py",
+          "kernel/observations.py",
+          "kernel/evidence_pack.py",
+          "kernel/adopt.py",
+          "kernel/workspace.py",
+          "kernel/security.py",
+          "kernel/doctor.py",
+          "kernel/demo.py",
+          "kernel/profiles.py",
+          "kernel/lenses.py",
+          "adapters/**",
+          "mcp/**",
+          "tools/contract_check.py",
+          "tests/test_typing.py"
+        ]
+      }
+    },
+    {
+      "id": "V-61",
+      "title": "Brief section B measured: holdout custody tested end to end; the Cynefin domain, its shadow classifier and the routing hypothesis recorded as not built",
+      "criteria": [
+        "FR-B4-AC-1",
+        "FR-B4-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_b.py"
+        ],
+        "read": [
+          "kernel/compile.py",
+          "kernel/dispatch.py",
+          "kernel/gate.py",
+          "kernel/lanes.py",
+          "kernel/model.py",
+          "kernel/workspace.py",
+          "kernel/rulings.py",
+          "kernel/change.py"
+        ]
+      }
+    },
+    {
+      "id": "V-62",
+      "title": "Brief section C measured against the code: the envelope's fields, the builder and verifier roles, and live progress from Gnomon's audit trail",
+      "criteria": [
+        "FR-C1-AC-1",
+        "FR-C1-AC-2",
+        "FR-C3-AC-1",
+        "FR-C3-AC-2",
+        "FR-C3-AC-3",
+        "FR-C4-AC-1",
+        "FR-C4-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_c.py"
+        ]
+      }
+    },
+    {
+      "id": "V-63",
+      "title": "Brief section D measured: revision-pinned hand-offs between builder and gate, and the ledger of paths tried kept out of each cell's context",
+      "criteria": [
+        "FR-D1-AC-1",
+        "FR-D2-AC-1",
+        "FR-D2-AC-2",
+        "FR-D2-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_d.py"
+        ]
+      }
+    },
+    {
+      "id": "V-64",
+      "title": "Brief section E, the phase machine: stages that move on evidence, never on agreement, and not measured as a valid outcome, measured by tests through the real pipeline and gate",
+      "criteria": [
+        "FR-E1-AC-1",
+        "FR-E1-AC-2",
+        "FR-E1-AC-3",
+        "FR-E2-AC-1",
+        "FR-E2-AC-2",
+        "FR-E3-AC-1",
+        "FR-E3-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_e.py"
+        ]
+      }
+    },
+    {
+      "id": "V-65",
+      "title": "Brief section F measured: one cell on a shared write scope, escalations charged to their task and round (tests only)",
+      "criteria": [
+        "FR-F3-AC-1",
+        "FR-F3-AC-2",
+        "FR-F7-AC-1",
+        "FR-F7-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_f.py"
+        ]
+      }
+    },
+    {
+      "id": "V-68",
+      "title": "Brief sections I, J and K measured: the loops' authority, healing and antifragility tested end to end; the rest deferred with reasons",
+      "criteria": [
+        "FR-I4-AC-1",
+        "FR-I4-AC-2",
+        "FR-I4-AC-3",
+        "FR-J1-AC-1",
+        "FR-J1-AC-2",
+        "FR-J1-AC-3",
+        "FR-K1-AC-1",
+        "FR-K1-AC-2",
+        "FR-K1-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_ijk.py"
+        ]
+      }
+    },
+    {
+      "id": "V-69",
+      "title": "Brief sections L and N measured: kernel-only append writes, kept ledger heads, the factory API's reads and signed writes",
+      "criteria": [
+        "FR-L2-AC-1",
+        "FR-L2-AC-2",
+        "FR-L3-AC-1",
+        "FR-L3-AC-2",
+        "FR-N1-AC-1",
+        "FR-N1-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_ln.py"
+        ]
+      }
+    },
+    {
+      "id": "V-70",
+      "title": "Brief coverage, section M (cockpit and observation): FR-M1, FR-M2, FR-M4 and FR-M7 measured against the kernel; FR-M5 and the unbuilt parts deferred",
+      "criteria": [
+        "FR-M1-AC-1",
+        "FR-M1-AC-2",
+        "FR-M1-AC-3",
+        "FR-M2-AC-1",
+        "FR-M4-AC-1",
+        "FR-M4-AC-2",
+        "FR-M7-AC-1"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_m.py"
+        ]
+      }
+    },
+    {
+      "id": "V-71",
+      "title": "Brief section O: tests for the built parts of FR-O4, FR-O5 and FR-O7; the rest deferred with reasons",
+      "criteria": [
+        "FR-O4-AC-1",
+        "FR-O4-AC-2",
+        "FR-O5-AC-1",
+        "FR-O5-AC-2",
+        "FR-O7-AC-1",
+        "FR-O7-AC-2",
+        "FR-O7-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_o.py"
+        ]
+      }
+    },
+    {
+      "id": "V-72",
+      "title": "Brief sections P and Q measured: the concept stage, the translation stage and IT's requirements, as far as they are built",
+      "criteria": [
+        "FR-P2-AC-1",
+        "FR-P2-AC-2",
+        "FR-P3-AC-1",
+        "FR-Q3-AC-1",
+        "FR-Q3-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_pq.py"
+        ]
+      }
+    },
+    {
+      "id": "V-73",
+      "title": "Brief sections R, S and T measured: tests for what is built (user validation, the canon's proposals, visibility, tools as views), deferrals for the rest",
+      "criteria": [
+        "FR-R2-AC-1",
+        "FR-R2-AC-2",
+        "FR-R2-AC-3",
+        "FR-R3-AC-1",
+        "FR-R3-AC-2",
+        "FR-S3-AC-1",
+        "FR-S3-AC-2",
+        "FR-S3-AC-3",
+        "FR-T2-AC-1",
+        "FR-T2-AC-2",
+        "FR-T3-AC-1",
+        "FR-T3-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "tests/test_brief_rst.py"
+        ]
+      }
+    },
+    {
+      "id": "V-80",
+      "title": "The website chat in its own model lane: a short timeout, a bounded wait, no kept records, and filing without a model reply on any lock or model failure",
+      "criteria": [
+        "FR-I1-AC-5"
+      ],
+      "scope": {
+        "write": [
+          "embed/server.py",
+          "embed/static/widget.js",
+          "kernel/embeds.py",
+          "tests/test_embed_server.py",
+          "tests/test_embeds_fix.py",
+          "docs/guides/embeds.md"
+        ]
+      }
+    }
+  ]
+}

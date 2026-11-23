@@ -1,0 +1,32 @@
+{
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Semgrep OSS",
+          "semanticVersion": "1.90.0",
+          "rules": [
+            {
+              "id": "python.lang.security.audit.formatted-sql-query",
+              "shortDescription": {"text": "Detected a formatted SQL query"},
+              "defaultConfiguration": {"level": "error"},
+              "properties": {"tags": ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')",
+                                      "OWASP-A03:2021 - Injection"]}
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleIndex": 0,
+          "ruleId": "python.lang.security.audit.formatted-sql-query",
+          "message": {"text": "SQL built with an f-string reaches cursor.execute()"},
+          "partialFingerprints": {"primaryLocationLineHash": "4b1d8a5c0e2f:1"},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "app/report.py"},
+                                              "region": {"startLine": 22}}}]
+        }
+      ]
+    }
+  ]
+}

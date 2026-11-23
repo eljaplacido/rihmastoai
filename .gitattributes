@@ -1,0 +1,5 @@
+# One byte-identical tree on every machine: Gnomon hashes .gnomon/ byte for byte,
+# and the contract revision and envelopes must not differ between Windows and Linux.
+* text=auto eol=lf
+*.png binary
+*.jpg binary

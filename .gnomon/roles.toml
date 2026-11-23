@@ -1,0 +1,67 @@
+# Roles for building Gnomon Factory. Changing a model or a scope is a surface change (hashes).
+# M0 scope: the contract checker, the ledger and the Gnomon adapter. Widen write_allow only by
+# amending the contract, never from inside a cell (.gnomon/ itself is protected by Gnomon).
+
+[roles.scout]
+model = "qwen3.6-35b"
+endpoint = "local"
+max_steps = 20
+max_steps_total = 120
+tools = ["read", "glob", "grep", "compute", "todo", "bash"]
+bash_allow = [
+  '^git (status|log|diff|show)\b',
+  '^python3 -m unittest\b',
+  '^python3 tools/contract_(check|trace)\.py\b',
+  '^(ls|cat|head|tail|wc)\b',                  # no find: -exec and -delete write and run
+]
+description = "Reads, maps and reproduces. Writes nothing."
+
+[roles.builder]
+model = "qwen3.6-35b"
+endpoint = "local"
+max_steps = 28
+max_steps_total = 224
+tools = ["read", "glob", "grep", "compute", "todo", "write", "edit", "bash"]
+write_allow = ["tools/**", "tests/**", "kernel/**", "adapters/**"]
+bash_deny = [
+  '\bgit\s+push\b',                                              # cells never push; people do
+  '\bgit\s+(reset\s+--hard|clean\s+-[a-z]*f|checkout\s+--)\b',  # no discarding work
+  '\bgit\s+branch\b[^|;&]*\s(-D\b|--delete\b)',
+  '\bgit\s+commit\b[^|;&]*--no-verify\b',
+]
+description = "Implements inside its write scope; every criterion gets a test that fails first."
+
+[roles.builder.escalate]
+model = "deepseek-v4-pro"              # the benchmarked cloud partner (11/12 escalations for $0.60)
+endpoint = "go"
+on = ["stuck", "stall", "step_wall", "deadline_share", "verify_failed"]
+carry = "handover"
+
+[roles.verifier]
+# A different model from the builder, so one blind spot does not pass twice.
+model = "glm-5.3"
+endpoint = "go"
+max_steps = 20
+max_steps_total = 80
+tools = ["read", "glob", "grep", "compute", "bash"]       # no write, no edit
+bash_allow = [
+  '^python3 -m unittest\b',
+  '^python3 tools/contract_(check|trace)\.py\b',
+  '^git (status|log|diff|show)\b',
+]
+description = "Read-only. Re-runs the checks and tries to break the change."
+
+[roles.verifier.fallback]
+# Recorded as a degradation when used: the verifier then shares the builder's model.
+model = "qwen3.6-35b"
+endpoint = "local"
+
+[roles.preflight]
+# Preflight (FR-O8-AC-3) checks the engine and the surface: one tool, a hard step cap, and a
+# task that needs exactly one call. Run without --deadline, so [turn] continuation does not apply.
+model = "qwen3.6-35b"
+endpoint = "local"
+max_steps = 3
+max_steps_total = 4
+tools = ["glob"]
+description = "Preflight smoke: one glob, then answer."

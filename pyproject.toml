@@ -1,0 +1,62 @@
+# Rihmasto: standard-library Python, no runtime dependencies (D-0002). Gnomon, its one runtime
+# dependency, is a separate command, not a Python package.
+#
+# Install it editable, from a checkout: `pip install -e .`. The kernel reads `.gnomon/`, `tools/`
+# and `kernel/routing.json` from the checkout, so a copy outside it would not run.
+#
+# The distribution and the commands are named Rihmasto (D-0013); the `rihma*` commands stay as
+# aliases. The Python packages and the file formats' schema ids keep their names: they are wire
+# formats, not product names.
+
+[build-system]
+# 77 or later reads the SPDX licence expression below (PEP 639).
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rihmasto"
+version = "1.0.0.dev0"
+description = "A governed AI solution factory for agentic capability, on the Gnomon harness."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = []
+keywords = ["ai", "agents", "governance", "software factory", "llm", "gnomon"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.urls]
+Homepage = "https://github.com/eljaplacido/rihmastoai"
+Repository = "https://github.com/eljaplacido/rihmastoai"
+Issues = "https://github.com/eljaplacido/rihmastoai/issues"
+Documentation = "https://github.com/eljaplacido/rihmastoai/tree/main/docs"
+
+[project.scripts]
+rihmasto = "kernel.cli:main"
+rihmasto-cockpit = "cockpit.server:main"
+rihmasto-embed = "embed.server:main"
+rihmasto-mcp = "mcp.server:main"
+# The commands' earlier names, kept as aliases of the same entry points (D-0013).
+rihma = "kernel.cli:main"
+rihma-cockpit = "cockpit.server:main"
+rihma-embed = "embed.server:main"
+rihma-mcp = "mcp.server:main"
+
+[tool.setuptools]
+packages = ["kernel", "adapters", "cockpit", "embed", "mcp"]

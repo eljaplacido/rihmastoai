@@ -1,0 +1,35 @@
+{
+  "schema": "rihma.quality_baseline/1",
+  "note": "Counts the gate holds (tools/quality.py --gate). Lower a count when it falls; raise one only with a reason in the commit message.",
+  "thresholds": {
+    "function_lines": 60,
+    "complexity": 15,
+    "module_lines": 500
+  },
+  "tools": {
+    "ruff": "0.17.6",
+    "mypy": "2.4.1"
+  },
+  "counts": {
+    "unparsable_files": 0,
+    "third_party_imports": 0,
+    "bare_excepts": 0,
+    "mutable_defaults": 0,
+    "non_lf_files": 0,
+    "unused_imports": 0,
+    "unused_locals": 0,
+    "duplicate_imports": 2,
+    "unexplained_broad_excepts": 1,
+    "library_prints": 0,
+    "todo_markers": 0,
+    "trailing_whitespace_lines": 0,
+    "unannotated_public_functions": 299,
+    "long_functions": 11,
+    "complex_functions": 54,
+    "large_modules": 7,
+    "duplicate_bodies": 5,
+    "ruff_findings": 98,
+    "mypy_errors": 30,
+    "mypy_strict_kernel_errors": 836
+  }
+}

@@ -1,0 +1,41 @@
+[
+ {
+  "value": {
+   "share_left": 0.00005,
+   "cusum": 1.5e-7,
+   "token_delta": -0.00004,
+   "big": 1e+21,
+   "mid": 123456789012345680000,
+   "ratio": 1.074
+  },
+  "canonical": "{\"big\":1e+21,\"cusum\":1.5e-7,\"mid\":123456789012345680000,\"ratio\":1.074,\"share_left\":0.00005,\"token_delta\":-0.00004}"
+ },
+ {
+  "value": {
+   "ﬁles": 1,
+   "😀docs": 2,
+   "z": 3,
+   "é": 4
+  },
+  "canonical": "{\"z\":3,\"é\":4,\"😀docs\":2,\"ﬁles\":1}"
+ },
+ {
+  "value": {
+   "text": "lone \ud800 surrogate",
+   "ctl": "\u0001\u001f",
+   "quote": "\"\\/"
+  },
+  "canonical": "{\"ctl\":\"\\u0001\\u001f\",\"quote\":\"\\\"\\\\/\",\"text\":\"lone \\ud800 surrogate\"}"
+ },
+ {
+  "value": [
+   0.1,
+   100,
+   0.000001,
+   1e-7,
+   5e-324,
+   0
+  ],
+  "canonical": "[0.1,100,0.000001,1e-7,5e-324,0]"
+ }
+]

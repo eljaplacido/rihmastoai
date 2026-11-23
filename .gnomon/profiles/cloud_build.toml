@@ -1,0 +1,14 @@
+# cloud_build: the builder on the benchmarked cloud partner (deepseek-v4-pro on OpenCode Go).
+#
+# A declared fallback, not the default. Use `--profile cloud_build` when the local lane cannot
+# do the work (endpoint down, capacity). It was added on 2026-11-22 on a wrong diagnosis
+# ("llama-server without --jinja"). The real cause of the text tool calls was a missing
+# .gnomon/tools.toml, so no tool was offered to any model. DeepSeek improvised markup too.
+#
+# Merged over the base roles per field: only the builder moves.
+name = "cloud_build"
+description = "Builder on deepseek-v4-pro (OpenCode Go) while the local lane cannot do tool calls"
+
+[roles.builder]
+model = "deepseek-v4-pro"
+endpoint = "go"

@@ -1,0 +1,37 @@
+# Enforcement for building Gnomon Factory (docs/spec-to-verify.md, links 5 and 6).
+
+[approval]
+gate = "on_write"
+readonly_bash = "allow"            # a bash call Gnomon proves read-only is not asked (CONTRACTS §10)
+
+[sandbox]
+level = "confined"
+network = false
+exec = "os"                        # Linux kernel sandbox; refuses shell on Windows, so cells run on Linux or WSL2
+
+[verify]
+command = "python3 -m unittest discover -s tests"
+after = "change"
+max_rounds = 2
+test_must_fail_first = true        # a new test must fail on the code as it was
+protects = ["@detected", "tests/**/conftest.py"]   # a green check over an edited check config is passed_unverified
+exit_on_fail = true                # failed, regressed, passed_unverified exit 1; unrunnable exits 4
+record_detail = true
+timeout_seconds = 600
+finish_gate = "v2"
+
+[verify.exit_map]
+5 = "unrunnable"                   # unittest exits 5 when no tests ran: nothing was measured
+
+[governance]
+level = "prevent"
+secrets = "enforce"
+ci = "enforce"
+
+[governance.paths]
+# Each list replaces its default, so the CI defaults are repeated. These paths are write-protected
+# for every role (reads stay allowed): the contract, the specs and the intake they were compiled from.
+ci = [
+  ".github/workflows/**", ".github/actions/**", ".gitlab-ci.yml",
+  "contract/**", "specs/**", "intake/**", "decisions/**", "evidence/**", "blueprint/**",
+]

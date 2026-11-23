@@ -1,0 +1,64 @@
+{
+  "_comment": "Which model answers for each role. Configuration, not code (D-0005). The verifier must be a different family from the builder and from the builder's fallback, and has no fallback of its own (FR-G6). A fallback is what Gnomon switches to when the primary endpoint fails, for example on a 429. The cockpit assistant answers from a snapshot, so a local model is enough; it never acts. The `local` endpoint is an OpenAI-compatible server on this machine (llama.cpp's llama-server listens on 8080 by default). A machine's own endpoints go in kernel/routing.local.json, which is not tracked and is merged over this file (docs/guides/local-models.md).",
+  "max_context_tokens": 98304,
+  "roles": {
+    "analyst": {
+      "model": "deepseek-v4-pro",
+      "endpoint": "go",
+      "fallback": {
+        "model": "glm-5.3",
+        "endpoint": "go"
+      }
+    },
+    "holdout_author": {
+      "model": "glm-5.3",
+      "endpoint": "go",
+      "fallback": {
+        "model": "deepseek-v4-pro",
+        "endpoint": "go"
+      }
+    },
+    "builder": {
+      "model": "deepseek-v4-pro",
+      "endpoint": "go",
+      "fallback": {
+        "model": "qwen3.6-35b",
+        "endpoint": "local"
+      }
+    },
+    "verifier": {
+      "model": "glm-5.3",
+      "endpoint": "go"
+    },
+    "assistant": {
+      "model": "qwen3.6-35b",
+      "endpoint": "local",
+      "fallback": {
+        "model": "glm-5.3",
+        "endpoint": "go"
+      }
+    }
+  },
+  "models": {
+    "deepseek-v4-pro": {
+      "family": "deepseek"
+    },
+    "glm-5.3": {
+      "family": "glm"
+    },
+    "qwen3.6-35b": {
+      "family": "qwen"
+    }
+  },
+  "endpoints": {
+    "go": {
+      "kind": "openai",
+      "url": "https://opencode.ai/zen/go/v1/chat/completions",
+      "api_key_env": "OPENCODE_API_KEY"
+    },
+    "local": {
+      "kind": "openai",
+      "url": "http://127.0.0.1:8080/v1/chat/completions"
+    }
+  }
+}

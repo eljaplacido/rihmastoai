@@ -157,7 +157,8 @@ What connects today:
 - **Your own coding agent:** an MCP server over stdio, with reads and proposals, never decisions
   ([docs/mcp.md](docs/mcp.md)).
 - **Signals:** from the command line, the cockpit's JSON API or the MCP server.
-- **Models:** any OpenAI-compatible endpoint, per role, in [kernel/routing.json](kernel/routing.json).
+- **Models:** any OpenAI-compatible endpoint, per role, in [kernel/routing.json](kernel/routing.json)
+  or in your own `kernel/routing.local.json`, which is merged over it.
 
 ## Portability
 

@@ -1487,6 +1487,235 @@ class SquareCatalogueTest(RedesignTestCase):
                 self.assertEqual(self.call("POST", url, who)[0], 500)        # a bug stays a 500, never a verdict
 
 
+class ScreensTest(RedesignTestCase):
+    """The square, the catalogue, the Inbox across projects and Settings, as the routes behind them say."""
+
+    def signal(self, text, persona="stakeholder", person="Sanna"):
+        status, out, _ = self.call("POST", "/api/signals", {"text": text, "channel": "monitoring", "source": "probe",
+                                                            "person": person, "persona": persona})
+        self.assertEqual(status, 201, out)
+        return out["signal"]
+
+    def concept(self, text="Warehouse staff need a way to report damaged pallets from a phone"):
+        sid = self.signal(text)["id"]
+        out = self.call("POST", f"/api/signals/{sid}/triage", {"person": "Sanna", "persona": "stakeholder"})[1]
+        self.assertEqual(out["signal"]["state"], "concept", out)
+        return out["signal"]["routed_to"]["card"]
+
+    def writes(self, kind):
+        return [r["event"]["payload"] for r in factory_project(self.factory).ledger().of_kind(kind)]
+
+    def test_FR_I3_AC_1_a_signal_keeps_its_signers_persona_and_the_change_it_routes_is_triaged_at_once(self):
+        p = self.new()
+        s = self.signal(f"{p.pid}: the TLS certificate must be rotated on the firewall before Friday", persona="it",
+                        person="Ilkka")
+        self.assertEqual(s["persona"], "it")
+        self.assertEqual(self.call("GET", "/api/signals")[1]["signals"][0]["persona"], "it")
+        status, out, _ = self.call("POST", f"/api/signals/{s['id']}/triage", {"person": "Ilkka", "persona": "it"})
+        self.assertEqual(status, 200, out)
+        self.assertEqual(out["signal"]["state"], "routed")
+        cid = out["signal"]["routed_to"]["card"]
+        card = Canon(p).get_card(cid)
+        self.assertEqual(card["payload"]["source"], "it")                    # IT's need, not a stakeholder's
+        self.assertEqual(card["payload"]["triage"]["class"], "infra_change")  # triaged when it was routed
+        self.assertEqual(out["triage"]["class"], "infra_change")
+        view = next(c for c in self.call("GET", f"/api/projects/{p.pid}")[1]["changes"] if c["id"] == cid)
+        self.assertIsNotNone(view["payload"]["triage"])
+        needs = self.call("GET", "/api/square")[1]["people"]["needs"]
+        self.assertEqual(needs, [{"name": "Ilkka", "persona": "it"}])             # the corner says who raised it
+
+    def test_FR_T1_AC_15_the_square_lists_every_new_signal_and_lists_the_rest_on_request(self):
+        from kernel.store import updating_json
+
+        for i in range(58):
+            self.signal(f"Need number {i}: a better label printout for pallets")
+        with updating_json(factory_project(self.factory).path("signals.json"), []) as items:
+            for s in items[3:]:
+                s["state"] = "parked"                 # only S-001 to S-003 are still new, and they are the oldest
+        before = self.ledgers()
+        sq = self.call("GET", "/api/square")[1]
+        listed = [s["id"] for s in sq["signals_list"]]
+        self.assertEqual(sq["signals"], {"new": 3, "total": 58})
+        self.assertEqual(len(listed), cockpit.SQUARE_SIGNALS + 3)
+        self.assertEqual(listed[0], "S-058")                                    # newest first
+        self.assertTrue({"S-001", "S-002", "S-003"} <= set(listed))            # a new signal can always be triaged
+        self.assertFalse(sq["signals_all"])
+        every = self.call("GET", "/api/square?signals=all")[1]
+        self.assertEqual((len(every["signals_list"]), every["signals_all"]), (58, True))
+        self.assert_no_ledger_writes(before)
+
+    def test_FR_T1_AC_15_a_concept_edit_records_only_what_changed_and_its_title_reaches_every_decision_view(self):
+        cid = self.concept()
+        edit = f"/api/concepts/{cid}/edit"
+        card = Canon(factory_project(self.factory)).get_card(cid)
+        same = {k: card["payload"][k] for k in ("profile", "maturity", "mode")}
+        status, out, _ = self.call("POST", edit, dict(same, title="Damaged pallet reports", person="Aino",
+                                                      persona="business_owner"))
+        self.assertEqual((status, out["changed"]), (200, ["title"]), out)
+        self.assertEqual([w["fields"] for w in self.writes("concept_edited")], [["title"]])
+        self.assertEqual([w["fields"] for w in self.writes("cockpit_write") if w["action"] == "edit_concept"], [["title"]])
+        # nothing changed: nothing is written or recorded; another persona is still refused
+        status, out, _ = self.call("POST", edit, dict(same, title="Damaged pallet reports", person="Aino",
+                                                      persona="business_owner"))
+        self.assertEqual((status, out["changed"]), (200, []))
+        self.assertEqual(len(self.writes("concept_edited")), 1)
+        self.assertEqual(self.call("POST", edit, dict(same, person="Dev", persona="developer"))[0], 403)
+        title = cockpit.CONCEPT_PREFIX + "Damaged pallet reports"
+        inbox = self.call("GET", "/api/inbox?persona=business_owner")[1]["cards"]
+        self.assertEqual([c["title"] for c in inbox if c["id"] == cid], [title])
+        decisions = self.call("GET", "/api/dashboard")[1]["decisions"]
+        self.assertEqual([d["title"] for d in decisions if d["card"] == cid], [title])
+        self.assertEqual([c["card_title"] for c in self.call("GET", "/api/square")[1]["concepts"]], [title])
+        # validated, the project knows who asked for it (its need), though project.json does not say
+        out = self.call("POST", f"/api/projects/{FACTORY_PID}/cards/{cid}/decide",
+                        {"verdict": "validate", "reason": "worth a demo", "person": "Aino", "persona": "business_owner"})[1]
+        meta = self.call("GET", f"/api/projects/{out['project']}")[1]["meta"]
+        self.assertEqual((meta["title"], meta["requested_by"]), ("Damaged pallet reports", "Aino"))
+        self.assertEqual(self.runner.started, [])                  # validating starts no job: Advance runs the intake
+
+    def test_FR_T1_AC_15_no_feedback_embed_on_rihma_itself_and_a_second_revoke_records_nothing(self):
+        p = self.new()
+        body = {"kind": "feedback", "origins": ["http://localhost:5501"], "person": "Ilkka", "persona": "it"}
+        status, out, _ = self.call("POST", "/api/embeds", dict(body, project=FACTORY_PID))
+        self.assertEqual(status, 400, out)
+        self.assertIn("Rihma itself", out["error"])
+        self.assertEqual(self.call("GET", "/api/embeds")[1]["embeds"], [])
+        eid = self.call("POST", "/api/embeds", dict(body, project=p.pid))[1]["embed"]["id"]
+        revoke = f"/api/embeds/{eid}/revoke"
+        self.assertEqual(self.call("POST", revoke, {"person": "Ilkka", "persona": "it"})[0], 200)
+        self.assertEqual(self.call("POST", revoke, {"person": "Sanna", "persona": "stakeholder"})[0], 403)
+        status, out, _ = self.call("POST", revoke, {"person": "Ilkka", "persona": "it"})
+        self.assertEqual(status, 409, out)
+        self.assertEqual(len(self.writes("embed_revoked")), 1)
+        self.assertEqual(len([w for w in self.writes("cockpit_write") if w["action"] == "revoke_embed"]), 1)
+
+    def test_FR_T1_AC_14_a_proposed_agent_is_a_capability_pack_and_a_release_without_a_pack_is_named(self):
+        cid = self.concept("We need an assistant agent that drafts replies to supplier emails for the buyers")
+        p = self.new()
+        write_json(p.path("releases", "1.json"), {"release": 1, "maturity": "demo", "state": "done", "steps": []})
+        before = self.ledgers()
+        items = self.call("GET", "/api/catalogue")[1]["items"]
+        proposed = next(i for i in items if i.get("card") == cid)
+        self.assertEqual((proposed["profile"], proposed["deliverable"]), ("agentic_workflow", "capability_pack"))
+        built = next(i for i in items if i["project"] == p.pid)
+        self.assertEqual((built["pack"], built["releases"], built["latest_release"]), (None, 1, 1))
+        dash = self.call("GET", "/api/dashboard")[1]["catalogue"]["items"]
+        self.assertEqual(next(i for i in dash if i.get("card") == cid)["deliverable"], "capability_pack")
+        self.assert_no_ledger_writes(before)                      # a read builds no pack and records nothing
+        self.assertFalse(p.path("packs.json").exists())
+
+    def test_FR_T1_AC_11_no_read_route_creates_the_factory_canon(self):
+        p = self.new()
+        for path in ("/api/dashboard", "/api/catalogue", "/api/square", "/api/inbox?persona=business_owner",
+                     "/api/embeds", "/api/autonomy", f"/api/projects/{p.pid}", "/api/projects"):
+            self.assertEqual(self.call("GET", path)[0], 200, path)
+            self.assertFalse((self.factory.projects_dir / FACTORY_PID).exists(), path)   # reading never creates it
+
+    def test_FR_K4_AC_1_a_run_the_autonomy_cap_stopped_shows_as_capped_with_the_kernels_reason(self):
+        p = self.new()
+        why = "delivering to preview needs autonomy level 3 (prepare); the cap is 2 (suggest)"
+        outcomes = ({"state": "capped", "stage": 5, "why": why, "history": ["spec", "compile"]},
+                    {"state": "waiting", "stage": 2, "why": "blocking questions are open", "waiting_on": ["C-0001"]})
+        for result in outcomes:
+            job = self.call("POST", f"/api/projects/{p.pid}/advance", {"person": "Dev", "persona": "developer"})[1]["job"]
+            _, _, log = next(s for s in self.runner.started if s[0] == job["id"])
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text("starting\n" + json.dumps(result, indent=2) + "\n", encoding="utf-8")
+            self.runner.states[job["id"]] = "done"
+        jobs = {j["id"]: j for j in self.call("GET", "/api/jobs")[1]}
+        capped, waiting = (jobs[s[0]] for s in self.runner.started)
+        self.assertEqual((capped["state"], capped["outcome"]["state"], capped["outcome"]["why"]), ("capped", "capped", why))
+        self.assertEqual((waiting["state"], waiting["outcome"]["state"]), ("done", "waiting"))
+
+    def test_FR_T1_AC_11_the_decisions_widget_lists_every_open_change_the_inbox_lists(self):
+        p = self.new()
+        s = self.signal(f"{p.pid}: the TLS certificate was rotated on the webhook endpoint", persona="it", person="Ilkka")
+        infra = self.call("POST", f"/api/signals/{s['id']}/triage", {"person": "Ilkka", "persona": "it"})[1]
+        cid = infra["signal"]["routed_to"]["card"]
+        self.assertEqual((infra["triage"]["class"], infra["triage"]["needs_decision"]), ("infra_change", False))
+        status, report, _ = self.call("POST", f"/api/projects/{p.pid}/changes",
+                                      {"text": "The order page should also show the parcel weight", "person": "Eetu",
+                                       "persona": "end_user"})
+        self.assertEqual(status, 201, report)
+        self.concept()
+        before = self.ledgers()
+        d = self.call("GET", "/api/dashboard")[1]
+        item = next(i for i in d["decisions"] if (i["project"], i["card"]) == (p.pid, cid))
+        self.assertEqual((item["kind"], item["payload"]["class"], item["payload"]["needs_decision"]),
+                         ("change", "infra_change", False))        # listed though no business decision gates it
+        self.assertEqual(d["kpis"]["decisions"]["value"], len(d["decisions"]))
+        for persona in ("product_owner", "business_owner"):
+            inbox = self.call("GET", f"/api/inbox?persona={persona}")[1]
+            mine = {(i["project"], i["card"]) for i in d["decisions"] if persona in i["deciders"]}
+            self.assertEqual(mine, {(c["project"], c["id"]) for c in inbox["cards"]}, persona)   # the same cards
+        self.assert_no_ledger_writes(before)
+
+    def test_FR_T1_AC_15_the_end_user_corner_counts_every_open_report_as_waiting(self):
+        p = self.new()
+        status, out, _ = self.call("POST", f"/api/projects/{p.pid}/changes",
+                                   {"text": "[R-1-AC-1] The stock system should also get the parcel weight.",
+                                    "person": "Eetu", "persona": "end_user"})
+        self.assertEqual(status, 201, out)                       # filed in the cockpit: triaged at once
+        self.assertEqual(cockpit.ksignals.square(self.factory)["end_user_feedback_waiting"], 0)   # the kernel: not triaged
+        sq = self.call("GET", "/api/square")[1]
+        counts = ("end_user_feedback_waiting", "end_user_feedback_open", "end_user_feedback_untriaged")
+        self.assertEqual(tuple(sq[k] for k in counts), (1, 1, 0))
+        self.assertEqual([(f["state"], f["triaged"]) for f in sq["feedback"]], [("open", True)])
+        dash = self.call("GET", "/api/dashboard")[1]["square"]
+        self.assertEqual((dash["end_user_feedback_waiting"], dash["end_user_feedback_untriaged"]), (1, 0))
+        Canon(p).decide(out["card"]["id"], "defer", person="Aino", persona="business_owner", reason="next release")
+        self.assertEqual(self.call("GET", "/api/square")[1]["end_user_feedback_waiting"], 0)   # decided: no longer waits
+
+    def test_FR_T1_AC_15_a_signal_triaged_beyond_the_newest_stays_listed_when_the_page_names_it(self):
+        from kernel.store import updating_json
+
+        for i in range(60):
+            self.signal(f"Need number {i}: a better label printout for pallets")
+        with updating_json(factory_project(self.factory).path("signals.json"), []) as items:
+            for s in items[8:]:
+                s["state"] = "parked"                 # S-001 to S-008 stay new, beyond the newest 50
+        status, out, _ = self.call("POST", "/api/signals/S-003/triage", {"person": "Sanna", "persona": "stakeholder"})
+        self.assertEqual((status, out["signal"]["state"]), (200, "concept"), out)
+        before = self.ledgers()
+        plain = self.call("GET", "/api/square")[1]
+        self.assertNotIn("S-003", [s["id"] for s in plain["signals_list"]])       # no longer new nor among the newest
+        self.assertEqual(plain["signals_shown"], [])
+        named = self.call("GET", "/api/square?show=S-003,S-004,../x,S-1234567890,S-055")[1]
+        listed = [s["id"] for s in named["signals_list"]]
+        self.assertIn("S-003", listed)
+        self.assertEqual(named["signals_shown"], ["S-003"])        # S-004 is new, S-055 among the newest anyway
+        self.assertEqual(next(s for s in named["signals_list"] if s["id"] == "S-003")["routed_to"]["card"],
+                         out["signal"]["routed_to"]["card"])
+        self.assertEqual(len(listed), len(plain["signals_list"]) + 1)
+        self.assertFalse(named["signals_all"])
+        self.assert_no_ledger_writes(before)
+
+    def test_FR_T1_AC_1_a_concept_is_parked_or_rejected_only_with_the_reason_and_a_refusal_records_nothing(self):
+        fp = factory_project(self.factory)
+        for verdict in ("park", "reject"):
+            cid = self.concept(f"Need to {verdict}: a shared calendar for the loading bays")
+            url = f"/api/projects/{FACTORY_PID}/cards/{cid}/decide"
+            before = self.ledgers()
+            for reason in (None, "", "   "):
+                body = {"verdict": verdict, "person": "Aino", "persona": "business_owner"}
+                if reason is not None:
+                    body["reason"] = reason
+                status, out, _ = self.call("POST", url, body)
+                self.assertEqual(status, 400, out)
+                self.assertIn(f"Say why you {verdict} {cid}", out["error"])
+            self.assertEqual(Canon(fp).get_card(cid)["state"], "open")
+            self.assert_no_ledger_writes(before)                     # nothing is recorded without the reason
+            status, out, _ = self.call("POST", url, {"verdict": verdict, "reason": "the bays have one already",
+                                                     "person": "Aino", "persona": "business_owner"})
+            self.assertEqual((status, out["decision"]["reason"]), (200, "the bays have one already"), out)
+        # validating needs no reason, as before
+        cid = self.concept("Need to validate: a phone form for damaged pallets")
+        status, out, _ = self.call("POST", f"/api/projects/{FACTORY_PID}/cards/{cid}/decide",
+                                   {"verdict": "validate", "person": "Aino", "persona": "business_owner"})
+        self.assertEqual(status, 200, out)
+        self.assertIn("project", out)
+
+
 class PackReadTest(RedesignTestCase):
     """FR-T1-AC-16: reading a capability pack never writes; building one is an explicit, signed POST."""
 

@@ -31,8 +31,10 @@ if TYPE_CHECKING:
     from kernel.canon import Canon
 
 # The factory home's variables (D-0013). RIHMASTO_HOME is the name; RIHMA_HOME and the working
-# name's GNOMONFACTORY_HOME are still honoured, in that order. HOME_ENV is the one the cockpit
-# passes to its child processes.
+# name's GNOMONFACTORY_HOME are still honoured, in that order. A child process reads the first one
+# set, so a parent that hands its home down passes --home or sets every name in HOME_ENVS: HOME_ENV
+# alone loses to an inherited RIHMASTO_HOME or RIHMA_HOME (the cockpit's job runner still sets only
+# HOME_ENV, D-0013).
 RIHMASTO_HOME_ENV = "RIHMASTO_HOME"
 RIHMA_HOME_ENV = "RIHMA_HOME"
 HOME_ENV = "GNOMONFACTORY_HOME"

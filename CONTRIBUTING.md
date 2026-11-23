@@ -125,6 +125,10 @@ no amendment: add the regression test to the criterion it belongs to.
   references, never values. Check `git status` before every commit.
 - **Neutral examples.** Demos, tests and docs use neutral examples, never real customers, people
   or machines.
+- **Your machine stays out.** Put your own model endpoints in `kernel/routing.local.json`, which
+  is gitignored and merged over the shipped `kernel/routing.json`. Tracked files name no host of
+  yours, no home folder and no private address; `tests/test_docs.py` checks the newcomer pages for
+  home folders and private addresses.
 - **Honest states.** Use the named verdicts in `kernel/verdicts.py`. Something that could not be
   checked is "not measured", never a pass, a fail or a zero.
 - **People decide.** Code may propose; only a named person with an allowed persona decides. Never

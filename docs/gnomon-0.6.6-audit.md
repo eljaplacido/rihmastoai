@@ -227,14 +227,20 @@ It exits 1 when Gnomon is missing, its version cannot be read, or it is older th
 
 Nothing here was run. Gnomon is installed and upgraded by the owner. The commands are from
 Gnomon's README@v0.6.6 ("Install", "Updating", "From source") and `package.json`@v0.6.6.
+Gnomon's repository, and so its README, is linked from this repository's
+[README](../README.md); `npm repo gnomon-harness` opens it too (the package's `repository`
+field). `gnomon update` needs no URL. The two installer lines, `install.sh` for Linux and macOS
+and `install.ps1` for Windows, are written out with their full URLs in
+[Getting started](getting-started.md#install-gnomon), under "Install Gnomon"; the pinned
+commands below name that line rather than repeat it.
 
 **Windows workstation** (`gnomon/0.6.5+v0.6.5-53f83bd`, an installer or npm install):
 
 ```powershell
 gnomon update                      # shows this version, the latest and its changelog, then re-runs the installer
-# or, pinned:
+# or, pinned: set the version, then run the Windows installer line from docs/getting-started.md, "Install Gnomon"
 $env:GNOMON_VERSION = '0.6.6'
-irm <the install.ps1 URL from Gnomon's README> | iex
+irm <install.ps1 URL, as in docs/getting-started.md> | iex
 gnomon --version                   # gnomon/0.6.6+...
 python -m kernel.cli doctor        # "is_recommended": true
 ```
@@ -262,7 +268,7 @@ node packages/gnomon-cli/gnomon.js --version              # gnomon/0.6.6+d3c574a
 
 ```bash
 source ~/.nvm/nvm.sh && nvm use 22
-gnomon update                       # or: curl -fsSL <the install.sh URL from Gnomon's README> | GNOMON_VERSION=0.6.6 sh
+gnomon update                       # or, pinned: curl -fsSL <install.sh URL, as in docs/getting-started.md> | GNOMON_VERSION=0.6.6 sh
 gnomon --version                    # gnomon/0.6.6+...
 export GNOMON_CMD=gnomon            # kernel/model.py and ops/gf-cell-run.sh both honour it
 ```

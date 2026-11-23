@@ -115,19 +115,31 @@ class HomeOrderTest(unittest.TestCase):
         self.assertEqual(store.default_home({}), REPO_ROOT / "var")
         self.assertEqual(store.default_home({"RIHMA_HOME": "b"}), Path("b"))
 
+    def projects_seen(self, env: dict, *argv: str) -> list:
+        """The project ids `python -m kernel.cli status` lists, started as a child with ``env``."""
+        run = subprocess.run([sys.executable, "-m", "kernel.cli", *argv, "status"], cwd=REPO_ROOT, env=env,
+                             capture_output=True, text=True, timeout=120)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        return [p["id"] for p in json.loads(run.stdout)["projects"]]
+
     def test_the_command_line_reads_RIHMASTO_HOME_before_the_older_names(self):
         with tempfile.TemporaryDirectory() as new, tempfile.TemporaryDirectory() as old:
             pid = Factory(new).new_project("Equipment loans").pid
             env = {k: v for k, v in os.environ.items() if k not in HOME_VARS}
             env.update(RIHMASTO_HOME=new, RIHMA_HOME=old, GNOMONFACTORY_HOME=old)
-            run = subprocess.run([sys.executable, "-m", "kernel.cli", "status"], cwd=REPO_ROOT, env=env,
-                                 capture_output=True, text=True, timeout=120)
-            self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertEqual([p["id"] for p in json.loads(run.stdout)["projects"]], [pid])
+            self.assertEqual(self.projects_seen(env), [pid])
             env.pop("RIHMASTO_HOME")                                                # the older name still works
-            run = subprocess.run([sys.executable, "-m", "kernel.cli", "status"], cwd=REPO_ROOT, env=env,
-                                 capture_output=True, text=True, timeout=120)
-            self.assertEqual((run.returncode, json.loads(run.stdout)), (0, {"projects": []}), run.stderr)
+            self.assertEqual(self.projects_seen(env), [])
+
+    def test_a_parent_hands_its_home_down_with_home_or_under_every_name(self):
+        """D-0013: the child reads the first name set, so a home handed down as GNOMONFACTORY_HOME alone
+        loses to an inherited RIHMASTO_HOME; --home, or every name in HOME_ENVS, wins."""
+        with tempfile.TemporaryDirectory() as mine, tempfile.TemporaryDirectory() as inherited:
+            pid = Factory(mine).new_project("Equipment loans").pid
+            env = {k: v for k, v in os.environ.items() if k not in HOME_VARS} | {"RIHMASTO_HOME": inherited}
+            self.assertEqual(self.projects_seen(env | {store.HOME_ENV: mine}), [])
+            self.assertEqual(self.projects_seen(env | dict.fromkeys(store.HOME_ENVS, mine)), [pid])
+            self.assertEqual(self.projects_seen(env | {store.HOME_ENV: mine}, "--home", mine), [pid])
 
 
 if __name__ == "__main__":

@@ -203,6 +203,24 @@ class RefusalTest(ExportCase):
         self.assertIn("links.md:2: link: a relative link to an excluded file: docs/page.html", out)
         self.assertIn("docs/back.md:1: link: a relative link to an excluded file: page.html", out)  # from its folder
 
+    def test_a_binary_files_bytes_are_scanned_for_words_and_secrets_in_its_metadata(self):
+        png = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR" + b"\0" * 13                     # 29 bytes: an odd offset follows
+        self.commit({"img/text.png": png + b"tEXtAuthor\0" + WORD.encode("latin-1") + b"\0",      # Latin-1
+                     "img/exif-even.png": png + b"\0" + f"XPAuthor {WORD}".encode("utf-16-le"),  # UTF-16, even
+                     "img/exif-odd.png": png + f"XPAuthor {WORD}".encode("utf-16-le"),           # UTF-16, odd
+                     "docs/scan.pdf": b"%PDF-1.7\n\0\xfe\xff" + f"Author {WORD}".encode("utf-16-be"),
+                     "img/key.bin": png + f"token={GITHUB_TOKEN}\0".encode("ascii"),
+                     "img/clean.png": png + b"tEXtSoftware\0an image editor\0" + bytes(range(256)) * 64})
+        code, out, _ = self.check()
+        self.assertEqual(code, 1, out)
+        self.assertEqual(hits(out), [("docs/scan.pdf", 0, "denylist"), ("img/exif-even.png", 0, "denylist"),
+                                     ("img/exif-odd.png", 0, "denylist"), ("img/key.bin", 0, "secret"),
+                                     ("img/text.png", 0, "denylist")])           # one hit a file, its views agreeing
+        self.assertNotIn(WORD.lower(), out.lower())
+        self.assertNotIn(GITHUB_TOKEN, out)
+        self.assertIn(f"img/text.png: denylist: its bytes hold a denylisted word: {MASKED}", out)
+        self.assertIn("img/key.bin: secret: its bytes hold a GitHub token: ghp_********", out)
+
     def test_a_file_over_5_mb_is_refused(self):
         self.commit({"data/big.bin": b"\0" * (5 * 2**20 + 1), "data/small.bin": b"\0" * 1024})
         code, out, _ = self.check()

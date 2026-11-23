@@ -8,15 +8,17 @@ Standard library only, no model. It reads the tree of a revision (default HEAD),
     python tools/release_export.py --check [--rev HEAD] [--denylist FILE]
 
 It refuses (exit 1, nothing written, every hit listed with its file and line) a snapshot holding:
-- a denylisted word (one a line, `#` comments skipped, any case, where no letter or digit adjoins
-  it), masked. The default list, `.release-denylist` at the repository root, is never exported;
-- a secret-like string, masked: a private key block, an AWS access key id, a GitHub token, an `sk-`
-  key (OpenAI, Anthropic, OpenRouter, opencode), a Slack token or webhook, or a random literal of 20
-  characters or more assigned to an api_key-like name. Placeholders are not secrets. A planted test
-  value is allowed only in tests/fixtures/redteam/, on a line whose comment starts with
-  `redteam: canary` or `seeded: RT-SECRET-...`, as those fixtures mark them;
+- a denylisted word (one a line, `#` comments skipped, any case, where no letter or digit adjoins it),
+  masked. The default list, `.release-denylist` at the repository root, is never exported;
+- a secret-like string, masked: a private key block, an AWS access key id, a GitHub token, an `sk-` key
+  (OpenAI, Anthropic, OpenRouter, opencode), a Slack token or webhook, or a random literal of 20 characters
+  or more assigned to an api_key-like name. Placeholders are not secrets. A planted test value is allowed
+  only in tests/fixtures/redteam/, on a line whose comment starts with `redteam: canary` or
+  `seeded: RT-SECRET-...`, as those fixtures mark them;
 - a relative Markdown link to an excluded or missing file;
 - a file over 5 MB, an entry that is not a plain file, or a path that cannot be written safely.
+A binary file's path is scanned for words and its bytes for words and secrets, read as Latin-1, UTF-8 and
+UTF-16 text, where metadata such as a PNG's tEXt or EXIF is written; compressed bytes are not inflated.
 
 Writing empties the target but its `.git` (never touched), so deletions carry over. The target must be
 missing, empty, a work tree of another repository or an earlier export (it holds release/exclude.txt).
@@ -326,15 +328,24 @@ def unsafe_path(path: str) -> bool:
             or any(":" in p or "\\" in p for p in parts))
 
 
+def binary_texts(data: bytes) -> tuple[str, ...]:
+    """A binary file's bytes as Latin-1, UTF-8 and UTF-16 text; UTF-16 at both offsets reads either byte order."""
+    return (data.decode("latin-1"), data.decode("utf-8", "replace"),
+            *((data[start:] + b"\0").decode("utf-16-le", "replace") for start in (0, 1)))
+
+
 def scan(path: str, data: bytes, words: list[re.Pattern[str]], shipped: set[str], tracked: set[str]) -> list[Hit]:
-    """Every hit in one shipped file. A binary file's path is scanned, not its bytes."""
+    """Every hit in one shipped file. A binary file's path and bytes are scanned; its hits are on line 0."""
     hits: list[Hit] = []
     if len(data) > MAX_BYTES:
         hits.append(Hit(path, 0, "size", f"{len(data)} bytes, over the {MAX_BYTES // 2**20} MB limit"))
     if unsafe_path(path):
         hits.append(Hit(path, 0, "path", "a path that cannot be written safely"))
     if b"\0" in data[:8192]:
-        return hits + denylist_hits(path, [], words)
+        lines = [line for text in binary_texts(data) for line in text.splitlines()]
+        inside = {Hit(path, 0, h.kind, f"its bytes hold {h.detail}")
+                  for h in denylist_hits(path, lines, words) + secret_hits(path, lines) if h.line}
+        return hits + denylist_hits(path, [], words) + sorted(inside, key=str)
     lines = data.decode("utf-8", "replace").splitlines()
     hits += denylist_hits(path, lines, words) + secret_hits(path, lines)
     if path.lower().endswith((".md", ".markdown")):
@@ -346,11 +357,7 @@ def scan(path: str, data: bytes, words: list[re.Pattern[str]], shipped: set[str]
 
 def with_folders(paths: Iterable[str]) -> set[str]:
     """The paths, every folder that holds one, and the root ("")."""
-    out = {""}
-    for path in paths:
-        parts = path.split("/")
-        out.update("/".join(parts[:n]) for n in range(1, len(parts) + 1))
-    return out
+    return {""} | {"/".join(parts[:n]) for parts in (p.split("/") for p in paths) for n in range(1, len(parts) + 1)}
 
 
 def never_exported(repo: Path, denylist: Path | None) -> set[str]:
@@ -448,10 +455,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def denylist_of(args: argparse.Namespace, repo: Path) -> Path | None:
-    if args.no_denylist:
-        return None
-    path: Path = args.denylist or repo / DENYLIST_NAME
-    if not path.is_file():
+    path: Path | None = None if args.no_denylist else args.denylist or repo / DENYLIST_NAME
+    if path is not None and not path.is_file():
         raise ExportError(f"no denylist at {path}: pass --denylist FILE, or --no-denylist to skip that scan")
     return path
 

@@ -142,7 +142,7 @@ widget offers its data as a table too, so a value is never only in a chart or a 
 | Key figures | How is the factory doing at a glance? | projects in flight, decisions waiting with the oldest age, first-round gate pass, criteria proven, capabilities in use |
 | Delivery square | Where is everything in the delivery square? | `signals.square`: a four-corner loop, or a step flow when small |
 | Pipeline | Where is the work? | stage columns with project chips (profile icon, title, maturity) |
-| Decisions waiting | What waits on me? | `queue` plus concepts and updates, with inline verdicts for cards this persona may decide |
+| Decisions waiting | What waits on me? | `queue` plus concepts and updates, and every open change as the Inbox lists it (also one whose class needs no business decision before it is applied, such as IT's infra change), with inline verdicts for cards this persona may decide |
 | Capabilities | Which capabilities do we have? | `catalogue`: state, profile, deliverable, pack version and validity |
 | Live agents | What are agents doing now? | Working, with a pulsing dot, only while `status.live` reports a running cell; otherwise the project's real state: waiting on a person, paused, apparatus failure, ready or done |
 | Task timeline | Where did the time go? | each round on one time axis, coloured by its gate's verdict, with merge and escalation marks |
@@ -208,35 +208,56 @@ The assistant writes nothing itself.
 **Square** is the home of the flow: needs arrive from the operation, a concept is validated, the
 factory builds, end users test and feedback flows back, and production runs with DevOps,
 maintenance, security and compliance around it. A map shows the loop with the counts and the
-people in each corner; below it:
+people in each corner, each with the persona they signed with: each corner's link names its count
+and its people in words and shows them on keyboard focus as on hover, and each card below has one
+keyboard stop that names them all; below it:
 
-- **Needs arrive**: **Log a signal** (the need, its channel and source, signed), and the signals
-  with their state. **Triage** routes a signal about an existing project to that project as a
-  change, or makes a new need a concept (`kernel.signals.triage`, no model).
+- **Needs arrive**: **Log a signal** (the need, its channel and source, signed; the signal keeps the
+  signer's persona), and the signals with their state: every signal still new and the newest
+  others, with **Show every signal** for the rest, so a new signal can always be triaged.
+  **Triage** routes a signal about an existing project to that project as a change, triaged at
+  once like every change filed in the cockpit (its class, by the signal's persona, its way back and
+  its impact), or makes a new need a concept (`kernel.signals.triage`, no model). A signal triaged
+  on the page stays listed though it is no longer new, and its link to what it became takes the
+  focus.
 - **Concepts to validate**: a business owner or product owner edits the title, work profile,
-  maturity and mode, then **Validate**, **Park** or **Reject** it with a reason. Deciding goes
-  through the Inbox's decide route on the factory's own canon (`_factory`); a validated concept
-  becomes a project at once, its intake starting from the need (`apply_concepts`).
+  maturity and mode (**Save the edit** records only the fields that changed), then **Validate**, or
+  **Park** or **Reject** with the reason why (without one the decide route refuses it with a 400,
+  from any page, and records nothing). Deciding goes through the Inbox's decide route on the
+  factory's own canon (`_factory`); a validated concept becomes a project at once, and its intake
+  runs from the need on the project's first **Advance** (`apply_concepts`). The project shows who
+  asked for it. An edited title is the one every Inbox and the decisions widget show.
 - **The factory**: the pipeline per stage.
-- **End-user testing**: feedback from end users, triaged or waiting.
+- **End-user testing**: feedback from end users, with how many are open and how many are not
+  triaged yet. Every open report waits (a triaged one on a decision, one not triaged yet for its
+  class), and the map's corner counts them all as "feedback waiting".
 - **Production**: what runs at stage 7.
+
+A link can name one concept, `#/square/<card>` (a signal's concept, the Inbox, the catalogue): the
+square brings it into view and gives it the focus.
 
 ## The capability catalogue
 
 **Catalogue** lists every capability: in use, pilot, trying, building, shaping or proposed (a
 concept waiting). A lifecycle strip counts each state and filters by it; profile, deliverable and
-a search narrow it further; cards or a table show the same items. A card shows the profile icon,
-the state, what it does, the deliverable, and the capability pack's version and validity. It opens
-its project, or the square for a concept.
+a search narrow it further; cards or a table show the same items, and a filter keeps the focus on
+the control that was used. A card shows the profile icon, the state, what it does, the deliverable
+(a proposed concept's is its work profile's: an agent is a capability pack), and the capability
+pack's version and validity; a release whose pack is not built yet says so, never "no release". It
+opens its project, or the concept on the square.
 
 ## New project
 
 **New project** (sidebar, Projects, Catalogue) opens a form: a title, the need or a written spec,
 the **work profile** as seven cards (web app or service, integration, mobile prototype, ML or data
 pipeline, agent or assistant, harness engineering, ops agent), each with its icon, summary,
-deliverable and a **Preview** badge where its template is still to come. **Let Rihma propose**
-picks the profile by rule from the words of the need (`propose_profile`) and says which words.
-Then maturity, mode and who asks. Creating it starts the intake as a job.
+deliverable and a **Preview** badge where its template is still to come, with the profile's note on
+what is. The cards are a radiogroup: one tab stop, and the arrow keys move and choose. **Let Rihma propose**
+picks the profile by rule from the words of the need (`propose_profile`) and says which words; a
+keyword the rule found inside a longer word is shown with the person's own word ("train" in
+"trainees") and the proposal is marked uncertain. The button keeps the focus once Rihma has read the
+need. Then maturity, mode and who asks. Creating it starts the intake as a job, and the new project's
+heading takes the focus.
 
 ## Projects and the Inbox
 
@@ -246,9 +267,14 @@ cards waiting for you. **Rihma itself** (`_factory`) comes first: the factory's 
 itself.
 
 **Inbox** gathers every card the persona may decide across every project and Rihma itself,
-grouped by kind (decisions that hold work up first, the panel's questions last), by project or by
-age. Each card decides in place through the same route as the project's Inbox; a question opens
-its options, the plan opens the plan, a concept opens the square.
+grouped by kind (decisions that hold work up first: escalations, holdout rulings, approvals,
+validations, deploy gates, incidents, paved roads and trust; then changes, updates and concepts;
+the panel's questions last; a blocking card first within its group), by project or by age. Each
+card decides in place through the same route as the project's Inbox. Card ids repeat across
+projects, so each card's reason, verdicts and status line are named by its project and id; a
+reason typed on one card survives a decision on another, and the focus moves to the next card. A
+card that accepts a release carries the release link and checklist, as in the project's Inbox. A
+question opens its options, the plan opens the plan, a concept opens it on the square.
 
 ## A project
 
@@ -372,16 +398,23 @@ the focus; on Esc, the focus goes back where it was.
 
 ## Embeds: a chat window for a website
 
-**Settings → Embeds** (product owner, business owner and IT) creates a chat for a website with
-exactly one capability: **feedback** on a product (filed as a change on that project) or a
-business **need** (filed as a signal in the square). The form takes the project, the allowed
-websites, a label and a short public brief; the embed sees nothing of the project's records. The
+**Settings → Embeds** (product owner, business owner and IT; anyone else is told who creates one)
+creates a chat for a website with exactly one capability: **feedback** on a product (filed as a
+change on that project; never on Rihma itself, which is refused) or a business **need** (filed as
+a signal in the square). The form takes the project, the allowed websites, a label and a short
+public brief; a proposed project the list does not hold is said, and none is chosen in its place.
+The embed sees nothing of the project's records. The
 key is shown **once**, masked until you choose Show, with the snippet from `kernel.embeds.snippet`
 and copy buttons; only its hash is kept. The snippet points at the embed server named by
 `--embed-base` (or `RIHMA_EMBED_BASE`), never at the cockpit; Settings and the key box say which
 address that is, or warn that none is set and the snippet points at the local embed server for
-testing. The list shows each embed's state and message count, and **Revoke** stops it at once.
-The assistant's "make a feedback chat for our website" opens this form, filled in.
+testing. The list shows each embed's state and message count, and **Revoke** stops it at once;
+revoking it again is a 409 and records nothing. The assistant's "make a feedback chat for our
+website" opens this form, filled in.
+
+**Settings → Appearance** reads the layout of the lens in view first, so it shows the person's own
+theme, and a change made there (mode, accent, density, corners, text size) is saved with that
+lens's layout; a save that fails says so. The accent swatches are a radiogroup with the arrow keys.
 
 ## Driven in a browser
 
@@ -431,7 +464,8 @@ every persona.
 project starts `python -m kernel.cli run <pid>`, which runs until the next gate a person must
 decide. Only one job runs per project at a time. A job is a child process with an argument
 list, never a shell string, started from the repository root with `GNOMONFACTORY_HOME` set. Its
-log is in `<home>/jobs/`. The **Jobs** page shows each job's state and the last lines of its log.
+log is in `<home>/jobs/`. The **Jobs** page shows each job's state and the last lines of its log;
+a run the autonomy cap stopped shows as capped, not done, with the kernel's reason.
 
 ## API
 
@@ -441,7 +475,7 @@ log is in `<home>/jobs/`. The **Jobs** page shows each job's state and the last 
 | `GET /api/meta` | stages and their four bands, modes, maturities (and the last stage each runs), change classes, card kinds, who may pause (`may_pause`), the plan's editors and the criterion kinds; the lenses and each persona's lens, the widget library and the lens presets, the layout's fixed sets, the work profiles and deliverables, signal channels, who edits concepts, creates embeds, promotes comments, exports evidence, builds a capability pack and sets the autonomy cap, where embed snippets point (`embed_base`, null when unset, and `embed_base_local`), and whether the assistant uses a model |
 | `GET /api/personas` | personas with labels and the card kinds each may decide |
 | `GET /api/projects` | id, title, maturity, mode, stage, profile, open cards, `now` (state and line), `running` (a cell runs now) and the last cell's outcome; `_factory` first, as "Rihma itself" |
-| `GET /api/projects/<pid>` | the whole project view: `now`, `health`, `evidence` (every criterion) and `evidence_summary` (counts per state, for the project and per requirement), `stage_summary` (a count per stage, the four bands; stage 5 also has verified and claimed), each requirement's sources, each question's `options` with the proposal first and `recommended`, change cards with their `impact`, ledger status against the kept head with who acted on each recent event (`actor`: a person with the persona, or an agent with its model) |
+| `GET /api/projects/<pid>` | the whole project view: `meta` (with `requested_by` from the need for a project a validated concept made), `now`, `health`, `evidence` (every criterion) and `evidence_summary` (counts per state, for the project and per requirement), `stage_summary` (a count per stage, the four bands; stage 5 also has verified and claimed), each requirement's sources, each question's `options` with the proposal first and `recommended`, change cards with their `impact`, ledger status against the kept head with who acted on each recent event (`actor`: a person with the persona, or an agent with its model) |
 | `GET /api/projects/<pid>/evidence` | each criterion's evidence state: verified, claimed, held out, failing or not measured (`kernel.status.evidence`) |
 | `GET /api/projects/<pid>/now` | the project's state (working, waiting on you, done, failed) and one line (`kernel.status.now`) |
 | `GET /api/projects/<pid>/health` | on track, at risk or off track, the reasons, and the forecast with its basis (`kernel.status.health`) |
@@ -453,7 +487,7 @@ log is in `<home>/jobs/`. The **Jobs** page shows each job's state and the last 
 | `GET /api/projects/<pid>/live` | what the running cell is doing: task, lane, role, model, tool steps, last action, ended; or `running: false` with why (`kernel.status.live`, lanes root `$GF_LANES` or `~/gf-lanes`) |
 | `GET /api/projects/<pid>/try` | the release, environment and url to try, and one item per criterion with its text and evidence state (`kernel.status.try_it`) |
 | `GET /api/floor` | the gate's judgement `gates` (tasks gated, first round passed and rate, merged, escalated, rounds), runs by phase and verdict, the harness outcomes `overall` with `harness_note`, spend (`kernel.projections.floor`), plus `model_reliability` and `immune_memory` (`kernel.learn`) |
-| `POST /api/projects/<pid>/cards/<cid>/decide` | `{verdict, person, persona, reason}` |
+| `POST /api/projects/<pid>/cards/<cid>/decide` | `{verdict, person, persona, reason}`; parking or rejecting a concept without the reason is a 400, and nothing is recorded |
 | `POST /api/projects/<pid>/questions/<qid>/answer` | `{text, person, persona}`; regenerates the brief. When the text is one of the options, the `cockpit_write` note keeps which (`option`, 0 is the proposal) |
 | `POST /api/projects/<pid>/questions/<qid>/assume` | `{person, persona}`; regenerates the brief |
 | `POST /api/projects/<pid>/assumptions/<aid>/settle` | `{confirmed, person, persona, correction}` |
@@ -463,17 +497,17 @@ log is in `<home>/jobs/`. The **Jobs** page shows each job's state and the last 
 | `POST /api/projects/<pid>/resume` | `{person, persona}` → `kernel.safestop.resume`; a persona that may not resume is a 403, a project that is not paused a 409 |
 | `POST /api/projects` | `{title, source, profile, mode, maturity, requested_by}`; creates the project with its work profile and starts the intake job |
 | `POST /api/projects/<pid>/advance` | starts `kernel.cli run` |
-| `GET /api/jobs` | jobs with their state and the last lines of their logs |
+| `GET /api/jobs` | jobs with their state and the last lines of their logs; a finished run carries its `outcome` (the state and reason of the result it printed last), and one the autonomy cap stopped has the state `capped` |
 | `POST /api/links` | a new one-use sign-in link for another tab |
-| `GET /api/dashboard` | every widget's read model in one answer: `kpis` (each with provenance and denominator), `pipeline` (chips with profile), `queue`, `decisions` (queue kinds plus concepts and updates, with age), `gate_trend`, `gates`, `timelines` per project, `activity`, `coverage`, `catalogue`, `square`, `projects` (now, health, live and the last cell's outcome), `models`, `updates`, `autonomy`, `evidence_packs` (each attestation, read-only), `spend`, `try_it`, `feed_health`, `eval_trend`. Records nothing |
-| `GET /api/catalogue` | `kernel.dashboard.catalogue` with the states, profiles and deliverables |
-| `GET /api/square` | `kernel.signals.square` with the signals, concepts (their editable fields), end-user feedback, production and the people per corner |
+| `GET /api/dashboard` | every widget's read model in one answer: `kpis` (each with provenance and denominator), `pipeline` (chips with profile), `queue`, `decisions` (queue kinds plus concepts and updates, and every open change as the Inbox lists it, with its class and `needs_decision`; with age), `gate_trend`, `gates`, `timelines` per project, `activity`, `coverage`, `catalogue`, `square`, `projects` (now, health, live and the last cell's outcome), `models`, `updates`, `autonomy`, `evidence_packs` (each attestation, read-only), `spend`, `try_it`, `feed_health`, `eval_trend`. Records nothing |
+| `GET /api/catalogue` | `kernel.dashboard.catalogue` with the states, profiles and deliverables; a proposed concept carries its work profile's `deliverable`, and a project its `releases` and `latest_release` |
+| `GET /api/square?signals=&show=` | `kernel.signals.square` with the signals, concepts (their editable fields), end-user feedback, production and the people per corner with the persona they signed with. `end_user_feedback_waiting` (and `end_user_feedback_open`) counts every open end-user report, triaged or not; the kernel's not-triaged count is `end_user_feedback_untriaged` (the dashboard's `square` says the same). `signals_list` holds every signal still new and the newest others, newest first; `?signals=all` lists every one, and `signals_all` says whether the list is whole; `?show=S-8,...` also lists the signals named (up to 20, such as one just triaged), and `signals_shown` names those listed only for that |
 | `GET /api/signals?state=` | the signals, the channels and states |
-| `POST /api/signals` | `{text, channel, source, person, persona}` → `kernel.signals.receive`; 201 |
-| `POST /api/signals/<sid>/triage` | `{person, persona}` → `kernel.signals.triage` (no model): a change on a project, or a concept; 409 when already triaged |
-| `POST /api/concepts/<cid>/edit` | `{title?, profile?, maturity?, mode?, person, persona}` → `edit_concept`; another persona is a 403, a bad value a 400. A concept is then decided through `POST /api/projects/_factory/cards/<cid>/decide`, which applies it (`apply_concepts`); an update card's decision applies it too (`apply_updates`), and both answer with `applied` |
+| `POST /api/signals` | `{text, channel, source, person, persona}` → `kernel.signals.receive`, which keeps the persona; 201 |
+| `POST /api/signals/<sid>/triage` | `{person, persona}` → `kernel.signals.triage` (no model): a change on a project, triaged at once (`triage`), or a concept; 409 when already triaged |
+| `POST /api/concepts/<cid>/edit` | `{title?, profile?, maturity?, mode?, person, persona}` → `edit_concept` with only the fields that differ from the card (`changed`); when none differs, nothing is written or recorded. Another persona is a 403, a bad value a 400. A concept is then decided through `POST /api/projects/_factory/cards/<cid>/decide`, which applies it (`apply_concepts`); an update card's decision applies it too (`apply_updates`), and both answer with `applied` |
 | `GET /api/profiles` · `POST /api/profiles/propose` | the work profiles and deliverables · `{text}` → `propose_profile` (records nothing) |
-| `GET /api/inbox?persona=` | every open card that persona may decide, across projects and `_factory`, with `count` |
+| `GET /api/inbox?persona=` | every open card that persona may decide, across projects and `_factory`, with `count`; a concept's title follows its edit, here and in the dashboard's `decisions` |
 | `GET /api/ui-map` | `cockpit/ui_map.json` |
 | `GET /api/layout?persona=&lens=&person=` | the person's layout for that persona and lens, or the lens preset (`preset: true`), and the `default` |
 | `PUT /api/layout?persona=&lens=` | `{person, layout}`; saved under `<home>/_cockpit/layouts/`. Unknown widget types, more than 24 widgets, a theme value outside its set or a non-person are refused |
@@ -487,11 +521,12 @@ log is in `<home>/jobs/`. The **Jobs** page shows each job's state and the last 
 | `GET /api/projects/<pid>/attestation` | what an export would attest, computed read-only |
 | `POST /api/projects/<pid>/evidence` | `{person, persona}` → `kernel.evidence_pack.export` into `<home>/_cockpit/exports/`; returns the file and a one-time `download` path |
 | `GET /api/exports/<token>` | that export, once, as an attachment, only from the exports folder |
-| `GET /api/embeds` · `POST /api/embeds` · `POST /api/embeds/<eid>/revoke` | the embeds, never a key or its hash, with `embed_base` (null when unset) and `embed_base_local`; reading creates nothing · `{kind, origins, project, label, brief, person, persona}` → the embed, its `key` (in this answer only) and the `snippet`, which points at the embed server · revoke |
+| `GET /api/embeds` · `POST /api/embeds` · `POST /api/embeds/<eid>/revoke` | the embeds, never a key or its hash, with `embed_base` (null when unset) and `embed_base_local`; reading creates nothing · `{kind, origins, project, label, brief, person, persona}` → the embed, its `key` (in this answer only) and the `snippet`, which points at the embed server; a feedback embed on `_factory` is a 400 · revoke; an embed already revoked is a 409 and nothing is recorded |
 | `POST /api/assistant` | `{question, persona, project, view, person, lens}` → `kernel.assistant.ask` with the widget library and the person's layout; records nothing |
 
-Every GET is a read: none of them records a decision, marks an approval stale or appends
-to a ledger. `<pid>` may also be `_factory`, Rihma's own canon.
+Every GET is a read: none of them records a decision, marks an approval stale, appends
+to a ledger or creates Rihma's own canon on a home without one. `<pid>` may also be `_factory`,
+Rihma's own canon.
 
 The cockpit keeps the last ledger head it verified for each project in
 `<home>/cockpit/heads.json`. If the ledger is cut or its tail rewritten after that, the

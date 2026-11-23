@@ -50,6 +50,9 @@ export function columns(opts) {
   const ticks = [0, max / 2, max];
   const maxLabels = o.maxLabels || 8;
   const every = Math.max(1, Math.ceil(rows.length / maxLabels));
+  // A narrow chart (a small widget) keeps every other label (k2); the CSS picks by the chart's width.
+  const label = (r, i) => (i % every === 0 ? h("span", { class: "xl" + (i % (every * 2) === 0 ? " k2" : " k1") }, r.short || r.label)
+    : h("span", { class: "xl" }));
   const plot = h("div", { class: "plot", style: { "--h": (o.height || 160) + "px" } },
     h("div", { class: "yaxis", "aria-hidden": "true" }, ticks.map((t) => h("span", { class: "tick", style: { bottom: (t / max * 100) + "%" } },
       h("span", { class: "tick-l" }, tickLabel(t))))),
@@ -64,8 +67,7 @@ export function columns(opts) {
         value: num(r.values[s.key] || 0), label: s.label })), r.tipFoot));
       return col;
     })));
-  const axis = h("div", { class: "xaxis", "aria-hidden": "true" }, rows.map((r, i) =>
-    h("span", { class: "xl" }, i % every === 0 ? r.short || r.label : "")));
+  const axis = h("div", { class: "xaxis", "aria-hidden": "true" }, rows.map(label));
   return h("figure", { class: "viz columns" }, h("div", { class: "plot-wrap" }, plot, axis),
     series.length > 1 ? legend(series) : null);
 }
@@ -117,12 +119,14 @@ export function segbar(opts) {
   const o = opts || {};
   const parts = (o.parts || []).filter((p) => p.value > 0);
   const total = parts.reduce((a, p) => a + p.value, 0);
-  if (!total) return h("p", { class: "muted small" }, o.none || "Nothing to show yet.");
+  if (!total) return h("p", { class: "muted small viz-none" }, o.none || "Nothing to show yet.");
   return h("figure", { class: "viz segbar" }, h("div", { class: "seg-tall", role: "img",
     "aria-label": parts.map((p) => p.label + " " + p.value).join(", ") }, parts.map((p) => {
     const share = p.value / total;
+    // a hatched part (not read, not measured) prints its count on a plate, so the hatching never crosses it
+    const count = share < 0.14 ? null : p.hatch ? h("span", { class: "segn" }, String(p.value)) : String(p.value);
     const el = h("span", { class: "segp mark " + (p.ink || "ink-light") + (p.hatch ? " hatch" : ""), tabindex: "0",
-      style: { flexGrow: String(p.value), background: p.hatch ? null : p.color } }, share >= 0.14 ? String(p.value) : null);
+      style: { flexGrow: String(p.value), background: p.hatch ? null : p.color } }, count);
     attachTip(el, () => tipBox(p.label, [{ color: p.color, icon: p.icon, value: p.value + " (" + pct(share) + ")", label: p.label }]));
     return el;
   })), legend(parts.map((p) => ({ label: p.label, color: p.color, icon: p.icon, hatch: p.hatch }))));
@@ -158,7 +162,7 @@ export function waterfall(opts) {
     if (t.escalated_at) times.push(Date.parse(t.escalated_at));
   });
   const ok = times.filter((x) => !Number.isNaN(x));
-  if (!tasks.length) return h("p", { class: "muted small" }, "No task has run yet.");
+  if (!tasks.length) return h("p", { class: "muted small viz-none" }, "No task has run yet.");
   const t0 = ok.length ? Math.min(...ok) : 0;
   const t1 = ok.length ? Math.max(...ok) : 1;
   const span = Math.max(1, t1 - t0);
@@ -194,7 +198,9 @@ export function waterfall(opts) {
     return h("div", { class: "wf-row" }, h("span", { class: "wf-l" }, o.href ? h("a", { href: o.href(t), class: "mono" }, t.task) : h("span", { class: "mono" }, t.task),
       h("small", null, t.title || "")), track);
   });
-  const ticks = ok.length ? [0, 1 / 3, 2 / 3, 1].map((f) => h("span", { style: { left: (f * 100) + "%" } }, fmt(t0 + f * span))) : [];
+  // the two middle ticks give way on a narrow chart (CSS), so the times never collide
+  const ticks = ok.length ? [0, 1 / 3, 2 / 3, 1].map((f) => h("span", { class: f > 0 && f < 1 ? "mid" : null, style: { left: (f * 100) + "%" } },
+    fmt(t0 + f * span))) : [];
   return h("figure", { class: "viz waterfall" }, h("div", { class: "wf" }, rows,
     h("div", { class: "wf-row wf-axis", "aria-hidden": "true" }, h("span", { class: "wf-l" }, "UTC"), h("div", { class: "wf-track" }, ticks))),
   legend([{ label: VERD.passed.label, color: VERD.passed.color, icon: "check-circle" },

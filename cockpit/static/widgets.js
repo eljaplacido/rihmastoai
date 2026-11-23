@@ -7,15 +7,17 @@ import {
   S, h, icon, chip, fill, api, act, say, signed, needPerson, decides, personaLabel, link, enc, num, pct, plural,
   fmtAge, ago, fmtAt, fmtMoney, fmtMinutes, avatar, profileOf, profileChip, nowChip, healthChip, empty, button,
   KIND_LABEL, KIND_ICON, VERDICT_LABEL, CATALOGUE_STATE, HEALTH, EVIDENCE, NOW_STATE, FACTORY_PID, nav, stageName,
-  download, attachTip,
+  download, attachTip, infoButton, orList,
 } from "./core.js";
-import { columns, bars, stack100, segbar, sparkline, waterfall, dataTable, legend, meter, SERIES, STATUS_MARK, tipBox } from "./charts.js";
+import { columns, bars, stack100, segbar, waterfall, dataTable, legend, meter, SERIES, STATUS_MARK, tipBox } from "./charts.js";
 
 const asOf = (d) => "as of " + String(d.generated_at || "").slice(11, 16) + " UTC";
+export const PROV_NOTE = { observed: "Observed: counted directly from the records", derived: "Derived: computed from observed counts" };
 
+// The provenance word, with its meaning on hover and focus of the widget's ⓘ, and in the text for a screen reader.
 function foot(d, prov, denom) {
-  return h("p", { class: "kpi-foot" }, h("span", { class: "prov " + prov, tip: prov === "observed"
-    ? "Observed: counted directly from the records" : "Derived: computed from observed counts" }, prov),
+  return h("p", { class: "kpi-foot" }, h("span", { class: "prov " + prov, tip: PROV_NOTE[prov] }, prov,
+    h("span", { class: "vh" }, " (" + (PROV_NOTE[prov] || "").replace(/^\w+: /, "") + ")")),
   denom ? h("span", null, denom) : null, h("span", { class: "fresh" }, asOf(d)));
 }
 
@@ -24,15 +26,68 @@ function notMeasured(reason, compact) {
     h("div", null, h("b", null, "Not measured yet"), h("p", null, reason)));
 }
 
+// -- read models that could not be read ------------------------------------------------------------
+// GET /api/dashboard names each read model that failed in `problems` ("timeline: TypeError") and
+// answers with an empty default for it. A widget built on one says so; it never shows that default as
+// "nothing yet". The names are the server's: its safe() names and the project status functions, plus
+// "inbox" when the persona's Inbox (the open questions the decisions count) could not be read.
+const PROBLEM_SOURCES = {
+  kpi_strip: ["now", "decisions", "inbox", "gate_trend", "coverage", "catalogue"], square: ["square"], pipeline: ["pipeline"],
+  decisions: ["decisions", "inbox"], catalogue: ["catalogue"], live: ["live", "now", "last_cell"], timeline: ["timeline"],
+  gate_trend: ["gate_trend"], coverage: ["coverage"], activity: ["activity"], models: ["models"], health: ["health", "now"],
+  updates: ["updates"], autonomy: ["autonomy"], evidence_packs: ["evidence_packs"], try_it: ["try_it"],
+};
+export function problemsOf(d, names) {
+  const want = new Set(names || []);
+  const seen = new Set();
+  return (d.problems || []).map(String).filter((p) => want.has(p.split(":")[0].trim()) && !seen.has(p) && seen.add(p));
+}
+function unreadable(probs) {
+  return h("div", { class: "nm-box err", role: "note" }, icon("alert"),
+    h("div", null, h("b", null, "Could not be read"), h("p", null, "The records behind this widget could not be read ("
+      + probs.join(", ") + "), so it cannot say what they hold. Nothing here means zero.")));
+}
+function isEmptyState(body) {
+  if (!body || !body.classList) return false;
+  if (body.matches(".empty, .nm-box, .viz-none") || body.querySelector(":scope > .empty, :scope > .nm-box, .viz-none")) return true;
+  const tbody = body.querySelector("tbody");
+  return !!tbody && !tbody.querySelector("tr");
+}
+function withProblems(type, view) {
+  return (d, w) => {
+    const body = view(d, w);
+    const probs = problemsOf(d, PROBLEM_SOURCES[type]);
+    if (!probs.length || type === "kpi_strip") return body;   // the key figures mark each figure itself
+    if (isEmptyState(body)) return unreadable(probs);
+    return h("div", null, h("p", { class: "w-warn", role: "note" }, icon("alert"),
+      h("span", null, "Part of this widget's records could not be read (" + probs.join(", ") + "); what is shown may be incomplete.")), body);
+  };
+}
+
+let kpiSeq = 0;
 function kpiTile(d, o) {
-  const measured = o.value !== null && o.value !== undefined;
-  return h("div", { class: "kpi" + (measured ? "" : " nm"), role: "group", "aria-label": o.label },
-    h("div", { class: "kpi-h" }, icon(o.icon), h("span", null, o.label), o.info ? h("span", { class: "kpi-i", tip: o.info }, icon("info")) : null),
+  const broken = o.problems && o.problems.length;
+  const partial = !broken && o.partial && o.partial.length;   // a figure read in part: shown, and said to be a floor
+  const measured = !broken && o.value !== null && o.value !== undefined;
+  let info = null;
+  let described = null;
+  if (o.info) {
+    // the basis: a real button (keyboard and pointer), its text also read with the button and in the tile
+    const id = "kpi-basis-" + (++kpiSeq);
+    info = infoButton(o.label, h("p", null, o.info));
+    info.classList.add("kpi-i");
+    info.setAttribute("aria-describedby", id);
+    attachTip(info, o.info);
+    described = h("span", { class: "vh", id }, "Basis: " + o.info);
+  }
+  return h("div", { class: "kpi" + (measured ? "" : " nm") + (broken || partial ? " err" : ""), role: "group", "aria-label": o.label },
+    h("div", { class: "kpi-h" }, icon(o.icon), h("span", null, o.label), info), described,
     measured ? h("div", { class: "kpi-v" }, o.display || num(o.value), o.unit ? h("small", null, o.unit) : null)
-      : h("div", { class: "kpi-v nm-text" }, "— Not measured"),
-    measured && o.sub ? h("p", { class: "kpi-sub" }, o.sub) : null,
-    !measured ? h("p", { class: "kpi-sub" }, o.why) : null,
-    measured && o.series ? sparkline(o.series, { min: 0, max: 1 }) : null,
+      : h("div", { class: "kpi-v nm-text" }, broken ? "— Could not be read" : "— Not measured"),
+    measured && o.sub && !partial ? h("p", { class: "kpi-sub" }, o.sub) : null,
+    partial ? h("p", { class: "kpi-sub" }, "Part of its records could not be read (" + o.partial.join(", ") + "); there may be more.")
+      : broken ? h("p", { class: "kpi-sub" }, "Its records could not be read (" + o.problems.join(", ") + "); it is not zero.")
+        : !measured ? h("p", { class: "kpi-sub" }, o.why) : null,
     foot(d, o.provenance, o.denom));
 }
 
@@ -40,21 +95,26 @@ function kpis(d) {
   const k = d.kpis || {};
   const fr = k.first_round || {};
   const pr = k.proven || {};
+  // The API's first_round.series is the hourly pass rate of every gate round, repairs included, not of
+  // first rounds: drawn under this figure it would describe another number, so the tile draws no line.
   return [
     { label: "Projects in flight", icon: "folder", value: k.in_flight ? k.in_flight.value : null, provenance: "observed",
-      denom: k.in_flight ? "of " + plural(k.in_flight.of, "project") : null, info: k.in_flight && k.in_flight.basis },
+      denom: k.in_flight ? "of " + plural(k.in_flight.of, "project") : null, info: k.in_flight && k.in_flight.basis,
+      problems: problemsOf(d, ["now"]) },
     { label: "Decisions waiting", icon: "inbox", value: k.decisions ? k.decisions.value : null, provenance: "observed",
       sub: k.decisions && k.decisions.oldest_hours !== null && k.decisions.oldest_hours !== undefined
         ? "oldest waits " + fmtAge(k.decisions.oldest_hours) : (k.decisions && k.decisions.value ? null : "nothing waits"),
-      denom: "across projects", info: k.decisions && k.decisions.basis },
+      denom: "across projects", info: k.decisions && k.decisions.basis, problems: problemsOf(d, ["decisions"]),
+      partial: problemsOf(d, ["inbox"]) },
     { label: "First-round gate pass", icon: "gate", value: fr.of ? fr.value : null, display: pct(fr.value),
       provenance: "derived", denom: fr.of ? fr.num + " of " + plural(fr.of, "task") + " gated" : null,
-      why: "No task has reached a gate yet.", series: (fr.series || []).map((s) => s.rate), info: fr.basis },
+      why: "No task has reached a gate yet.", info: fr.basis },
     { label: "Criteria proven", icon: "file-check", value: pr.of ? pr.value : null, display: pct(pr.value), provenance: "derived",
       denom: pr.of ? pr.num + " of " + plural(pr.of, "criterion", "criteria") : null,
-      why: "No contract is compiled yet, so there are no criteria.", info: pr.basis },
+      why: "No contract is compiled yet, so there are no criteria.", info: pr.basis, problems: problemsOf(d, ["coverage"]) },
     { label: "Capabilities in use", icon: "catalogue", value: k.in_use ? k.in_use.value : null, provenance: "observed",
-      denom: k.in_use ? "of " + k.in_use.of + " in the catalogue" : null, info: k.in_use && k.in_use.basis },
+      denom: k.in_use ? "of " + k.in_use.of + " in the catalogue" : null, info: k.in_use && k.in_use.basis,
+      problems: problemsOf(d, ["catalogue"]) },
   ];
 }
 
@@ -63,7 +123,7 @@ function kpis(d) {
 export function decideButtons(item, opts) {
   const o = opts || {};
   const kind = item.kind;
-  if (!decides(kind)) return h("span", { class: "muted small" }, "Waits on " + (item.deciders || []).map(personaLabel).join(" or "));
+  if (!decides(kind)) return h("span", { class: "muted small" }, "Waits on " + orList(item.deciders || []));
   const box = h("div", { class: "inline-decide" });
   const verdicts = (item.verdicts || []).filter((v) => !(kind === "question" && v === "assume"));
   if (kind === "question") return h("a", { class: "btn small", href: link(item.project, "questions", (item.refs || {}).question) }, "Answer");
@@ -125,7 +185,11 @@ const DEF = {};
 DEF.kpi_strip = {
   views: ["chart", "table"],
   render: (d) => h("div", { class: "kpi-strip" }, kpis(d).map((t) => kpiTile(d, t))),
-  table: (d) => dataTable([{ label: "Figure", key: "label" }, { label: "Value", value: (r) => (r.value === null || r.value === undefined ? null : (r.display || num(r.value))) },
+  table: (d) => dataTable([{ label: "Figure", key: "label" }, { label: "Value", value: (r) => ((r.problems || []).length
+    ? h("span", { class: "nm-text" }, "could not be read (" + r.problems.join(", ") + ")")
+    : r.value === null || r.value === undefined ? null
+      : (r.partial || []).length ? (r.display || num(r.value)) + " or more (part not read: " + r.partial.join(", ") + ")"
+        : (r.display || num(r.value))) },
     { label: "Denominator", value: (r) => r.denom || "-" }, { label: "Provenance", key: "provenance" }], kpis(d), "Key figures"),
 };
 
@@ -195,13 +259,14 @@ DEF.pipeline = {
   render: (d) => {
     const stages = pipelineStages(d);
     if (!(d.pipeline || {}).total) return empty("pipeline", "No project yet.", button("New project", { icon: "plus", kind: "small", onclick: () => nav.newProject && nav.newProject() }));
-    return h("div", { class: "pipe" }, stages.map((s) => h("div", { class: "pipe-col" + (s.projects.length ? "" : " empty") },
+    // the box is a size container: the stages go from seven columns to four, then to rows, by its width
+    return h("div", { class: "pipe-box" }, h("div", { class: "pipe" }, stages.map((s) => h("div", { class: "pipe-col" + (s.projects.length ? "" : " empty") },
       h("div", { class: "pipe-h" }, h("span", { class: "pipe-n" }, String(s.stage)), h("span", { class: "pipe-name" }, s.name),
         h("span", { class: "pipe-c" }, String(s.projects.length))),
       h("div", { class: "pipe-band" }, s.band),
       s.projects.map((p) => h("a", { class: "pchip", href: "#/p/" + enc(p.id), tip: p.title + " · " + (p.maturity || "") },
         icon(profileOf(p.profile).icon || "globe"), h("span", { class: "pchip-b" }, h("span", { class: "pchip-t" }, p.title),
-          h("span", { class: "pchip-m" }, (p.maturity || "") + (p.paused ? " · paused" : ""))))))));
+          h("span", { class: "pchip-m" }, (p.maturity || "") + (p.paused ? " · paused" : "")))))))));
   },
   table: (d) => dataTable([{ label: "Stage", value: (r) => r.stage + " " + r.name }, { label: "Band", key: "band" },
     { label: "Projects", value: (r) => r.projects.map((p) => p.title).join(", ") || "-" }], pipelineStages(d), "Projects per stage"),
@@ -210,7 +275,10 @@ DEF.pipeline = {
 DEF.decisions = {
   views: ["list", "chart", "table"],
   render: (d, w) => {
-    const items = (d.decisions || []).slice().sort((a, b) => (decides(b.kind) - decides(a.kind)) || ((b.age_hours || 0) - (a.age_hours || 0)));
+    // as the Inbox orders them: yours first, then what holds work up, the panel's open questions last, oldest first
+    const holds = (x) => (x.blocking || x.kind !== "question" ? 1 : 0);
+    const items = (d.decisions || []).slice().sort((a, b) => (decides(b.kind) - decides(a.kind)) || (holds(b) - holds(a))
+      || ((b.age_hours || 0) - (a.age_hours || 0)));
     if (!items.length) return empty("check-circle", "Nothing waits on a person right now.");
     if (w.view === "chart") {
       const by = {};
@@ -225,7 +293,8 @@ DEF.decisions = {
   },
   table: (d) => dataTable([{ label: "Card", value: (r) => r.card + " " + r.title }, { label: "Kind", value: (r) => KIND_LABEL[r.kind] || r.kind },
     { label: "Project", key: "project_title" }, { label: "Waiting", value: (r) => fmtAge(r.age_hours) },
-    { label: "Who decides", value: (r) => (r.deciders || []).map(personaLabel).join(", ") }], d.decisions || [], "Decisions waiting"),
+    { label: "Who decides", value: (r) => (S.personas.length && S.personas.every((p) => (r.deciders || []).includes(p.id))
+      ? "Any persona" : (r.deciders || []).map(personaLabel).join(", ")) }], d.decisions || [], "Decisions waiting"),
 };
 
 export function catalogueCard(it) {
@@ -329,7 +398,7 @@ DEF.timeline = {
   render: (d, w) => {
     const { pid, tl, ids } = timelineFor(d, w);
     if (!tl) return empty("timeline", "No task has run yet: timelines start when the build does.");
-    const sel = ids.length > 1 ? h("select", { class: "w-select", "aria-label": "Project" }, ids.map((id) =>
+    const sel = ids.length > 1 ? h("select", { class: "w-select", "aria-label": "Project", "data-fk": "filter" }, ids.map((id) =>
       h("option", { value: id, selected: id === pid }, d.timelines[id].title || id))) : null;
     if (sel) sel.addEventListener("change", () => { if (nav.setWidgetFilter) nav.setWidgetFilter(w.id, { project: sel.value }); });
     return h("div", null, h("div", { class: "w-row" }, h("span", { class: "w-sum" }, h("b", null, tl.title || pid), " · " + plural(tl.tasks.length, "task")), sel),
@@ -431,32 +500,51 @@ DEF.models = {
   Object.entries(d.models || {}), "Builder models"),
 };
 
+// A project whose health could not be read is counted and listed as "not read" in every view (hatched in
+// the chart), beside the projects that were read, under the widget's warning; never left out, never zero.
+const unreadText = (d, names) => (problemsOf(d, names).length ? "could not be read" : "not read");
 DEF.health = {
   views: ["list", "chart", "table"],
   render: (d, w) => {
     const rows = d.projects || [];
     if (!rows.length) return empty("heart", "No project yet.");
     if (w.view === "chart") {
-      const by = { on_track: 0, at_risk: 0, off_track: 0 };
-      rows.forEach((r) => { if (r.health && by[r.health.status] !== undefined) by[r.health.status] += 1; });
+      const by = { on_track: 0, at_risk: 0, off_track: 0, unread: 0 };
+      rows.forEach((r) => { const st = (r.health || {}).status; by[st !== "unread" && by[st] !== undefined ? st : "unread"] += 1; });
       return segbar({ parts: [{ label: "On track", value: by.on_track, color: STATUS_MARK.good, icon: "check-circle" },
         { label: "At risk", value: by.at_risk, color: STATUS_MARK.warning, icon: "alert", ink: "ink-dark" },
-        { label: "Off track", value: by.off_track, color: STATUS_MARK.critical, icon: "stop" }] });
+        { label: "Off track", value: by.off_track, color: STATUS_MARK.critical, icon: "stop" },
+        { label: "Health not read", value: by.unread, hatch: true, icon: "dashed", ink: "ink-text" }] });
     }
     return h("ul", { class: "health-list" }, rows.map((r) => {
       const f = (r.health || {}).forecast || {};
+      const known = (x) => x !== null && x !== undefined;
       return h("li", { class: "health-row" }, healthChip(r.health),
         h("div", { class: "hr-b" }, h("a", { href: "#/p/" + enc(r.project) }, r.title), h("p", { class: "muted small" }, (r.now || {}).line || "")),
-        h("span", { class: "hr-f", tip: f.basis || "" }, f.eta_minutes !== null && f.eta_minutes !== undefined
-          ? "ETA " + fmtMinutes(f.eta_minutes) : h("span", { class: "nm-text" }, "ETA not measured"),
-        h("small", null, plural(f.tasks_left || 0, "task") + " left")));
+        !r.health ? h("span", { class: "hr-f" }, h("span", { class: "nm-text" }, "Forecast not read"))
+          : h("span", { class: "hr-f", tip: f.basis || "" }, known(f.eta_minutes)
+            ? "ETA " + fmtMinutes(f.eta_minutes) : h("span", { class: "nm-text" }, "ETA not measured"),
+          h("small", null, known(f.tasks_left) ? plural(f.tasks_left, "task") + " left" : "tasks left not measured")));
     }));
   },
-  table: (d) => dataTable([{ label: "Project", key: "title" }, { label: "Health", value: (r) => ((HEALTH[(r.health || {}).status] || {}).word || "-") },
-    { label: "Tasks left", value: (r) => ((r.health || {}).forecast || {}).tasks_left, num: true },
-    { label: "ETA", value: (r) => fmtMinutes(((r.health || {}).forecast || {}).eta_minutes) }, { label: "Now", value: (r) => (r.now || {}).line || "-" }],
-  d.projects || [], "Project health"),
+  table: (d) => {
+    const unread = (r, fn) => (r.health ? fn(r.health) : h("span", { class: "nm-text" }, unreadText(d, ["health"])));
+    return dataTable([{ label: "Project", key: "title" },
+      { label: "Health", value: (r) => unread(r, (x) => (HEALTH[x.status] || {}).word || x.status) },
+      { label: "Tasks left", value: (r) => unread(r, (x) => (x.forecast || {}).tasks_left), num: true },
+      { label: "ETA", value: (r) => unread(r, (x) => fmtMinutes((x.forecast || {}).eta_minutes)) },
+      { label: "Now", value: (r) => (r.now || {}).line || h("span", { class: "nm-text" }, unreadText(d, ["now"])) }],
+    d.projects || [], "Project health");
+  },
 };
+
+// Who may decide an update card: the card's own deciders (as the decisions read model carries them), else
+// every persona that decides updates. The observation's `who` only suggests who should look at it.
+function updateDeciders(d, u) {
+  const card = (d.decisions || []).find((x) => x.card === u.card && x.project === u.project);
+  if (card && (card.deciders || []).length) return card.deciders;
+  return (S.personas || []).filter((p) => (p.decides || []).includes("update")).map((p) => p.id);
+}
 
 function updateView(u) {
   const lens = S.lens || "business";
@@ -475,7 +563,8 @@ DEF.updates = {
         u.state === "open" ? chip("warning", "clock", "Open") : u.decision ? chip("good", "check", VERDICT_LABEL[u.decision.verdict] || u.decision.verdict)
           : chip("neutral", "info", "For information")),
       updateView(u),
-      u.state === "open" && u.card ? decideButtons({ kind: "update", card: u.card, project: u.project, verdicts: u.verdicts, deciders: u.who }) : null)));
+      u.state === "open" && u.card ? decideButtons({ kind: "update", card: u.card, project: u.project, verdicts: u.verdicts,
+        deciders: updateDeciders(d, u) }) : null)));
   },
   table: (d) => dataTable([{ label: "Update", value: (r) => r.label || r.trigger }, { label: "Project", value: (r) => r.project_title || r.project || "the factory" },
     { label: "State", key: "state" }, { label: "Decision", value: (r) => (r.decision ? (VERDICT_LABEL[r.decision.verdict] || r.decision.verdict) + " by " + r.decision.person : "-") }],
@@ -565,24 +654,38 @@ DEF.evidence_packs = {
     { label: "Exports", key: "exports", num: true }], d.evidence_packs || [], "Evidence packs"),
 };
 
+// Spend over the Gnomon runs. With no run there is nothing to price or count: both figures are "not
+// measured", never 0.0000 USD and 0 tokens. A cloud sum with an unpriced run in it is not measured either.
+function spendOf(d) {
+  const s = d.spend || {};
+  const noRun = s.runs === 0;
+  return { s, noRun, cloudNm: noRun || s.cloud === null || s.cloud === undefined, localNm: noRun || s.local_tokens === null || s.local_tokens === undefined };
+}
+const runsKnown = (s) => s.runs !== null && s.runs !== undefined;
 DEF.spend = {
   views: ["chart", "table"],
   render: (d) => {
-    const s = d.spend || {};
-    const cloud = s.cloud === null || s.cloud === undefined;
+    const { s, noRun, cloudNm, localNm } = spendOf(d);
+    const why = noRun ? "No Gnomon run yet, so nothing is priced." : plural(s.unmeasured_runs || 0, "run") + " without a price"
+      + (s.cloud_measured_part ? "; the priced part is " + fmtMoney(s.cloud_measured_part, s.currency) : "") + ". Prices come from kernel/prices.json.";
     return h("div", { class: "kpi-strip two" },
-      h("div", { class: "kpi" + (cloud ? " nm" : "") }, h("div", { class: "kpi-h" }, icon("coins"), h("span", null, "Cloud spend")),
-        cloud ? h("div", { class: "kpi-v nm-text" }, "— Not measured") : h("div", { class: "kpi-v" }, fmtMoney(s.cloud, s.currency)),
-        h("p", { class: "kpi-sub" }, cloud ? (s.unmeasured_runs ? plural(s.unmeasured_runs, "run") + " without a price" + (s.cloud_measured_part ? "; the priced part is " + fmtMoney(s.cloud_measured_part, s.currency) : "") + "."
-          : "No run yet.") + " Prices come from kernel/prices.json." : "Every run is priced."),
-        foot(d, "derived", s.runs !== undefined ? "over " + plural(s.runs || 0, "run") : null)),
-      h("div", { class: "kpi" }, h("div", { class: "kpi-h" }, icon("cpu"), h("span", null, "Local tokens")),
-        h("div", { class: "kpi-v" }, num(s.local_tokens)), h("p", { class: "kpi-sub" }, "Local models cost no API money."),
+      h("div", { class: "kpi" + (cloudNm ? " nm" : "") }, h("div", { class: "kpi-h" }, icon("coins"), h("span", null, "Cloud spend")),
+        cloudNm ? h("div", { class: "kpi-v nm-text" }, "— Not measured") : h("div", { class: "kpi-v" }, fmtMoney(s.cloud, s.currency)),
+        h("p", { class: "kpi-sub" }, cloudNm ? why : "Every run is priced."),
+        foot(d, "derived", noRun ? "no run yet" : runsKnown(s) ? "over " + plural(s.runs, "run") : null)),
+      h("div", { class: "kpi" + (localNm ? " nm" : "") }, h("div", { class: "kpi-h" }, icon("cpu"), h("span", null, "Local tokens")),
+        localNm ? h("div", { class: "kpi-v nm-text" }, "— Not measured") : h("div", { class: "kpi-v" }, num(s.local_tokens)),
+        h("p", { class: "kpi-sub" }, noRun ? "No Gnomon run yet, so no token is counted." : "Local models cost no API money."),
         foot(d, "observed", "tokens on local models")));
   },
-  table: (d) => dataTable([{ label: "Figure", key: "k" }, { label: "Value", key: "v" }], [
-    { k: "Cloud spend", v: (d.spend || {}).cloud === null ? null : fmtMoney((d.spend || {}).cloud, (d.spend || {}).currency) },
-    { k: "Runs without a price", v: num((d.spend || {}).unmeasured_runs) }, { k: "Local tokens", v: num((d.spend || {}).local_tokens) }], "Spend"),
+  table: (d) => {
+    const { s, noRun, cloudNm, localNm } = spendOf(d);
+    return dataTable([{ label: "Figure", key: "k" }, { label: "Value", key: "v" }], [
+      { k: "Runs", v: runsKnown(s) ? num(s.runs) : null },
+      { k: "Cloud spend", v: cloudNm ? null : fmtMoney(s.cloud, s.currency) },
+      { k: "Runs without a price", v: s.unmeasured_runs === null || s.unmeasured_runs === undefined ? null : num(s.unmeasured_runs) },
+      { k: "Local tokens", v: localNm ? null : num(s.local_tokens) }], "Spend");
+  },
 };
 
 DEF.feed_health = {
@@ -597,16 +700,27 @@ DEF.eval_trend = {
 };
 DEF.try_it = {
   views: ["list", "table"],
+  // The address is where the release was last deployed. Nothing here checks that it still answers, so each
+  // row says "last deployed" and offers the checklist, never a running service to try now.
   render: (d) => {
     const rows = (d.try_it || []).filter((t) => t.url);
-    if (!rows.length) return notMeasured("No release runs at a reachable address yet. The checklist is ready for when one does.");
-    return h("ul", { class: "try-list" }, rows.map((t) => h("li", null, icon("play"), h("a", { href: link(t.project, "try") }, t.title),
-      h("span", { class: "muted small" }, "release " + t.release + " (" + (t.env || "?") + ") · " + plural(t.checks, "check")))));
+    if (!rows.length) return notMeasured("No release has been deployed to an address yet. The checklist is ready for when one is.");
+    return h("div", null, h("ul", { class: "try-list" }, rows.map((t) => h("li", null, icon("package"),
+      h("a", { href: link(t.project, "try"), "aria-label": t.title + ": its checklist" }, t.title),
+      h("span", { class: "muted small" }, "release " + t.release + ", last deployed" + (t.env ? " to " + t.env : "") + " · "
+        + plural(t.checks, "check"))))),
+    h("p", { class: "viz-note try-note" }, icon("info"), h("span", null, "Where each release was last deployed. Whether it still "
+      + "answers is not checked here: its checklist opens the address, and it may be stopped.")));
   },
-  table: (d) => dataTable([{ label: "Project", key: "title" }, { label: "Release", key: "release" }, { label: "Environment", key: "env" },
+  table: (d) => dataTable([{ label: "Project", key: "title" }, { label: "Release", key: "release", none: "no release yet" },
+    { label: "Environment", key: "env", none: "-" }, { label: "Last deployed at", key: "url", none: "not deployed" },
     { label: "Checks", key: "checks", num: true }], d.try_it || [], "What to try"),
 };
 
+Object.entries(DEF).forEach(([type, def]) => {
+  def.render = withProblems(type, def.render);
+  def.table = withProblems(type, def.table);
+});
 export const WIDGET_DEFS = DEF;
 
 // The ⓘ text for a widget: its question, and where its numbers come from.
@@ -629,5 +743,5 @@ export const SOURCES = {
   spend: "kernel.projections.floor spend: priced runs only; an unpriced run is never counted as zero.",
   feed_health: "An integration's freshness probe.",
   eval_trend: "A model or agent release's evals, re-measured over time.",
-  try_it: "kernel.status.try_it: the release to open and its checks.",
+  try_it: "kernel.status.try_it: where the latest release was deployed, and its checks. Whether it still runs is not checked.",
 };

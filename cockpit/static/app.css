@@ -293,6 +293,7 @@ html.drawer-open .fab { display: none; }
 .widget.size-XL .card-body { min-height: 320px; }
 .card-body { min-width: 0; }
 .card-body.inert { pointer-events: none; }
+.card-body[inert] { user-select: none; }
 .grid-empty { grid-column: 1 / -1; }
 .view-toggle { display: inline-flex; gap: 1px; padding: 1px; border-radius: var(--r-md); }
 .view-toggle .icon-btn { color: var(--text-3); }
@@ -301,7 +302,19 @@ html.drawer-open .fab { display: none; }
 .w-sum b { color: var(--text); font-variant-numeric: tabular-nums; }
 .w-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s2); flex-wrap: wrap; }
 .w-row .w-sum { margin: 0; }
-.w-select { width: auto; min-height: 28px; padding: 2px 26px 2px 8px; font-size: var(--fs-sm); }
+.w-select { width: auto; max-width: 100%; min-width: 0; min-height: 28px; padding: 2px 26px 2px 8px; font-size: var(--fs-sm); text-overflow: ellipsis; }
+/* a read model that could not be read: said in the widget, never shown as an empty state */
+.w-warn { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 var(--s3); padding: 8px 10px; border: 1px solid var(--warning-border);
+  background: var(--warning-bg); border-radius: var(--r-md); color: var(--text); font-size: var(--fs-sm); }
+.w-warn > .ic { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--warning); }
+.w-warn.page { margin-bottom: var(--gap); }
+/* newer figures held back while the person types in a widget: said, with the button that shows them */
+.w-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--accent-border);
+  background: var(--accent-subtle); border-radius: var(--r-md); color: var(--text); font-size: var(--fs-sm); }
+.w-note > .ic { width: 16px; height: 16px; flex: none; color: var(--accent-text); }
+.w-note > span { flex: 1 1 24ch; min-width: 0; }
+.w-note.page { margin-bottom: var(--gap); }
+.dash-refreshing { color: var(--text-2); }
 .w-headline { display: flex; align-items: baseline; gap: 10px; margin-bottom: var(--s3); color: var(--text-2); flex-wrap: wrap; }
 .w-headline .big { font-size: var(--fs-kpi); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1; }
 .w-headline small { margin-left: 8px; }
@@ -314,6 +327,8 @@ html.drawer-open .fab { display: none; }
 .nm-box > .ic { width: 20px; height: 20px; color: var(--text-3); margin-top: 1px; }
 .nm-box b { color: var(--text); font-weight: 600; }
 .nm-box p { margin: 2px 0 0; font-size: var(--fs-md); }
+.nm-box.err { border-style: solid; border-color: var(--warning-border); background: var(--warning-bg); color: var(--text); }
+.nm-box.err > .ic { color: var(--warning); }
 .skeleton { display: grid; gap: var(--gap); }
 .sk-h { height: 40px; width: 40%; border-radius: var(--r-md); background: var(--sunken); }
 .sk-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
@@ -322,7 +337,9 @@ html.drawer-open .fab { display: none; }
 
 /* customizing */
 html.customizing .widget.cz { cursor: grab; outline: 1px dashed var(--border-strong); outline-offset: 3px; }
-html.customizing .widget.cz:focus-visible { outline: 2px solid var(--accent); }
+html.customizing .widget.cz:focus-visible { outline: 2px solid var(--accent-text); }
+/* focus rings in the dashboard: the accent's text step, at least 3:1 on the surfaces in both themes */
+#grid :focus-visible, .library :focus-visible, .cz-bar :focus-visible, .preview-bar :focus-visible { outline-color: var(--accent-text); }
 .widget.dragging { opacity: 0.45; }
 .widget.drop { outline: 2px solid var(--accent) !important; }
 .grip { color: var(--text-3); display: inline-grid; cursor: grab; }
@@ -357,6 +374,9 @@ html.customizing .widget.cz:focus-visible { outline: 2px solid var(--accent); }
 .kpi-h { align-items: flex-start; }
 .kpi-h > .ic, .kpi-i { margin-top: 1px; }
 .kpi-i { color: var(--text-3); display: inline-grid; }
+.kpi-h .kpi-i { width: 22px; height: 22px; margin: -3px -6px -3px 0; flex: none; }
+.kpi-h .kpi-i .ic { width: 15px; height: 15px; }
+.kpi.err { border-color: var(--warning-border); }
 .kpi-v { font-size: var(--fs-kpi); font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .kpi-v small { font-size: var(--fs-md); color: var(--text-2); font-weight: 500; margin-left: 4px; }
 .kpi-v.nm-text { font-size: var(--fs-lg); font-weight: 500; color: var(--text-3); padding: 6px 0 3px; }
@@ -376,7 +396,9 @@ html.customizing .widget.cz:focus-visible { outline: 2px solid var(--accent); }
 .legend-row > span { display: inline-flex; align-items: center; gap: 6px; }
 .viz-note { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: var(--s2); font-size: var(--fs-sm); color: var(--text-3); }
 .viz-note .ic { width: 14px; height: 14px; }
-.plot-wrap { padding-left: 34px; }
+.plot-wrap { padding-left: 34px; padding-right: 12px; }
+/* charts are size containers: a small widget thins its labels instead of letting them collide */
+.viz.columns, .viz.bars, .viz.waterfall { container-type: inline-size; }
 .plot { position: relative; height: var(--h, 160px); border-bottom: 1px solid var(--chart-axis); }
 .yaxis { position: absolute; inset: 0; pointer-events: none; }
 .tick { position: absolute; left: 0; right: 0; border-top: 1px solid var(--chart-grid); }
@@ -390,14 +412,23 @@ html.customizing .widget.cz:focus-visible { outline: 2px solid var(--accent); }
 .stack .cseg { display: block; min-height: 2px; flex-basis: 0; }
 .stack .cseg:last-child { border-radius: 4px 4px 0 0; }
 .xaxis { display: flex; justify-content: space-around; gap: 2px; padding: 6px 4px 0; }
-.xl { flex: 1 1 0; max-width: 40px; text-align: center; font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; overflow: visible; font-variant-numeric: tabular-nums; }
+.xl { flex: 1 1 0; min-width: 0; max-width: 40px; display: flex; justify-content: center; font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; overflow: visible; font-variant-numeric: tabular-nums; }
+@container (max-width: 340px) { .xl.k1 { visibility: hidden; } }
 .bar-list { list-style: none; display: grid; gap: 8px; }
 .bar-row { display: grid; grid-template-columns: minmax(90px, 38%) minmax(0, 1fr) auto; align-items: center; gap: var(--s3); padding: 2px 0; border-radius: var(--r-sm); }
 .bar-row:hover, .bar-row:focus-visible { background: color-mix(in srgb, var(--text) 4%, transparent); }
 .bar-l { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-md); }
 .bar-l > a, .bar-l > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar-l small { color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
-.bar-l .ic { color: var(--text-3); }
+.bar-l .ic { color: var(--text-3); flex: none; }
+/* a label with a sub-line: the name first (it may shrink, never to nothing), the sub-line under it */
+.bar-l:has(> small) { flex-wrap: wrap; row-gap: 0; }
+.bar-l > small { flex: 1 0 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.bar-l > a, .bar-l > span { flex: 0 1 auto; min-width: 3ch; }
+@container (max-width: 360px) {
+  .bar-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .bar-row .track { grid-column: 1 / -1; grid-row: 2; }
+}
 .track { position: relative; height: 12px; }
 .track.nm { border: 1px dashed var(--border-strong); border-radius: 4px; height: 12px; }
 .bar { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; }
@@ -419,13 +450,18 @@ html.customizing .widget.cz:focus-visible { outline: 2px solid var(--accent); }
 .segp { display: flex; align-items: center; padding: 0 8px; border-radius: 4px; min-width: 4px; flex-basis: 0; font-size: var(--fs-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
 .segp.ink-light { color: #ffffff; }
 .segp.ink-dark { color: #0b0b0b; }
+.segp.ink-text { color: var(--text); }
+.segp .segn { padding: 0 5px; border-radius: 3px; background: var(--surface); line-height: 1.4; }
 .spark { position: relative; display: block; height: 24px; margin: 2px 0; }
 .spark svg { width: 100%; height: 24px; display: block; overflow: visible; }
 .spark-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .spark-area { fill: var(--accent); opacity: 0.1; stroke: none; }
 .spark-dot { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--raised); }
 .wf { display: grid; gap: 6px; }
-.wf-row { display: grid; grid-template-columns: minmax(120px, 30%) minmax(0, 1fr); gap: var(--s3); align-items: center; min-height: 26px; }
+/* the right padding keeps a merge or escalation mark at the end of the axis inside the chart */
+.wf-row { display: grid; grid-template-columns: minmax(120px, 30%) minmax(0, 1fr); gap: var(--s3); align-items: center; min-height: 26px; padding-right: 10px; }
+@container (max-width: 440px) { .wf-row { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+@container (max-width: 230px) { .wf-axis .wf-track span.mid { display: none; } }
 .wf-l { display: flex; flex-direction: column; min-width: 0; font-size: var(--fs-md); }
 .wf-l small { color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wf-track { position: relative; height: 14px; border-left: 1px solid var(--chart-axis); background: linear-gradient(var(--chart-grid), var(--chart-grid)) 0 50% / 100% 1px no-repeat; }
@@ -480,6 +516,13 @@ html.customizing .widget.cz:focus-visible { outline: 2px solid var(--accent); }
 .dec-m { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--fs-sm); color: var(--text-3); }
 .dec-m .ic { width: 13px; height: 13px; margin-right: 3px; }
 .dec-a, .inline-decide { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+/* a narrow widget (size S, or M beside the drawer) puts the verdicts and the forecast under the title,
+   by the list's own width, as a phone does by the screen's */
+.dec-list, .health-list { container-type: inline-size; }
+@container (max-width: 440px) {
+  .dec-row { grid-template-columns: 28px minmax(0, 1fr); row-gap: 6px; }
+  .dec-row .dec-a { grid-column: 2; justify-content: flex-start; }
+}
 .sq-map {
   display: grid; grid-template-columns: 30px minmax(0, 1fr) 64px minmax(0, 1fr) 30px;
   grid-template-areas: ". a ft b ." "fl c c c fr" ". e fb d ."; gap: var(--s2); align-items: stretch;
@@ -541,6 +584,16 @@ html.customizing .widget.cz:focus-visible { outline: 2px solid var(--accent); }
 .pchip-b { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .pchip-m { font-size: var(--fs-xs); color: var(--text-3); }
 .pipe-h { text-align: left; }
+/* by the widget's own width, not the window's: seven columns, then four, then one row per stage */
+.pipe-box { container-type: inline-size; }
+@container (max-width: 860px) { .pipe-box .pipe { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container (max-width: 520px) {
+  .pipe-box .pipe { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .pipe-box .pipe-col { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 0; padding: 6px 8px; }
+  .pipe-box .pipe-h { flex: 1 1 auto; align-items: center; }
+  .pipe-box .pipe-band { flex: none; margin: 0; }
+  .pipe-box .pchip { flex: 1 1 100%; }
+}
 .cat-rows { list-style: none; display: grid; }
 .cat-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: var(--s3); align-items: center; padding: 8px 0; border-top: 1px solid var(--border); }
 .cat-row:first-child { border-top: 0; padding-top: 0; }
@@ -568,6 +621,11 @@ html.customizing .widget.cz:focus-visible { outline: 2px solid var(--accent); }
 .hr-b p { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hr-f { display: flex; flex-direction: column; align-items: flex-end; font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; }
 .hr-f small { color: var(--text-3); font-weight: 400; }
+@container (max-width: 440px) {
+  .health-row { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
+  .health-row > .chip { justify-self: start; }
+  .health-row .hr-f { flex-direction: row; align-items: baseline; gap: 8px; white-space: normal; flex-wrap: wrap; }
+}
 .act-row { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: var(--s3); padding: 8px 0; border-top: 1px solid var(--border); }
 .act-row:first-child { border-top: 0; padding-top: 0; }
 .act-b p { margin: 0; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -594,6 +652,8 @@ html.customizing .widget.cz:focus-visible { outline: 2px solid var(--accent); }
 .ev-m { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 4px; font-size: var(--fs-sm); color: var(--text-2); }
 .ev-m .ic { width: 14px; height: 14px; margin-right: 3px; color: var(--text-3); }
 .try-list li { display: flex; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
+.try-note { flex-wrap: nowrap; align-items: flex-start; }
+.try-note .ic { flex: none; margin-top: 2px; }
 
 /* -- popovers, menus, dialogs -------------------------------------------------------------------- */
 
@@ -1089,6 +1149,26 @@ main > .card { margin-bottom: var(--gap); }
 .prof-s { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.4; }
 .prof-card small { color: var(--text-3); font-size: var(--fs-xs); margin-top: auto; }
 .intro { padding: var(--s6); }
+/* the pages' own focus rings: --accent-text holds at least 3:1 on the surface in both themes */
+.lc:focus-visible, .prof-card:focus-visible, .people:focus-visible, .proj-card:focus-visible, .emb-row:focus-visible,
+.cat-grid.wide .cat-card:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+.swatch:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 3px; }
+.check input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; box-shadow: none; }
+.concepts .concept.focused { outline-color: var(--accent-text); }
+/* the square's map corners (each names its people on focus), the square's links and buttons, the
+   Inbox's, the embeds' and the New project form's buttons: the same ring, 3:1 in the light theme too */
+.sq-card :is(.sq-corner, .sq-factory):focus-visible, .sq-cols :is(a, .btn):focus-visible,
+.inbox-card :is(a, .btn):focus-visible, .emb-card .btn:focus-visible, .np-form .btn:focus-visible,
+.sq-cols .card-t[tabindex="-1"]:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+.people { border-radius: 999px; }
+.prof-note { font-size: var(--fs-xs); color: var(--text-2); line-height: 1.4; }
+.sig-more { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: var(--s2) 0 0; padding-top: var(--s2); border-top: 1px solid var(--border); }
+/* a card's count and people wrap under its title rather than cutting the title short */
+.sq-cols .card-head, .emb-card .card-head { flex-wrap: wrap; row-gap: var(--s1); }
+.sq-cols .card-head .card-t, .emb-card .card-head .card-t { flex-shrink: 0; max-width: 100%; }
+.sq-cols .card-tools, .emb-card .card-tools { flex-wrap: wrap; justify-content: flex-end; gap: 4px 8px; max-width: 100%; }
+/* the Inbox across projects: a test name has no break points of its own */
+.inbox-card .impact-dl dd, .inbox-card .impact-dl code { overflow-wrap: anywhere; min-width: 0; }
 @media (max-width: 900px) {
   .sq-cols, .row2 { grid-template-columns: minmax(0, 1fr); }
   .concept-f { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }

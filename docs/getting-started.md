@@ -25,7 +25,8 @@ python -m venv .venv
 pip install -e .
 ```
 
-This installs the `rihmasto` command (`rihma` stays as an alias) and `rihmasto-cockpit`.
+This installs the `rihmasto` command and `rihmasto-cockpit`, `rihmasto-embed` and `rihmasto-mcp`.
+The earlier names (`rihma`, `rihma-cockpit` and so on) stay as aliases.
 
 - Install it editable (`-e`), from a checkout. The kernel reads `.gnomon/`, `tools/` and
   `kernel/routing.json` from the checkout, so a copy outside it would not run.
@@ -48,8 +49,9 @@ It prints JSON:
 - Gnomon (found, version, supported, recommended);
 - git and docker;
 - whether the lanes root is writable;
-- for each endpoint in `kernel/routing.json`, whether its key variable is set. It never prints
-  a key's value.
+- whether this machine's routing overlay, `kernel/routing.local.json`, is present (section 5);
+- for each endpoint in the routing, whether its key variable is set. It never prints a key's
+  value.
 
 It exits 1 when Gnomon is missing, too old, or its version cannot be read. Everything else is a
 warning. The demo below runs even when the doctor exits 1.
@@ -106,12 +108,21 @@ irm https://raw.githubusercontent.com/eljaplacido/gnomonharness/master/scripts/i
 ### Choose the models
 
 Rihmasto is model-agnostic. Each role (each Rihma agent) uses any OpenAI-compatible endpoint, local
-or hosted, set per role in [kernel/routing.json](../kernel/routing.json). Every call goes through
-Gnomon, which gives it governance, an audit trail and security, whatever model answers. The shipped
-file is an example: replace its endpoints with yours before a real project.
+or hosted, set per role. Every call goes through Gnomon, which gives it governance, an audit trail
+and security, whatever model answers.
 
-This routing uses a local GPU host for the analyst and the builder, and a hosted provider for the
-verifier and the holdout author:
+The shipped [kernel/routing.json](../kernel/routing.json) points at a local OpenAI-compatible
+server on 127.0.0.1 and one hosted endpoint. Put your own routing in `kernel/routing.local.json`,
+beside it. That file is gitignored, so your hosts and choices never reach a commit, and the kernel
+merges it over the shipped file each time it loads the routing:
+
+- each role, model and endpoint it names replaces the shipped one whole (a role's `fallback` too);
+- any other key it sets, such as `max_context_tokens`, replaces the shipped value;
+- nothing is removed. A shipped endpoint that no role uses is never compiled into a lane, but
+  `rihmasto doctor` still warns when its key variable is not set.
+
+This `kernel/routing.local.json` uses a GPU host on your network for the analyst and the builder,
+and a hosted provider for the verifier and the holdout author:
 
 ```json
 {
@@ -203,8 +214,15 @@ rihmasto run <project>
 
 `run` writes the spec, compiles the contract, authors the holdouts, builds each task in a cell,
 judges it at the gate, and delivers. It stops at each card a person must decide and says which.
-Decide it in the cockpit's **Inbox** (or with `rihmasto decide <project> <card> <verdict>`), then
-run again. At `pilot` and `production`, nothing is built until a person approves the plan.
+Decide it in the cockpit's **Inbox**, or on the command line, then run again:
+
+```bash
+rihmasto decide <project> <card> <verdict> --person "<your name>" --persona <persona> --reason "<why>"
+```
+
+`rihmasto status <project>` lists each open card with its id. `--reason` is optional, and it is
+recorded with the decision. At `pilot` and `production`, nothing is built until a person approves
+the plan.
 
 Feedback goes back through the change loop:
 
@@ -216,10 +234,12 @@ rihmasto apply <project> <card>   # after triage, and after a business decision 
 ## 7. The cockpit
 
 ```bash
-rihmasto-cockpit                  # the factory home: $RIHMA_HOME, else var/ in the checkout
+rihmasto-cockpit
 ```
 
-The server listens on 127.0.0.1 only and prints one link:
+Without `--home`, the cockpit and the command line use the same factory home: `$RIHMASTO_HOME`,
+else `$RIHMA_HOME` or `$GNOMONFACTORY_HOME` (earlier names, still honoured), else `var/` in the
+checkout. The server listens on 127.0.0.1 only and prints one link:
 
 ```text
 Open this link once to sign in: http://127.0.0.1:8787/#k=<one-use code>
@@ -312,7 +332,7 @@ rihmasto catalogue
 
 | What | Where |
 |---|---|
-| The factory home | `--home`, else `$RIHMA_HOME`, else `$GNOMONFACTORY_HOME`, else `var/` in the checkout. Not committed. |
+| The factory home | `--home`, else `$RIHMASTO_HOME`, else `$RIHMA_HOME`, else `$GNOMONFACTORY_HOME`, else `var/` in the checkout. Not committed. |
 | A project | `<home>/projects/<id>/`: `project.json`, `canon/` (brief, questions, assumptions, decisions, Inbox cards), `spec.json`, `contract.json`, `checkplan.json`, `tasks.json`, `repo.git` (the product), `releases/`, `ops/`, `ledger.jsonl` |
 | The factory's own canon | `<home>/projects/_factory/`: concepts, signals, observations, the autonomy policy, embeds |
 | Holdouts | `<home>/holdouts/<id>/`: outside the project folder and every lane. Builders never see them. |
@@ -321,7 +341,7 @@ rihmasto catalogue
 | Workspaces | `<lanes root>/workspaces/<id>/<person>-<n>`, on the branch `work/<person>/<n>` |
 | Security findings | `<home>/projects/<id>/security/<n>.json`, one per ingested SARIF scan |
 | Cockpit state | `<home>/cockpit/heads.json` (the last ledger head it verified), `<home>/_cockpit/` (layouts and evidence exports), `<home>/jobs/` (logs of Advance and New project) |
-| Model routing and prices | [kernel/routing.json](../kernel/routing.json), [kernel/prices.json](../kernel/prices.json) |
+| Model routing and prices | [kernel/routing.json](../kernel/routing.json) with your `kernel/routing.local.json` merged over it (gitignored), [kernel/prices.json](../kernel/prices.json) |
 
 Secrets are never kept in any of these. Keys stay in environment variables, and deploy packages
 carry references to secrets, never their values.
@@ -367,3 +387,9 @@ clamped. Product lanes grant nothing extra, so they need no trust. Trusting a su
 
 **`rihmasto demo` refuses a folder.** It only writes into an empty folder or an earlier demo home.
 Choose another `--home`.
+
+**"Filename too long" on Windows.** A project's repository lives at
+`<home>/projects/<id>/repo.git`, and git writes files up to about 140 characters below the home.
+Windows limits a path to 260 characters, so a factory home in a deep folder fails with this
+error. Keep the home's path under about 120 characters, for example by cloning near the root of a
+drive or by passing a short `--home`.

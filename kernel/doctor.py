@@ -138,8 +138,9 @@ def doctor(home, *, gnomon=None, routing: dict | None = None, lanes_root=None, e
             problems.append(f"Gnomon {g['version']} is older than {MIN_GNOMON}: Rihma needs {MIN_GNOMON} or later, "
                             f"{RECOMMENDED_GNOMON} recommended")
         elif not g["is_recommended"]:
-            warnings.append(f"Gnomon {g['version']} works; {RECOMMENDED_GNOMON} is recommended "
-                            "(see docs/gnomon-0.6.6-audit.md, 'Upgrade steps')")
+            warnings.append(f"Gnomon {g['version']} works; {RECOMMENDED_GNOMON} is recommended: "
+                            "`gnomon update` upgrades it (docs/gnomon-0.6.6-audit.md, 'Upgrade steps', "
+                            "has the pinned and source-build ways)")
 
     git = _tool("git")
     if not git["found"]:

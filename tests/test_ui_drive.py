@@ -5,7 +5,8 @@ The test builds a demo home (``kernel.demo``, what ``rihma demo`` builds), start
 and say who is deciding, switch the lens, open the delivery square and validate a concept as a
 business owner, open a project and decide a card, Customize (resize a widget, Done), ask the
 assistant a where-is question and press Take me there (to the Releases view, whose capability pack
-is read and never built), and open Settings. After every step there is no console error, no
+is read and never built), switch to the Compliance lens (the demo's evidence pack and autonomy cap),
+and open Settings (the demo's website chat). After every step there is no console error, no
 uncaught exception, no failed request and no Content-Security-Policy violation.
 
 Standard library only: the DevTools protocol goes over a WebSocket client written here on a plain
@@ -374,10 +375,16 @@ class UiDriveTest(unittest.TestCase):
         self.customize()
         self.step("ask the assistant")
         self.take_me_there(webhook)
+        self.step("compliance lens")
+        self.compliance_lens()
         self.step("settings")
         b.click('#sb-foot a[href="#/settings"]', what="Settings")
         note = "(document.querySelector('[aria-labelledby=\"embeds-h\"] .note.warning') || {}).textContent"
         self.assertIn("http://127.0.0.1:8790", b.wait(note, "the embed address note"))
+        row = b.wait("(document.querySelector('.emb-list .emb-row') || {}).textContent", "the demo's website chat")
+        for said in ("Warehouse feedback", "E-001", "Feedback on Shipment webhook to the stock system",
+                     "https://warehouse.example", "1 message", "by demo-product", "Active"):
+            self.assertIn(said, row)
         self.check()
         self.assertEqual(self.runner.started, [])                  # nothing in the drive started a job
         # the watch itself: an inline style and a console error made on purpose are both seen
@@ -455,6 +462,24 @@ class UiDriveTest(unittest.TestCase):
         sizes = [{"id": w["id"], "size": w["size"]} for w in saved[0]["layout"]["widgets"]]
         self.assertIn({"id": wid, "size": after}, sizes)
         self.assertEqual(b.eval("document.querySelector('.layout-kind').textContent"), "Your layout")
+
+    def compliance_lens(self) -> None:
+        """The demo's evidence pack and autonomy cap, as the Compliance lens shows them: read only."""
+        b = self.browser
+        b.click('#sb-nav a[href="#/home"]', what="Home in the sidebar")
+        b.wait("!!document.querySelector('#grid .widget')", "the dashboard")
+        b.click('#lens-switch [data-lens="compliance"]', what="the Compliance lens")
+        packs = b.wait("document.title.startsWith('Compliance')"
+                       " && (document.querySelector('#grid .widget[data-type=\"evidence_packs\"] .ev-list') || {}).textContent",
+                       "the Evidence packs widget")
+        row = next(line for line in b.eval("[...document.querySelectorAll('#grid .ev-row')].map((r) => r.textContent)")
+                   if "Shipment webhook" in line)
+        for said in ("Attestable", "pack v1.0.0", "valid", "ledger intact"):
+            self.assertIn(said, row)
+        self.assertIn("Access review check", packs)
+        autonomy = b.wait("(document.querySelector('#grid .widget[data-type=\"autonomy\"] .autonomy') || {}).textContent",
+                          "the Autonomy widget")
+        self.assertIn("Lower caps: Access review check 3", autonomy)
 
     def take_me_there(self, webhook) -> None:
         b = self.browser

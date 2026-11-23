@@ -1,28 +1,43 @@
-"""`rihma demo`: a demo factory home, built with no model keys, no network and no Gnomon (FR-N4-AC-1).
+"""`rihmasto demo`: one showcase factory home, built with no model keys, no network and no Gnomon (FR-N4-AC-1).
 
-A scripted model stands in for the analyst and the holdout author, and a scripted builder cell and
-verifier stand in for Gnomon's cells. Everything else is the real kernel: the panel and the brief,
-the spec and its provenance rules, the compiled contract, the holdout custody, git lanes, the gate
-(the product's own tests, the criterion trace, fail-first, the verifier's findings), escalation, the
-local-preview road, the capability pack, signals, concepts and the updates inbox.
+A scripted model stands in for the analyst, the holdout author and the website chat's assistant,
+and a scripted builder cell and verifier stand in for Gnomon's cells. Everything else is the real
+kernel: the panel and the brief, the spec and its provenance rules, the compiled contract, the
+holdout custody, git lanes, the gate (the product's own tests, the criterion trace, fail-first, the
+verifier's findings), escalation, the local-preview road, the capability pack, the SARIF reader and
+the security gate, the evidence pack, the autonomy cap, embeds, comments, brownfield adoption,
+signals, concepts and the updates inbox.
 
-What it builds, with neutral examples only:
+What it builds, with neutral examples only (docs/demo.md is the guided tour):
 
 - **Equipment loans** (web service, mixed mode, demo maturity): the panel's blocking questions wait
   for a person; a demo business owner has confirmed one assumption.
 - **Shipment webhook to the stock system** (integration, assume mode, explore maturity): built
   through the gate. One task escalated after three rounds; a demo developer chose retry, and it
-  passed. Release 1 ran on the local-preview road and has a capability pack. A chat signal became a
-  change on it, and an observation (a new model) opened an update card.
+  passed. Release 1 ran on the local-preview road and has a capability pack. Then:
+  - a security scan by a neutral example tool ("Example Scanner"), written here as SARIF 2.1.0 over
+    the release's own code, was ingested; the demo compliance person accepted its one error as a
+    risk, with a reason and an expiry, and the security gate recorded its verdict;
+  - a demo stakeholder commented on a requirement (a comment decides nothing);
+  - a website feedback chat (an embed) was created for it, and one end user's message went through
+    the real embed code, with the scripted model as the chat's assistant: it was filed as a change
+    and triaged by the rules;
+  - a chat signal became a change on it, and an observation (a new model) opened an update card;
+  - the demo compliance person exported its evidence pack into `<home>/exports/`.
 - **Access review check** (ops agent, assume mode, demo maturity): built through the gate until a
   task escalated; the escalation waits for a person, with the gate's objections. Its holdout
-  scenario sits in the holdout custody.
-- **Rihma itself**: a need raised in a meeting became a concept that waits for a business owner.
+  scenario sits in the holdout custody. The demo compliance person capped its autonomy at 3
+  (prepare), with a reason.
+- **Stock levels service**: an existing service (a small git repository the demo writes into
+  `<home>/existing/stock-levels`, with its own unittest suite) adopted to maintain it: inventory and
+  as-is spec by rule, and its own suite run once as the characterisation baseline.
+- **Rihmasto itself**: a need raised in a meeting became a concept that waits for a business owner.
 
 Every decision is made by a fake person named `demo-*`. The scripted model and cell are named
-`demo-model` and `demo-builder`; nothing they produce measures a real model. Timestamps are spread
-over the last two days so the dashboard has ages and a trend to show. The local preview is started,
-checked over loopback and stopped again before the command returns.
+`demo-model` and `demo-builder`, and the scanner is an example; nothing they produce measures a real
+model or a real scanner, and what the demo did not measure says "not measured". Timestamps are
+spread over the last two days so the dashboard has ages and a trend to show. The local preview is
+started, checked over loopback and stopped again before the command returns.
 
 The kernel never imports the tests; this module re-implements the scripted model and cell natively.
 """
@@ -32,9 +47,13 @@ from __future__ import annotations
 import contextlib
 import datetime as dt
 import json
+import os
 import re
 import shutil
+import subprocess
 import time
+import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +71,8 @@ PRODUCT = ("demo-product", "product_owner")
 DEVELOPER = ("demo-dev", "developer")
 OPERATIONS = ("demo-ops", "operations")
 COMPLIANCE = ("demo-compliance", "compliance")
+STAKEHOLDER = ("demo-stakeholder", "stakeholder")
+PEOPLE = (OWNER, PRODUCT, DEVELOPER, OPERATIONS, COMPLIANCE, STAKEHOLDER)
 
 
 class DemoError(RuntimeError):
@@ -93,11 +114,13 @@ def _real_now() -> dt.datetime:
 LOANS = "loans"
 WEBHOOK = "webhook"
 ACCESS = "access"
+STOCK = "stock"
 
 TITLES = {
     LOANS: "Equipment loans",
     WEBHOOK: "Shipment webhook to the stock system",
     ACCESS: "Access review check",
+    STOCK: "Stock levels service",
 }
 
 REQUESTS = {
@@ -252,6 +275,136 @@ CONCEPT = {"title": "Offline maintenance visits", "problem": "Technicians lose v
            "who": "field technicians and their team lead",
            "value": "complete visit records without typing them up again at the office", "existing_project": None}
 
+# A stakeholder's remark on the webhook's duplicate rule (R-2). It decides nothing.
+COMMENT = {"requirement": "R-2",
+           "text": "The carrier sometimes sends a relabelled parcel again under a new event_id. Would that count "
+                   "twice? It happened twice last month."}
+
+# The website feedback chat on the webhook, and the one end user who used it.
+EMBED_ORIGIN = "https://warehouse.example"
+EMBED_LABEL = "Warehouse feedback"
+EMBED_BRIEF = "The shipment webhook keeps the warehouse's incoming stock up to date from the carrier's events."
+EMBED_PROMPT = "You are a short, friendly intake assistant on a website."
+EMBED_MESSAGE = ("We also need the expected arrival time next to each item on the incoming list, so we can plan "
+                 "who unloads.")
+EMBED_REPLY = {"reply": "Thank you: the expected arrival time beside each incoming item, to plan the unloading. "
+                        "It has been passed on to the team.",
+               "ready": True,
+               "summary": "A warehouse user asks for each item's expected arrival time on the incoming list, to "
+                          "plan the unloading."}
+
+# The example scanner's rules over the webhook's app/routes.py: (rule, level, CWE, title, the line it
+# points at, message). Both describe the scripted cell's code as it is: nothing is invented.
+SCANNER = "Example Scanner"
+SCAN_FILE = "example-scanner.sarif"
+SCAN_RULES = (
+    ("EX-AUTH-001", "error", "306", "An endpoint that changes data accepts requests without authentication",
+     '@route("POST", "/webhooks/shipments")',
+     "POST /webhooks/shipments accepts a request with no authentication: anyone who can reach it adds incoming "
+     "stock."),
+    ("EX-INPUT-002", "warning", "20", "A number from the request is used without a range check",
+     'int(item.get("qty", 1))',
+     "qty is read with int() and never checked: a negative quantity lowers the incoming stock."),
+)
+RISK_REASON = ("Release 1 runs only on the local preview at explore maturity, with recorded sample events. The "
+               "carrier's shared secret (the panel's Q-003) is an IT rule for the next maturity; the verifier noted "
+               "the same.")
+RISK_DAYS = 90
+
+AUTONOMY = (3, "An ops agent that reads access lists stays in the sandbox: nothing reaches staging or production "
+               "until the compliance owner has signed off its first quarterly report.")
+EXPORTS = "exports"
+
+# The existing service a team brings in to maintain: a small git repository with its own tests.
+STOCK_DIR = ("existing", "stock-levels")
+STOCK_COMMIT = "The stock levels service as it runs today"
+STOCK_README = """# Stock levels
+
+A small HTTP service that answers how many of each item the warehouse holds. The warehouse team
+has run it on its own server for two years.
+
+## Run it
+
+    python -m stock.server 8080
+"""
+STOCK_LEVELS = '''"""Stock levels, kept as a dict of item to quantity."""
+
+
+def receive(levels, sku, qty):
+    """Add ``qty`` of ``sku``; a receipt needs an item and a positive quantity."""
+    sku, qty = str(sku or "").strip(), int(qty)
+    if not sku or qty <= 0:
+        raise ValueError("a receipt needs an item and a positive quantity")
+    levels[sku] = levels.get(sku, 0) + qty
+    return levels[sku]
+
+
+def issue(levels, sku, qty):
+    """Take ``qty`` of ``sku`` out; never below zero."""
+    qty = int(qty)
+    if qty > levels.get(sku, 0):
+        raise ValueError(f"only {levels.get(sku, 0)} of {sku} in stock")
+    levels[sku] -= qty
+    return levels[sku]
+'''
+STOCK_SERVER = '''"""A small HTTP front for the stock levels (standard library only)."""
+
+import json
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+from stock.levels import receive
+
+LEVELS = {}
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        sku = self.path.rsplit("/", 1)[-1]
+        self._send(200, {"sku": sku, "level": LEVELS.get(sku, 0)})
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        self._send(201, {"level": receive(LEVELS, body.get("sku"), body.get("qty", 1))})
+
+    def _send(self, status, body):
+        data = json.dumps(body).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(data)
+
+
+if __name__ == "__main__":
+    HTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8080), Handler).serve_forever()
+'''
+STOCK_TESTS = '''import unittest
+
+from stock.levels import issue, receive
+
+
+class LevelsTest(unittest.TestCase):
+    def test_a_receipt_adds_to_the_level(self):
+        levels = {}
+        receive(levels, "drill", 2)
+        self.assertEqual(receive(levels, "drill", 3), 5)
+
+    def test_a_receipt_needs_a_positive_quantity(self):
+        with self.assertRaises(ValueError):
+            receive({}, "drill", 0)
+
+    def test_an_issue_never_goes_below_zero(self):
+        with self.assertRaises(ValueError):
+            issue({"ladder": 1}, "ladder", 2)
+'''
+STOCK_FILES = {
+    "README.md": STOCK_README,
+    "stock/__init__.py": '"""Stock levels: how many of each item the warehouse holds."""\n',
+    "stock/levels.py": STOCK_LEVELS,
+    "stock/server.py": STOCK_SERVER,
+    "tests/test_levels.py": STOCK_TESTS,
+}
+
 
 def _fence(obj) -> str:
     return "```json\n" + json.dumps(obj, ensure_ascii=False) + "\n```"
@@ -268,34 +421,54 @@ def _which(prompt: str) -> str | None:
     return None
 
 
+# Prompts answered from a script per request: (how the prompt starts, the scripts by request).
+SCRIPTED: tuple[tuple[str, dict], ...] = (
+    ("You turn a brief into a software specification", SPECS),
+    ("You write acceptance scenarios", HOLDOUTS),
+    ("Classify a piece of feedback", TRIAGE),
+)
+
+
+def _panel(which: str, prompt: str) -> dict | None:
+    """One perspective's reading and questions, for the perspective the prompt names."""
+    for perspective, questions in PANELS[which].items():
+        if f"You are the **{perspective}** perspective" in prompt:
+            return {"reading": f"The {perspective.replace('_', ' ')} reading of the request (scripted for the demo).",
+                    "questions": questions}
+    return None
+
+
 class ScriptedModel(Model):
     """Answers the kernel's prompts from the scripts above. It is not a model: it never reads the
     prompt beyond telling which request and which kind of question it is."""
 
     name = MODEL_NAME
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
 
     def ask(self, prompt: str, *, role: str) -> str:
         self.calls.append((role, prompt[:80]))
+        answer = self._script(prompt)
+        if answer is None:
+            raise ModelError(f"the demo's scripted model has no answer for this {role} prompt")
+        return _fence(answer)
+
+    @staticmethod
+    def _script(prompt: str) -> Any:
+        if prompt.startswith(EMBED_PROMPT):
+            return EMBED_REPLY
         if prompt.startswith("A business need arrived") and SIGNAL_NEED in prompt:
-            return _fence(CONCEPT)
+            return CONCEPT
         which = _which(prompt)
         if "perspective on a panel" in prompt and which:
-            for perspective, questions in PANELS[which].items():
-                if f"You are the **{perspective}** perspective" in prompt:
-                    return _fence({"reading": f"The {perspective.replace('_', ' ')} reading of the request "
-                                              f"(scripted for the demo).", "questions": questions})
+            return _panel(which, prompt)
         if prompt.startswith("A panel of perspectives"):
-            return _fence({"opinions": OPINIONS.get(which, []) if which else []})
-        if prompt.startswith("You turn a brief into a software specification") and which in SPECS:
-            return _fence(SPECS[which])
-        if prompt.startswith("You write acceptance scenarios") and which in HOLDOUTS:
-            return _fence(HOLDOUTS[which])
-        if prompt.startswith("Classify a piece of feedback") and which in TRIAGE:
-            return _fence(TRIAGE[which])
-        raise ModelError(f"the demo's scripted model has no answer for this {role} prompt")
+            return {"opinions": OPINIONS.get(which, []) if which else []}
+        for start, scripts in SCRIPTED:
+            if prompt.startswith(start) and which in scripts:
+                return scripts[which]
+        return None
 
 
 # -- the scripted builder cell --------------------------------------------------------------------
@@ -530,152 +703,341 @@ def _prepare_home(home: Path) -> None:
     home.mkdir(parents=True, exist_ok=True)
 
 
-def _decide(project, card_id: str, verdict: str, who: tuple, reason: str) -> dict:
+def _decide(project: Any, card_id: str, verdict: str, who: tuple, reason: str) -> dict:
     from kernel.canon import Canon
 
     return Canon(project).decide(card_id, verdict, person=who[0], persona=who[1], reason=reason)
 
 
-def build_demo(home, *, echo=print) -> dict:
+class _Build:
+    """What the steps of one demo build share: the home, the demo clock, the factory, the lanes,
+    the scripted model, and what the build reports."""
+
+    def __init__(self, home: Path) -> None:
+        from kernel.lanes import Lanes
+
+        self.home = home
+        self.clock = DemoClock(_real_now() - dt.timedelta(hours=48))
+        self.factory = Factory(home, clock=self.clock)
+        self.lanes = Lanes(home / "lanes", size=1)
+        self.model = ScriptedModel()
+        self.out: dict[str, Any] = {"home": str(home), "projects": {}}
+
+    def advance(self, project: Any, cell: ScriptedCell) -> dict:
+        """The real pipeline, with the scripted cell and verifier in place of Gnomon's."""
+        from kernel.pipeline import advance
+
+        return advance(project, model=self.model, lanes=self.lanes, cell_runner=cell, verifier_runner=cell.verify,
+                       deliver_kwargs={})
+
+
+def build_demo(home: str | Path, *, echo: Callable[[str], object] = print) -> dict:
     """Build the demo factory home at ``home`` and return what it holds."""
     from kernel import roads
-    from kernel.canon import Canon
-    from kernel.change import triage as triage_change
-    from kernel.intake import intake
-    from kernel.lanes import Lanes
-    from kernel.observations import observe
-    from kernel.packs import build_pack
-    from kernel.pipeline import advance
-    from kernel.signals import receive
-    from kernel.signals import triage as triage_signal
 
     if shutil.which("git") is None:
         raise DemoError("git was not found: the demo builds real product repositories in git lanes")
     home = Path(home).resolve()
     _prepare_home(home)
     started = time.monotonic()
-    clock = DemoClock(_real_now() - dt.timedelta(hours=48))
-    factory = Factory(home, clock=clock)
-    lanes = Lanes(home / "lanes", size=1)
-    model = ScriptedModel()
-    out: dict[str, Any] = {"home": str(home), "projects": {}}
-
-    def kwargs(cell):
-        return dict(model=model, lanes=lanes, cell_runner=cell, verifier_runner=cell.verify, deliver_kwargs={})
-
+    b = _Build(home)
     try:
-        # 1. The webhook: built through the gate, one escalation, a retry, a release and its pack.
-        webhook = factory.new_project(TITLES[WEBHOOK], maturity="explore", mode="assume")
-        intake(webhook, REQUESTS[WEBHOOK], model=model, requested_by=PRODUCT[0])
-        cell = ScriptedCell(WEBHOOK, clock, lazy={"T-002": 3})
-        first = advance(webhook, **kwargs(cell))
-        if first["state"] != "waiting":
-            raise DemoError(f"the webhook should wait on its escalation, but it is {first['state']}: {first.get('why')}")
-        clock.at(hours=4)
-        escalation = first["waiting_on"][0]
-        _decide(webhook, escalation, "retry", DEVELOPER,
-                "The gate is right: the test cannot fail. Build it again with a test that checks the duplicate.")
-        second = advance(webhook, **kwargs(cell))
-        if second["state"] != "done":
-            raise DemoError(f"the webhook's release did not finish: {second['state']}: {second.get('why')}")
-        roads.stop_all(webhook)  # the preview was started and checked; nothing keeps running
-        clock.advance(minutes=5)
-        pack = build_pack(webhook)
-
-        # 2. The access review: built through the gate until a task escalated; it waits for a person.
-        clock.at(hours=20)
-        access = factory.new_project(TITLES[ACCESS], maturity="demo", mode="assume")
-        intake(access, REQUESTS[ACCESS], model=model, requested_by=COMPLIANCE[0])
-        waiting = advance(access, **kwargs(ScriptedCell(ACCESS, clock, lazy={"T-002": 99})))
-        if waiting["state"] != "waiting":
-            raise DemoError(f"the access review should wait on its escalation, but it is {waiting['state']}")
-
-        # 3. Equipment loans: the panel's blocking questions wait; one assumption is confirmed.
-        clock.at(hours=40)
-        loans = factory.new_project(TITLES[LOANS], maturity="demo", mode="mixed")
-        intake(loans, REQUESTS[LOANS], model=model, requested_by=OWNER[0])
-        clock.at(hours=41)
-        canon = Canon(loans)
-        benefit = next(a for a in canon.assumptions("open") if "lost items" in a["text"])
-        canon.settle_assumption(benefit["id"], confirmed=True, person=OWNER[0], persona=OWNER[1])
-
-        # 4. The delivery square: a chat signal becomes a change; a meeting need becomes a concept.
-        clock.at(hours=44)
-        s1 = receive(factory, SIGNAL_CHANGE, channel="chat", source="warehouse chat", person=OPERATIONS[0],
-                     persona=OPERATIONS[1])
-        routed = triage_signal(factory, s1["id"])  # by rule: it names the webhook project's title
-        triage_change(webhook, routed["routed_to"]["card"], model=model)
-        clock.at(hours=45)
-        s2 = receive(factory, SIGNAL_NEED, channel="meeting", source="monthly operations review",
-                     person=OWNER[0], persona=OWNER[1])
-        triage_signal(factory, s2["id"], model=model)  # the model only summarises; it names no project
-
-        # 5. The updates inbox: a new model is available for what built the webhook.
-        clock.at(hours=46)
-        obs = observe(factory, "model_release", facts={"model": "demo-model-2", "replaces": BUILDER_NAME,
-                                                       "projects": [webhook.pid]}, source="demo release notes")
+        webhook = _webhook(b)       # hours 0-4: the gate, an escalation, a retry, release 1 and its pack
+        _security(b, webhook)       # hours 6-8: a SARIF scan, a risk accepted, the security gate
+        _comment(b, webhook)        # hour 10: a stakeholder's comment on a requirement
+        access = _access(b)         # hours 20-22: built until an escalation; its autonomy capped
+        _embed(b, webhook)          # hours 24-30: a website feedback chat, one end user's message
+        loans = _loans(b)           # hours 40-41: the panel's blocking questions wait
+        stock = _adopt(b)           # hour 42: an existing service adopted to maintain it
+        _square(b, webhook)         # hours 44-46: signals, a concept, an update card
+        _evidence(b, webhook)       # hour 47: the webhook's evidence pack, exported
     finally:
         roads.stop_started()
 
-    seconds = round(time.monotonic() - started, 1)
-    for key, p in ((LOANS, loans), (WEBHOOK, webhook), (ACCESS, access)):
+    out = b.out
+    out["seconds"] = round(time.monotonic() - started, 1)
+    for key, p in ((LOANS, loans), (WEBHOOK, webhook), (ACCESS, access), (STOCK, stock)):
         out["projects"][key] = {"id": p.pid, "title": p.meta["title"], "stage": p.meta["stage"],
                                 "maturity": p.meta["maturity"], "profile": p.meta.get("profile")}
-    out.update(seconds=seconds, pack={"version": pack["version"], "valid": pack["acceptance"]["valid"]},
-               observation=obs["id"], signals=[s1["id"], s2["id"]])
     write_json(home / DEMO_MARKER, {"schema": DEMO_SCHEMA, "built": _real_now().isoformat().replace("+00:00", "Z"),
                                     "projects": {k: v["id"] for k, v in out["projects"].items()},
-                                    "people": [OWNER[0], PRODUCT[0], DEVELOPER[0], OPERATIONS[0], COMPLIANCE[0]],
-                                    "scripted": {"model": MODEL_NAME, "builder": BUILDER_NAME}})
+                                    "people": [who[0] for who in PEOPLE],
+                                    "scripted": {"model": MODEL_NAME, "builder": BUILDER_NAME, "scanner": SCANNER}})
     write_text(home / "README.md", _readme(out))
-    for line in _summary(out, loans, webhook, access):
+    for line in _summary(out, loans, webhook, access, stock):
         echo(line)
     return out
 
 
-def _readme(out: dict) -> str:
-    return f"""# A Rihma demo home
+# -- the steps, in the order they happen on the demo clock ----------------------------------------
 
-Built by `rihma demo` with a scripted model (`{MODEL_NAME}`) and a scripted builder cell
+def _webhook(b: _Build) -> Any:
+    """Built through the gate: one task escalates after three rounds, a demo developer chooses retry,
+    release 1 runs on the local-preview road and gets its capability pack."""
+    from kernel import roads
+    from kernel.intake import intake
+    from kernel.packs import build_pack
+
+    webhook = b.factory.new_project(TITLES[WEBHOOK], maturity="explore", mode="assume")
+    intake(webhook, REQUESTS[WEBHOOK], model=b.model, requested_by=PRODUCT[0])
+    cell = ScriptedCell(WEBHOOK, b.clock, lazy={"T-002": 3})
+    first = b.advance(webhook, cell)
+    if first["state"] != "waiting":
+        raise DemoError(f"the webhook should wait on its escalation, but it is {first['state']}: {first.get('why')}")
+    b.clock.at(hours=4)
+    _decide(webhook, first["waiting_on"][0], "retry", DEVELOPER,
+            "The gate is right: the test cannot fail. Build it again with a test that checks the duplicate.")
+    second = b.advance(webhook, cell)
+    if second["state"] != "done":
+        raise DemoError(f"the webhook's release did not finish: {second['state']}: {second.get('why')}")
+    roads.stop_all(webhook)  # the preview was started and checked; nothing keeps running
+    b.clock.advance(minutes=5)
+    pack = build_pack(webhook)
+    b.out["pack"] = {"version": pack["version"], "valid": pack["acceptance"]["valid"]}
+    return webhook
+
+
+def _sarif(routes: str) -> dict:
+    """The example scanner's SARIF 2.1.0 log over the release's app/routes.py. Each result points at
+    the line it describes, found in the code the release holds."""
+    lines = routes.splitlines()
+    results = []
+    for rule, level, _, _, snippet, message in SCAN_RULES:
+        line = next((n for n, text in enumerate(lines, 1) if snippet in text), None)
+        if line is None:
+            raise DemoError(f"the release's app/routes.py has no line with {snippet!r} for the example scan")
+        results.append({"ruleId": rule, "level": level, "message": {"text": message},
+                        "locations": [{"physicalLocation": {"artifactLocation": {"uri": "app/routes.py"},
+                                                            "region": {"startLine": line}}}]})
+    rules = [{"id": rule, "shortDescription": {"text": title}, "defaultConfiguration": {"level": level},
+              "properties": {"tags": ["security", f"CWE-{cwe}"]}} for rule, level, cwe, title, _, _ in SCAN_RULES]
+    return {"version": "2.1.0", "runs": [{
+        "tool": {"driver": {"name": SCANNER, "version": "1.0.0", "rules": rules}},
+        "invocations": [{"executionSuccessful": True}],
+        "properties": {"note": "written by the demo over its own release: an example scan, not a real scanner's "
+                               "output"},
+        "results": results}]}
+
+
+def _security(b: _Build, webhook: Any) -> None:
+    """A neutral example scanner's SARIF, written from the release's own code, goes through the real
+    reader. The demo compliance person accepts the error as a risk until a date, with a reason, and
+    the security gate records its verdict (the warning stays open; it does not block)."""
+    from adapters import sarif
+    from kernel.lanes import _git
+    from kernel.security import accept_risk, security_gate
+
+    b.clock.at(hours=6)
+    path = b.home / "scans" / SCAN_FILE
+    write_json(path, _sarif(_git(webhook.path("repo.git"), "show", "main:app/routes.py")))
+    scan = sarif.ingest(webhook, path, person=DEVELOPER[0], persona=DEVELOPER[1])
+    b.clock.at(hours=8)
+    error = next(f for f in scan["findings"] if f["level"] == "error")
+    accepted = accept_risk(webhook, error["id"], person=COMPLIANCE[0], persona=COMPLIANCE[1], reason=RISK_REASON,
+                           expires=b.clock.today() + dt.timedelta(days=RISK_DAYS))
+    gate = security_gate(webhook)
+    b.out["security"] = {"tool": SCANNER, "file": path.relative_to(b.home).as_posix(), "scan": scan["scan"],
+                         "counts": {k: v for k, v in scan["counts"].items() if v}, "accepted": accepted["finding"],
+                         "expires": accepted["expires"], "gate": gate["verdict"]}
+
+
+def _comment(b: _Build, webhook: Any) -> None:
+    """A demo stakeholder comments on the duplicate rule. A comment decides nothing; a product owner
+    may promote it into a change."""
+    from kernel.canon import Canon
+
+    b.clock.at(hours=10)
+    c = Canon(webhook).comment({"kind": "requirement", "id": COMMENT["requirement"]}, COMMENT["text"],
+                               person=STAKEHOLDER[0], persona=STAKEHOLDER[1])
+    b.out["comment"] = {"id": c["id"], "target": c["target"], "by": c["person"]}
+
+
+def _access(b: _Build) -> Any:
+    """Built through the gate until a task escalated; the escalation waits for a person. The demo
+    compliance person then caps the project's autonomy, with a reason."""
+    from kernel.autonomy import set_cap
+    from kernel.intake import intake
+
+    b.clock.at(hours=20)
+    access = b.factory.new_project(TITLES[ACCESS], maturity="demo", mode="assume")
+    intake(access, REQUESTS[ACCESS], model=b.model, requested_by=COMPLIANCE[0])
+    waiting = b.advance(access, ScriptedCell(ACCESS, b.clock, lazy={"T-002": 99}))
+    if waiting["state"] != "waiting":
+        raise DemoError(f"the access review should wait on its escalation, but it is {waiting['state']}")
+    b.clock.at(hours=22)
+    level, reason = AUTONOMY
+    cap = set_cap(access, level, person=COMPLIANCE[0], persona=COMPLIANCE[1], reason=reason)
+    b.out["autonomy"] = {"project": access.pid, "cap": cap["cap"], "by": COMPLIANCE[0]}
+    return access
+
+
+def _embed(b: _Build, webhook: Any) -> None:
+    """A demo product owner makes a website feedback chat for the webhook. One end user's message
+    goes through the real embed code (its key, origin and filing), with the scripted model as the
+    chat's assistant: it is filed as a change and triaged by the rules. The key lives only here."""
+    from kernel import embeds
+    from kernel.canon import Canon
+
+    b.clock.at(hours=24)
+    e = embeds.create(b.factory, kind="feedback", origins=[EMBED_ORIGIN], person=PRODUCT[0], persona=PRODUCT[1],
+                      project_id=webhook.pid, label=EMBED_LABEL, brief=EMBED_BRIEF)
+    b.clock.at(hours=30)
+    turn = embeds.converse(b.factory, e["id"], e["key"], EMBED_ORIGIN, [{"role": "person", "text": EMBED_MESSAGE}],
+                           model=b.model)
+    filed = turn["filed"] or {}
+    if filed.get("kind") != "change":
+        raise DemoError(f"the website chat's message was not filed as a change: {filed}")
+    triage = Canon(webhook).get_card(filed["id"])["payload"].get("triage") or {}
+    b.out["embed"] = {"id": e["id"], "card": filed["id"], "class": triage.get("class"), "by": triage.get("by")}
+
+
+def _loans(b: _Build) -> Any:
+    """The panel's blocking questions wait for a person; a demo business owner confirms one assumption."""
+    from kernel.canon import Canon
+    from kernel.intake import intake
+
+    b.clock.at(hours=40)
+    loans = b.factory.new_project(TITLES[LOANS], maturity="demo", mode="mixed")
+    intake(loans, REQUESTS[LOANS], model=b.model, requested_by=OWNER[0])
+    b.clock.at(hours=41)
+    canon = Canon(loans)
+    benefit = next(a for a in canon.assumptions("open") if "lost items" in a["text"])
+    canon.settle_assumption(benefit["id"], confirmed=True, person=OWNER[0], persona=OWNER[1])
+    return loans
+
+
+def _existing_repo(path: Path, at: str) -> None:
+    """The existing service a team brings in: a small git repository with its own tests, committed
+    by a demo person at the demo clock's time."""
+    for rel, text in STOCK_FILES.items():
+        _write(path / rel, text)
+    name, email = DEVELOPER[0], f"{DEVELOPER[0]}@example.invalid"
+    env = {**os.environ, "GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_AUTHOR_DATE": at,
+           "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email, "GIT_COMMITTER_DATE": at}
+    for args in (("init", "-q", "-b", "main"), ("add", "-A"), ("commit", "-q", "-m", STOCK_COMMIT)):
+        proc = subprocess.run(["git", "-c", "core.autocrlf=false", *args], cwd=path, env=env, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace")
+        if proc.returncode != 0:
+            raise DemoError(f"git {args[0]} failed for the demo's existing service: {proc.stderr.strip()[-300:]}")
+
+
+def _adopt(b: _Build) -> Any:
+    """A demo developer adopts the existing service to maintain it: mirrored with its upstream
+    fetch-only, inventoried and specified as it is by rule, and its own suite run once as the
+    characterisation baseline. Nothing is built until a change arrives."""
+    from kernel.adopt import adopt
+
+    b.clock.at(hours=42)
+    repo = b.home.joinpath(*STOCK_DIR)
+    _existing_repo(repo, b.clock.stamp())
+    b.clock.advance(minutes=20)
+    return adopt(b.factory, TITLES[STOCK], source=repo, intent="maintain", person=DEVELOPER[0],
+                 persona=DEVELOPER[1], maturity="production", timeout=120)
+
+
+def _square(b: _Build, webhook: Any) -> None:
+    """The delivery square: a chat signal becomes a change on the webhook, a meeting need becomes a
+    concept; then the updates inbox: a new model is available for what built the webhook."""
+    from kernel.change import triage as triage_change
+    from kernel.observations import observe
+    from kernel.signals import receive
+    from kernel.signals import triage as triage_signal
+
+    b.clock.at(hours=44)
+    s1 = receive(b.factory, SIGNAL_CHANGE, channel="chat", source="warehouse chat", person=OPERATIONS[0],
+                 persona=OPERATIONS[1])
+    routed = triage_signal(b.factory, s1["id"])  # by rule: it names the webhook project's title
+    triage_change(webhook, routed["routed_to"]["card"], model=b.model)
+    b.clock.at(hours=45)
+    s2 = receive(b.factory, SIGNAL_NEED, channel="meeting", source="monthly operations review",
+                 person=OWNER[0], persona=OWNER[1])
+    triage_signal(b.factory, s2["id"], model=b.model)  # the model only summarises; it names no project
+    b.clock.at(hours=46)
+    obs = observe(b.factory, "model_release", facts={"model": "demo-model-2", "replaces": BUILDER_NAME,
+                                                     "projects": [webhook.pid]}, source="demo release notes")
+    b.out.update(observation=obs["id"], signals=[s1["id"], s2["id"]])
+
+
+def _evidence(b: _Build, webhook: Any) -> None:
+    """The demo compliance person exports the webhook's evidence pack into the demo home."""
+    from kernel.evidence_pack import export
+
+    b.clock.at(hours=47)
+    path = export(webhook, b.home / EXPORTS, person=COMPLIANCE[0], persona=COMPLIANCE[1])
+    with zipfile.ZipFile(path) as z:
+        verdict = json.loads(z.read("attestation.json"))["verdict"]
+    b.out["evidence"] = {"file": path.relative_to(b.home).as_posix(), "attestation": verdict}
+
+
+# -- what the build says -----------------------------------------------------------------------------
+
+def _readme(out: dict) -> str:
+    return f"""# A Rihmasto demo home
+
+Built by `rihmasto demo` with a scripted model (`{MODEL_NAME}`) and a scripted builder cell
 (`{BUILDER_NAME}`): no model keys, no network and no Gnomon. The gate, the contract, the ledger,
-the holdout custody and the local-preview road are the real kernel.
+the holdout custody, the local-preview road, the SARIF reader and the security gate, the evidence
+pack, embeds and adoption are the real kernel. The security scan in `scans/` is an example written
+by the demo ("{SCANNER}"), not a real scanner's output.
 
 Every decision here was made by a fake person named `demo-*`. Timestamps are spread over the two
 days before it was built, so the dashboard has ages and a trend to show.
 
-Open it with `rihma-cockpit --home {out['home']}` (or `python -m cockpit.server --home ...`).
+- `exports/`: the webhook's evidence pack, as a reviewer receives it.
+- `scans/`: the example scanner's SARIF file.
+- `existing/stock-levels/`: the existing service the demo adopted. Commit a change there, then run
+  `rihmasto sync <its project id>` to see the drift and the review card it opens.
+
+Open it with `rihmasto-cockpit --home {out['home']}` (or `python -m cockpit.server --home ...`).
 **Advance** in the cockpit runs the real pipeline, which needs Gnomon and a model: the scripted
-cell exists only inside `rihma demo`. Run `rihma demo` again to rebuild this folder.
+cell exists only inside `rihmasto demo`. Run `rihmasto demo` again to rebuild this folder. The
+guided tour is `docs/demo.md` in the Rihmasto repository.
 """
 
 
-def _summary(out: dict, loans, webhook, access) -> list:
+def _summary(out: dict, loans: Any, webhook: Any, access: Any, stock: Any) -> list:
     from kernel.canon import Canon
     from kernel.learn import factory_project
 
-    def waiting(p, kind):
-        return [c for c in Canon(p).cards(kind=kind)]
-
-    concept = waiting(factory_project(webhook.factory), "concept")
+    concepts = Canon(factory_project(webhook.factory)).cards(kind="concept")
+    changes = Canon(webhook).cards(kind="change")
+    blocking = [c for c in Canon(loans).cards(kind="question") if c["blocking"]]
+    sec, emb, aut = out["security"], out["embed"], out["autonomy"]
     rows = [
-        (TITLES[LOANS], f"stage {loans.meta['stage']}",
-         f"{len([c for c in waiting(loans, 'question') if c['blocking']])} blocking questions wait for a person"),
+        (TITLES[LOANS], f"stage {loans.meta['stage']}", f"{len(blocking)} blocking questions wait for a person"),
         (TITLES[WEBHOOK], f"stage {webhook.meta['stage']}",
          f"release 1 on the local preview, capability pack {out['pack']['version']} "
-         f"({'valid' if out['pack']['valid'] else 'not valid'}); a change and an update card wait"),
+         f"({'valid' if out['pack']['valid'] else 'not valid'}); {len(changes)} changes and an update card wait"),
         (TITLES[ACCESS], f"stage {access.meta['stage']}",
-         "a task escalated after 3 gate rounds; the escalation waits for a person"),
-        ("Rihma itself", "", f"{len(concept)} concept from a meeting waits for a business owner"),
+         f"a task escalated after 3 gate rounds; the escalation waits for a person; autonomy cap {aut['cap']}"),
+        (TITLES[STOCK], f"stage {stock.meta['stage']}", f"adopted to maintain; {_baseline_line(stock)}"),
+        ("Rihmasto itself", "", f"{len(concepts)} concept from a meeting waits for a business owner"),
     ]
     width = max(len(r[0]) for r in rows)
-    lines = [f"Rihma demo: built in {out['seconds']} s with no model keys, no network and no Gnomon.",
+    lines = [f"Rihmasto demo: built in {out['seconds']} s with no model keys, no network and no Gnomon.",
              f"Home: {out['home']}", ""]
     lines += [f"  {t.ljust(width)}  {s.ljust(7)}  {w}" for t, s, w in rows]
-    lines += ["",
+    lines += ["", "Also on the webhook:",
+              f"  - a website feedback chat ({emb['id']}): one end user's message, filed as {emb['card']} and "
+              f"triaged by the {emb['by']} as {emb['class']}",
+              f"  - a stakeholder's comment ({out['comment']['id']}) on requirement {out['comment']['target']['id']}",
+              f"  - a scan by {sec['tool']} ({sec['file']}): the error accepted as a risk by {COMPLIANCE[0]} until "
+              f"{sec['expires']}; security gate {sec['gate']}",
+              f"  - its evidence pack: {out['evidence']['file']} ({out['evidence']['attestation']})",
+              "",
               f"A scripted model ({MODEL_NAME}) and a scripted builder cell ({BUILDER_NAME}) stood in for Gnomon.",
               "The gate, the contract, the ledger and the road are the real kernel. Every decision was made",
               "by a demo-* person. The local preview was started, checked and stopped again.", "",
-              "Next, open the cockpit on this home:",
-              f"  rihma-cockpit --home {out['home']}",
+              "Next, open the cockpit on this home (the tour is docs/demo.md):",
+              f"  rihmasto-cockpit --home {out['home']}",
               f"  (or, without installing: python -m cockpit.server --home {out['home']})"]
     return lines
+
+
+def _baseline_line(project: Any) -> str:
+    """What the adopted service's own suite did at the baseline, as measured (or not measured)."""
+    base = project.read("baseline.json") or {}
+    counts = next((r.get("counts") for r in base.get("runs") or [] if r.get("counts")), None)
+    said = f"its own tests at the baseline: {base.get('verdict', 'not measured')}"
+    return said + (f" ({counts['passed']} of {counts['ran']} passed)" if counts and "ran" in counts else "")
+

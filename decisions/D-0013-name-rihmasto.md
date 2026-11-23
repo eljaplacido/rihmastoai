@@ -34,9 +34,22 @@ repository name.
 
 **Carried out in the command line (2026-11-23).** The distribution is `rihmasto`, and its commands are
 `rihmasto`, `rihmasto-cockpit`, `rihmasto-embed` and `rihmasto-mcp`; `rihma`, `rihma-cockpit`,
-`rihma-embed` and `rihma-mcp` are aliases of the same entry points. The factory home is read from
-`RIHMASTO_HOME`, then `RIHMA_HOME`, then `GNOMONFACTORY_HOME`. Two things keep their names on
-purpose, because they are wire formats rather than product names: the Python packages (`kernel`,
-`adapters`, `cockpit`, `embed`, `mcp`), which other code imports, and the schema ids (`rihma.*`,
-`gnomonfactory.*`), which files and other tools already carry. Renaming either would break what
-was written before, for no gain to anyone using Rihmasto.
+`rihma-embed` and `rihma-mcp` are aliases of the same entry points. The factory home is `--home`,
+else the first of `RIHMASTO_HOME`, `RIHMA_HOME` and `GNOMONFACTORY_HOME` that is set, else `var/` in
+the checkout (`default_home` in `kernel/store.py`). `rihmasto` and `rihmasto-mcp` find it so, and so
+does `rihmasto-cockpit` for the home it serves. A process that starts another hands its home down with
+`--home` or under all three names, because the child reads the first name set and an inherited
+`RIHMASTO_HOME` outranks the others.
+
+Two places do not follow this yet; each is fixed in its own change, outside the command line. The
+embed server (`rihmasto-embed`, `python -m embed.server`) picks its home itself: `RIHMA_HOME`, then
+`GNOMONFACTORY_HOME`, then `var/` in the working folder, never `RIHMASTO_HOME`. The cockpit's job
+runner hands its home to the `run` and `intake` jobs only as `GNOMONFACTORY_HOME`, so a cockpit
+started with `--home` while `RIHMASTO_HOME` or `RIHMA_HOME` names another home runs those jobs there.
+Until then, start the embed server with `--home`, and set `RIHMASTO_HOME` and `RIHMA_HOME` to the
+cockpit's own home or not at all.
+
+Two things keep their names on purpose, because they are wire formats rather than product names: the
+Python packages (`kernel`, `adapters`, `cockpit`, `embed`, `mcp`), which other code imports, and the
+schema ids (`rihma.*`, `gnomonfactory.*`), which files and other tools already carry. Renaming either
+would break what was written before, for no gain to anyone using Rihmasto.

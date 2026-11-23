@@ -202,6 +202,14 @@ MODE_MEANING = {
 
 # The factory's own canon (kernel/learn.py) is shown under the factory's name.
 FACTORY_TITLE = "Rihma itself"
+# A concept card's title as kernel/signals.py writes it; the title a person edits lives in its payload.
+CONCEPT_PREFIX = "Validate as a concept? "
+# The square lists every signal still new, and the newest of the others up to this many.
+SQUARE_SIGNALS = 50
+# ... and up to this many signals the page names (?show=), such as one just triaged that is no longer
+# new and not among the newest, so the person sees what it became.
+SQUARE_SHOWN = 20
+SIGNAL_ID_RE = re.compile(r"S-\d{1,9}\Z")
 
 # Four bands over the seven stages, for readers who do not think in stages (FR-T1-AC-3).
 BANDS = (("decide", "Decide", (1, 2)), ("shape", "Shape", (3, 4)), ("deliver", "Deliver", (5, 6)),
@@ -506,6 +514,12 @@ class CockpitServer(ThreadingHTTPServer):
         out["state"] = status.get("state", "unknown")
         out["code"] = status.get("code")
         out["log_tail"] = _tail(Path(job["log"]), LOG_TAIL_LINES)
+        if job["kind"] == "run" and out["state"] == "done":
+            # The process ended; what the run itself reached is the last result it printed. A run the
+            # autonomy cap stopped is not "done": it shows as capped, with the kernel's reason.
+            out["outcome"] = _run_outcome(Path(job["log"]))
+            if (out["outcome"] or {}).get("state") == "capped":
+                out["state"] = "capped"
         return out
 
     def running_job(self, pid: str) -> dict | None:
@@ -556,6 +570,23 @@ def _tail(path: Path, lines: int) -> list:
     except OSError:
         return []
     return data.decode("utf-8", errors="replace").splitlines()[-lines:]
+
+
+def _run_outcome(path: Path) -> dict | None:
+    """What a finished ``kernel.cli run`` reached: the state and the reason of the result it printed last
+    (an indented JSON object that ends the log). None when the log ends with no such result."""
+    lines = _tail(path, 400)
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i] != "{":
+            continue
+        try:
+            out = json.loads("\n".join(lines[i:]))
+        except ValueError:
+            return None
+        if not isinstance(out, dict) or not isinstance(out.get("state"), str):
+            return None
+        return {"state": out["state"], "stage": out.get("stage"), "why": str(out.get("why") or "")[:500] or None}
+    return None
 
 
 # -- request handling -----------------------------------------------------------------------------
@@ -858,8 +889,19 @@ class Api:
                 out["card_state"] = "missing"
         return out
 
+    @staticmethod
+    def _card_title(card: dict) -> str:
+        """A card's title as people should read it. A concept's title follows the edit made to it on the
+        square (its payload), so nobody validates a project under a name they do not see."""
+        title = str(card.get("title") or "")
+        edited = (card.get("payload") or {}).get("title") if card.get("kind") == "concept" else None
+        if edited and title.startswith(CONCEPT_PREFIX):
+            return CONCEPT_PREFIX + str(edited)
+        return title
+
     def _card_view(self, card: dict, canon: Canon) -> dict:
         out = dict(card)
+        out["title"] = self._card_title(card)
         out["verdicts"] = list(CARD_VERDICTS[card["kind"]])
         out["deciders"] = list(CARD_DECIDERS[card["kind"]])
         if card["kind"] == "question" and (card.get("refs") or {}).get("question"):
@@ -1029,10 +1071,16 @@ class Api:
         meta["title"] = _factory_label(pid, meta.get("title", pid))
         meta["factory"] = pid == FACTORY_PID
         problems: list = []
+        if not meta.get("requested_by"):
+            # A project a validated concept made keeps who asked for it in its need, not in project.json.
+            need = self._read(project, "need.json", None, problems)
+            if isinstance(need, dict) and need.get("requested_by"):
+                meta["requested_by"] = need["requested_by"]
         overdue = {a["id"] for a in canon.overdue()}
         assumptions = [dict(a, overdue=a["id"] in overdue) for a in canon.assumptions()]
         decisions = canon.decisions()
-        open_cards = [{k: c.get(k) for k in ("id", "kind", "title", "blocking", "created", "refs")}
+        open_cards = [{k: self._card_title(c) if k == "title" else c.get(k)
+                       for k in ("id", "kind", "title", "blocking", "created", "refs")}
                       for c in canon.cards(state="open")]
         changes = [self._card_view(c, canon) for c in canon.cards(state=None, kind="change")]
         contract = self._read(project, "contract.json", None, problems)
@@ -1261,6 +1309,11 @@ class Api:
                 return self._answer(project, qid, reason, person, persona)
             if verdict == "assume":
                 return self._assume(project, qid, person, persona)
+        if card["kind"] == "concept" and verdict in ("park", "reject") and not reason.strip():
+            # A need is parked or rejected with the reason why, for whoever raised it; nothing is recorded
+            # without one.
+            raise ApiError(400, f"Say why you {verdict} {cid}: a concept is parked or rejected with the reason, "
+                                f"recorded with the decision. Write it on the concept's card on the Square.")
         decision = canon.decide(cid, verdict, person=person, persona=persona, reason=reason)
         self._audit(project, "decide", cid, person, persona, verdict=verdict)
         out = {"decision": decision, "card": self._card_view(canon.get_card(cid), canon)}
@@ -1522,7 +1575,12 @@ class Api:
 
     def _decision_items(self) -> list:
         """Every open card a person must decide across the factory: the queue's kinds, plus concepts
-        to validate (the factory's canon) and updates to try, with their age."""
+        to validate (the factory's canon) and updates to try, with their age.
+
+        Every open change is listed, as the Inbox lists it: a change stays open until a business owner
+        or product owner decides it, whether or not its class needs that decision before it is applied
+        (``needs_decision`` in the item's payload says which). So the decisions widget and the Inbox
+        count the same changes."""
         now_t = self.factory.clock.now()
         items = []
         fp = self._factory_if_any()
@@ -1531,8 +1589,6 @@ class Api:
             for c in Canon(p).cards(state="open"):
                 kind = c["kind"]
                 if kind == "question" and not c.get("blocking"):
-                    continue
-                if kind == "change" and not ((c.get("payload") or {}).get("triage") or {}).get("needs_decision"):
                     continue
                 if is_factory and kind not in ("concept", "approval"):
                     continue
@@ -1543,7 +1599,7 @@ class Api:
                     except ValueError:
                         age = None
                 items.append({"project": p.pid, "project_title": _factory_label(p.pid, p.meta.get("title", p.pid)),
-                              "card": c["id"], "kind": kind, "title": c["title"],
+                              "card": c["id"], "kind": kind, "title": self._card_title(c),
                               "deciders": list(c.get("deciders") or CARD_DECIDERS[kind]),
                               "verdicts": list(CARD_VERDICTS[kind]), "age_hours": age,
                               "blocking": bool(c.get("blocking")), "payload": self._card_payload(c)})
@@ -1552,13 +1608,18 @@ class Api:
 
     @staticmethod
     def _card_payload(c: dict) -> dict:
-        """The parts of a card's payload a dashboard shows: a concept's fields, an update's renderings."""
+        """The parts of a card's payload a dashboard shows: a concept's fields, an update's renderings, a
+        change's triage (its class, its way back and whether it needs a business decision first)."""
         pl = c.get("payload") or {}
         if c["kind"] == "concept":
             return {k: pl.get(k) for k in ("title", "text", "profile", "profile_basis", "maturity", "mode",
                                            "raised_by", "signal")}
         if c["kind"] == "update":
             return {k: pl.get(k) for k in ("trigger", "facts", "views", "who", "observation")}
+        if c["kind"] == "change":
+            tri = pl.get("triage") if isinstance(pl.get("triage"), dict) else {}
+            return {"source": pl.get("source"), "triaged": bool(tri),
+                    **{k: tri.get(k) for k in ("class", "way_back", "needs_decision")}}
         return {}
 
     def _attestation_of(self, project) -> dict:
@@ -1633,8 +1694,8 @@ class Api:
         queue = safe("queue", lambda: kdash.queue(f), {"items": [], "count": 0})
         gate_trend = safe("gate_trend", lambda: kdash.gate_trend(f), {"series": [], "rounds": 0, "pass_rate": None})
         coverage = safe("coverage", lambda: kdash.coverage(f), {"projects": [], "total": {}, "proven_share": None})
-        catalogue = safe("catalogue", lambda: kdash.catalogue(f), {"items": [], "counts": {}})
-        square = safe("square", lambda: ksignals.square(f), None)
+        catalogue = safe("catalogue", self._catalogue, {"items": [], "counts": {}})
+        square = safe("square", lambda: self._square_counts(ksignals.square(f), self._end_user_feedback()), None)
         updates = safe("updates", self._updates, [])
         packs = [safe("evidence_packs", lambda p=p: self._attestation_of(p)) for p in products]
         tries = []
@@ -1711,7 +1772,8 @@ class Api:
                             "label": TRIGGERS.get(pl.get("trigger"), {}).get("label"), "views": pl.get("views"),
                             "who": pl.get("who") or list(CARD_DECIDERS["update"]), "decision": c.get("decision"),
                             "created": c.get("created"), "verdicts": list(CARD_VERDICTS["update"])})
-        for obs in observations(self.factory):
+        # kernel.observations reads through the factory's canon and would create it: a read never does
+        for obs in observations(self.factory) if self._factory_if_any() is not None else []:
             touched = obs.get("touched") or []
             for t in touched:
                 if t.get("card") is None:
@@ -1745,9 +1807,28 @@ class Api:
         history.sort(key=lambda x: x["at"] or "", reverse=True)
         return {"factory": fac, "projects": projects, "setters": list(kautonomy.SETTERS), "history": history[:20]}
 
+    def _catalogue(self) -> dict:
+        """kernel.dashboard.catalogue, with what a reader needs to say it right: a proposed concept's
+        deliverable is its work profile's (an agent concept is a capability pack, not a product), and a
+        project's releases, so a pack not built yet is never called "no release". Read only."""
+        from kernel.deliver import releases
+
+        cat = kdash.catalogue(self.factory)
+        for item in cat.get("items") or []:
+            if not item.get("deliverable"):
+                item["deliverable"] = (kprofiles.PROFILES.get(item.get("profile")) or {}).get("deliverable", "product")
+            if item.get("project"):
+                try:
+                    rels = releases(self.factory.project(item["project"]))
+                except (KeyError, OSError, TypeError, ValueError):
+                    rels = []
+                item["releases"] = len(rels)
+                item["latest_release"] = rels[-1].get("release") if rels and isinstance(rels[-1], dict) else None
+        return cat
+
     def get_catalogue(self, **_):
         """The capability catalogue (FR-T1-AC-14): what each capability is, what it delivers, how far it is."""
-        cat = kdash.catalogue(self.factory)
+        cat = self._catalogue()
         return 200, {**cat, "states": list(kdash.CATALOGUE_STATES), "profiles": kprofiles.public(),
                      "deliverables": dict(kprofiles.DELIVERABLES)}
 
@@ -1759,7 +1840,9 @@ class Api:
         people: dict = {k: {} for k in ("needs", "concept", "factory", "testing", "production")}
         for s in ksignals.signals(self.factory):
             if s.get("person") and is_person(s["person"]):
-                people["needs"].setdefault(s["person"], "stakeholder")
+                # the persona the signal was signed with; one nobody's persona raised is a stakeholder's
+                people["needs"].setdefault(s["person"], s.get("persona") if s.get("persona") in PERSONAS
+                                           else "stakeholder")
         for p in self._products():
             for c in Canon(p).cards(state=None, kind="change"):
                 pl = c.get("payload") or {}
@@ -1772,15 +1855,9 @@ class Api:
                     people[corner].setdefault(d["person"], d["persona"])
         return {k: [{"name": n, "persona": v} for n, v in list(d.items())[:8]] for k, d in people.items()}
 
-    def get_square(self, **_):
-        """The delivery square at a glance (kernel.signals.square), with what sits in each corner."""
-        f = self.factory
-        sq = ksignals.square(f)
-        fp = self._factory_if_any()          # read, never created here
-        concepts = [dict(self._card_payload(c), card=c["id"], created=c.get("created"), card_title=c["title"],
-                         body=c.get("body"), deciders=list(CARD_DECIDERS["concept"]))
-                    for c in (Canon(fp).cards(kind="concept") if fp is not None else [])]
-        feedback, production = [], []
+    def _end_user_feedback(self) -> list:
+        """Every change an end user filed, on every product: open first, then the newest."""
+        feedback = []
         for p in self._products():
             for c in Canon(p).cards(state=None, kind="change"):
                 pl = c.get("payload") or {}
@@ -1788,13 +1865,52 @@ class Api:
                     feedback.append({"project": p.pid, "project_title": p.meta.get("title"), "card": c["id"],
                                      "title": c["title"], "state": c["state"], "triaged": bool(pl.get("triage")),
                                      "person": pl.get("person"), "created": c.get("created")})
+        feedback.sort(key=lambda x: x["created"] or "", reverse=True)
+        feedback.sort(key=lambda x: x["state"] != "open")
+        return feedback
+
+    @staticmethod
+    def _square_counts(sq: dict, feedback: list) -> dict:
+        """The square's counts as the cockpit shows them. The end-user testing corner says how much
+        feedback waits, so ``end_user_feedback_waiting`` counts every open end-user report: one not
+        triaged yet waits for its class, a triaged one waits on a decision (a report filed in the
+        cockpit is triaged at once). The kernel's own count, the reports not triaged yet, is
+        ``end_user_feedback_untriaged``."""
+        open_ = sum(1 for x in feedback if x["state"] == "open")
+        return {**sq, "end_user_feedback_untriaged": sq.get("end_user_feedback_waiting", 0),
+                "end_user_feedback_waiting": open_, "end_user_feedback_open": open_}
+
+    def get_square(self, query: dict | None = None, **_):
+        """The delivery square at a glance (kernel.signals.square), with what sits in each corner.
+        ``signals_list`` holds every signal still new and the newest others up to SQUARE_SIGNALS, newest
+        first, so a new signal can always be triaged; ``?signals=all`` lists every signal. ``?show=S-8,...``
+        also lists the signals named (up to SQUARE_SHOWN), such as one the person just triaged that is no
+        longer new nor among the newest: ``signals_shown`` names those listed only for that reason."""
+        f = self.factory
+        query = query or {}
+        sq = ksignals.square(f)
+        fp = self._factory_if_any()          # read, never created here
+        concepts = [dict(self._card_payload(c), card=c["id"], created=c.get("created"), card_title=self._card_title(c),
+                         body=c.get("body"), deciders=list(CARD_DECIDERS["concept"]))
+                    for c in (Canon(fp).cards(kind="concept") if fp is not None else [])]
+        newest_first = ksignals.signals(f)[::-1]
+        every = query.get("signals") == "all"
+        named = {x for x in str(query.get("show") or "").split(",")[:SQUARE_SHOWN] if SIGNAL_ID_RE.match(x)}
+        listed, shown = [], []
+        for i, s in enumerate(newest_first):
+            if every or i < SQUARE_SIGNALS or s.get("state") == "new":
+                listed.append(s)
+            elif s.get("id") in named:
+                listed.append(s)
+                shown.append(s["id"])
+        feedback, production = self._end_user_feedback(), []
+        for p in self._products():
             if p.meta.get("stage") == 7:
                 production.append({"project": p.pid, "title": p.meta.get("title"), "now": self._status(now, p),
                                    "health": self._status(health, p),
                                    "profile": p.meta.get("profile") or kprofiles.DEFAULT_PROFILE})
-        feedback.sort(key=lambda x: x["created"] or "", reverse=True)
-        feedback.sort(key=lambda x: x["state"] != "open")
-        return 200, {**sq, "signals_list": ksignals.signals(f)[::-1][:50], "concepts": concepts,
+        return 200, {**self._square_counts(sq, feedback), "signals_list": listed, "signals_shown": shown,
+                     "signals_all": every or len(listed) == len(newest_first), "concepts": concepts,
                      "feedback": feedback[:40], "production": production, "people": self._people_by_corner(),
                      "channels": list(ksignals.CHANNELS)}
 
@@ -1953,7 +2069,8 @@ class Api:
         channel = _text(body, "channel", limit=32) or "manual"
         source = _text(body, "source", limit=200) or "the cockpit"
         try:
-            s = ksignals.receive(self.factory, text, channel=channel, source=source, person=person)
+            # The signal keeps its signer's persona: triage routes by it (IT's need is an infra change).
+            s = ksignals.receive(self.factory, text, channel=channel, source=source, person=person, persona=persona)
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
         self._audit(self._factory_canon(), "log_signal", s["id"], person, persona)
@@ -1968,8 +2085,28 @@ class Api:
             raise ApiError(404, f"no signal {sid}") from None
         except ValueError as exc:
             raise ApiError(409, str(exc)) from None
+        out = {"signal": s}
+        routed = s.get("routed_to") or {}
+        if s["state"] == "routed" and routed.get("project") and routed.get("card"):
+            # A change routed to a project is triaged at once, like every change filed in the cockpit:
+            # it gets its class, its way back and its impact, and reaches the decisions that wait.
+            # The signal is routed already; a triage that cannot be written leaves the change untriaged.
+            try:
+                out["triage"] = triage(self.factory.project(routed["project"]), routed["card"], model=None)
+            except (OSError, KeyError, ValueError) as exc:
+                out["triage"], out["triage_error"] = None, type(exc).__name__
         self._audit(self._factory_canon(), "triage_signal", sid, person, persona, state=s["state"])
-        return 200, {"signal": s}
+        return 200, out
+
+    def _open_concept(self, cid: str) -> dict | None:
+        """The open concept card ``cid`` on the factory's canon, read only; None when there is none (the
+        kernel then refuses the edit with its own reason)."""
+        fp = self._factory_if_any()
+        try:
+            card = Canon(fp).get_card(cid) if fp is not None else None
+        except (KeyError, ValueError, OSError):
+            return None
+        return card if card and card.get("kind") == "concept" and card.get("state") == "open" else None
 
     def post_concept_edit(self, cid: str, body: dict, **_):
         person, persona = _who(body)
@@ -1979,6 +2116,15 @@ class Api:
                 fields[k] = _text(body, k, limit=200)
         if not fields:
             raise ApiError(400, "send a title, profile, maturity or mode to change")
+        card = self._open_concept(cid)
+        if card is not None:
+            # Only what the person changed is an edit: an unchanged field is neither written nor recorded.
+            current = card.get("payload") or {}
+            fields = {k: v for k, v in fields.items() if str(current.get(k) or "") != (v[:80] if k == "title" else v)}
+            if not fields:
+                if not is_person(person) or persona not in CARD_DECIDERS["concept"]:
+                    raise DecisionRefused(f"a {persona or 'nobody'} named {person!r} may not edit a concept")
+                return 200, {"card": card, "changed": []}
         try:
             card = ksignals.edit_concept(self.factory, cid, person=person, persona=persona, **fields)
         except KeyError:
@@ -1988,7 +2134,7 @@ class Api:
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
         self._audit(self._factory_canon(), "edit_concept", cid, person, persona, fields=sorted(fields))
-        return 200, {"card": card}
+        return 200, {"card": card, "changed": sorted(fields)}
 
     # comments: people talk about the work without deciding anything
 
@@ -2156,6 +2302,9 @@ class Api:
         if not isinstance(origins, list) or len(origins) > 20 or not all(isinstance(o, str) for o in origins):
             raise ApiError(400, "origins is a list of up to 20 website addresses")
         project_id = _text(body, "project", limit=100) or None
+        if kind == "feedback" and project_id is not None and project_id.startswith("_"):
+            # Feedback is on a product. Rihma's own canon takes no anonymous website's word as a change.
+            raise ApiError(400, "a feedback embed belongs to a product; Rihma itself takes no website feedback")
         try:
             e = kembeds.create(self.factory, kind=kind, origins=origins, person=person, persona=persona,
                                project_id=project_id, label=_text(body, "label", limit=80),
@@ -2173,6 +2322,10 @@ class Api:
 
     def post_embed_revoke(self, eid: str, body: dict, **_):
         person, persona = _who(body)
+        held = next((e for e in kembeds.embeds(self.factory) if e.get("id") == eid), None)
+        if held is not None and held.get("state") == "revoked" and is_person(person) and persona in kembeds.CREATORS:
+            # Already stopped: a second revoke records nothing (writes run one at a time under the lock).
+            raise ApiError(409, f"{eid} is already revoked")
         try:
             e = kembeds.revoke(self.factory, eid, person=person, persona=persona)
         except KeyError:

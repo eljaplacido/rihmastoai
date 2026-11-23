@@ -1,4 +1,4 @@
-# Enforcement for building Gnomon Factory (docs/spec-to-verify.md, links 5 and 6).
+# Enforcement for building Rihmasto (docs/spec-to-verify.md, links 5 and 6).
 
 [approval]
 gate = "on_write"

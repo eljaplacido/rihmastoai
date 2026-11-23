@@ -1,4 +1,4 @@
-# Gnomon Factory's own Gnomon surface: the rules this repository is built under.
+# Rihmasto's own Gnomon surface: the rules this repository is built under.
 # Part of the surface hash. Compiled from docs/spec-to-verify.md (link 5), by hand for M0.
 # Cells run on Linux (a GPU box, WSL2 or a container): exec = "os" refuses shell on Windows.
 

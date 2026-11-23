@@ -46,7 +46,7 @@ Rules:
 
 (The rules above are Gnomon's `gnomon init` system prompt, verbatim. What follows is this project.)
 
-This project: Gnomon Factory, an independent solution factory whose only runtime
+This project: Rihmasto, an independent solution factory whose only runtime
 dependency is Gnomon. The design is in `docs/spec-to-verify.md`; read it only when the task
 needs it.
 

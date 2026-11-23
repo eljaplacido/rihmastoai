@@ -128,7 +128,7 @@
     {
       "id": "FR-O8",
       "group": "O. Spec to verify",
-      "statement": "The spec-to-verify chain applies to Gnomon Factory itself: its own contract and .gnomon/ surface govern its development from the first milestone.",
+      "statement": "The spec-to-verify chain applies to Rihmasto itself: its own contract and .gnomon/ surface govern its development from the first milestone.",
       "provenance": "customer-confirmed",
       "decided_by": "owner",
       "decided_on": "2026-11-22",

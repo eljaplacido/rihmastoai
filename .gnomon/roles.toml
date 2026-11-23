@@ -1,4 +1,4 @@
-# Roles for building Gnomon Factory. Changing a model or a scope is a surface change (hashes).
+# Roles for building Rihmasto. Changing a model or a scope is a surface change (hashes).
 # M0 scope: the contract checker, the ledger and the Gnomon adapter. Widen write_allow only by
 # amending the contract, never from inside a cell (.gnomon/ itself is protected by Gnomon).
 

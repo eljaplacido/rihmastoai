@@ -49,6 +49,13 @@ NEEDS_DECISION = {"change_request", "new_requirement"}
 # personas who decide a change card anyway, so a label never skips their decision (FR-P4).
 HINT_TRUSTED = CARD_DECIDERS["change"]
 AMENDS = ("defect", "change_request", "new_requirement")
+# The question a defect that names no requirement puts to a person (FR-DF3), and its last option.
+WHICH_REQUIREMENT = "Which requirement does this defect break?"
+NEW_REQUIREMENT = "None of them: file it as a new requirement"
+
+
+class RequirementUnknown(ValueError):
+    """A defect naming no requirement waits for a person to say which: not applied, nothing written."""
 
 _DEFECT = re.compile(r"\b(error|errors|crash|crashes|broken|bug|fails?|failing|wrong|500|exception|does ?n[o']t work|"
                      r"lost|missing data|virhe|ei toimi|kaatuu)\b", re.I)
@@ -150,17 +157,67 @@ def _ruled_by_submitter(ruling: dict[str, Any], payload: dict[str, Any]) -> bool
             and decision.get("persona") == payload.get("source"))
 
 
-def _ruled_defect(project: Project, canon: Canon, card: dict[str, Any]) -> bool:
-    """Whether a change card is the defect a person's product-defect ruling files (FR-H3-AC-2): a
-    ruling not yet carried out, decided product_defect by the card's person as its persona, whose
-    defect the card states word for word. That ruling is the decision the defect stands on: a
-    person who may rule whether the product or the scenario is wrong ruled the product wrong,
-    against a criterion the contract already holds. Nothing else a person files rides on it."""
+def _ruling_of(project: Project, canon: Canon, card: dict[str, Any]) -> dict[str, Any] | None:
+    """The product-defect ruling a change card is the defect of (FR-H3-AC-2), or None: one not yet
+    carried out, decided product_defect by the card's person as its persona, whose defect the card
+    states word for word. That ruling is the decision the defect stands on; nothing else rides on it."""
     payload = card["payload"]
     carried_out = set(project.read("rulings_applied.json", []) or [])
-    return any(r["id"] not in carried_out and _ruled_by_submitter(r, payload)
-               and ruling_defect_text(r) == payload.get("text")
-               for r in canon.cards(state="decided", kind="holdout_ruling"))
+    return next((r for r in canon.cards(state="decided", kind="holdout_ruling")
+                 if r["id"] not in carried_out and _ruled_by_submitter(r, payload)
+                 and ruling_defect_text(r) == payload.get("text")), None)
+
+
+def _live_ids(spec: dict[str, Any]) -> list[str]:
+    return [str(r["id"]) for r in spec.get("requirements") or [] if r.get("provenance") != "withdrawn"]
+
+
+def _ask_requirement(project: Project, canon: Canon, card: dict[str, Any], tri: dict[str, Any],
+                     spec: dict[str, Any]) -> dict[str, Any]:
+    """A defect whose triage names no requirement never defaults to one (FR-DF3): a ruling's
+    requirement stands; otherwise a question asks a person which one it breaks, with the closest
+    live ones as options, and the change waits for the answer (`_which_requirement`)."""
+    if tri["class"] != "defect" or tri["requirements"] or not _live_ids(spec):
+        return tri
+    ruling = _ruling_of(project, canon, card)
+    named = [r for r in (ruling or {}).get("refs", {}).get("requirements") or [] if r in _live_ids(spec)]
+    if named:
+        return tri | {"requirements": named}
+    text = str(tri.get("text") or card["payload"]["text"])
+    words = set(re.findall(r"\w{3,}", text.lower()))
+    close = sorted([r for r in spec["requirements"] if r["id"] in _live_ids(spec)],
+                   key=lambda r: -len(words & set(re.findall(r"\w{3,}", str(r["statement"]).lower()))))[:3]
+    q = canon.add_question(f"{WHICH_REQUIREMENT} ({card['id']}: {text.splitlines()[0][:70]})", "business",
+                           rationale=f"Triage named no requirement for this defect, and Rihmasto never guesses one. "
+                                     f"Answer with the requirement's id, or say none: {NEW_REQUIREMENT.lower()}.",
+                           options=[f"{r['id']}: {str(r['statement'])[:80]}" for r in close] + [NEW_REQUIREMENT])
+    asked = {"question": q["id"], "card": canon.ask(q["id"])["id"]}
+    project.log("defect_requirement_asked", {"card": card["id"], **asked})
+    return tri | {"needs_requirement": asked}
+
+
+def _which_requirement(project: Project, canon: Canon, card: dict[str, Any], tri: dict[str, Any]) -> dict[str, Any]:
+    """The requirement a defect that named none breaks, from a person (FR-DF3): the one the answer
+    names, else the one the change's accept names. Answered or accepted naming none, it is a new
+    requirement, through the business decision; neither, it is not applied (`RequirementUnknown`)."""
+    asked, decision = tri.get("needs_requirement"), card.get("decision") or {}
+    if tri["class"] != "defect" or tri.get("requirements") or not asked or \
+            decision.get("verdict") not in (None, "accept"):
+        return tri  # a rejected or deferred change is refused as it is (`_decided_person`)
+    live, q = _live_ids(project.read("spec.json") or {}), canon.question(asked["question"])
+    answered = str((q.get("answer") or {}).get("text") or "") if q["status"] == "answered" else ""
+    said = answered or (str(decision.get("reason") or "") if decision.get("verdict") == "accept" else "")
+    named = [rid for rid in re.findall(r"[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+", said) if rid in live]
+    who = q["answer"]["by"] if answered else decision.get("person")
+    if named:
+        return tri | {"requirements": named[:1], "requirement_from": who}
+    if not answered and decision.get("verdict") != "accept":
+        if tri.get("needs_decision"):
+            return tri  # it waits on the business decision first (`_decided_person` says so)
+        raise RequirementUnknown(f"{card['id']} is a defect that names no requirement: answer {asked['question']} "
+                                 "with the one it breaks, or accept the change to file it as a new requirement")
+    return tri | {"class": "new_requirement", "way_back": WAY_BACK["new_requirement"], "needs_decision": True,
+                  "requirement_from": who}
 
 
 def _hint_trusted(project: Project, canon: Canon, card: dict[str, Any]) -> bool:
@@ -170,7 +227,7 @@ def _hint_trusted(project: Project, canon: Canon, card: dict[str, Any]) -> bool:
     included, needs a business owner's or product owner's accept (FR-P4-AC-1)."""
     if card["payload"].get("source") in HINT_TRUSTED:
         return True
-    return card["payload"].get("hint") == "defect" and _ruled_defect(project, canon, card)
+    return card["payload"].get("hint") == "defect" and _ruling_of(project, canon, card) is not None
 
 
 def triage(project, card_id: str, *, model=None) -> dict:
@@ -197,7 +254,7 @@ def triage(project, card_id: str, *, model=None) -> dict:
                 result.update(parts[0])
         except Exception as exc:  # the rules' classification stands
             result["model_error"] = str(exc)
-    result = _finish(result, hint, _hint_trusted(project, canon, card))
+    result = _ask_requirement(project, canon, card, _finish(result, hint, _hint_trusted(project, canon, card)), spec)
     children = []
     if len(parts) > 1 and not card["payload"].get("split_from"):
         for part in parts[1:]:
@@ -206,6 +263,8 @@ def triage(project, card_id: str, *, model=None) -> dict:
                                payload={"source": persona, "person": card["payload"].get("person"),
                                         "text": part["text"], "hint": None, "split_from": card_id,
                                         "triage": _finish(dict(part), None)})
+            child["payload"]["triage"] = _ask_requirement(project, canon, child, child["payload"]["triage"], spec)
+            write_json(canon.dir / "inbox" / f"{child['id']}.json", child)
             children.append(child["id"])
             project.log("change_triaged", {"card": child["id"], "class": child["payload"]["triage"]["class"],
                                            "way_back": child["payload"]["triage"]["way_back"],
@@ -292,10 +351,12 @@ def _decided_person(card: dict[str, Any], tri: dict[str, Any], person: str | Non
 
 
 def _regression(spec: dict[str, Any], tri: dict[str, Any], text: str) -> tuple[str, str]:
-    """A defect's lesson: a regression criterion on the requirement it breaks (FR-K2). Returns the
-    requirement's id and the new criterion's id."""
-    rid = (tri.get("requirements") or [None])[0] or spec["requirements"][0]["id"]
-    req = next(r for r in spec["requirements"] if r["id"] == rid)
+    """A defect's lesson: a regression criterion on the requirement it breaks (FR-K2), the one triage,
+    a ruling or a person named, never a default (FR-DF3). Returns its id and the criterion's id."""
+    rid = (tri.get("requirements") or [None])[0]
+    req = next((r for r in spec["requirements"] if r["id"] == rid), None)
+    if req is None:
+        raise ValueError("the defect names no requirement of the spec: a person says which one it breaks")
     regression = tri.get("regression") or {}
     if isinstance(regression, str):
         regression = {"given": "-", "when": "-", "then": regression}
@@ -404,6 +465,7 @@ def apply_change(project: Project, card_id: str, *, model: Any = None, person: s
     canon = Canon(project)
     card = canon.get_card(card_id)
     tri = card["payload"].get("triage") or triage(project, card_id, model=model)
+    tri = _which_requirement(project, canon, card, tri)
     cls = tri["class"]
     person = _decided_person(card, tri, person)
     text = str(tri.get("text") or card["payload"]["text"])
@@ -429,7 +491,8 @@ def apply_change(project: Project, card_id: str, *, model: Any = None, person: s
     retired = retire_holdouts(project, _gone(before, spec), because=card_id)
     project.log("change_applied", {"card": card_id, "class": cls, "changed": sorted(changed),
                                    "stale": [d["id"] for d in stale], "contract": contract["revision"],
-                                   "holdouts_retired": retired})
+                                   "holdouts_retired": retired,
+                                   **{k: tri[k] for k in ("requirement_from",) if k in tri}})
     return {"class": cls, "way_back": tri["way_back"], "changed": sorted(changed),
             "stale": [d["id"] for d in stale], "contract": contract["revision"], "holdouts_retired": retired}
 

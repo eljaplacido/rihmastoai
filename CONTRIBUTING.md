@@ -24,9 +24,22 @@ and a recorded decision for anything that changes what is promised.
   4. and you understand that the project and the contribution are public, and that a record of
      the contribution, your sign-off included, is kept indefinitely and may be redistributed.
 
-  Read the full text at the link above. Use a name and an email address that identify you.
-- **Forgot to sign off?** `git commit --amend -s` fixes the last commit, and
-  `git rebase --signoff main` fixes every commit on your branch.
+  Read the full text at the link above. Use a name and an email address that identify you: the
+  sign-off must name the commit's author, the same name and email.
+- **Forgot to sign off?** `git commit --amend -s --no-edit` fixes the last commit. To fix every
+  commit on your branch, run `git rebase --signoff <start>`, where `<start>` is the last commit
+  your branch shares with `main`: the DCO check prints it, and it is in your clone, so the rebase
+  moves nothing and only adds the lines. Then force-push the branch:
+  `git push --force-with-lease origin HEAD`.
+- **The DCO check.** Every pull request runs the **DCO sign-off** check
+  ([tools/dco_check.py](tools/dco_check.py)). It lists each commit whose sign-off is missing or
+  names someone other than its author, and says how to fix it.
+- **Two authors need no sign-off, each only in a pull request its own account opened:** the
+  project owner's GitHub noreply address (`40121627+eljaplacido@users.noreply.github.com`), in the
+  owner's pull requests, because the owner holds the copyright of their own work; and
+  `dependabot[bot]`, in Dependabot's pull requests, whose commits are the version bumps the owner
+  set it up to make. git lets anyone write any author address, so the check goes by who opened the
+  pull request, as GitHub records it. Everyone else signs off, maintainers included.
 
 ## Get set up
 
@@ -46,7 +59,8 @@ start product processes on loopback ports.
 ## Run the checks
 
 These are the commands CI runs ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on Ubuntu
-and Windows with Python 3.11 and 3.12. All three must pass.
+and Windows with Python 3.11 and 3.12. All three must pass. On a pull request the DCO sign-off
+check runs too ([How changes reach main](#how-changes-reach-main)).
 
 ```bash
 python -m unittest discover -s tests              # the whole suite: about 13 minutes
@@ -162,6 +176,38 @@ A good pull request:
 - says what you could not check.
 
 The [pull request template](.github/PULL_REQUEST_TEMPLATE.md) asks for these.
+
+## How changes reach main
+
+- **Pull requests only.** `main` is protected: nobody pushes to it, maintainers included. Fork the
+  repository, work on a branch, and open a pull request against `main`.
+- **The required checks.** A pull request merges only when the four CI jobs pass (Ubuntu and
+  Windows, Python 3.11 and 3.12, in [ci.yml](.github/workflows/ci.yml)) and the **DCO sign-off**
+  check passes ([dco.yml](.github/workflows/dco.yml)).
+- **A code owner's review.** [CODEOWNERS](.github/CODEOWNERS) asks the lead maintainer to review
+  every pull request ([GOVERNANCE.md](GOVERNANCE.md) says who decides what).
+- **Squash merges.** A pull request becomes one commit on `main`, and the branch is deleted after
+  the merge. A pull request of one commit merges with that commit's message, your `Signed-off-by`
+  line included, so write it for the history. For several commits, the merge message is the pull
+  request's title and your commits' messages, and the maintainer who merges keeps your
+  `Signed-off-by` line at its end.
+- **Sync pull requests.** The maintainers develop Rihmasto in a development repository of their
+  own and publish it here as scrubbed snapshots. Each arrives as a pull request from a branch
+  `sync/<sha>`, titled "Sync from the development repository at ...", whose description ends with
+  a `Rihmasto-Export:` line; it passes the same checks. Before one is opened, every contribution
+  merged on `main` is brought into the development repository with your name and the merged
+  commit's message, your sign-off in it, kept, so a sync never reverts your work. A contribution
+  must stay within the files this repository ships; one that adds a file the release leaves out,
+  or a secret, cannot be brought in, and a maintainer will say so on the pull request. A change to
+  `release/exclude.txt`, to the release tools (`tools/release_*.py`) or to a `.gitignore` gets a
+  second, separate review before it is brought in.
+- **Questions** go to [GitHub Discussions](https://github.com/eljaplacido/rihmastoai/discussions).
+  Issues are for bugs and proposals.
+- **A first contribution?** Look for issues labelled
+  [good first issue](https://github.com/eljaplacido/rihmastoai/labels/good%20first%20issue): small,
+  with a clear criterion, and a maintainer ready to help.
+
+[docs/maintainers.md](docs/maintainers.md) gives the maintainers' side: releases and the sync.
 
 ## Where decisions are recorded
 

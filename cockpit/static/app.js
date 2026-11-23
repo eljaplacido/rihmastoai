@@ -6,10 +6,12 @@
 
 import {
   S, $, $$, h, fill, icon, api, say, store, local, localJSON, nav, enc, AuthError, setSignedOutHandler, wireTips,
-  wireModal, closeMenu, openMenu, personaLabel, PAGES, PAGE_ROUTES, TOP_PAGES, PROJECT_VIEWS, VIEWS, LENS_ICON, ACCENTS,
-  FACTORY_PID, avatar, button, empty, pageHead,
+  wireModal, closeMenu, openMenu, hideTip, personaLabel, PAGES, PAGE_ROUTES, TOP_PAGES, PROJECT_VIEWS, VIEWS, LENS_ICON,
+  ACCENTS, FACTORY_PID, avatar, button, empty, pageHead, CREDENTIALS,
 } from "./core.js";
-import { renderHome, applyTheme, currentTheme, setTheme, toggleCustomize, customizeKeys, THEME_DEFAULT } from "./dashboard.js";
+import {
+  renderHome, applyTheme, currentTheme, setTheme, loadLayout, previewing, toggleCustomize, customizeKeys, THEME_DEFAULT,
+} from "./dashboard.js";
 import { renderProject, renderFloor, renderJobs, stopLive, startLive, LIVE, cycleTasksMode } from "./project.js";
 import { renderSquare, renderCatalogue, renderProjectsPage, renderInboxAll, renderSettings, newProjectModal, openEmbedForm } from "./screens.js";
 import { openPalette, wirePalette } from "./palette.js";
@@ -22,6 +24,17 @@ applyTheme(Object.assign({}, THEME_DEFAULT, localJSON("gf.theme", {})));
 function showSignIn(message) {
   clearTimeout(S.timer);
   document.documentElement.classList.add("signed-out");
+  if (S.enforcedSignIn) {
+    // Access is enforced: people sign in through the organisation's sign-in, at IT's proxy.
+    fill($("#main"), h("div", { class: "signin" }, h("div", { class: "card signin-card" },
+      h("span", { class: "card-ic big" }, icon("key")),
+      h("h1", null, "Sign in"),
+      message ? h("p", { class: "toast-inline warning" }, icon("alert"), message) : null,
+      h("p", null, "This cockpit signs you in through your organisation's sign-in. Your name and the personas "
+        + "you may act as come from it, as IT set them."),
+      button("Sign in again", { icon: "key", kind: "primary", onclick: () => { location.reload(); } }))));
+    return;
+  }
   fill($("#main"), h("div", { class: "signin" }, h("div", { class: "card signin-card" },
     h("span", { class: "card-ic big" }, icon("key")),
     h("h1", null, "Sign in"),
@@ -36,11 +49,70 @@ setSignedOutHandler(showSignIn);
 
 async function signIn(bootstrap) {
   const res = await fetch("/auth", { method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store",
-    credentials: "omit", body: JSON.stringify({ bootstrap }) });
+    credentials: CREDENTIALS, body: JSON.stringify(bootstrap ? { bootstrap } : {}) });
   let data = {};
   try { data = await res.json(); } catch (e) { data = {}; }
+  if (data.access === "enforced") S.enforcedSignIn = true;
   if (!res.ok || !data.token) throw new Error(data.error || "the sign-in link was refused");
   return data.token;
+}
+
+/* The one-use link, #k=<bootstrap> in the address. It is read when the page opens and whenever the address
+   changes, so a link pasted into a signed-out tab (or one whose session ended) signs it in at once, as the
+   sign-in card says. Answers whether the address held a link. */
+async function useLink() {
+  const m = /^#k=([A-Za-z0-9_-]+)/.exec(location.hash || "");
+  if (!m) return false;
+  history.replaceState(null, "", location.pathname + "#/home");
+  try {
+    S.token = await signIn(m[1]);
+    store.set("gf.token", S.token);
+  } catch (e) {
+    S.token = store.get("gf.token");
+    if (!S.token) showSignIn(e.message);
+  }
+  return true;
+}
+
+// -- access: who signs (kernel/access.py) ------------------------------------------------------------
+
+function enforced() { return !!(S.meta && S.meta.access && S.meta.access.mode === "enforced"); }
+
+// The personas offered: every one for a single operator; with access enforced, those granted on the open
+// project (outside a project, those granted anywhere). The server refuses any other.
+function offeredPersonas() {
+  if (!enforced()) return S.personas;
+  const grants = S.meta.access.grants || [];
+  const pid = S.route && S.route.name === "project" ? S.route.pid : null;
+  return S.personas.filter((p) => grants.some((g) => g.persona === p.id
+    && (!pid || g.scope === "*" || (Array.isArray(g.scope) && g.scope.includes(pid)))));
+}
+
+function drawAccess() {
+  const a = (S.meta && S.meta.access) || {};
+  $("#access-note-text").textContent = a.note || "";
+  $("#access-note").dataset.tip = a.note || "";
+  $("#access-pop").textContent = a.note || "";
+  for (const id of ["#access-note", "#access-pop"]) $(id).hidden = !a.note;
+  $("#access-note").classList.toggle("enforced", enforced());
+  if (!enforced()) return;
+  S.person = a.name || "";              // the verified name: not typed, not editable
+  const input = $("#person");
+  input.value = S.person;
+  input.readOnly = true;
+  $("#newlink").hidden = true;          // another tab signs in through the organisation's sign-in too
+  drawPersonChip();
+}
+
+// With access enforced, a persona not granted where the person now is gives way to the first that is.
+function keepGrantedPersona() {
+  if (!enforced()) return;
+  const offered = offeredPersonas();
+  if (!offered.length || offered.some((p) => p.id === S.persona)) return;
+  S.persona = offered[0].id;
+  S.lens = lensFor(S.persona);
+  drawPersonChip();
+  drawLens();
 }
 
 // -- the person and the lens ------------------------------------------------------------------------
@@ -60,14 +132,28 @@ function drawPersonChip() {
   $("#person-chip").classList.toggle("unset", !name);
 }
 
+// The persona radios are drawn once and afterwards only checked: drawing them again would take the focus
+// from the radio an arrow key has just chosen, and the next arrow would do nothing.
 function drawPersonaList() {
-  fill($("#persona-list"), S.personas.map((p) => {
-    const id = "pp-" + p.id;
-    const r = h("input", { type: "radio", name: "pp-persona", id, value: p.id, checked: p.id === S.persona });
-    r.addEventListener("change", () => setPersona(p.id));
-    return h("div", { class: "pp-opt" }, r, h("label", { for: id }, h("b", null, p.label),
-      h("small", null, (((S.meta && S.meta.lenses) || {})[p.lens] || {}).label + " lens")));
-  }));
+  const list = $("#persona-list");
+  const offered = offeredPersonas();
+  if (!offered.length) {
+    fill(list, h("p", { class: "muted small" }, "No persona is granted to you here. IT grants personas in the access file."));
+    $("#persona-note").textContent = "";
+    return;
+  }
+  const radios = $$("input[type=radio]", list);
+  if (radios.length !== offered.length || radios.some((r, i) => r.value !== offered[i].id)) {
+    fill(list, offered.map((p) => {
+      const id = "pp-" + p.id;
+      const r = h("input", { type: "radio", name: "pp-persona", id, value: p.id, checked: p.id === S.persona });
+      r.addEventListener("change", () => setPersona(p.id));
+      return h("div", { class: "pp-opt" }, r, h("label", { for: id }, h("b", null, p.label),
+        h("small", null, (((S.meta && S.meta.lenses) || {})[p.lens] || {}).label + " lens")));
+    }));
+  } else {
+    radios.forEach((r) => { r.checked = r.value === S.persona; });
+  }
   const p = S.personas.find((x) => x.id === S.persona);
   $("#persona-note").textContent = p ? p.label + " sees " + p.sees + ". Can " + p.can + "." : "";
 }
@@ -96,12 +182,15 @@ function openPerson(focusName) {
   ($("#person").value ? $("#persona-list input:checked") || $("#person") : $("#person")).focus();
   if (focusName) $("#person").focus();
 }
-function closePerson() {
+// Closing by Done or Esc gives the focus back to the chip that opened the menu; a click elsewhere leaves it
+// where the click put it.
+function closePerson(refocus) {
   const pop = $("#person-pop");
   if (pop.hidden) return;
   pop.hidden = true;
   $("#person-chip").setAttribute("aria-expanded", "false");
   $("#linkbox").hidden = true;
+  if (refocus) $("#person-chip").focus();
 }
 nav.openPerson = openPerson;
 
@@ -112,11 +201,11 @@ function wirePerson() {
   input.addEventListener("input", () => { S.person = input.value; store.set("gf.person", input.value); drawPersonChip(); });
   input.addEventListener("change", () => { if (S.route && S.route.name === "home") route(true); });
   $("#person-chip").addEventListener("click", () => openPerson(false));
-  $("#pp-done").addEventListener("click", closePerson);
-  $("#person-pop").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); closePerson(); $("#person-chip").focus(); } });
+  $("#pp-done").addEventListener("click", () => closePerson(true));
+  $("#person-pop").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); closePerson(true); } });
   document.addEventListener("pointerdown", (e) => {
     const pop = $("#person-pop");
-    if (!pop.hidden && !pop.contains(e.target) && !$("#person-chip").contains(e.target)) closePerson();
+    if (!pop.hidden && !pop.contains(e.target) && !$("#person-chip").contains(e.target)) closePerson(false);
   });
   $("#newlink").addEventListener("click", async () => {
     try {
@@ -133,20 +222,46 @@ function wirePerson() {
   });
 }
 
+/* The lens switcher is an ARIA radiogroup: one tab stop (the chosen lens), the arrow keys (and Home, End)
+   move and choose within it, and choosing keeps the focus on the lens. The buttons are drawn once and then
+   only marked, so the focused one is never replaced. */
 function drawLens() {
   const lenses = (S.meta && S.meta.lenses) || {};
   const box = $("#lens-switch");
-  fill(box, Object.entries(lenses).map(([k, v]) => {
-    const b = h("button", { type: "button", role: "radio", "aria-checked": String(k === S.lens), class: "lens-b", "data-lens": k,
-      tip: v.question }, icon(LENS_ICON[k] || "eye"), h("span", { class: "lbl" }, v.label));
-    b.addEventListener("click", () => {
-      S.lens = k;
-      store.set("gf.lens." + S.persona, k);
-      drawLens();
-      route(true);
-    });
-    return b;
-  }));
+  const keys = Object.keys(lenses);
+  if ($$(".lens-b", box).map((b) => b.dataset.lens).join(" ") !== keys.join(" ")) {
+    fill(box, keys.map((k) => {
+      const b = h("button", { type: "button", role: "radio", class: "lens-b", "data-lens": k, tip: lenses[k].question },
+        icon(LENS_ICON[k] || "eye"), h("span", { class: "lbl" }, lenses[k].label));
+      b.addEventListener("click", () => chooseLens(k));
+      return b;
+    }));
+  }
+  $$(".lens-b", box).forEach((b) => {
+    const on = b.dataset.lens === S.lens;
+    b.setAttribute("aria-checked", String(on));
+    b.tabIndex = on ? 0 : -1;
+  });
+}
+function chooseLens(k) {
+  if (k === S.lens) return;
+  S.lens = k;
+  store.set("gf.lens." + S.persona, k);
+  drawLens();
+  route(true);
+}
+function wireLens() {
+  const box = $("#lens-switch");
+  box.addEventListener("keydown", (e) => {
+    const all = $$(".lens-b", box);
+    const i = all.indexOf(document.activeElement);
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (i < 0 || (!step && e.key !== "Home" && e.key !== "End")) return;
+    e.preventDefault();
+    const j = e.key === "Home" ? 0 : e.key === "End" ? all.length - 1 : (i + step + all.length) % all.length;
+    all[j].focus();
+    chooseLens(all[j].dataset.lens);
+  });
 }
 
 // -- the sidebar, the top bar and the bottom bar ----------------------------------------------------
@@ -155,26 +270,59 @@ const NAV_ORDER = ["home", "square", "catalogue", "projects", "inbox_all", "floo
 const PAGE_ROUTE = { home: "#/home", square: "#/square", catalogue: "#/catalogue", projects: "#/projects",
   inbox_all: "#/inbox", floor: "#/floor", jobs: "#/jobs", settings: "#/settings" };
 
-function navItem(id, extra) {
+/* A page in the sidebar. Its label is hidden in the icon rail, where the tooltip carries it and what its
+   badge counts. A note the badge alone shows (the cells running now) is a tooltip at every width, on
+   keyboard focus as on hover, and its words are in the link's name. */
+function navItem(id, extra, note, everyWidth) {
   const pg = PAGES[id];
   const on = S.route && S.route.name === id;
-  return h("a", { class: "nav-i rail-tip" + (on ? " on" : ""), href: PAGE_ROUTE[id], "aria-current": on ? "page" : null, "data-tip": pg.label },
-    icon(pg.icon), h("span", { class: "lbl" }, pg.label), extra || null);
+  return h("a", { class: "nav-i" + (everyWidth ? "" : " rail-tip") + (on ? " on" : ""), href: PAGE_ROUTE[id], "aria-current": on ? "page" : null,
+    "data-tip": note ? pg.label + ": " + note : pg.label }, icon(pg.icon), h("span", { class: "lbl" }, pg.label), extra || null);
+}
+
+// The sidebar and the bottom bar are drawn again after every route and count: a focused link or button in
+// them is found again by its address (or id) in the same list it was in (the pages, the project's views,
+// the foot or the bottom bar), so the focus stays where the person left it. Only within that list is an
+// address unique: the brand at the top of the sidebar goes to Home as the Home page link does.
+function keepFocus(roots, draw) {
+  const a = document.activeElement;
+  const root = a ? roots.find((r) => r.contains(a)) : null;
+  const box = root && a.parentElement ? a.parentElement.closest("[id]") : null;
+  const href = root ? a.getAttribute("href") : null;
+  const id = root ? a.id : null;
+  draw();
+  if (!root || a.isConnected) return;
+  const within = box && box.isConnected && root.contains(box) ? box : root;
+  const again = $$("a, button", within).find((el) => (id && el.id === id) || (href && el.getAttribute("href") === href));
+  if (again) again.focus({ preventScroll: true });
 }
 
 function refreshSidebar() {
+  keepFocus([$("#sidebar"), $("#bottombar")], drawSidebar);
+}
+function drawSidebar() {
   const running = (S.projects || []).filter((p) => p.running).length;   // a running cell, never a guess
-  fill($("#sb-nav"), NAV_ORDER.map((id) => navItem(id,
-    id === "inbox_all" && S.inboxCount ? h("span", { class: "count", "aria-label": S.inboxCount + " waiting on you" }, String(S.inboxCount))
-      : id === "projects" && running ? h("span", { class: "live-badge", tip: running === 1 ? "1 cell running now" : running + " cells running now" }, h("span", { class: "live-dot pulse" }), String(running)) : null)));
+  const waiting = S.inboxCount ? S.inboxCount + " waiting on you" : "";
+  const live = running === 1 ? "1 cell running now" : running + " cells running now";
+  fill($("#sb-nav"), NAV_ORDER.map((id) => {
+    if (id === "inbox_all" && S.inboxCount) {
+      return navItem(id, h("span", { class: "count", "aria-label": waiting }, String(S.inboxCount)), waiting);
+    }
+    if (id === "projects" && running) {
+      return navItem(id, h("span", { class: "live-badge" }, h("span", { class: "live-dot pulse" }),
+        h("span", { class: "live-n", "aria-hidden": "true" }, String(running)), h("span", { class: "vh" }, live)), live, true);
+    }
+    return navItem(id);
+  }));
   const pv = S.route && S.route.name === "project" ? S.projectViews : null;
   const sbp = $("#sb-project");
   if (pv && S.project) {
     sbp.hidden = false;
     fill(sbp, h("div", { class: "sb-sec rail-tip", "data-tip": S.project.meta.title }, h("span", { class: "lbl" }, S.project.meta.title)),
       pv.views.map((v) => h("a", { class: "nav-i sub rail-tip" + (v === pv.current ? " on" : ""), href: "#/p/" + enc(pv.pid) + "/" + v,
-        "aria-current": v === pv.current ? "page" : null, "data-tip": VIEWS[v].label }, icon(VIEWS[v].icon), h("span", { class: "lbl" }, VIEWS[v].label),
-      v === "inbox" && pv.inbox ? h("span", { class: "count" }, String(pv.inbox)) : null)));
+        "aria-current": v === pv.current ? "page" : null, "data-tip": VIEWS[v].label + (v === "inbox" && pv.inbox ? ": " + pv.inbox + " waiting on you" : "") },
+      icon(VIEWS[v].icon), h("span", { class: "lbl" }, VIEWS[v].label),
+      v === "inbox" && pv.inbox ? h("span", { class: "count", "aria-label": pv.inbox + " waiting on you" }, String(pv.inbox)) : null)));
   } else {
     sbp.hidden = true;
     fill(sbp);
@@ -183,8 +331,9 @@ function refreshSidebar() {
   fill($("#bottombar"), [["home", "Home"], ["square", "Square"], ["inbox_all", "Inbox"], ["projects", "Projects"]].map(([id, lbl]) => {
     const on = S.route && S.route.name === id;
     return h("a", { href: PAGE_ROUTE[id], class: on ? "on" : null, "aria-current": on ? "page" : null }, icon(PAGES[id].icon),
-      h("span", null, lbl), id === "inbox_all" && S.inboxCount ? h("span", { class: "count" }, String(S.inboxCount)) : null);
-  }).concat([h("button", { type: "button", onclick: () => (assistantOpen() ? closeAssistant() : openAssistant()) }, icon("bot"), h("span", null, "Ask"))]));
+      h("span", null, lbl), id === "inbox_all" && S.inboxCount ? h("span", { class: "count", "aria-label": waiting }, String(S.inboxCount)) : null);
+  }).concat([h("button", { type: "button", id: "bb-ask", "aria-controls": "assistant", "aria-expanded": String(assistantOpen()),
+    onclick: () => (assistantOpen() ? closeAssistant() : openAssistant()) }, icon("bot"), h("span", null, "Ask"))]));
 }
 
 function crumbs() {
@@ -211,32 +360,126 @@ async function refreshCounts() {
   } catch (e) { /* the shell keeps what it had */ }
 }
 
+// The icon rail: the collapse button says what it will do, in its name and its tooltip, also after a reload.
+function drawRail(on) {
+  document.documentElement.classList.toggle("rail", on);
+  const b = $("#sb-collapse");
+  const label = on ? "Expand the sidebar" : "Collapse the sidebar";
+  b.setAttribute("aria-expanded", String(!on));
+  b.setAttribute("aria-label", label);
+  b.setAttribute("data-tip", label);
+}
+
+/* Below 901px the sidebar is a navigation overlay opened from the menu button. While it is closed it is
+   hidden (so its links are not in the tab order); open, it takes the focus, and a click outside it, its
+   close button, Esc or tabbing out of it closes it. Closing by the close button, Esc or the backdrop gives
+   the focus back to the menu button; following a link gives it to the new page's heading. */
+function navOpen() { return document.documentElement.classList.contains("nav-open"); }
+function setNav(open, refocus) {
+  const was = navOpen();
+  document.documentElement.classList.toggle("nav-open", open);
+  $("#tb-menu").setAttribute("aria-expanded", String(open));
+  if (open && !was) {
+    const first = $("#sidebar .nav-i[aria-current]") || $("#sidebar .nav-i");
+    if (first) first.focus();
+  } else if (!open && was && refocus) {
+    $("#tb-menu").focus();
+  }
+}
+function wireNav() {
+  $("#tb-menu").addEventListener("click", () => setNav(!navOpen(), false));
+  $("#sb-close").addEventListener("click", () => setNav(false, true));
+  $("#sidebar").addEventListener("click", (e) => {
+    const a = e.target.closest("a");
+    if (!a || !navOpen()) return;
+    const same = a.getAttribute("href") === location.hash;
+    if (!same) S.jumped = true;
+    setNav(false, same);
+  });
+  document.addEventListener("click", (e) => {
+    if (!navOpen() || $("#sidebar").contains(e.target) || $("#tb-menu").contains(e.target)) return;
+    if (e.target.closest && e.target.closest("dialog, .popover, .toasts")) return;
+    setNav(false, e.target === $("#shell"));   // the backdrop
+  });
+  // Tabbing out of the overlay either way (forward into the page, back to the skip link) closes it; a dialog,
+  // menu or toast opened from it keeps it open, as a click there does.
+  document.addEventListener("focusin", (e) => {
+    const t = e.target;
+    if (!navOpen() || !(t instanceof Element) || $("#sidebar").contains(t) || t.closest("dialog, .popover, .toasts")) return;
+    setNav(false, false);
+  });
+}
+
+/* A theme change from the top bar is shown at once and kept with the layout of the person, persona and lens
+   in view. The layout in memory may be the one Home loaded for another persona, lens or person (the switch
+   was made on another page, or Home is still drawing the new one), so it is read again first, and the theme
+   is never saved under the wrong lens or for the wrong persona. Only a Customize session or an assistant's
+   preview shown on Home keeps its own layout. What is kept is the theme on screen with the change. The
+   changes are kept one after another, so a second choice made before the first is saved builds on it. */
+let themeQueue = Promise.resolve();
+function changeTheme(changes) {
+  const free = !S.customizing && !previewing();
+  if (free) applyTheme(Object.assign({}, S.theme || currentTheme(), changes));
+  themeQueue = themeQueue.then(() => keepTheme(changes, free))
+    .catch((e) => { if (!(e instanceof AuthError)) say("The theme is shown here but was not saved: " + e.message, "warning"); });
+  return themeQueue;
+}
+async function keepTheme(changes, free) {
+  const home = !!S.route && S.route.name === "home";
+  if (!S.customizing && S.person.trim() && !(home && previewing())) {
+    try {
+      await loadLayout();
+    } catch (e) {
+      if (e instanceof AuthError) return;
+      await setTheme(Object.assign({}, S.theme, changes), { save: false });
+      say("The theme is shown here but was not saved with your layout: " + e.message, "warning");
+      return;
+    }
+  }
+  await setTheme(free ? Object.assign({}, S.theme, changes) : changes);
+}
+function shownTheme() { return S.theme || currentTheme(); }
+
 function wireShell() {
-  const rail = local.get("gf.rail") === "1";
-  document.documentElement.classList.toggle("rail", rail);
-  $("#sb-collapse").setAttribute("aria-expanded", String(!rail));
+  drawRail(local.get("gf.rail") === "1");
   $("#sb-collapse").addEventListener("click", () => {
     const on = !document.documentElement.classList.contains("rail");
-    document.documentElement.classList.toggle("rail", on);
+    drawRail(on);
     local.set("gf.rail", on ? "1" : "");
-    $("#sb-collapse").setAttribute("aria-expanded", String(!on));
-    $("#sb-collapse").setAttribute("aria-label", on ? "Expand the sidebar" : "Collapse the sidebar");
+    hideTip();   // the pointer is still on the button: its next move shows the new tooltip
   });
-  $("#tb-menu").addEventListener("click", () => document.documentElement.classList.toggle("nav-open"));
-  $("#sidebar").addEventListener("click", (e) => { if (e.target.closest("a")) document.documentElement.classList.remove("nav-open"); });
+  wireNav();
+  wireLens();
   $("#sb-new").addEventListener("click", () => newProjectModal());
-  $("#skip").addEventListener("click", (e) => { e.preventDefault(); $("#main").focus(); });
-  $("#customize").addEventListener("click", toggleCustomize);
-  $("#density").addEventListener("click", () => setTheme({ density: currentTheme().density === "compact" ? "comfortable" : "compact" }));
-  $("#theme").addEventListener("click", () => {
-    const t = currentTheme();
-    openMenu($("#theme"), [{ group: "Mode" }].concat([["dark", "Dark", "moon"], ["light", "Light", "sun"], ["system", "System", "monitor"]].map(([v, l, ic]) =>
-      ({ label: l, icon: ic, checked: t.mode === v, onclick: () => setTheme({ mode: v }) })),
-    [{ sep: true }, { group: "Accent" }], ACCENTS.map((a) => ({ label: a.charAt(0).toUpperCase() + a.slice(1), checked: t.accent === a,
-      onclick: () => setTheme({ accent: a }) })),
-    [{ sep: true }, { group: "Corners" }], [["soft", "Soft"], ["crisp", "Crisp"]].map(([v, l]) => ({ label: l, checked: t.radius === v, onclick: () => setTheme({ radius: v }) }))), "Theme");
+  // The top bar is sticky: main's top goes just below it, so the page's heading is never hidden under the bar.
+  $("#skip").addEventListener("click", (e) => {
+    e.preventDefault();
+    const main = $("#main");
+    main.focus({ preventScroll: true });
+    const top = main.getBoundingClientRect().top + window.scrollY - $("#topbar").offsetHeight;
+    if (window.scrollY > top) window.scrollTo(0, Math.max(0, top));
   });
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(currentTheme()));
+  $("#customize").addEventListener("click", toggleCustomize);
+  $("#density").addEventListener("click", () => changeTheme({ density: shownTheme().density === "compact" ? "comfortable" : "compact" }));
+  $("#theme").addEventListener("click", () => {
+    const t = shownTheme();
+    openMenu($("#theme"), [{ group: "Mode" }].concat([["dark", "Dark", "moon"], ["light", "Light", "sun"], ["system", "System", "monitor"]].map(([v, l, ic]) =>
+      ({ label: l, icon: ic, checked: t.mode === v, onclick: () => changeTheme({ mode: v }) })),
+    [{ sep: true }, { group: "Accent" }], ACCENTS.map((a) => ({ label: a.charAt(0).toUpperCase() + a.slice(1), checked: t.accent === a,
+      onclick: () => changeTheme({ accent: a }) })),
+    [{ sep: true }, { group: "Corners" }], [["soft", "Soft"], ["crisp", "Crisp"]].map(([v, l]) => ({ label: l, checked: t.radius === v, onclick: () => changeTheme({ radius: v }) }))), "Theme");
+  });
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(shownTheme()));
+  // The phone's Ask says whether the assistant is open, as Ask Rihma does; closing it there gives the focus
+  // back to Ask (Ask Rihma is hidden at that width).
+  new MutationObserver(() => {
+    const bb = $("#bb-ask");
+    if (!bb) return;
+    const open = assistantOpen();
+    bb.setAttribute("aria-expanded", String(open));
+    const a = document.activeElement;
+    if (!open && bb.offsetParent !== null && (!a || a === document.body || $("#assistant").contains(a))) bb.focus();
+  }).observe($("#assistant"), { attributes: true, attributeFilter: ["hidden"] });
 }
 
 // -- routing ----------------------------------------------------------------------------------------
@@ -269,6 +512,7 @@ async function route(keep) {
   const r = parseRoute();
   const same = S.route && S.route.name === r.name && S.route.pid === r.pid && S.route.view === r.view && S.route.focus === r.focus;
   S.route = r;
+  keepGrantedPersona();
   const seq = ++S.seq;
   if (r.name !== "project") { S.project = null; S.projectViews = null; }
   document.documentElement.classList.toggle("on-home", r.name === "home");
@@ -276,6 +520,7 @@ async function route(keep) {
   refreshSidebar();
   crumbs();
   onRouteChange();
+  const main = $("#main");
   try {
     if (r.name === "project") {
       const shown = await renderProject(r, keep || same, seq);
@@ -283,15 +528,18 @@ async function route(keep) {
     } else {
       await RENDER[r.name](seq);
     }
-    if (seq === S.seq) { crumbs(); refreshSidebar(); }
+    if (seq === S.seq) { main.dataset.loaded = "1"; crumbs(); refreshSidebar(); }   // what is shown now stays
     if (S.jumped && seq === S.seq) {
       S.jumped = false;
       if (!r.focus) { const t = $("#view-title"); if (t) t.focus(); }
     }
   } catch (e) {
     if (e instanceof AuthError || seq !== S.seq) return;
-    fill($("#main"), pageHead("Something went wrong", null), empty("alert", e.message,
+    // an error stays on screen: a loading placeholder still waiting to be drawn never replaces it
+    main.dataset.loaded = "1";
+    fill(main, pageHead("Something went wrong", null), empty("alert", e.message,
       button("Back to Home", { icon: "home", onclick: () => { location.hash = "#/home"; } })));
+    if (S.jumped) { S.jumped = false; $("#view-title").focus(); }   // a jump lands on the error's heading
   }
   refreshCounts();
 }
@@ -341,13 +589,43 @@ function wireKeys() {
       if (cycleTasksMode()) e.preventDefault();
       return;
     }
-    if (e.key === "Escape") {
-      if (document.documentElement.classList.contains("nav-open")) document.documentElement.classList.remove("nav-open");
+    if (e.key === "Escape" && navOpen() && !$("#modal").open && !$("#palette").open) {
+      const a = document.activeElement;
+      setNav(false, !a || a === document.body || $("#sidebar").contains(a));
     }
   });
 }
 
 // -- start ------------------------------------------------------------------------------------------
+
+let started = false;
+// After a sign-in: the personas and the meta are read once, then the shell is drawn and the page routed.
+async function start() {
+  if (!S.token) { showSignIn(); return; }
+  if (started) {
+    document.documentElement.classList.remove("signed-out");
+    route();
+    return;
+  }
+  try {
+    const [personas, meta] = await Promise.all([api("GET", "/api/personas"), api("GET", "/api/meta")]);
+    S.personas = personas;
+    S.meta = meta;
+  } catch (e) {
+    if (!(e instanceof AuthError)) say(e.message, "critical");
+    return;
+  }
+  started = true;
+  document.documentElement.classList.remove("signed-out");
+  const saved = store.get("gf.persona");
+  if (saved && S.personas.some((p) => p.id === saved)) S.persona = saved;
+  S.lens = lensFor(S.persona);
+  S.oneAtATime = store.get("gf.oneatatime") === "1";
+  drawAccess();
+  drawPersonChip();
+  drawLens();
+  route();
+}
 
 async function boot() {
   wireTips();
@@ -357,43 +635,28 @@ async function boot() {
   wirePalette();
   wireAssistant();
   wireKeys();
-  const m = /^#k=([A-Za-z0-9_-]+)/.exec(location.hash || "");
-  if (m) {
-    history.replaceState(null, "", location.pathname + "#/home");
-    try {
-      S.token = await signIn(m[1]);
-      store.set("gf.token", S.token);
-    } catch (e) {
-      S.token = store.get("gf.token");
-      if (!S.token) { showSignIn(e.message); return; }
-    }
-  } else {
-    S.token = store.get("gf.token");
-  }
-  if (!S.token) { showSignIn(); return; }
-  try {
-    const [personas, meta] = await Promise.all([api("GET", "/api/personas"), api("GET", "/api/meta")]);
-    S.personas = personas;
-    S.meta = meta;
-  } catch (e) {
-    if (!(e instanceof AuthError)) say(e.message, "critical");
-    return;
-  }
-  document.documentElement.classList.remove("signed-out");
-  const saved = store.get("gf.persona");
-  if (saved && S.personas.some((p) => p.id === saved)) S.persona = saved;
-  S.lens = lensFor(S.persona);
-  S.oneAtATime = store.get("gf.oneatatime") === "1";
-  drawPersonChip();
-  drawLens();
-  window.addEventListener("hashchange", () => { route(); });
+  window.addEventListener("hashchange", async () => {
+    if (await useLink()) { if (S.token) start(); return; }
+    if (started) route();
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stopLive();
     else if (LIVE.el && LIVE.el.isConnected) startLive();
   });
-  route();
+  if (!(await useLink())) {
+    S.token = store.get("gf.token");
+    // No link and no session: with access enforced (the page says so), the organisation's sign-in at IT's
+    // proxy opens one. A single operator's page asks for nothing until a sign-in link is opened.
+    const mode = document.querySelector('meta[name="rihmasto-access"]');
+    if (mode && mode.content === "enforced") S.enforcedSignIn = true;
+    if (!S.token && S.enforcedSignIn) {
+      try { S.token = await signIn(null); store.set("gf.token", S.token); }
+      catch (e) { S.token = null; showSignIn(e.message); return; }
+    }
+  }
+  start();
 }
 
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
 else boot();
-void $$; void avatar; void FACTORY_PID;
+void avatar; void FACTORY_PID;

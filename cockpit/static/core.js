@@ -112,6 +112,7 @@ export const S = {
   allViews: false, showSettled: false, onlyMine: false, onlyWaiting: false, oneAtATime: false,
   alignOpen: {}, skipped: {}, focusNext: null, jumped: false, timer: null, seq: 0, dashboard: null,
   layout: null, layoutPreset: true, theme: null, customizing: false, uiMap: null, running: [],
+  enforcedSignIn: false,
 };
 
 // The router and the shell register themselves here, so modules can call them without import cycles.
@@ -223,15 +224,20 @@ export function empty(iconName, line, action) {
   return h("div", { class: "empty" }, h("span", { class: "empty-ic" }, icon(iconName || "info")),
     h("p", null, line), action || null);
 }
-// A static placeholder, shown only if loading takes more than a second (never a shimmer).
+// A static placeholder, shown only if loading takes more than a second (never a shimmer). Only the latest
+// load draws one, and never over what a finished render or an error has put there (the router marks main
+// loaded when it is done either way).
+let loads = 0;
 export function skeleton(main, what) {
+  const mine = String(++loads);
   const t = setTimeout(() => {
-    if (!main.isConnected || main.dataset.loaded === "1") return;
+    if (!main.isConnected || main.dataset.loaded === "1" || main.dataset.load !== mine) return;
     fill(main, h("div", { class: "skeleton", "aria-label": "Loading " + what }, h("div", { class: "sk-h" }),
       h("div", { class: "sk-row" }, h("div", { class: "sk-b" }), h("div", { class: "sk-b" })), h("div", { class: "sk-b tall" })));
   }, 1000);
+  main.dataset.load = mine;
   main.dataset.loaded = "0";
-  return () => { clearTimeout(t); main.dataset.loaded = "1"; };
+  return () => { clearTimeout(t); if (main.dataset.load === mine) main.dataset.loaded = "1"; };
 }
 
 // -- formatting ---------------------------------------------------------------------------------
@@ -329,8 +335,12 @@ export class AuthError extends Error {}
 let onSignedOut = () => {};
 export function setSignedOutHandler(fn) { onSignedOut = fn; }
 
+// "same-origin": with access enforced, IT's sign-in proxy in front of the cockpit keeps its own session
+// cookie and needs it on every request. The cockpit itself sets and reads no cookie.
+export const CREDENTIALS = "same-origin";
+
 export async function api(method, path, body) {
-  const opts = { method, headers: { Authorization: "Bearer " + S.token }, cache: "no-store", credentials: "omit" };
+  const opts = { method, headers: { Authorization: "Bearer " + S.token }, cache: "no-store", credentials: CREDENTIALS };
   if (method !== "GET") {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body || {});
@@ -346,6 +356,7 @@ export async function api(method, path, body) {
   if (res.status === 401) {
     S.token = null;
     store.del("gf.token");
+    if (data && data.access === "enforced") S.enforcedSignIn = true;   // sign in again through the proxy
     onSignedOut((data && data.error) || "Your session ended.");
     throw new AuthError("signed out");
   }
@@ -359,7 +370,7 @@ export async function api(method, path, body) {
 
 // A binary download behind the bearer token: fetched, then handed to the browser as a file.
 export async function download(path, fallbackName) {
-  const res = await fetch(path, { headers: { Authorization: "Bearer " + S.token }, cache: "no-store", credentials: "omit" });
+  const res = await fetch(path, { headers: { Authorization: "Bearer " + S.token }, cache: "no-store", credentials: CREDENTIALS });
   if (!res.ok) {
     let msg = res.status + " " + res.statusText;
     try { msg = (await res.json()).error || msg; } catch (e) { /* not JSON */ }
@@ -481,7 +492,14 @@ export function openMenu(anchor, items, label) {
       disabled: it.disabled || null,
     }, it.icon ? icon(it.icon) : h("span", { class: "ic-space" }), h("span", null, it.label),
     it.checked ? icon("check", "menu-check") : null);
-    b.addEventListener("click", () => { closeMenu(); it.onclick(); });
+    b.addEventListener("click", () => {
+      closeMenu();
+      it.onclick();
+      // the item that had the focus is gone with the menu: unless the choice moved the focus (to a dialog or
+      // a field), it goes back to the button that opened the menu, as Esc does
+      const a = document.activeElement;
+      if ((!a || a === document.body || (pop.hidden && pop.contains(a))) && anchor.isConnected) anchor.focus();
+    });
     btns.push(b);
     return b;
   }));
@@ -499,7 +517,7 @@ export function openMenu(anchor, items, label) {
     if (e.key === "Escape") { e.preventDefault(); closeMenu(); anchor.focus(); }
     else if (e.key === "ArrowDown") { e.preventDefault(); (btns[(i + 1) % btns.length] || btns[0]).focus(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); (btns[(i - 1 + btns.length) % btns.length] || btns[0]).focus(); }
-    else if (e.key === "Tab") closeMenu();
+    else if (e.key === "Tab") { closeMenu(); anchor.focus(); }   // Tab goes on from the menu's button
   };
   const onDown = (e) => { if (!pop.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) closeMenu(); };
   pop.addEventListener("keydown", onKey);

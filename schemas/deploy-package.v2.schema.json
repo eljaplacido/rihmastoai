@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:rihmasto:schema:deploy-package:v2",
+  "title": "Rihmasto deploy package for a site (gnomonfactory.deploy_package/2)",
+  "description": "What a site runs a release with (kernel/bundle.py deploy_package): the release's deploy package for its landing environment, with the image as the release pinned it and the capability pack it belongs to, named by version and hash. kernel/roads.py render_compose turns it into compose.yaml only when the image is pinned by digest.",
+  "$comment": "Secrets are named, never given: an entry holds where the value lives (ref), and a value fails this schema. Nothing in the package is hashed apart; the bundle's SHA256SUMS covers it.",
+  "type": "object",
+  "required": ["schema", "project", "release", "environment", "slot", "road", "revision", "contract_revision",
+               "artifact", "settings", "secrets", "rules", "target", "road_problems", "pack"],
+  "properties": {
+    "schema": {"const": "gnomonfactory.deploy_package/2"},
+    "project": {"type": "string"},
+    "release": {"type": "integer"},
+    "environment": {"enum": ["preview", "demo", "staging", "production"]},
+    "slot": {"enum": ["current", "candidate", "twin"]},
+    "road": {"type": "object", "required": ["name", "kind"],
+             "properties": {"name": {"type": "string"}, "kind": {"type": "string"}}},
+    "revision": {"type": "string"},
+    "contract_revision": {"type": ["string", "null"]},
+    "artifact": {
+      "type": "object",
+      "required": ["type", "ref"],
+      "properties": {
+        "type": {"enum": ["image", "process"]},
+        "ref": {"type": "string", "description": "an image pushed by the factory is named repository@sha256:..."},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "tag": {"type": "string"},
+        "id": {"type": ["string", "null"]},
+        "registry": {"type": "string"}
+      }
+    },
+    "settings": {"type": "object", "additionalProperties": {"type": "string"}},
+    "secrets": {
+      "type": "array",
+      "items": {"type": "object", "required": ["name"],
+                "properties": {"name": {"type": "string"}, "ref": {"type": ["string", "null"]}},
+                "additionalProperties": false}
+    },
+    "rules": {"type": "object"},
+    "target": {"type": "object"},
+    "road_problems": {"type": "array", "items": {"type": "string"}},
+    "rendered": {"type": "object"},
+    "pack": {
+      "type": "object",
+      "required": ["format", "version", "content_sha256", "file", "status_file"],
+      "properties": {
+        "format": {"const": "rihma.capability-pack.v1"},
+        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "file": {"type": "string"},
+        "status_file": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

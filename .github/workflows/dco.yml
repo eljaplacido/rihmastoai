@@ -1,0 +1,37 @@
+# The Developer Certificate of Origin check (CONTRIBUTING.md, "Licence and sign-off"): every commit of
+# a pull request carries a Signed-off-by trailer by its author. Standard-library Python only: nothing
+# is installed, and no secret is used. Branch protection on main requires the job "DCO sign-off".
+name: DCO
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: DCO sign-off
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check the sign-offs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # GitHub's record of who opened the pull request: the owner's and Dependabot's exemptions hold
+          # only in their own pull requests, since a commit's author address is whatever git was told.
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: python tools/dco_check.py --base "$BASE_SHA" --head "$HEAD_SHA" --pr-author "$PR_AUTHOR"

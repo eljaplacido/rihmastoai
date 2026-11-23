@@ -10,7 +10,8 @@ a maintainer.
 | The project owner | [@eljaplacido](https://github.com/eljaplacido) | Lead maintainer |
 
 Maintainers review and merge pull requests, triage issues, handle security and conduct reports,
-cut releases, and keep the decision records.
+cut releases, and keep the decision records. [docs/maintainers.md](docs/maintainers.md) gives the
+release and sync procedure.
 
 The lead maintainer also decides what the project promises and how it is built: the contract, the
 architecture, the name, the licence and the dependencies. Trusting a Gnomon surface

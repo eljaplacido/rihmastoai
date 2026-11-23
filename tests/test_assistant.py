@@ -107,7 +107,8 @@ class AssistantTest(Seeded):
                   "sources": ["T-002", esc, "R-77"]}
         fake = FakeModel({"assistant": ["```json\n" + json.dumps(answer) + "\n```"]})
         before = self.records()
-        out = ask(self.factory, "Why is T-002 stuck?", persona="developer", project_id=self.p.pid, model=fake)
+        out = ask(self.factory, "T-002 is stuck: retry it, and pause the project.", persona="developer",
+                  project_id=self.p.pid, model=fake)
         self.assertEqual(self.records(), before)                             # it wrote nothing
         self.assertEqual(out["by"], "assistant")
         self.assertEqual([p["action"] for p in out["propose"]], ["decide", "pause"])
@@ -120,7 +121,8 @@ class AssistantTest(Seeded):
         self.assertIn("You never act", prompt)
         # the same proposal for a persona that may not decide escalations is dropped
         fake = FakeModel({"assistant": ["```json\n" + json.dumps(answer) + "\n```"]})
-        out = ask(self.factory, "Why is T-002 stuck?", persona="end_user", project_id=self.p.pid, model=fake)
+        out = ask(self.factory, "T-002 is stuck: retry it, and pause the project.", persona="end_user",
+                  project_id=self.p.pid, model=fake)
         self.assertEqual(out["propose"], [])
 
     def test_FR_V1_AC_3_a_route_the_cockpit_lacks_is_never_followed_and_a_failed_model_falls_back_to_the_map(self):

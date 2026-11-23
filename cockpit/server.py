@@ -41,6 +41,26 @@ Rules the server keeps:
 - static files carry no data: every fact comes from the API, behind the token;
 - the server never decides anything. A decision is the Inbox's: it carries the person and the
   persona who made it, and the kernel (``Canon``) accepts or refuses it.
+
+Access (``kernel.access``, D-0016). Without an access file the cockpit is a single operator's tool,
+as above: the person and persona come from the request, and the page's header says "single
+operator: personas are self-declared". With ``projects/_factory/access/access.json`` in mode
+``enforced`` it stays on 127.0.0.1 behind IT's identity-aware proxy, which runs beside it:
+- the identity comes only from the proxy's configured headers, each sent once, and only on a request
+  that also carries the proxy's shared secret (compared in constant time with the value of the
+  environment variable the file names, which the cockpit then takes out of its own environment, so no
+  job inherits it); any other request is refused, and so is every request while the file cannot be
+  read or checked;
+- the page (``index.html``) says the mode, so an enforced page signs in through the proxy at once and
+  a single operator's asks for nothing until a sign-in link is opened;
+- ``/auth`` opens a session for that identity, and a session answers only that identity;
+- every write route that takes a person or persona signs as the verified person (a different
+  ``person`` is refused) and needs the persona granted on its project (the factory's own writes:
+  on ``_factory``); the records name the identity beside the person;
+- the ``Host`` and ``Origin`` the proxy forwards (the file's ``origin``) are accepted beside the
+  server's own;
+- a request that noticed a changed access file records it with its verified identity, and a new
+  project's record carries its request's sha256, so the intake job carries out that request only.
 """
 
 from __future__ import annotations
@@ -61,6 +81,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from kernel import access as kaccess
 from kernel import assistant as kassistant
 from kernel import autonomy as kautonomy
 from kernel import dashboard as kdash
@@ -77,7 +98,7 @@ from kernel.intake import MATURITY_MEANING, render_brief
 from kernel.learn import FACTORY_PID, factory_project, immune_memory, model_reliability
 from kernel.lenses import LENSES, lens_for, project_context
 from kernel.observations import TRIGGERS, apply_updates, observations
-from kernel.people import PERSONAS, is_person
+from kernel.people import PERSONAS, Identity, is_person
 from kernel.pricing import load_prices
 from kernel.projections import cell, floor
 from kernel.safestop import MAY_PAUSE, request_pause, resume
@@ -380,6 +401,7 @@ class CockpitServer(ThreadingHTTPServer):
         self._jobs_lock = threading.Lock()
         self._links: dict = {}       # bootstrap -> expiry (monotonic seconds) or None
         self._sessions: dict = {}    # token -> expiry (monotonic seconds)
+        self._session_ids: dict = {}  # token -> the verified identity it was opened for (enforced access)
         self._downloads: dict = {}   # one-time token -> (file name in exports, expiry)
         self.jobs: list = []
         # The cockpit's own files, never in a project's ledger: layouts per person, and exports.
@@ -426,6 +448,15 @@ class CockpitServer(ThreadingHTTPServer):
             self._sessions[token] = now + SESSION_TTL
             return token
 
+    def open_session(self, identity: str) -> str:
+        """A session for a verified identity (enforced access): the proxy's sign-in replaces the bootstrap,
+        and the session answers that identity only."""
+        token = secrets.token_urlsafe(32)
+        with self._auth_lock:
+            self._sessions[token] = time.monotonic() + SESSION_TTL
+            self._session_ids[token] = identity
+        return token
+
     # one-time downloads (an exported evidence pack), served only from the exports folder
 
     def offer_download(self, name: str) -> str:
@@ -448,7 +479,8 @@ class CockpitServer(ThreadingHTTPServer):
             return None
         return path
 
-    def session_ok(self, token) -> bool:
+    def session_ok(self, token, identity: str | None = None) -> bool:
+        """A live session, opened for ``identity`` (None: a single operator's session, from a bootstrap)."""
         if not isinstance(token, str) or not token:
             return False
         now = time.monotonic()
@@ -456,8 +488,9 @@ class CockpitServer(ThreadingHTTPServer):
             for known in list(self._sessions):
                 if self._sessions[known] < now:
                     del self._sessions[known]
+                    self._session_ids.pop(known, None)
             match = next((k for k in self._sessions if hmac.compare_digest(k, token)), None)
-            if match is None:
+            if match is None or self._session_ids.get(match) != identity:
                 return False
             self._sessions[match] = now + SESSION_TTL
             return True
@@ -615,25 +648,56 @@ class CockpitHandler(BaseHTTPRequestHandler):
         body = (json.dumps(obj, ensure_ascii=False, indent=1) + "\n").encode("utf-8")
         self._send(status, body, "application/json; charset=utf-8")
 
-    def _error(self, status: int, message: str) -> None:
-        self._json(status, {"error": message, "status": status})
+    def _error(self, status: int, message: str, *, enforced: bool = False) -> None:
+        out = {"error": message, "status": status}
+        if enforced:  # the page then offers to sign in again through the organisation's proxy
+            out["access"] = kaccess.ENFORCED
+        self._json(status, out)
 
     # guards
 
-    def _host_ok(self) -> bool:
-        if self.headers.get("Host", "") != self.server.host_header:
-            self._error(403, f"open the cockpit at {self.server.origin}/")
+    def _host_ok(self, access: kaccess.Access) -> bool:
+        hosts = {self.server.host_header}
+        if access.enforced and access.proxy is not None:
+            hosts.add(urlsplit(access.proxy.origin).netloc)
+        if self.headers.get("Host", "") not in hosts:
+            why = f"access is enforced, but {access.error}" if access.error else \
+                f"open the cockpit at {self.server.origin}/"
+            self._error(403, why, enforced=access.enforced)
             return False
         return True
 
-    def _origin_ok(self) -> bool:
-        return hmac.compare_digest(self.headers.get("Origin", ""), self.server.origin)
+    def _origin_ok(self, access: kaccess.Access) -> bool:
+        given = self.headers.get("Origin", "")
+        origins = [self.server.origin]
+        if access.enforced and access.proxy is not None:
+            origins.append(access.proxy.origin)
+        return any(hmac.compare_digest(given, origin) for origin in origins)
 
-    def _token_ok(self) -> bool:
+    def _token_ok(self, identity: Identity | None = None) -> bool:
         auth = self.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             return False
-        return self.server.session_ok(auth[len("Bearer "):].strip())
+        return self.server.session_ok(auth[len("Bearer "):].strip(), identity.id if identity else None)
+
+    def _identity(self, access: kaccess.Access) -> Identity | None:
+        """The verified identity of a request when access is enforced, else None (a single operator). A
+        request that did not come through IT's proxy is refused: 401, or 403 while access cannot apply."""
+        if not access.enforced:
+            return None
+        try:
+            return kaccess.from_proxy(access, self.headers)
+        except kaccess.AccessBroken as exc:
+            raise ApiError(403, f"refused: {exc}") from None
+        except kaccess.AccessRefused as exc:
+            raise ApiError(401, f"refused: {exc}") from None
+
+    def _asker(self, access: kaccess.Access) -> tuple[Identity | None, ApiError | None]:
+        """The request's verified identity, or why it has none (refused later, after the other guards)."""
+        try:
+            return self._identity(access), None
+        except ApiError as exc:
+            return None, exc
 
     def _read_body(self) -> bytes | None:
         """Read the whole request body before answering, so the socket closes cleanly."""
@@ -665,17 +729,22 @@ class CockpitHandler(BaseHTTPRequestHandler):
     # methods
 
     def do_GET(self):
-        if not self._host_ok():
+        access = kaccess.load(self.server.factory)
+        if not self._host_ok(access):
             return
         path = urlsplit(self.path).path
         if path in ("/", "/index.html"):
-            return self._static("index.html")
+            return self._index(access)
         if path.startswith("/static/"):
             return self._static(path[len("/static/"):])
         if path.startswith("/api/"):
-            if not self._token_ok():
-                return self._error(401, "sign in first: a valid session token is needed")
-            return self._api("GET", path, {})
+            try:
+                identity = self._identity(access)
+            except ApiError as exc:
+                return self._error(exc.status, exc.message, enforced=True)
+            if not self._token_ok(identity):
+                return self._error(401, "sign in first: a valid session token is needed", enforced=access.enforced)
+            return self._api("GET", path, {}, access, identity)
         self._error(404, "not found")
 
     def do_POST(self):
@@ -688,36 +757,62 @@ class CockpitHandler(BaseHTTPRequestHandler):
         """A POST or a PUT: the same guards (Host, Origin, bearer token, a JSON body), then the API.
         Writes run one at a time under the write lock, except those that record nothing."""
         raw = self._read_body()
-        if raw is None or not self._host_ok():
+        access = kaccess.load(self.server.factory)
+        identity, refused = self._asker(access)
+        # A write path notes a changed access file in the factory ledger before anything is decided under it,
+        # with the verified identity of the request that noticed it, if the proxy vouched for one.
+        kaccess.note_change(self.server.factory, access, "the cockpit", identity)
+        if raw is None or not self._host_ok(access):
             return
         path = urlsplit(self.path).path
-        if not self._origin_ok():
+        if access.error is not None:
+            return self._error(403, f"refused: access is enforced, but {access.error}: every request is refused "
+                                    "until IT fixes it", enforced=True)
+        if not self._origin_ok(access):
             return self._error(403, "refused: the Origin is not this cockpit")
-        if path != "/auth" or method != "POST":
-            if not path.startswith("/api/"):
-                return self._error(404, "not found")
-            if not self._token_ok():
-                return self._error(401, "sign in first: a valid session token is needed")
+        is_auth = path == "/auth" and method == "POST"
+        if not is_auth and not path.startswith("/api/"):
+            return self._error(404, "not found")
+        if refused is not None:
+            return self._error(refused.status, refused.message, enforced=True)
+        if not is_auth and not self._token_ok(identity):
+            return self._error(401, "sign in first: a valid session token is needed", enforced=access.enforced)
         try:
             body = self._parse(raw, self.headers.get("Content-Type", ""))
         except ApiError as exc:
             return self._error(exc.status, exc.message)
-        if path == "/auth":
+        if is_auth:
+            return self._auth(body, identity)
+        found = _route(method, path)
+        if found is not None and found[1] in UNLOCKED:
+            return self._api(method, path, body, access, identity)
+        with self.server.write_lock:
+            self._api(method, path, body, access, identity)
+
+    def _auth(self, body: dict, identity: Identity | None) -> None:
+        """A session: for the proxy's verified identity when access is enforced, else for a one-use bootstrap."""
+        if identity is not None:
+            token = self.server.open_session(identity.id)
+        else:
             token = self.server.redeem(body.get("bootstrap"))
             if token is None:
                 return self._error(401, "this sign-in link was already used or is not valid")
-            return self._json(200, {"token": token, "expires_in": SESSION_TTL})
-        found = _route(method, path)
-        if found is not None and found[1] in UNLOCKED:
-            return self._api(method, path, body)
-        with self.server.write_lock:
-            self._api(method, path, body)
+        self._json(200, {"token": token, "expires_in": SESSION_TTL})
 
     def _refuse_method(self):
         self._read_body()
         self._error(405, "method not allowed")
 
     do_DELETE = do_PATCH = do_OPTIONS = _refuse_method
+
+    def _index(self, access: kaccess.Access) -> None:
+        """The page, saying the access mode: with access enforced it signs in through the organisation's
+        proxy at once; a single operator's page asks for nothing until a link is opened."""
+        body = (STATIC_DIR / "index.html").read_bytes()
+        if access.enforced:
+            body = body.replace(b'<meta name="rihmasto-access" content="single_operator">',
+                                b'<meta name="rihmasto-access" content="enforced">', 1)
+        self._send(200, body, STATIC_EXT[".html"])
 
     def _static(self, name: str) -> None:
         if not _STATIC_NAME.match(name):
@@ -729,16 +824,18 @@ class CockpitHandler(BaseHTTPRequestHandler):
             return self._error(404, "not found")
         self._send(200, body, ctype)
 
-    def _api(self, method: str, path: str, body: dict) -> None:
+    def _api(self, method: str, path: str, body: dict, access: kaccess.Access | None = None,
+             identity: Identity | None = None) -> None:
         found = _route(method, path)
         if found is None:
             allowed = any(p.match(path) for _, p, _ in ROUTES)
             return self._error(405 if allowed else 404, "method not allowed" if allowed else "not found")
         match, name = found
         query = {k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()}
-        api = Api(self.server)
+        api = Api(self.server, access, identity)
         try:
-            status, out = getattr(api, name)(body=body, query=query, **match.groupdict())
+            with kaccess.signing(identity):     # enforced access: the records name the identity
+                status, out = getattr(api, name)(body=body, query=query, **match.groupdict())
         except ApiError as exc:
             return self._error(exc.status, exc.message)
         # The kernel refuses in three families. A refusal is never a 500: DecisionRefused (a
@@ -793,10 +890,6 @@ def _text(body: dict, key: str, *, required: bool = False, limit: int = 20000) -
     return value
 
 
-def _who(body: dict) -> tuple[str, str]:
-    return _text(body, "person", limit=200), _text(body, "persona", limit=64)
-
-
 def _require_person(person: str, persona: str) -> None:
     """For writes the kernel does not check itself before recording something."""
     if not is_person(person):
@@ -834,10 +927,31 @@ def _written_pack(project: Project) -> tuple[dict | None, dict | None]:
 
 
 class Api:
-    def __init__(self, server: CockpitServer):
+    def __init__(self, server: CockpitServer, access: kaccess.Access | None = None,
+                 identity: Identity | None = None):
         self.server = server
         self.factory = server.factory
         self._impacts: dict = {}     # (pid, requirement ids) -> (impact, error), for this one request
+        # The access rules this request came under, and its verified identity when access is enforced.
+        self.access = access if access is not None else kaccess.load(server.factory)
+        self.identity = identity
+
+    # who signs a write
+
+    def _sign(self, person: str, persona: str, pid: str | None) -> tuple[str, str]:
+        """The person and persona a write records. A single operator's are as sent; with access enforced
+        they are the verified identity's name and a persona granted on ``pid`` (None: on any project),
+        or the write is refused (kernel.access.sign, D-0016)."""
+        if not self.access.enforced:
+            return person, persona
+        try:
+            return kaccess.sign(self.access, self.identity, person, persona, pid)
+        except kaccess.AccessRefused as exc:
+            raise ApiError(403, f"refused: {exc}") from None
+
+    def _who(self, body: dict, pid: str | None) -> tuple[str, str]:
+        """The person and persona that sign a write on ``pid`` (FACTORY_PID: the factory's own records)."""
+        return self._sign(_text(body, "person", limit=200), _text(body, "persona", limit=64), pid)
 
     # helpers
 
@@ -992,6 +1106,8 @@ class Api:
     def get_meta(self, **_):
         return 200, {
             "origin": self.server.origin,
+            # the access mode for the header; with access enforced, who is signed in and their grants
+            "access": kaccess.view(self.access, self.identity),
             "stages": {str(n): name for n, name in STAGES.items()},
             "modes": {m: MODE_MEANING.get(m, "") for m in MODES},
             "maturities": {m: MATURITY_MEANING.get(m, "") for m in MATURITIES},
@@ -1297,7 +1413,7 @@ class Api:
         canon = Canon(project)
         verdict = _text(body, "verdict", required=True, limit=64)
         reason = _text(body, "reason")
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         try:
             card = canon.get_card(cid)
         except KeyError:
@@ -1331,7 +1447,7 @@ class Api:
     def post_answer(self, pid: str, qid: str, body: dict, **_):
         project = self._project(pid)
         text = _text(body, "text", required=True)
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         return self._answer(project, qid, text, person, persona)
 
     def _answer(self, project, qid: str, text: str, person: str, persona: str):
@@ -1351,7 +1467,7 @@ class Api:
 
     def post_assume(self, pid: str, qid: str, body: dict, **_):
         project = self._project(pid)
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         return self._assume(project, qid, person, persona)
 
     def _assume(self, project, qid: str, person: str, persona: str):
@@ -1384,7 +1500,7 @@ class Api:
         correction = _text(body, "correction")
         if not confirmed and not correction:
             raise ApiError(400, "a refuted assumption needs the correction")
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         canon = Canon(project)
         try:
             a = canon.settle_assumption(aid, confirmed=confirmed, person=person, persona=persona,
@@ -1397,7 +1513,7 @@ class Api:
 
     def post_change(self, pid: str, body: dict, **_):
         project = self._project(pid)
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         _require_person(person, persona)
         text = _text(body, "text", required=True)
         hint = _text(body, "hint", limit=64) or None
@@ -1425,12 +1541,16 @@ class Api:
             raise ApiError(400, f"maturity must be one of {', '.join(MATURITIES)}")
         if profile is not None and profile not in kprofiles.PROFILES:
             raise ApiError(400, f"profile must be one of {', '.join(kprofiles.PROFILES)}")
+        requested_by, persona = self._sign(requested_by, persona, FACTORY_PID)
         _require_person(requested_by, persona)
         try:
             project = self.factory.new_project(title, maturity=maturity, mode=mode, profile=profile)
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
-        self._audit(project, "new_project", project.pid, requested_by, persona)
+        # With access enforced the record carries the request's digest: the intake job, which runs as the
+        # cockpit's own account, carries out this signed request and no other (kernel.access.cli_signing).
+        signed = {"request_sha256": kaccess.request_digest(source)} if self.access.enforced else {}
+        self._audit(project, "new_project", project.pid, requested_by, persona, **signed)
         source_file = self.server.jobs_dir / f"{project.pid}.source.md"
         write_text(source_file, source if source.endswith("\n") else source + "\n")
         job = self.server.start_job("intake", project.pid,
@@ -1441,7 +1561,7 @@ class Api:
 
     def post_advance(self, pid: str, body: dict, **_):
         project = self._project(pid)
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         running = self.server.running_job(pid)
         if running is not None:
             raise ApiError(409, f"job {running['id']} is still running for {pid}")
@@ -1475,7 +1595,7 @@ class Api:
         non-person, a persona that may not edit the plan, and a plan already compiled. The edit makes
         the person the requirement's owner, and the plan's approval card is reissued for the edit."""
         project = self._project(pid)
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         statement = _text(body, "statement", limit=4000) or None
         acceptance = None if body.get("acceptance") is None else self._criteria_in(body.get("acceptance"))
         if statement is None and acceptance is None:
@@ -1501,7 +1621,7 @@ class Api:
         project = self._project(pid)
         if pid == FACTORY_PID:
             raise ApiError(400, "Rihma itself has no pipeline to pause")
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         reason = _text(body, "reason", limit=2000)
         held = project.meta.get("pause")
         if held:
@@ -1513,7 +1633,7 @@ class Api:
     def post_resume(self, pid: str, body: dict, **_):
         """Lift a pause (FR-J3), signed with person and persona; the next Advance carries on."""
         project = self._project(pid)
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         if not project.meta.get("pause"):
             raise ApiError(409, f"{pid} is not paused")
         resume(project, person=person, persona=persona)
@@ -2052,7 +2172,7 @@ class Api:
         """Save a person's layout for a persona and a lens (FR-T1-AC-11). It is the cockpit's own file
         under the factory home's _cockpit/layouts/, never written into any project's ledger."""
         _, persona, lens = self._who_lens(query)
-        person = _text(body, "person", limit=200)
+        person, persona = self._sign(_text(body, "person", limit=200), persona, None)   # a persona granted anywhere
         if not is_person(person):
             raise ApiError(403, f"refused: {person!r} is not a person; a layout belongs to a named person")
         layout = self._check_layout(body.get("layout"), lens)
@@ -2063,7 +2183,7 @@ class Api:
     # signals and concepts: the delivery square's front corner
 
     def post_signal(self, body: dict, **_):
-        person, persona = _who(body)
+        person, persona = self._who(body, FACTORY_PID)
         _require_person(person, persona)
         text = _text(body, "text", required=True, limit=ksignals.MAX_TEXT)
         channel = _text(body, "channel", limit=32) or "manual"
@@ -2077,7 +2197,7 @@ class Api:
         return 201, {"signal": s}
 
     def post_signal_triage(self, sid: str, body: dict, **_):
-        person, persona = _who(body)
+        person, persona = self._who(body, FACTORY_PID)
         _require_person(person, persona)
         try:
             s = ksignals.triage(self.factory, sid, model=None)
@@ -2109,7 +2229,7 @@ class Api:
         return card if card and card.get("kind") == "concept" and card.get("state") == "open" else None
 
     def post_concept_edit(self, cid: str, body: dict, **_):
-        person, persona = _who(body)
+        person, persona = self._who(body, FACTORY_PID)
         fields = {}
         for k in ("title", "profile", "maturity", "mode"):
             if body.get(k) not in (None, ""):
@@ -2147,7 +2267,7 @@ class Api:
 
     def post_comment(self, pid: str, body: dict, **_):
         project = self._project(pid)
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         target = body.get("target")
         text = _text(body, "text", limit=4000)
         if not isinstance(target, dict):
@@ -2164,7 +2284,7 @@ class Api:
 
     def post_comment_promote(self, pid: str, cmid: str, body: dict, **_):
         project = self._project(pid)
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         if not is_person(person):
             raise DecisionRefused(f"{person!r} is not a person")
         try:
@@ -2187,22 +2307,21 @@ class Api:
                      "levels": {str(n): {"name": kautonomy.LEVELS[n], "meaning": kautonomy.MEANING[n]}
                                 for n in kautonomy.LEVELS}}
 
-    def _set_cap(self, target, body: dict):
-        person, persona = _who(body)
+    def _set_cap(self, target, body: dict, pid: str) -> tuple[dict, str, str]:
+        person, persona = self._who(body, pid)
         level = body.get("level")
         if isinstance(level, bool) or not isinstance(level, int):
             raise ApiError(400, "level is a whole number from 1 to 4")
         reason = _text(body, "reason", limit=2000)
         try:
-            return kautonomy.set_cap(target, level, person=person, persona=persona, reason=reason)
+            return kautonomy.set_cap(target, level, person=person, persona=persona, reason=reason), person, persona
         except DecisionRefused:
             raise
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
 
     def put_autonomy(self, body: dict, **_):
-        out = self._set_cap(self.factory, body)
-        person, persona = _who(body)
+        out, person, persona = self._set_cap(self.factory, body, FACTORY_PID)
         self._audit(self._factory_canon(), "set_autonomy_cap", "factory", person, persona, level=out["cap"])
         return 200, {**out, "autonomy": self._autonomy_view()}
 
@@ -2210,8 +2329,7 @@ class Api:
         project = self._project(pid)
         if pid == FACTORY_PID:
             raise ApiError(400, "set the factory's cap with PUT /api/autonomy")
-        out = self._set_cap(project, body)
-        person, persona = _who(body)
+        out, person, persona = self._set_cap(project, body, pid)
         self._audit(project, "set_autonomy_cap", pid, person, persona, level=out["cap"])
         return 200, {**out, "autonomy": self._autonomy_view()}
 
@@ -2244,7 +2362,7 @@ class Api:
         exports evidence. The kernel keeps the version while the content is the same; a new content is a
         new version, in packs.json and the ledger."""
         project = self._project(pid)
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         _require_person(person, persona)
         if persona not in PACK_BUILDERS:
             raise DecisionRefused(f"a {persona} may not build a capability pack; {', '.join(PACK_BUILDERS)} may")
@@ -2265,7 +2383,7 @@ class Api:
     def post_evidence_export(self, pid: str, body: dict, **_):
         """Export the evidence pack into _cockpit/exports/ and hand back a one-time download path."""
         project = self._project(pid)
-        person, persona = _who(body)
+        person, persona = self._who(body, pid)
         path = kevidence.export(project, self.server.exports_dir, person=person, persona=persona)
         token = self.server.offer_download(path.name)
         self._audit(project, "export_evidence", path.name, person, persona)
@@ -2294,7 +2412,7 @@ class Api:
                      **self._embed_base_view()}
 
     def post_embed(self, body: dict, **_):
-        person, persona = _who(body)
+        person, persona = self._who(body, FACTORY_PID)
         kind = _text(body, "kind", limit=32)
         origins = body.get("origins")
         if isinstance(origins, str):
@@ -2305,6 +2423,8 @@ class Api:
         if kind == "feedback" and project_id is not None and project_id.startswith("_"):
             # Feedback is on a product. Rihma's own canon takes no anonymous website's word as a change.
             raise ApiError(400, "a feedback embed belongs to a product; Rihma itself takes no website feedback")
+        if project_id is not None:   # a feedback embed files changes on its project: granted there too
+            person, persona = self._sign(person, persona, project_id)
         try:
             e = kembeds.create(self.factory, kind=kind, origins=origins, person=person, persona=persona,
                                project_id=project_id, label=_text(body, "label", limit=80),
@@ -2321,7 +2441,7 @@ class Api:
                      "shown_once": True, **self._embed_base_view()}
 
     def post_embed_revoke(self, eid: str, body: dict, **_):
-        person, persona = _who(body)
+        person, persona = self._who(body, FACTORY_PID)
         held = next((e for e in kembeds.embeds(self.factory) if e.get("id") == eid), None)
         if held is not None and held.get("state") == "revoked" and is_person(person) and persona in kembeds.CREATORS:
             # Already stopped: a second revoke records nothing (writes run one at a time under the lock).
@@ -2350,7 +2470,8 @@ class Api:
         lens = _text(body, "lens", limit=32) or lens_for(persona)
         if lens not in LENSES:
             raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
-        layout, _ = self._layout_for(_text(body, "person", limit=200), persona, lens)
+        person, persona = self._sign(_text(body, "person", limit=200), persona, pid)
+        layout, _ = self._layout_for(person, persona, lens)
         ui = {"widgets": list(WIDGETS), "layout": layout}
         try:
             out = kassistant.ask(self.factory, question, persona=persona, project_id=pid,
@@ -2374,7 +2495,19 @@ def make_server(factory: Factory, port: int = 0, *, runner=None, host: str = LOO
     if host != LOOPBACK:
         raise ValueError(f"the cockpit binds to {LOOPBACK} only, not {host!r}; reach it through an SSH tunnel")
     server = CockpitServer(factory, port, runner, assistant_model=assistant_model, embed_base=embed_base)
+    kaccess.load(factory, record=True, by="the cockpit")   # a changed access file is on record from the start
     return server, server.issue_link(ttl=None)
+
+
+def access_note(factory: Factory) -> str:
+    """The line the server prints at start: the access mode (kernel.access, D-0016)."""
+    access = kaccess.load(factory)
+    if not access.enforced:
+        return f"Access: {kaccess.SINGLE_NOTE}. Whoever holds the session picks the person and the persona."
+    if access.error or access.proxy is None:
+        return f"Access: enforced, but {access.error}: every request is refused until IT fixes it."
+    return (f"Access: enforced. People sign in at {access.proxy.origin} through IT's proxy; the printed link is "
+            f"not needed, and requests without the proxy's secret are refused.")
 
 
 def configured_embed_base(flag: str | None, environ: Mapping[str, str]) -> str | None:
@@ -2458,6 +2591,7 @@ def main(argv: list | None = None) -> int:
     print(f"Rihma cockpit for {factory.home}", flush=True)
     print(note, flush=True)
     print(embed_base_note(embed_base), flush=True)
+    print(access_note(factory), flush=True)
     print(f"Open this link once to sign in: {server.origin}/#k={bootstrap}", flush=True)
     print(f"From another machine: ssh -L {server.port}:127.0.0.1:{server.port} <this host>, then open the link.",
           flush=True)

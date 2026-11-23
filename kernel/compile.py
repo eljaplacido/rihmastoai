@@ -266,7 +266,11 @@ def _ruling_section(ruling: dict | None) -> str:
             + ("\n".join(lines) or "- (not recorded)") + "\nDo not repeat what made them wrong.\n")
 
 
-def holdout_prompt(spec: dict, rows: list, ruling: dict | None = None) -> str:
+def holdout_prompt(spec: dict, rows: list, ruling: dict | None = None, secret_names: list | None = None) -> str:
+    """The holdout author's prompt. Its interface section says how a step signs a request, with the
+    names (never the values) of the secrets the environment's settings give (FR-DF2-AC-2)."""
+    from kernel.holdouts import signing_rules
+
     listing = "\n".join(f"- {r['criterion']} ({r['kind']}): {r['then']}" for r in rows)
     return f"""You write acceptance scenarios that a factory runs against a deployed HTTP service. The
 builder never sees them.
@@ -277,6 +281,8 @@ Its requirements:
 
 The product's HTTP interface, fixed by the spec. Use exactly these methods and paths:
 {render_interface(spec)}
+
+{signing_rules(list(secret_names or []))}
 
 Write one scenario for each of these criteria:
 {listing}
@@ -333,13 +339,15 @@ def author_holdouts(project, *, model, only=None, reason: str | None = None, per
     names = {r["criterion"] for r in rows}
     ruling = {"reason": reason, "evidence": [f for f in (evidence or []) if f.get("criterion") in names]} \
         if only is not None else None
-    answer = _ask_json(model, holdout_prompt(spec, rows, ruling), role="holdout_author")
+    from kernel.holdouts import clean_step, secret_names
+
+    answer = _ask_json(model, holdout_prompt(spec, rows, ruling, secret_names(project)), role="holdout_author")
     wanted = {r["criterion"]: r for r in rows}
     saved = []
     for sc in answer.get("scenarios") or []:
         cid = sc.get("criterion") if isinstance(sc, dict) else None
-        steps = [s for s in (sc.get("steps") or []) if isinstance(s, dict) and s.get("method") and s.get("path")] \
-            if cid in wanted else []
+        steps = [clean_step(s) for s in (sc.get("steps") or []) if isinstance(s, dict) and s.get("method")
+                 and s.get("path")] if cid in wanted else []
         if not steps:
             continue
         doc = {"criterion": cid, "kind": wanted[cid]["kind"], "steps": steps, "author_role": "holdout_author"}

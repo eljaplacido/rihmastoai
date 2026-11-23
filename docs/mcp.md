@@ -26,6 +26,11 @@ python -m mcp.server --home <factory home> --person "<your name>" --persona deve
   `developer`, `operations`, `stakeholder`.
 - `--lanes` is where the product lanes are, for the live cell (default: `$GF_LANES`, then
   `~/gf-lanes`).
+- With access enforced ([guides/access.md](guides/access.md)), the server signs as the operating
+  system user that starts it, `local:<os user>`, which the access file must name. `--person` must be
+  that user's name in the file and `--persona` must be granted to them; otherwise the server refuses
+  to start. Each proposal needs the persona granted on its project, and its records name the
+  identity beside the person.
 
 The file can also be run directly, from any working directory: `python <path to rihma>/mcp/server.py
 ...`. That is the form the client examples below use, because they do not depend on the client's

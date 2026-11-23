@@ -18,8 +18,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import json
+import posixpath
 import re
 import sys
 from dataclasses import dataclass, field
@@ -41,8 +43,11 @@ REPORT_SCHEMA = "gnomonfactory.contract_check/1"
 PROVENANCE = ("customer-confirmed", "customer-endorsed", "vendor-proposed", "assumption", "withdrawn")
 NEEDS_HUMAN = ("customer-confirmed", "customer-endorsed")
 CHECK_KINDS = ("test", "holdout", "browser_walk", "probe", "signed_manual")
-# Paths no task may claim write access to: the contract and the specs it was compiled from.
-PROTECTED_WRITE = ("contract/", "specs/", "intake/", "decisions/")
+# Paths no task may claim write access to: the contract and the specs it was compiled from, and the
+# ontology the knowledge graph is checked against (kernel/ontology.json), which only the owner amends.
+# A write glob claims one when it can name it, a folder above it or (for a folder) anything inside it,
+# however it is spelled (claims_protected).
+PROTECTED_WRITE = ("contract/", "specs/", "intake/", "decisions/", "kernel/ontology.json")
 
 REQ_ID = re.compile(r"^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$")
 TASK_ID = re.compile(r"^[A-Z][A-Z0-9]*-?[0-9]+[A-Z0-9-]*$")
@@ -120,6 +125,84 @@ def _str_list(rep: Report, obj: dict, key: str, path: str) -> list[str]:
         rep.fail("R-TYPE", f"{path}/{key}", "a list of non-empty strings", value)
         return []
     return value
+
+
+# -- write globs against the protected paths ---------------------------------------------------------
+# The check errs on the side of refusing: * and ? may cross a /, **/ may also match no folder at all, a
+# {a,b} group is read as *, and case is ignored (a case-insensitive file system claims the file whatever
+# its case).
+
+def _normal_glob(glob: str) -> str:
+    """A write glob as the paths it may claim are compared: forward slashes; ./, // and .. resolved; no
+    leading slash; every {a,b} group widened to * (whatever an alternative matches, * matches too)."""
+    g, n = glob.replace("\\", "/"), 1
+    while n:
+        g, n = re.subn(r"\{[^{}]*\}", "*", g)
+    return posixpath.normpath(g).lstrip("/").lower()
+
+
+def _glob_tokens(glob: str) -> list[str]:
+    """A glob as tokens: *, ?, a character class [...] as fnmatch reads one, or one literal character."""
+    out: list[str] = []
+    i = 0
+    while i < len(glob):
+        j = i + 1
+        if glob[i] == "[":
+            first = j + 1 if glob[j:j + 1] == "!" else j
+            first = first + 1 if glob[first:first + 1] == "]" else first
+            close = glob.find("]", first)
+            j = close + 1 if close >= 0 else j        # no closing ] makes the [ a literal
+        out.append(glob[i:j])
+        i = j
+    return out
+
+
+def _glob_takes(token: str, c: str) -> bool:
+    """Whether one token reads the character ``c``."""
+    if token in ("*", "?"):
+        return True
+    return fnmatch.fnmatchcase(c, token) if len(token) > 1 else token == c
+
+
+def _glob_closure(tokens: list[str], states: set[int]) -> set[int]:
+    """The states reachable without reading a character: past a *, and past a whole **/."""
+    out: set[int] = set()
+    todo = list(states)
+    while todo:
+        s = todo.pop()
+        if s in out:
+            continue
+        out.add(s)
+        if s < len(tokens) and tokens[s] == "*":
+            todo.append(s + 1)
+            if tokens[s + 1:s + 3] == ["*", "/"]:
+                todo.append(s + 3)
+    return out
+
+
+def _glob_reach(tokens: list[str], text: str) -> set[int]:
+    """The glob's states after reading ``text``: empty when no path that starts with it can match."""
+    states = _glob_closure(tokens, {0})
+    for c in text:
+        moved = {s if tokens[s] == "*" else s + 1 for s in states if s < len(tokens) and _glob_takes(tokens[s], c)}
+        states = _glob_closure(tokens, moved)
+    return states
+
+
+def claims_protected(glob: str) -> bool:
+    """Whether a write glob claims a protected path: the path itself, a folder above it, or anything
+    inside a protected folder, however the glob is spelled."""
+    g = _normal_glob(glob)
+    if g in ("", "."):
+        return True                                    # the whole tree
+    tokens = _glob_tokens(g)
+    for path in PROTECTED_WRITE:
+        parts = path.rstrip("/").split("/")
+        if any(len(tokens) in _glob_reach(tokens, "/".join(parts[:k])) for k in range(1, len(parts) + 1)):
+            return True
+        if path.endswith("/") and _glob_reach(tokens, path):
+            return True
+    return False
 
 
 def check(contract) -> tuple[Report, dict]:
@@ -263,9 +346,10 @@ def check(contract) -> tuple[Report, dict]:
                 for j, g in enumerate(_str_list(rep, task["scope"], k, f"{p}/scope")):
                     if not GLOB.match(g):
                         rep.fail("R-SCOPE", f"{p}/scope/{k}/{j}", "a glob without spaces", g)
-                    if k == "write" and g.lstrip("./").startswith(PROTECTED_WRITE):
+                    if k == "write" and claims_protected(g):
                         rep.fail("R-SCOPE", f"{p}/scope/write/{j}",
-                                 "no write access to contract/, specs/, intake/ or decisions/", g)
+                                 "no write access to contract/, specs/, intake/, decisions/ or kernel/ontology.json, "
+                                 "by name or by a glob that covers them", g)
         if tid:
             task_ids[tid] = i
             deps[tid] = _str_list(rep, task, "depends_on", p)

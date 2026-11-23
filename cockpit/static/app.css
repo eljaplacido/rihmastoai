@@ -24,7 +24,8 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 pre.code, pre.json { background: var(--sunken); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s3); font-size: var(--fs-sm); max-height: 420px; overflow: auto; }
 hr { border: 0; border-top: 1px solid var(--border); margin: var(--s4) 0; }
 ::selection { background: var(--accent-subtle); }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+/* the focus ring: --accent-text holds at least 3:1 on every surface in both themes (--accent does not in light) */
+:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; border-radius: var(--r-sm); }
 .vh { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .muted { color: var(--text-2); }
 .small { font-size: var(--fs-sm); }
@@ -36,6 +37,8 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--s4) 0; }
 .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .skip { position: absolute; left: -999px; top: 8px; z-index: 100; background: var(--raised); padding: var(--s2) var(--s3); border-radius: var(--r-md); }
 .skip:focus { left: 8px; }
+/* what takes the focus or is scrolled into view stops below the sticky top bar, never under it */
+html { scroll-padding-top: calc(var(--topbar-h) + 8px); }
 [hidden] { display: none !important; }
 
 /* -- controls --------------------------------------------------------------------------------- */
@@ -74,6 +77,8 @@ textarea { resize: vertical; line-height: 1.45; }
 input:hover, textarea:hover, select:hover { border-color: var(--n8); }
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-subtle); }
 input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; min-height: 0; accent-color: var(--accent); margin: 0; flex: none; }
+/* a native radio or checkbox ignores the border colour of input:focus: it takes the ring, at least 3:1 */
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; box-shadow: none; }
 select { padding-right: 28px; }
 label { font-size: var(--fs-md); font-weight: 500; color: var(--text-2); }
 .field { display: grid; gap: 6px; margin-bottom: var(--s3); }
@@ -176,17 +181,41 @@ html.signed-out .shell { grid-template-columns: 1fr; }
 .live-dot.pulse { background: var(--good-mark); box-shadow: 0 0 0 0 color-mix(in srgb, var(--good-mark) 55%, transparent); animation: pulse 1.8s ease-out infinite; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good-mark) 55%, transparent); } 100% { box-shadow: 0 0 0 7px transparent; } }
 .sb-foot { margin-top: auto; padding-top: var(--s2); border-top: 1px solid var(--border); }
-html.rail .brand-text, html.rail .nav-i .lbl, html.rail .sb-new .lbl, html.rail .sb-sec .lbl, html.rail .nav-i .count, html.rail .live-badge { display: none; }
-html.rail .sb-top { flex-direction: column; padding: 0 0 var(--s2); }
-html.rail .nav-i { justify-content: center; padding: 0; }
-html.rail .sb-new { justify-content: center; padding: 0; }
-html.rail .sb-sec { height: 1px; padding: 0; }
-html.rail .sb-collapse .ic { transform: scaleX(-1); }
+/* The icon rail (above 900px only; below it the sidebar is an overlay with its labels). A label is hidden
+   visually but stays in the link's name; a count stays visible as a corner badge, and a live badge as its dot
+   (the tooltip and the name say how many). */
+@media (min-width: 901px) {
+  html.rail .brand-text { display: none; }
+  html.rail .nav-i .lbl, html.rail .sb-new .lbl, html.rail .sb-sec .lbl {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  html.rail .nav-i .count { position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; font-size: 10px; }
+  html.rail .nav-i .live-badge { position: absolute; top: 5px; right: 5px; }
+  html.rail .nav-i .live-n { display: none; }
+  html.rail .sb-top { flex-direction: column; padding: 0 0 var(--s2); }
+  html.rail .nav-i { justify-content: center; padding: 0; }
+  html.rail .sb-new { justify-content: center; padding: 0; }
+  html.rail .sb-sec { height: 1px; padding: 0; }
+  html.rail .sb-collapse .ic { transform: scaleX(-1); }
+}
+/* the overlay's close button, and the backdrop that closes it on a click (below 901px) */
+.sb-close { display: none; }
+@media (max-width: 900px) {
+  .sb-close { display: inline-grid; }
+  html.nav-open .shell::after { content: ""; position: fixed; inset: 0; z-index: 19; background: rgb(0 0 0 / 0.4); }
+}
 
 .frame { min-width: 0; display: flex; flex-direction: column; }
 .topbar {
   position: sticky; top: 0; z-index: 15; height: var(--topbar-h); display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s4);
   background: color-mix(in srgb, var(--bg) 92%, transparent); border-bottom: 1px solid var(--border);
+}
+/* The lens labels give way first: under 1520px of bar (with the sidebar open, a window under 1760px)
+   the lenses are icons with tooltips, so the access note keeps its words and nothing leaves the bar. */
+.topbar { container: topbar / inline-size; }
+@container topbar (max-width: 1519px) {
+  .lens-b .lbl { display: none; }
+  .lens-b { padding: 0 9px; }
 }
 .tb-menu { display: none; }
 .crumbs { display: flex; align-items: center; gap: 4px; min-width: 64px; flex: 1 1 0; font-weight: 500; color: var(--text-2); white-space: nowrap; overflow: hidden; }
@@ -202,13 +231,22 @@ html.rail .sb-collapse .ic { transform: scaleX(-1); }
 .lens-b[aria-checked="true"] { background: var(--raised); color: var(--text); box-shadow: var(--e1); }
 .lens-b[aria-checked="true"] .ic { color: var(--accent-text); }
 .tb-right { display: flex; align-items: center; gap: var(--s1); flex: none; }
+/* Where the access note shows, only it gives way when the bar is full. */
+@media (min-width: 1101px) {
+  .tb-right { flex: 0 1 auto; min-width: 0; }
+  .tb-right > :not(.access-note) { flex: none; }
+}
 .search-btn {
   display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--surface); color: var(--text-3); font: 400 var(--fs-md)/1 var(--font-sans); cursor: pointer;
 }
 .crumbs a, .crumbs span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.search-btn .lbl { flex: 1; text-align: left; display: none; }
-@media (min-width: 1600px) { .search-btn { min-width: 200px; } .search-btn .lbl { display: inline; } }
+.search-btn .lbl { flex: 1; text-align: left; }
+@media (min-width: 1600px) { .search-btn { min-width: 200px; } }
+/* below 1600px the label is hidden visually; it stays the button's name ("Search or jump", not "Ctrl K") */
+@media (max-width: 1599px) {
+  .search-btn .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
 .bar-l a, .s100-l a, .wf-l a { color: var(--text); }
 .search-btn:hover { border-color: var(--border-strong); color: var(--text-2); }
 .tb-customize[aria-pressed="true"] { background: var(--accent-subtle); border-color: var(--accent-border); color: var(--accent-text); }
@@ -223,6 +261,18 @@ html.rail .sb-collapse .ic { transform: scaleX(-1); }
 .pc-text b { font-size: var(--fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
 .pc-text small { font-size: var(--fs-xs); color: var(--text-3); white-space: nowrap; }
 .person-chip .chev { color: var(--text-3); width: 14px; height: 14px; }
+/* The access mode, in words (kernel/access.py): self-declared personas, or the verified person. */
+/* It shrinks to its shield before anything is pushed off the bar; the full words are its tooltip and in
+   the person menu. */
+.access-note {
+  display: inline-flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 26px; max-width: 280px;
+  font-size: var(--fs-xs); color: var(--text-2); border: 1px solid var(--border); border-radius: var(--r-pill);
+  padding: 2px 7px; white-space: nowrap; overflow: hidden;
+}
+.access-note .ic { width: 12px; height: 12px; flex: none; }
+.an-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.access-note.enforced { color: var(--text); border-color: var(--border-strong); }
+.access-pop { margin: 0 0 var(--s3); }
 
 main { width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--s5) var(--s6) 96px; outline: none; flex: 1; }
 .toasts { position: fixed; top: calc(var(--topbar-h) + 10px); left: 50%; transform: translateX(-50%); z-index: 60; display: grid; gap: var(--s2); width: min(560px, calc(100vw - 32px)); pointer-events: none; }
@@ -251,7 +301,9 @@ html.drawer-open .fab { display: none; }
 @media (min-width: 1200px) {
   html.drawer-open .frame, html.library-open .frame { margin-right: var(--drawer-w); }
   html.drawer-open .drawer, html.library-open .library { box-shadow: none; }
-  html.drawer-open .lens-b .lbl, html.library-open .lens-b .lbl, html.drawer-open .pc-text, html.library-open .pc-text { display: none; }
+  html.drawer-open .lens-b .lbl, html.library-open .lens-b .lbl, html.drawer-open .pc-text, html.library-open .pc-text {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;   /* still the name */
+  }
   html.drawer-open .lens-b, html.library-open .lens-b { padding: 0 9px; }
 }
 /* The drawer takes 400px from the page: below 1700px a stage's name no longer fits its step, so the
@@ -760,6 +812,24 @@ dialog::backdrop { background: var(--backdrop); }
 .send { width: 40px; height: 40px; background: var(--accent); color: var(--accent-fg); }
 .send:hover { background: var(--accent-hover); color: var(--accent-fg); }
 .dr-note { padding: 6px var(--s4) var(--s3); margin: 0; }
+#assistant :focus-visible { outline-color: var(--accent-text); }
+.bub.err { display: flex; gap: 6px; align-items: flex-start; }
+.bub.err .ic { flex: none; margin-top: 2px; }
+.bub .queued { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: var(--fs-xs); }
+.bub .queued .ic { width: 12px; height: 12px; }
+.th-s { font-size: var(--fs-xs); }
+.prop-st[tabindex="-1"]:focus { outline: none; }
+.prop-st[tabindex="-1"]:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+.as-preview {
+  position: sticky; top: calc(-1 * var(--s4)); z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+  margin: calc(-1 * var(--s4)) calc(-1 * var(--s4)) 0; padding: 8px var(--s4); font-size: var(--fs-sm);
+  background: var(--accent-subtle); border-bottom: 1px solid var(--accent-border); color: var(--text);
+}
+.as-preview > .ic { color: var(--accent-text); flex: none; }
+.as-preview > span:first-of-type { flex: 1 1 160px; min-width: 0; }
+.as-preview .btns { display: inline-flex; gap: 6px; margin: 0; }
+/* At phone width the drawer is the whole screen from its left edge, even on a page wider than the screen. */
+@media (max-width: 760px) { .drawer { left: 0; right: auto; width: 100vw; border-left: 0; } }
 
 /* -- the project page ---------------------------------------------------------------------------- */
 
@@ -879,7 +949,7 @@ article.card > .card-t { white-space: normal; margin-bottom: var(--s2); font-siz
 .sources { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: var(--fs-sm); color: var(--text-2); margin: var(--s2) 0; }
 .stmt { font-size: var(--fs-lg); font-weight: 500; margin: 0 0 var(--s2); }
 .card.req.withdrawn { opacity: 0.55; }
-.ev-row td { background: var(--sunken); }
+.crit-ev td { background: var(--sunken); }
 .ev-b { font-size: var(--fs-md); }
 .evc { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; font-size: var(--fs-sm); }
 .evc-i { display: inline-flex; align-items: center; gap: 4px; }
@@ -996,7 +1066,8 @@ details > summary { cursor: pointer; }
 .toast-inline { display: flex; gap: 8px; align-items: center; color: var(--warning); }
 
 html:not(.on-home) .tb-customize { display: none; }
-.view-body > div:not(.with-side) { display: grid; gap: var(--gap); align-content: start; }
+/* one column that may shrink to the page: a wide table scrolls in its own box instead of widening the view */
+.view-body > div:not(.with-side), .view-body .cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); align-content: start; }
 .view-body > div > .section, .view-body > div > .q { margin-top: 0; margin-bottom: 0; }
 .crit-cm { margin-left: 4px; vertical-align: middle; color: var(--text-3); }
 .crit-cm.has { color: var(--accent-text); }
@@ -1022,6 +1093,38 @@ p.empty { display: block; padding: var(--s3) 0; text-align: left; color: var(--t
 .raw { margin-top: var(--s3); }
 .raw summary { font-size: var(--fs-sm); color: var(--text-2); }
 .raw pre { margin-top: 6px; }
+/* a view's table is the containing block of what it hides for screen readers (.vh), so a hidden label in
+   a wide table scrolls with the table instead of widening the page at phone width */
+.view-body .tbl { position: relative; }
+/* a test name has no break points of its own: it wraps rather than widening a phone's page */
+.view-body .impact-dl dd, .view-body .impact-dl code, .crit-ev code { overflow-wrap: anywhere; min-width: 0; }
+.objections li, .round, .tcard .facts { overflow-wrap: anywhere; }
+/* the project page's focus rings: --accent-text holds at least 3:1 on the surface in both themes */
+.proj-head :focus-visible, .tabs-wrap :focus-visible, .view-body :focus-visible, .fl :focus-visible,
+.au-body :focus-visible { outline-color: var(--accent-text); }
+.view-body input:is([type="checkbox"], [type="radio"]):focus-visible, .tabs-all input:focus-visible {
+  outline: 2px solid var(--accent-text); outline-offset: 2px; box-shadow: none;
+}
+.view-body :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select):focus,
+.proj-head :is(input, textarea):focus, .au-body :is(input, select):focus { border-color: var(--accent-text); box-shadow: 0 0 0 1px var(--accent-text); }
+/* the comment thread and the autonomy ladder are dialogs over the project page: their controls, and the
+   dialog's own Close, take the same ring */
+.cm-thread :focus-visible, #modal:has(.cm-thread, .au-body) .modal-head :focus-visible { outline-color: var(--accent-text); }
+.cm-thread textarea:focus { border-color: var(--accent-text); box-shadow: 0 0 0 1px var(--accent-text); }
+/* the Tasks timeline: a merge or escalation mark sits just above the end of its round, never over a
+   round's bar, so a passed round under its merge mark and a failed one under its flag stay in sight */
+.view-body .waterfall .wf-row:not(.wf-axis) .wf-track { margin-top: 16px; }
+.view-body .waterfall .wf-mark { top: -17px; width: 16px; height: 16px; }
+.view-body .waterfall .wf-mark .ic { width: 10px; height: 10px; }
+/* a control a persona may not use stays focusable and says why beside it */
+.view-body .btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; transform: none; }
+.lesson p { margin: 0; }
+.lesson-t { font-weight: 500; }
+.au-body { display: grid; gap: var(--s3); }
+.au-body p { margin: 0; }
+.au-body .ladder { margin-bottom: 0; }
+.au-form { display: grid; gap: 0; padding-top: var(--s3); border-top: 1px solid var(--border); }
+.au-form .btns { margin-top: 0; }
 
 /* -- pages: the square, the catalogue, projects, the inbox, settings, new project ----------------- */
 
@@ -1188,10 +1291,9 @@ main > .card { margin-bottom: var(--gap); }
 /* -- widths: no horizontal scroll at any width ----------------------------------------------------- */
 
 @media (max-width: 1280px) {
-  .lens-b .lbl { display: none; }
+  .lens-b .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }   /* still the name */
   .lens-b { padding: 0 9px; }
   .search-btn { min-width: 0; }
-  .search-btn .lbl { display: none; }
   .with-side { grid-template-columns: minmax(0, 1fr); }
   .side-col { position: static; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
   .stepper .step-t small { display: none; }
@@ -1203,15 +1305,15 @@ main > .card { margin-bottom: var(--gap); }
   .stepper { grid-template-columns: repeat(7, minmax(36px, 1fr)); }
   .stepper .step-t { display: none; }
   .stepper .step { justify-content: center; }
-  .pc-text { display: none; }
-  .tb-customize .lbl { display: none; }
+  .pc-text, .tb-customize .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }   /* still the name */
+  .access-note { display: none; }   /* narrow screens: the person menu says it */
 }
 @media (max-width: 900px) {
   .shell, html.rail .shell { grid-template-columns: minmax(0, 1fr); }
-  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: var(--sidebar-w); transform: translateX(-100%); transition: transform var(--t-enter) var(--ease-out); box-shadow: var(--e3); }
-  html.nav-open .sidebar { transform: none; }
-  html.rail .brand-text, html.rail .nav-i .lbl, html.rail .sb-new .lbl, html.rail .sb-sec .lbl, html.rail .nav-i .count { display: revert; }
-  html.rail .nav-i { justify-content: flex-start; padding: 0 10px; }
+  /* closed, the overlay is hidden once it has slid out, so its links leave the tab order */
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: var(--sidebar-w); transform: translateX(-100%); visibility: hidden;
+    transition: transform var(--t-enter) var(--ease-out), visibility 0s linear var(--t-enter); box-shadow: var(--e3); }
+  html.nav-open .sidebar { transform: none; visibility: visible; transition: transform var(--t-enter) var(--ease-out), visibility 0s; }
   .sb-collapse { display: none; }
   .tb-menu { display: inline-grid; }
   .widget, .widget.size-S, .widget.size-M { grid-column: span 12; }

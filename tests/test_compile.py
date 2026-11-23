@@ -47,7 +47,7 @@ class CompileTest(FactoryTestCase):
                          contract["revision"])
         res = run_suite(work)
         self.assertEqual(res["exit"], 0, res)
-        self.assertEqual(res["ran"], 4)
+        self.assertEqual(res["ran"], 7)                  # the scaffold's four and the road contract's three
 
     def test_FR_O3_AC_1_holdouts_live_outside_the_project_and_never_in_an_envelope(self):
         p = specced(self)

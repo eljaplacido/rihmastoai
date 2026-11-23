@@ -23,10 +23,16 @@ NEEDS_APPROVAL = {"explore": False, "demo": False, "pilot": True, "production": 
 
 
 def required(project) -> bool:
+    """Whether a person approves the plan before building: the owner's setting, else the maturity's
+    rule; and at any maturity when a requirement contradicts the paved road (FR-DF1-AC-3)."""
     meta = project.meta
     if "approve_plan" in meta:
         return bool(meta["approve_plan"])
-    return NEEDS_APPROVAL.get(meta.get("maturity"), True)
+    if NEEDS_APPROVAL.get(meta.get("maturity"), True):
+        return True
+    from kernel.roads import road_conflicts
+
+    return bool(road_conflicts(project.read("spec.json") or {}))
 
 
 def _version(project) -> int:
@@ -45,6 +51,11 @@ def summary(spec: dict) -> str:
             lines.append(f"    - {c['id']} [{c['kind']}]: then {c['then']}")
     if spec.get("interface"):
         lines += ["", "Interface:"] + [f"- {e['method']} {e['path']}" for e in spec["interface"]]
+    from kernel.roads import conflict_lines
+
+    conflicts = conflict_lines(spec)  # for the person who approves: built as written, delivery would fail
+    if conflicts:
+        lines += ["", "Conflicts with the paved road (edit or reject these before approving):", *conflicts]
     return "\n".join(lines)
 
 
@@ -54,9 +65,14 @@ def open_card(project) -> dict:
         if c["refs"].get("spec_version") == version:
             return c
     n_crit = sum(len(r["acceptance"]) for r in spec["requirements"])
+    from kernel.roads import road_conflicts
+
+    conflicts = road_conflicts(spec)
     card = Canon(project).card(
-        "approval", f"Approve the plan: {len(spec['requirements'])} requirements, {n_crit} criteria",
-        body=summary(spec), blocking=True,
+        "approval", f"Approve the plan: {len(spec['requirements'])} requirements, {n_crit} criteria"
+        + (f"; {len(conflicts)} {'conflict' if len(conflicts) == 1 else 'conflicts'} with the paved road"
+           if conflicts else ""),
+        body=summary(spec), blocking=True, payload={"road_conflicts": conflicts} if conflicts else None,
         refs={"scope": "plan", "spec_version": version, "requirements": [r["id"] for r in spec["requirements"]]})
     project.log("plan_card_opened", {"card": card["id"], "spec_version": version})
     return card

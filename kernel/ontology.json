@@ -1,0 +1,431 @@
+{
+  "schema": "rihmasto.ontology/1",
+  "version": "1.0.0",
+  "description": "The declared schema of Rihmasto's own records: which kinds of record exist, which links between them are allowed, how each link is known, and who may see each kind. The knowledge graph (kernel/graph.py) is rebuilt from the records on every read and checked against this file. Changes go through the factory's own contract, which only the owner amends.",
+  "origins": {
+    "kernel": "the kernel wrote the link itself, by a fixed rule",
+    "convention": "a naming convention links the two records, such as a test named after its criterion",
+    "model_proposed": "a model proposed the link and no person has decided on it yet; never used by a write path",
+    "person_confirmed": "a named person made or decided the record that holds the link"
+  },
+  "audiences": {
+    "person": "a named person in the cockpit or on the command line",
+    "assistant": "the cockpit's chat assistant, answering a person",
+    "verifier": "the read-only reviewer at the gate",
+    "builder": "a builder cell"
+  },
+  "outcomes": ["answered", "ambiguous", "not_found", "not_measured"],
+  "kinds": {
+    "request": {
+      "id": "request", "label": "Request", "key": "request",
+      "description": "The need as it was asked: the project's request, and the person who asked.",
+      "aliases": ["source", "ask"], "standard": "prov:Entity", "source": "source.json",
+      "audiences": ["person", "assistant", "verifier", "builder"],
+      "consumers": ["graph.Graph.trace"]
+    },
+    "question": {
+      "id": "question", "label": "Question", "key": "Q-n",
+      "description": "A question the intake panel asked; a person answers it, or the factory assumes an answer.",
+      "aliases": ["Q"], "standard": "prov:Entity", "source": "canon/questions.json",
+      "audiences": ["person", "assistant", "verifier", "builder"],
+      "enums": {"perspective": "canon.PERSPECTIVES"},
+      "consumers": ["graph.Graph.trace", "graph_ask.rests_on_refuted", "graph_ask.criteria_from_answers"]
+    },
+    "assumption": {
+      "id": "assumption", "label": "Assumption", "key": "A-n",
+      "description": "An answer the factory took for itself, with a due date, until a person confirms or refutes it.",
+      "aliases": ["A", "assumed answer"], "standard": "prov:Entity", "source": "canon/assumptions.json",
+      "audiences": ["person", "assistant", "verifier", "builder"],
+      "enums": {"perspective": "canon.PERSPECTIVES"},
+      "consumers": ["graph.Graph.trace", "graph_ask.rests_on_refuted"]
+    },
+    "person": {
+      "id": "person", "label": "Person", "key": "person:<name>",
+      "description": "A named person: a name exactly as the records give it, never an identity. The persona a person acted as is a qualifier on the link.",
+      "aliases": ["who"], "standard": "prov:Person", "source": "the answers and decisions that name them",
+      "audiences": ["person", "assistant", "verifier"],
+      "enums": {"persona": "people.PERSONAS"},
+      "consumers": ["graph.Graph.trace", "graph_ask.criteria_from_answers", "graph_ask.production_approvals"]
+    },
+    "requirement": {
+      "id": "requirement", "label": "Requirement@v", "key": "<rid>@v<n>",
+      "description": "One requirement as one spec version states it. A plain id (R-1) names the requirement across versions.",
+      "aliases": ["R", "FD", "requirement version"], "standard": "oslc_rm:Requirement",
+      "source": "spec.v<n>.json, spec.json and contract.json",
+      "audiences": ["person", "assistant", "verifier", "builder"],
+      "consumers": ["graph.Graph.trace", "graph.Graph.impact", "graph_ask.rests_on_refuted",
+                    "graph_ask.criteria_from_answers", "graph_ask.parity"]
+    },
+    "criterion": {
+      "id": "criterion", "label": "Criterion", "key": "<rid>-AC-n@<sha12 of given, when and then>",
+      "description": "One acceptance criterion, keyed by a hash of its given, when and then, so a restated criterion is a new node and an old link to its id is ambiguous after the amendment.",
+      "aliases": ["AC", "acceptance criterion"], "source": "spec.v<n>.json, spec.json and contract.json",
+      "audiences": ["person", "assistant", "verifier", "builder"],
+      "enums": {"kind": "spec.KINDS"},
+      "consumers": ["graph.Graph.impact", "graph_ask.criteria_from_answers", "graph_ask.parity"]
+    },
+    "task": {
+      "id": "task", "label": "Task", "key": "T-nnn",
+      "description": "A contract task: the work that serves a requirement's criteria.",
+      "aliases": ["T"], "standard": "prov:Plan", "source": "contract.json",
+      "audiences": ["person", "assistant", "verifier", "builder"],
+      "consumers": ["graph.Graph.impact", "graph_ask.parity"]
+    },
+    "test": {
+      "id": "test", "label": "Test", "key": "test:<name>",
+      "description": "A test on the product's main whose name names a criterion (test_R_1_AC_2_...).",
+      "aliases": ["unit test"], "standard": "prov:Activity", "source": "the product repository's main",
+      "audiences": ["person", "assistant", "verifier", "builder"],
+      "consumers": ["graph.Graph.impact", "graph_ask.parity"]
+    },
+    "holdout_ref": {
+      "id": "holdout_ref", "label": "HoldoutRef", "key": "H-<criterion id>",
+      "description": "A criterion checked outside the build: its id, its criterion, its kind and the verdicts releases recorded. Never its scenario, which stays in the holdout custody.",
+      "aliases": ["holdout", "probe"], "source": "contract.json (check kind), releases/<n>.json (verdicts only)",
+      "audiences": ["person", "assistant"],
+      "enums": {"kind": "spec.KINDS"},
+      "consumers": ["graph.Graph.impact"]
+    },
+    "card": {
+      "id": "card", "label": "Card", "key": "C-nnnn",
+      "description": "An Inbox card: a proposal waiting for a person. Its title, body and payload are never in the graph.",
+      "aliases": ["C", "Inbox card"], "standard": "prov:Entity", "source": "canon/inbox/C-nnnn.json",
+      "audiences": ["person", "assistant", "verifier"],
+      "enums": {"kind": "canon.CARD_VERDICTS", "deciders": "canon.CARD_DECIDERS", "triage_class": "change.CLASSES"},
+      "consumers": ["graph.Graph.trace", "graph.Graph.impact", "graph.Graph.path"]
+    },
+    "decision": {
+      "id": "decision", "label": "Decision", "key": "D-nnn",
+      "description": "A named person's decision on a card, or an answer recorded without one. Its reason is never in the graph.",
+      "aliases": ["D", "approval"], "standard": "prov:Activity", "source": "canon/decisions.json",
+      "audiences": ["person", "assistant", "verifier"],
+      "enums": {"verdict": "canon.CARD_VERDICTS", "approving": "canon.APPROVING"},
+      "consumers": ["graph.Graph.impact", "graph_ask.production_approvals", "graph_ask.parity"]
+    },
+    "release": {
+      "id": "release", "label": "Release", "key": "release-<n>",
+      "description": "A release of the product: its revision, the requirements it carries and how far it got.",
+      "aliases": ["delivery"], "standard": "prov:Entity", "source": "releases/<n>.json",
+      "audiences": ["person", "assistant", "verifier"],
+      "enums": {"maturity": "store.MATURITIES"},
+      "consumers": ["graph.Graph.impact", "graph_ask.rests_on_refuted", "graph_ask.production_approvals",
+                    "graph_ask.parity"]
+    },
+    "pack": {
+      "id": "pack", "label": "Pack", "key": "pack-<version>",
+      "description": "A capability pack version, pinned to the release it was built for.",
+      "aliases": ["capability pack"], "standard": "prov:Entity", "source": "packs.json",
+      "audiences": ["person", "assistant", "verifier"],
+      "consumers": ["graph.Graph.impact"]
+    },
+    "round": {
+      "id": "round", "label": "Round", "key": "round:<task>/<n>",
+      "description": "One builder cell round of a task.",
+      "aliases": ["cell round"], "standard": "prov:Activity", "source": "cell_ran in the ledger",
+      "audiences": ["person", "assistant", "verifier"],
+      "consumers": ["graph.Graph.trace", "graph.Graph.impact"]
+    },
+    "model": {
+      "id": "model", "label": "Model", "key": "model:<id>",
+      "description": "A model a round ran on, by the id the run record gives.",
+      "aliases": ["LLM"], "standard": "prov:SoftwareAgent", "source": "cell_ran in the ledger",
+      "audiences": ["person", "assistant", "verifier"],
+      "consumers": ["graph.Graph.trace"]
+    },
+    "revision": {
+      "id": "revision", "label": "Revision", "key": "rev:<git sha>",
+      "description": "A git revision of the product that a round produced.",
+      "aliases": ["commit"], "standard": "prov:Entity", "source": "cell_ran and merged in the ledger",
+      "audiences": ["person", "assistant", "verifier", "builder"],
+      "consumers": ["graph.Graph.impact"]
+    },
+    "signal": {
+      "id": "signal", "label": "Signal", "key": "S-nnn",
+      "description": "A need or remark that arrived in the delivery square. Its text is outside text and never in the graph.",
+      "aliases": ["S", "need"], "standard": "prov:Entity", "source": "_factory/signals.json",
+      "audiences": ["person", "assistant", "verifier"],
+      "enums": {"channel": "signals.CHANNELS", "state": "signals.STATES"},
+      "consumers": ["graph.Graph.trace"]
+    },
+    "observation": {
+      "id": "observation", "label": "Observation", "key": "O-nnn",
+      "description": "An outside event the factory recorded (a model, a CVE, drift). Only its id is in the graph.",
+      "aliases": ["O", "update"], "standard": "prov:Entity", "source": "refs.observation on an update card",
+      "audiences": ["person", "assistant", "verifier"],
+      "consumers": ["graph.Graph.trace"]
+    },
+    "comment": {
+      "id": "comment", "label": "Comment", "key": "CM-nnn",
+      "description": "A remark a person made about a record. Its text is outside text and never in the graph.",
+      "aliases": ["CM", "remark"], "standard": "prov:Entity", "source": "canon/comments.json",
+      "audiences": ["person", "assistant", "verifier"],
+      "enums": {"target": "canon.Canon.COMMENT_TARGETS"},
+      "consumers": ["graph.Graph.impact"]
+    }
+  },
+  "relations": {
+    "derived_from": {
+      "id": "derived_from", "label": "derived from",
+      "description": "A requirement version rests on its sources: a question, the request, a change card, or a person's edit of the plan.",
+      "aliases": ["sources", "rests on source"], "from": ["requirement"], "to": ["question", "request", "card", "person"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "sources in each spec version",
+      "standard": "prov:wasDerivedFrom",
+      "consumers": ["graph.Graph.trace", "graph_ask.rests_on_refuted", "graph_ask.criteria_from_answers"]
+    },
+    "revision_of": {
+      "id": "revision_of", "label": "revision of",
+      "description": "A requirement version replaces the same requirement's previous version.",
+      "aliases": ["previous version"], "from": ["requirement"], "to": ["requirement"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "the spec snapshots, in version order",
+      "standard": "prov:wasRevisionOf", "consumers": ["graph.Graph.trace"]
+    },
+    "amended_by": {
+      "id": "amended_by", "label": "amended by",
+      "description": "A requirement version was written by applying a change card.",
+      "aliases": ["changed by"], "from": ["requirement"], "to": ["card"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "change_applied in the ledger (changed)",
+      "standard": "prov:wasInfluencedBy", "consumers": ["graph.Graph.trace"]
+    },
+    "answered_by": {
+      "id": "answered_by", "label": "answered by",
+      "description": "A question was answered by a named person, acting as a persona.",
+      "aliases": ["answer"], "from": ["question"], "to": ["person"], "qualifiers": {"persona": "people.PERSONAS"},
+      "upstream": "to", "origins": ["person_confirmed"], "carried_by": "the question's answer (by, persona)",
+      "standard": "prov:qualifiedAssociation",
+      "consumers": ["graph.Graph.trace", "graph_ask.criteria_from_answers"]
+    },
+    "assumed_as": {
+      "id": "assumed_as", "label": "assumed as",
+      "description": "A question was answered by an assumption the factory took (a person may have chosen to let it).",
+      "aliases": ["assumption"], "from": ["question"], "to": ["assumption"],
+      "upstream": "to", "origins": ["kernel", "person_confirmed"], "carried_by": "the question's answer (assumption)",
+      "standard": "prov:wasDerivedFrom", "consumers": ["graph.Graph.trace", "graph_ask.rests_on_refuted"]
+    },
+    "has_criterion": {
+      "id": "has_criterion", "label": "has criterion",
+      "description": "A requirement version states an acceptance criterion.",
+      "aliases": ["acceptance"], "from": ["requirement"], "to": ["criterion"],
+      "upstream": "from", "origins": ["kernel"], "carried_by": "each requirement's acceptance, and the criterion id's prefix",
+      "standard": "oslc_rm:decomposedBy",
+      "consumers": ["graph.Graph.impact", "graph_ask.criteria_from_answers", "graph_ask.parity"]
+    },
+    "checked_by": {
+      "id": "checked_by", "label": "checked by",
+      "description": "A criterion is checked by a test on main that names it, or by a held-out check.",
+      "aliases": ["validated by"], "from": ["criterion"], "to": ["test", "holdout_ref"],
+      "upstream": "from", "origins": ["convention", "kernel"], "carried_by": "test names on main; check.ref in the contract",
+      "standard": "oslc_rm:validatedBy", "consumers": ["graph.Graph.impact", "graph_ask.parity"]
+    },
+    "serves": {
+      "id": "serves", "label": "serves",
+      "description": "A contract task serves a criterion.",
+      "aliases": ["implements"], "from": ["task"], "to": ["criterion"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "the contract's tasks",
+      "standard": "oslc_rm:implementedBy", "consumers": ["graph.Graph.impact", "graph_ask.parity"]
+    },
+    "depends_on": {
+      "id": "depends_on", "label": "depends on",
+      "description": "A contract task runs after another.",
+      "aliases": ["after"], "from": ["task"], "to": ["task"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "the contract's tasks (depends_on)",
+      "standard": "prov:wasInfluencedBy", "consumers": ["graph.Graph.trace"]
+    },
+    "round_of": {
+      "id": "round_of", "label": "round of",
+      "description": "A builder cell round worked on a task.",
+      "aliases": ["cell of"], "from": ["round"], "to": ["task"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "cell_ran in the ledger (task, round)",
+      "standard": "prov:wasAssociatedWith", "consumers": ["graph.Graph.trace", "graph.Graph.impact"]
+    },
+    "ran_on": {
+      "id": "ran_on", "label": "ran on",
+      "description": "A round ran on a model (and, when it escalated, on the model it escalated to).",
+      "aliases": ["model"], "from": ["round"], "to": ["model"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "cell_ran in the ledger (model, final_model)",
+      "standard": "prov:wasAssociatedWith", "consumers": ["graph.Graph.trace"]
+    },
+    "produced": {
+      "id": "produced", "label": "produced",
+      "description": "A round produced a revision of the product.",
+      "aliases": ["generated"], "from": ["round"], "to": ["revision"],
+      "upstream": "from", "origins": ["kernel"], "carried_by": "cell_ran in the ledger (head)",
+      "standard": "prov:generated", "consumers": ["graph.Graph.impact"]
+    },
+    "carries": {
+      "id": "carries", "label": "carries",
+      "description": "A release carries a requirement, at the spec version in force when the release started.",
+      "aliases": ["ships"], "from": ["release"], "to": ["requirement"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "the release file's requirements",
+      "standard": "prov:wasDerivedFrom",
+      "consumers": ["graph.Graph.impact", "graph_ask.rests_on_refuted", "graph_ask.parity"]
+    },
+    "versions": {
+      "id": "versions", "label": "versions",
+      "description": "A capability pack version pins a release.",
+      "aliases": ["pins"], "from": ["pack"], "to": ["release"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "packs.json",
+      "standard": "prov:wasDerivedFrom", "consumers": ["graph.Graph.impact"]
+    },
+    "decides": {
+      "id": "decides", "label": "decides",
+      "description": "A decision decided a card.",
+      "aliases": ["decision on"], "from": ["decision"], "to": ["card"],
+      "upstream": "to", "origins": ["person_confirmed"], "carried_by": "decisions.json (card)",
+      "standard": "prov:used", "consumers": ["graph.Graph.trace", "graph_ask.production_approvals"]
+    },
+    "signed_by": {
+      "id": "signed_by", "label": "signed by",
+      "description": "A decision was made by a named person, acting as a persona.",
+      "aliases": ["decided by"], "from": ["decision"], "to": ["person"], "qualifiers": {"persona": "people.PERSONAS"},
+      "upstream": "to", "origins": ["person_confirmed"], "carried_by": "decisions.json (person, persona)",
+      "standard": "prov:qualifiedAssociation", "consumers": ["graph.Graph.trace", "graph_ask.production_approvals"]
+    },
+    "approves": {
+      "id": "approves", "label": "approves",
+      "description": "An approving decision approves a release.",
+      "aliases": ["accepts"], "from": ["decision"], "to": ["release"],
+      "upstream": "to", "origins": ["person_confirmed"], "carried_by": "refs.release on an approving decision",
+      "standard": "prov:qualifiedAssociation", "consumers": ["graph_ask.production_approvals"]
+    },
+    "concerns": {
+      "id": "concerns", "label": "concerns",
+      "description": "A card, or a decision that does not approve, is about a release.",
+      "aliases": ["about release"], "from": ["card", "decision"], "to": ["release"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "refs.release",
+      "standard": "prov:wasInfluencedBy", "consumers": ["graph.Graph.impact"]
+    },
+    "rests_on": {
+      "id": "rests_on", "label": "rests on",
+      "description": "A card, or the decision on it, rests on a requirement: an amendment of that requirement makes an approval stale.",
+      "aliases": ["requirements"], "from": ["card", "decision"], "to": ["requirement"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "refs.requirement and refs.requirements",
+      "standard": "prov:wasInfluencedBy", "consumers": ["graph.Graph.impact", "graph_ask.parity"]
+    },
+    "invalidated_by": {
+      "id": "invalidated_by", "label": "invalidated by",
+      "description": "An approval went stale because a change card (or, when the ledger names none, an amended requirement) changed what it rested on.",
+      "aliases": ["stale"], "from": ["decision"], "to": ["card", "requirement"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "approvals_stale in the ledger",
+      "standard": "prov:wasInvalidatedBy", "consumers": ["graph_ask.production_approvals"]
+    },
+    "touches": {
+      "id": "touches", "label": "touches",
+      "description": "A triaged change names the requirements it would touch. A model's list stays model_proposed until a person decides the card.",
+      "aliases": ["affects"], "from": ["card"], "to": ["requirement"],
+      "upstream": "to", "origins": ["model_proposed", "person_confirmed", "kernel"],
+      "carried_by": "the triage payload's requirements", "standard": "oslc_rm:affectedBy",
+      "consumers": ["graph.Graph.impact"]
+    },
+    "asks": {
+      "id": "asks", "label": "asks",
+      "description": "A question card puts a question to a person.",
+      "aliases": ["question card"], "from": ["card", "decision"], "to": ["question"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "refs.question",
+      "standard": "prov:wasInfluencedBy", "consumers": ["graph.Graph.trace"]
+    },
+    "settles": {
+      "id": "settles", "label": "settles",
+      "description": "A card or decision is about an assumption: a refuted assumption's change card, or the decision that confirmed or refuted it.",
+      "aliases": ["about assumption"], "from": ["card", "decision"], "to": ["assumption"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "refs.assumption",
+      "standard": "prov:wasInfluencedBy", "consumers": ["graph.Graph.trace"]
+    },
+    "about_criterion": {
+      "id": "about_criterion", "label": "about criterion",
+      "description": "A card or decision is about criteria, such as a holdout ruling on the criteria whose checks failed.",
+      "aliases": ["criteria"], "from": ["card", "decision"], "to": ["criterion"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "refs.criteria",
+      "standard": "prov:wasInfluencedBy", "consumers": ["graph.Graph.impact"]
+    },
+    "about_task": {
+      "id": "about_task", "label": "about task",
+      "description": "A card or decision is about a task, such as an escalation.",
+      "aliases": ["task"], "from": ["card", "decision"], "to": ["task"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "refs.task",
+      "standard": "prov:wasInfluencedBy", "consumers": ["graph.Graph.impact"]
+    },
+    "raised_from": {
+      "id": "raised_from", "label": "raised from",
+      "description": "A card was raised from a signal or an observation.",
+      "aliases": ["routed to"], "from": ["card"], "to": ["signal", "observation"],
+      "upstream": "to", "origins": ["kernel"],
+      "carried_by": "refs.signal, refs.observation, and routed_to in the factory's signals.json",
+      "standard": "prov:wasDerivedFrom", "consumers": ["graph.Graph.trace"]
+    },
+    "split_from": {
+      "id": "split_from", "label": "split from",
+      "description": "A change card is one part of feedback that triage split.",
+      "aliases": ["part of"], "from": ["card"], "to": ["card"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "refs.split_from",
+      "standard": "prov:wasDerivedFrom", "consumers": ["graph.Graph.trace"]
+    },
+    "routed_from": {
+      "id": "routed_from", "label": "routed from",
+      "description": "A road card was routed to IT from a change card.",
+      "aliases": ["from change"], "from": ["card"], "to": ["card"],
+      "upstream": "to", "origins": ["kernel"], "carried_by": "refs.change",
+      "standard": "prov:wasDerivedFrom", "consumers": ["graph.Graph.trace"]
+    },
+    "about": {
+      "id": "about", "label": "about",
+      "description": "A comment is about a requirement, criterion, task, release or card.",
+      "aliases": ["target"], "from": ["comment"], "to": ["requirement", "criterion", "task", "release", "card"],
+      "upstream": "to", "origins": ["person_confirmed"], "carried_by": "comments.json (target)",
+      "standard": "prov:wasInfluencedBy", "consumers": ["graph.Graph.impact"]
+    }
+  },
+  "refs": {
+    "question": {"relation": "asks"},
+    "assumption": {"relation": "settles"},
+    "requirement": {"relation": "rests_on"},
+    "requirements": {"relation": "rests_on"},
+    "release": {"relation": "concerns", "note": "approves, on a decision that approves"},
+    "criteria": {"relation": "about_criterion"},
+    "task": {"relation": "about_task"},
+    "signal": {"relation": "raised_from"},
+    "observation": {"relation": "raised_from"},
+    "change": {"relation": "routed_from"},
+    "split_from": {"relation": "split_from"},
+    "perspective": {"attribute": "the panel perspective a question card speaks for"},
+    "source": {"attribute": "the persona a change came from"},
+    "scope": {"attribute": "what an approval covers: plan, factory or trial"},
+    "kind": {"attribute": "the kind of factory proposal (default_check)"},
+    "spec_version": {"attribute": "the spec version a plan approval is for"},
+    "redone": {"attribute": "a rejected plan card whose spec was drafted again"},
+    "environment": {"attribute": "the environment an incident happened in"},
+    "environments": {"attribute": "the environments a road card asks IT to configure"},
+    "roads": {"attribute": "the road names a road card asks IT to configure"},
+    "trigger": {"attribute": "the trigger of the observation an update card is about"},
+    "trial": {"attribute": "a sandbox trial's id; the Trial kind is planned (phase 2)"},
+    "workspace": {"attribute": "the branch of a person's workspace"},
+    "person": {"attribute": "the person a workspace card is for"},
+    "connector": {"attribute": "the connector (its system name) a connector card asks IT to turn on"}
+  },
+  "ledger": {
+    "question_added": {"id": "question"},
+    "question_answered": {"id": "question", "by": "person", "persona": null},
+    "question_assumed": {"id": "question", "assumption": "assumption", "chosen_by": "person"},
+    "assumption_added": {"id": "assumption"},
+    "assumption_settled": {"id": "assumption", "status": null},
+    "card_opened": {"id": "card"},
+    "decision": {"id": "decision", "card": "card", "kind": null, "verdict": null, "person": "person",
+                 "persona": null, "refs": null},
+    "approvals_stale": {"decisions": "decision", "requirements": "requirement", "reason": null},
+    "change_submitted": {"card": "card"},
+    "change_triaged": {"card": "card", "requirements": "requirement"},
+    "change_applied": {"card": "card", "changed": "requirement", "contract": null},
+    "plan_edited": {"requirement": "requirement"},
+    "plan_redone": {"card": "card"},
+    "spec_written": {},
+    "as_is_spec_written": {},
+    "contract_compiled": {"revision": null},
+    "repo_created": {},
+    "cell_ran": {"task": "task", "head": "revision", "model": "model", "final_model": "model"},
+    "merged": {"task": "task", "revision": "revision"},
+    "release_started": {"release": "release"},
+    "promoted": {"release": "release", "environment": null},
+    "pack_versioned": {"release": "release", "version": "pack"},
+    "comment": {"id": "comment"},
+    "signal_received": {"id": "signal"}
+  }
+}

@@ -1,7 +1,10 @@
 # What tools/release_export.py leaves out of the public repository, one gitignore-style pattern a
 # line. A leading slash anchors a pattern at the repository root, a trailing slash matches folders
 # only, and `*`, `?` and `**` match as in .gitignore. The last pattern that matches a file or one of
-# its folders decides; a pattern starting with `!` takes a file back in.
+# its folders decides; a pattern starting with `!` takes a file back in. Patterns match in any case,
+# so a folder spelled otherwise on a disk that ignores case (Intake/ for intake/) stays out too.
+#
+# A contribution that changes this list is never imported unread (tools/release_import.py).
 #
 # What is listed here stays in the private repository, untouched. Only the public snapshot leaves it out.
 

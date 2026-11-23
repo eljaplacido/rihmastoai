@@ -225,13 +225,16 @@ paths you may write, and how the work is checked; the rules for your role are in
 For every role:
 - `.gnomon/`, `contract.json` and `factory/` are read-only. Write nothing outside the paths your
   task names; a task that names none allows no writes.
+- `tests/test_road_contract.py` is the paved road's own check: read-only too.
 - Files you write use LF line endings.
 """
 
 
 # What PRODUCT_RULES makes read-only. The gate refuses a builder cell's change that touches one, and
-# a workspace's submission (kernel/gate.py, kernel/workspace.py).
-PROTECTED = (".gnomon/", "contract.json", "factory/")
+# a workspace's submission (kernel/gate.py, kernel/workspace.py). The last is the paved road's own
+# tests (kernel/scaffold.py ROAD_CONTRACT_TESTS): Gnomon's write_allow has no exclusions, so `tests/**`
+# lets the write tool reach it, and this check is what refuses the change (FR-DF1-AC-2).
+PROTECTED = (".gnomon/", "contract.json", "factory/", "tests/test_road_contract.py")
 
 
 def protected_paths(repo_dir: Path, base: str, head: str) -> list[str]:

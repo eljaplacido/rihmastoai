@@ -1,29 +1,22 @@
 #!/usr/bin/env python3
-"""release_export: a scrubbed snapshot of a git revision, for the public repository.
-
-Standard library only, no model. It reads the tree of a revision (default HEAD), leaves out what
-`release/exclude.txt` in that tree names, scans the rest and writes it into a target folder:
-
-    python tools/release_export.py --target ../public-clone [--rev HEAD] [--denylist FILE]
-    python tools/release_export.py --check [--rev HEAD] [--denylist FILE]
+"""release_export: a scrubbed snapshot of a git revision, for the public repository. Standard library only.
+It reads a revision's tree (default HEAD), leaves out what its `release/exclude.txt` names, scans the rest
+and writes it to a target: `--target ../public-clone [--rev HEAD] [--denylist FILE]`, or `--check`.
 
 It refuses (exit 1, nothing written, every hit listed with its file and line) a snapshot holding:
 - a denylisted word (one a line, `#` comments skipped, any case, where no letter or digit adjoins it),
   masked. The default list, `.release-denylist` at the repository root, is never exported;
-- a secret-like string, masked: a private key block, an AWS access key id, a GitHub token, an `sk-` key
-  (OpenAI, Anthropic, OpenRouter, opencode), a Slack token or webhook, or a random literal of 20 characters
-  or more assigned to an api_key-like name. Placeholders are not secrets. A planted test value is allowed
-  only in tests/fixtures/redteam/, on a line whose comment starts with `redteam: canary` or
-  `seeded: RT-SECRET-...`, as those fixtures mark them;
+- a secret-like string, masked: a private key, an AWS access key id, a GitHub, `sk-` or Slack token, or a
+  random literal of 20+ characters assigned to an api_key-like name (placeholders are not secrets). Planted
+  values pass only in tests/fixtures/redteam/, on a line or in a file marked as those fixtures mark them;
 - a relative Markdown link to an excluded or missing file;
 - a file over 5 MB, an entry that is not a plain file, or a path that cannot be written safely.
 A binary file's path is scanned for words and its bytes for words and secrets, read as Latin-1, UTF-8 and
 UTF-16 text, where metadata such as a PNG's tEXt or EXIF is written; compressed bytes are not inflated.
-
 Writing empties the target but its `.git` (never touched), so deletions carry over. The target must be
 missing, empty, a work tree of another repository or an earlier export (it holds release/exclude.txt).
-Exit codes: 0 clean (and written, unless --check); 1 refused; 2 the export cannot run (an unknown
-revision, no exclude list or denylist, a target that may not be written).
+Exit codes: 0 clean (and written, unless --check); 1 refused; 2 it cannot run (an unknown revision, no
+exclude list or denylist, a target that may not be written).
 """
 
 from __future__ import annotations
@@ -268,16 +261,24 @@ def denylist_hits(path: str, lines: list[str], words: list[re.Pattern[str]]) -> 
     return hits
 
 
+KEY_BODY = re.compile(r"^\s*(?:[A-Za-z0-9+/]{40,}={0,2}|Proc-Type:.*)\s*$")   # what follows a key's header
+FILE_MARKER = re.compile(r"^\s*(?:#|//|;)\s*seeded:\s*RT-SECRET-FILE\b")
+
+
 def secret_hits(path: str, lines: list[str]) -> list[Hit]:
-    """Each secret-like string, but on a marked line of the red-team fixtures."""
+    """Each secret-like string but in the red-team fixtures' marked lines and marked secret files. A private
+    key is a header with key material after it: a header alone (docs, key-finding code) is not a key."""
     may_plant = path.startswith(CANARY_DIR)
+    if may_plant and lines and FILE_MARKER.match(lines[0]):
+        return []
     hits: list[Hit] = []
     for n, line in enumerate(lines, 1):
         if may_plant and ALLOW_MARKER.search(line):
             continue
         for kind, pattern in SECRETS:
+            body = kind != "a private key block" or (n < len(lines) and KEY_BODY.match(lines[n]))
             hits += [Hit(path, n, "secret", f"{kind}: {mask_secret(m.group(1))}" if pattern.groups else kind)
-                     for m in pattern.finditer(line) if not pattern.groups or plausible(m.group(1))]
+                     for m in pattern.finditer(line) if body and (not pattern.groups or plausible(m.group(1)))]
     return hits
 
 

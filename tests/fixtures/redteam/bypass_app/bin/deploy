@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""Deploy the build: a script with no extension is still Python."""
+
+import os
+import sys
+
+os.system("rsync -a build/ " + sys.argv[1])  # seeded: RT-PY-SHELL

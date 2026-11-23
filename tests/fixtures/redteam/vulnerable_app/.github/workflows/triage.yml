@@ -1,0 +1,13 @@
+name: triage
+on:
+  issues:
+    types: [opened]
+jobs:
+  greet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4  # seeded: RT-GHA-UNPINNED
+      - name: Greet the reporter
+        run: |
+          echo "Thanks for issue ${{ github.event.issue.number }}"
+          echo "New issue: ${{ github.event.issue.title }}"  # seeded: RT-GHA-INJECT

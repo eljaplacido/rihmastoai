@@ -39,6 +39,7 @@ SK_KEY = "sk-" + "proj-" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4"
 SLACK_TOKEN = "xoxb-" + "1234567890-" + "aBcDeFgHiJ"
 LITERAL = "Zq8Vz3LmW9pXr2Kd7NfYb4Hs"
 PRIVATE_KEY = "-----BEGIN " + "RSA PRIVATE KEY-----"
+KEY_MATERIAL = "MIIEpAIBAAKCAQEA" + "q7Lm2Xv9Rt4Wz8Np3Kd6Hs1Jf5Gb0Yc" * 2   # made up, shaped like a key body
 HIT = re.compile(r"^(?P<path>\S+?)(?::(?P<line>\d+))?: (?P<kind>denylist|secret|link|size|path|tree): (?P<detail>.*)$")
 
 
@@ -156,8 +157,8 @@ class RefusalTest(ExportCase):
         self.assertRefused(out)
 
     def test_secret_like_strings_are_refused_masked_and_placeholders_are_not(self):
-        lines = [f'KEY_ID = "{AWS_KEY}"', f"token: {GITHUB_TOKEN}", PRIVATE_KEY, f"OPENAI = '{SK_KEY}'",
-                 f"slack = {SLACK_TOKEN}", f'api_key = "{LITERAL}"',
+        lines = [f'KEY_ID = "{AWS_KEY}"', f"token: {GITHUB_TOKEN}", PRIVATE_KEY, KEY_MATERIAL,
+                 f"OPENAI = '{SK_KEY}'", f"slack = {SLACK_TOKEN}", f'api_key = "{LITERAL}"',
                  # placeholders and names, not secrets
                  'api_key = "your-api-key-goes-here-1234"', 'KEY_ID = "AKIAIOSFODNN7EXAMPLE"',
                  'OPENAI_API_KEY = "OPENAI_API_KEY_FROM_THE_ENV"', "see the sk-learn-style-naming-of-things docs",
@@ -165,11 +166,31 @@ class RefusalTest(ExportCase):
         self.commit({"app/config.py": "\n".join(lines) + "\n"})
         code, out, _ = self.check()
         self.assertEqual(code, 1, out)
-        self.assertEqual(hits(out), [("app/config.py", n, "secret") for n in range(1, 7)])
+        self.assertEqual(hits(out), [("app/config.py", n, "secret") for n in (1, 2, 3, 5, 6, 7)])
         for value in (AWS_KEY, GITHUB_TOKEN, SK_KEY, SLACK_TOKEN, LITERAL):
             self.assertNotIn(value, out)
         self.assertIn("app/config.py:1: secret: an AWS access key id: AKI********", out)
         self.assertIn("app/config.py:3: secret: a private key block", out)
+
+    def test_a_private_key_header_without_key_material_is_not_a_secret(self):
+        self.commit({"docs/deploy.md": f"The key file starts with `{PRIVATE_KEY}`; never commit it.\n",
+                     "app/keydetect.py": f'HEADER = "{PRIVATE_KEY}"\nname = "cache"\n',
+                     "app/real.pem": f"{PRIVATE_KEY}\n{KEY_MATERIAL}\n-----END RSA PRIVATE KEY-----\n"})
+        code, out, _ = self.check()
+        self.assertEqual(code, 1, out)
+        self.assertEqual(hits(out), [("app/real.pem", 1, "secret")])
+
+    def test_a_seeded_secret_file_is_allowed_whole_only_in_the_redteam_fixtures(self):
+        credentials = f"# seeded: RT-SECRET-FILE (made-up values)\n[default]\naws_access_key_id = {AWS_KEY}\n"
+        pattern_only = f"# seeded: RT-SECRET-PATTERN\n[default]\naws_access_key_id = {AWS_KEY}\n"
+        self.commit({"tests/fixtures/redteam/app/.aws/credentials": credentials,
+                     "tests/fixtures/redteam/app/other.ini": pattern_only,
+                     "app/.aws/credentials": credentials})
+        code, out, _ = self.check()
+        self.assertEqual(code, 1, out)
+        # the file marker covers only a fixture file marked as a seeded secret file, and only there
+        self.assertEqual(hits(out), [("app/.aws/credentials", 3, "secret"),
+                                     ("tests/fixtures/redteam/app/other.ini", 3, "secret")])
 
     def test_planted_canaries_are_allowed_only_on_a_marked_line_of_the_redteam_fixtures(self):
         fixture = "\n".join([f'exfil_token = "{GITHUB_TOKEN}"  # redteam: canary (planted for leak tests)',

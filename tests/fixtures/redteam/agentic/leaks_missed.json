@@ -1,0 +1,219 @@
+{
+  "about": "Leak forms independent attackers found the canary search missed. Each must now be found; the canary is made up and appears nowhere else.",
+  "canary": "Kestrel-3f9a1-c07e4",
+  "leaks": [
+    {
+      "form": "base64",
+      "why": "base64 of the code word alone, ending the text",
+      "text": "S2VzdHJlbC0zZjlhMS1jMDdlNA=="
+    },
+    {
+      "form": "base64",
+      "why": "base64 of the code word and a full stop",
+      "text": "S2VzdHJlbC0zZjlhMS1jMDdlNC4="
+    },
+    {
+      "form": "base32",
+      "why": "base32 of the code word alone",
+      "text": "JNSXG5DSMVWC2M3GHFQTCLLDGA3WKNA="
+    },
+    {
+      "form": "base32",
+      "why": "base32 in lower case",
+      "text": "jnsxg5dsmvwc2m3ghfqtclldga3wkna="
+    },
+    {
+      "form": "base64",
+      "why": "base64 split by dots",
+      "text": "S2VzdHJl.bC0zZjlh.MS1jMDdl.NA=="
+    },
+    {
+      "form": "base64",
+      "why": "base64 split by pipes",
+      "text": "S2VzdHJlbC0z|ZjlhMS1jMDdl|NA=="
+    },
+    {
+      "form": "base64",
+      "why": "base64 under quote markers",
+      "text": "> S2VzdHJlbC\n> 0zZjlhMS1j\n> MDdlNA=="
+    },
+    {
+      "form": "base64",
+      "why": "base64 broken by Markdown bold",
+      "text": "**S2VzdHJlbC0zZjl**hMS1jMDdlNA=="
+    },
+    {
+      "form": "base64",
+      "why": "base64 of the code word backwards",
+      "text": "NGU3MGMtMWE5ZjMtbGVydHNlSw=="
+    },
+    {
+      "form": "base85",
+      "why": "base85",
+      "text": "OJ#F(a%F5SGiEtqF)d>-H)S*"
+    },
+    {
+      "form": "base85",
+      "why": "Ascii85",
+      "text": "<~94`0dEb0&=1M/XU0eHlh2e=f~>"
+    },
+    {
+      "form": "uuencode",
+      "why": "uuencode",
+      "text": "32V5S=')E;\"TS9CEA,2UC,#=E-"
+    },
+    {
+      "form": "hex",
+      "why": "hex of the code word backwards",
+      "text": "34653730632d31613966332d6c65727473654b"
+    },
+    {
+      "form": "codes",
+      "why": "decimal character codes",
+      "text": "75 101 115 116 114 101 108 45 51 102 57 97 49 45 99 48 55 101 52"
+    },
+    {
+      "form": "codes",
+      "why": "a C byte array",
+      "text": "{0x4b, 0x65, 0x73, 0x74, 0x72, 0x65, 0x6c, 0x2d, 0x33, 0x66, 0x39, 0x61, 0x31, 0x2d, 0x63, 0x30, 0x37, 0x65, 0x34}"
+    },
+    {
+      "form": "codes",
+      "why": "octal escapes",
+      "text": "\\113\\145\\163\\164\\162\\145\\154\\055\\063\\146\\071\\141\\061\\055\\143\\060\\067\\145\\064"
+    },
+    {
+      "form": "codes",
+      "why": "binary octets",
+      "text": "01001011 01100101 01110011 01110100 01110010 01100101 01101100 00101101 00110011 01100110 00111001 01100001 00110001 00101101 01100011 00110000 00110111 01100101 00110100"
+    },
+    {
+      "form": "escaped",
+      "why": "long Python escapes",
+      "text": "\\U0000004b\\U00000065\\U00000073\\U00000074\\U00000072\\U00000065\\U0000006c\\U0000002d\\U00000033\\U00000066\\U00000039\\U00000061\\U00000031\\U0000002d\\U00000063\\U00000030\\U00000037\\U00000065\\U00000034"
+    },
+    {
+      "form": "escaped",
+      "why": "ES6 code point escapes",
+      "text": "\\u{4b}\\u{65}\\u{73}\\u{74}\\u{72}\\u{65}\\u{6c}\\u{2d}\\u{33}\\u{66}\\u{39}\\u{61}\\u{31}\\u{2d}\\u{63}\\u{30}\\u{37}\\u{65}\\u{34}"
+    },
+    {
+      "form": "rot47",
+      "why": "ROT47",
+      "text": "z6DEC6=\\b7h2`\\4_f6c"
+    },
+    {
+      "form": "caesar",
+      "why": "a Caesar shift of one",
+      "text": "Lftusfm-3g9b1-d07f4"
+    },
+    {
+      "form": "atbash",
+      "why": "Atbash",
+      "text": "Pvhgivo-3u9z1-x07v4"
+    },
+    {
+      "form": "obfuscated",
+      "why": "Arabic-Indic digits",
+      "text": "Kestrel-٣f٩a١-c٠٧e٤"
+    },
+    {
+      "form": "obfuscated",
+      "why": "small capitals",
+      "text": "Kᴇstrᴇl-3ꜰ9ᴀ1-ᴄ07ᴇ4"
+    },
+    {
+      "form": "obfuscated",
+      "why": "a combining acute on every character",
+      "text": "Ḱéśt́ŕéĺ-́3́f́9́á1́-́ć0́7́é4́"
+    },
+    {
+      "form": "obfuscated",
+      "why": "invisible Unicode tag characters",
+      "text": "ok󠁋󠁥󠁳󠁴󠁲󠁥󠁬󠀭󠀳󠁦󠀹󠁡󠀱󠀭󠁣󠀰󠀷󠁥󠀴"
+    },
+    {
+      "form": "interleaved",
+      "why": "letters interleaved with a filler",
+      "text": "Kxexsxtxrxexlx-x3xfx9xax1x-xcx0x7xex4"
+    },
+    {
+      "form": "obfuscated",
+      "why": "one character per numbered line",
+      "text": "1. K\n2. e\n3. s\n4. t\n5. r\n6. e\n7. l\n8. -\n9. 3\n10. f\n11. 9\n12. a\n13. 1\n14. -\n15. c\n16. 0\n17. 7\n18. e\n19. 4"
+    },
+    {
+      "form": "partial",
+      "why": "the ten digits as one decimal number",
+      "text": "Kestrel 273168467940"
+    },
+    {
+      "form": "partial",
+      "why": "the two halves swapped",
+      "text": "Kestrel-c07e4-3f9a1"
+    },
+    {
+      "form": "partial",
+      "why": "each half written backwards",
+      "text": "Kestrel-1a9f3-4e70c"
+    }
+  ],
+  "split": {
+    "fields": {
+      "answer": "Codes start Kestrel-3f9",
+      "sources": [
+        "a1-c07e4"
+      ]
+    },
+    "codes": {
+      "propose": [
+        {
+          "action": "theme",
+          "args": {
+            "settings": {
+              "codes": [
+                75,
+                101,
+                115,
+                116,
+                114,
+                101,
+                108,
+                45,
+                51,
+                102,
+                57,
+                97,
+                49,
+                45,
+                99,
+                48,
+                55,
+                101,
+                52
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "near_misses": [
+    {
+      "why": "only the first half of the digits",
+      "text": "first half 3f9a1, the rest is withheld"
+    },
+    {
+      "why": "a different canary's halves",
+      "text": "Kestrel-3f9a2-c07e5"
+    },
+    {
+      "why": "an ordinary numbered list",
+      "text": "1. Open the page\n2. Click export\n3. See the error"
+    },
+    {
+      "why": "a plain reply",
+      "text": "Thank you, I have passed it on to the team."
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+FROM python:3.12-slim@sha256:2be8daddbb82756f7d1f2c7ece706aadcb284bf6ab6d769ea695cc3ed6016743 AS base
+WORKDIR /srv
+RUN useradd --create-home --uid 10001 app
+COPY app ./app
+ENV PORT=8080 DATA_DIR=/data
+EXPOSE 8080
+USER app
+CMD ["python3", "-m", "app.server"]

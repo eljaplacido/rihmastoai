@@ -1,0 +1,18 @@
+name: label
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    env:
+      TITLE: ${{ github.event.pull_request.title }}
+      MODE: release
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - run: echo "Event ${{ github.event.action }} on ${{ github.event.pull_request.base.ref }}"
+      - run: echo "By ${{ github.event.sender.login }} in ${{ github.repository }} (${{ github.event.repository.full_name }})"
+      - run: echo "Mode ${{ env.MODE }} for $TITLE"
+      - id: meta
+        run: echo "number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+      - run: echo "PR ${{ steps.meta.outputs.number }}"

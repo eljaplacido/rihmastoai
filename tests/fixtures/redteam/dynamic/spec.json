@@ -1,0 +1,12 @@
+{
+  "requirements": [],
+  "interface": [
+    {"method": "GET", "path": "/", "purpose": "the home page"},
+    {"method": "GET", "path": "/search", "purpose": "search the items by name (?q=)"},
+    {"method": "GET", "path": "/items/{id}", "purpose": "an item's page"},
+    {"method": "POST", "path": "/items", "purpose": "add an item"},
+    {"method": "GET", "path": "/static/{name}", "purpose": "the page's static files"},
+    {"method": "GET", "path": "/files/{name}", "purpose": "downloads"},
+    {"method": "GET", "path": "/health", "purpose": "health"}
+  ]
+}

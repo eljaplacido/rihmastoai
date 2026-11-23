@@ -1,0 +1,3 @@
+# seeded below: RT-DOCKER-UNPINNED
+FROM nginx:latest
+USER nginx

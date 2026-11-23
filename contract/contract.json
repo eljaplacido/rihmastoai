@@ -2789,6 +2789,220 @@
           "then": "holdouts run against a twin slot of the environment deployed from the same revision on its own data, which is stopped with its data afterwards, so the slot end users try holds none of it; the local-process and docker roads host a twin; a road that cannot host one runs them in the shared slot and the release records \"holdouts ran in the shared slot: this road has no twin\""
         }
       ]
+    },
+    {
+      "id": "FR-H10",
+      "group": "H. Delivery",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-23",
+      "statement": "Rihmasto scans and red-teams what it builds with its own checks, proven by seeded defects, within a scope a person authorised",
+      "notes": "D-0014: the capability is Rihmasto's own and depends on no other project or repository.",
+      "acceptance": [
+        {
+          "id": "FR-H10-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "each rule of the static layer catches its seeded defect in tests/fixtures/redteam/vulnerable_app at the marked line, and reports nothing else there; each rule names a CWE id, an OWASP Top 10 2025 category, a severity and a fix"
+        },
+        {
+          "id": "FR-H10-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the same product written safely (tests/fixtures/redteam/clean_app), the near misses a careless rule would report, and the red team's own source (full of sink names and secret patterns as text) yield no finding and no canary marker"
+        },
+        {
+          "id": "FR-H10-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the scan's SARIF 2.1.0 is read by adapters/sarif.py with each finding's rule, level, CWE and location; the security gate fails on the vulnerable product and passes on the clean one; a finding keeps its fingerprint when lines move, so a person's risk acceptance follows it; each kind of scan is its own tool, so a later run of another kind never replaces the static findings"
+        },
+        {
+          "id": "FR-H10-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "each layer says measured, partial or not measured, with the reason; a layer with a file it could not read is partial, and a scan with no finding there is not measured, never passed; the gap reaches the ledger as an open result; a scan that measured nothing writes no SARIF; generated code nested thousands deep is checked, and a file the checks could not walk is a gap, never a crash"
+        },
+        {
+          "id": "FR-H10-AC-5",
+          "check": {
+            "kind": "test"
+          },
+          "then": "every evidence snippet is masked (at most a sixth of a credential, never more than four characters, stays readable) and trimmed, so no planted credential reaches the report, the SARIF or the summary; a comment marker `redteam: canary` silences only the secret rules on its own line and is listed in the summary and the SARIF, a mere mention of it is not a marker, and a marked secret file is a canary whose unmarked lines are still read"
+        },
+        {
+          "id": "FR-H10-AC-6",
+          "check": {
+            "kind": "test"
+          },
+          "then": "only a named person with the it or compliance persona authorises red teaming, naming targets, a reason and an expiry in the future at most 31 days ahead; the scope is recorded in the project's ledger and can be revoked by the same people, with a reason"
+        },
+        {
+          "id": "FR-H10-AC-7",
+          "check": {
+            "kind": "test"
+          },
+          "then": "before any request is sent, a target that is not a loopback IP address, not a base_url the factory deployed (its slot state) or a surface it runs, or not in an unexpired, unrevoked scope is refused, and the refusal is recorded; a ledger that does not verify authorises nothing"
+        },
+        {
+          "id": "FR-H10-AC-8",
+          "check": {
+            "kind": "test"
+          },
+          "then": "`python -m kernel.redteam static <path> [--sarif out] [--markdown out]` prints the summary, writes the files and exits 0 when passed, 1 when failed, 4 when not measured and 2 on a usage error"
+        },
+        {
+          "id": "FR-H10-AC-9",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the red team depends on the standard library and the kernel only; optional external scanners are never needed and say not measured; the product the factory scaffolds is scanned without false alarms"
+        },
+        {
+          "id": "FR-H10-AC-10",
+          "check": {
+            "kind": "test"
+          },
+          "then": "each dynamic probe (security headers, error pages that leak, path traversal plain and encoded, reflected injection on the routes of the project's fixed interface, method tampering, malformed and oversized bodies, CORS that echoes any origin or allows credentials with a wildcard, missing rate limiting on a write route) catches its seeded defect in the vulnerable server of tests/fixtures/redteam/dynamic, and nothing else there; each dynamic rule names a CWE id, an OWASP Top 10 2025 category, a severity and a fix"
+        },
+        {
+          "id": "FR-H10-AC-11",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the clean twin server, the same product and interface written safely with near misses beside the fixes, yields no dynamic finding with every layer measured, and the near misses a careless probe would report (a 404 that echoes the request, a tag in JSON, a page's script path, a public API's wildcard origin) stay quiet"
+        },
+        {
+          "id": "FR-H10-AC-12",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a dynamic run checks the scope before the target and before every request; a target outside the scope, expired or revoked, not deployed by the factory, or not on loopback is refused and recorded with zero connections made; a surface the run started needs its own scope; a scope that ends mid-run stops the run at its next request and the layers it did not reach are not measured"
+        },
+        {
+          "id": "FR-H10-AC-13",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a dynamic run never sends more requests than its budget (1 to 1000) and the rate limit probe never more than 12, stopping at the first 429; what the budget did not reach is partial or not measured with the reason, never passed; each run is recorded in the project's ledger with its scope, target, requests sent and verdict"
+        },
+        {
+          "id": "FR-H10-AC-14",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the dynamic report's SARIF is its own tool (Rihmasto red team (dynamic)) read by adapters/sarif.py beside the static scan, with fingerprints that hold from run to run; `python -m kernel.redteam dynamic <project> --env <environment>` prints the summary and exits 0 when passed, 1 when failed, 4 when not measured, 2 on a usage or input error and 3 when the scope refused the target, with nothing sent"
+        },
+        {
+          "id": "FR-H10-AC-20",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the agentic red team's payload corpus (kernel/redteam/payloads.json) covers, for the embed chat and the cockpit assistant, instruction override, system prompt extraction, exfiltration of the project's records, of holdout scenarios and of another project's data, tool or action abuse (a persona proposing a decision it may not take, an embed for any origin), encoding and language tricks and multi-turn escalation with forged answers; a malformed corpus is refused before anything is sent"
+        },
+        {
+          "id": "FR-H10-AC-21",
+          "check": {
+            "kind": "test"
+          },
+          "then": "before a run, fresh canaries are planted in a sandbox copy of the project where the surface must never reveal them (a holdout scenario, the project's records, another project's canon); the canary check finds each seeded leak in tests/fixtures/redteam/agentic/leaks.json in its form (plain, obfuscated, look-alike, reversed, ROT13, escaped, base64, base32, hex, partial) and none of the near misses; a canary's value never reaches the report, the SARIF or the ledger, and the sandbox is removed after the run"
+        },
+        {
+          "id": "FR-H10-AC-22",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the embed chat, over POST /e/<id>/messages on the factory's own embed server on loopback with the embed's key and an allowed origin, and in process, leaks no canary, exposes none to the model and files only change cards on its project, against a worst-case FakeModel that complies with every attack; the report gives per category the attempts, leaks and disallowed actions"
+        },
+        {
+          "id": "FR-H10-AC-23",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the cockpit assistant, through kernel.assistant.ask and through the cockpit's POST /api/assistant on loopback, leaks and exposes no canary against the worst-case model, and every disallowed proposal it is handed is refused by the kernel's Inbox rules before a person sees it, judged again independently by the red team"
+        },
+        {
+          "id": "FR-H10-AC-24",
+          "check": {
+            "kind": "test"
+          },
+          "then": "each seeded defect in tests/fixtures/redteam/agentic/broken_guards.py is caught in its layer: a model that leaks the holdout custody (and not its honest twin), a chat whose prompt carries the canon, an assistant whose snapshot carries the custody and another project, proposals that skip the Inbox's rules, and a chat that accepts its own change; the findings are SARIF of their own tool that the security gate reads and fails on"
+        },
+        {
+          "id": "FR-H10-AC-25",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a run needs an unexpired scope a person with the it or compliance persona authorised for that surface; without one, after a revoke, after the expiry, with a ledger that does not verify, or over HTTP to a server not on loopback, it is refused and recorded before any request is sent or any model asked; a run is recorded in the project's ledger with its counts and leaves the real project's records untouched"
+        },
+        {
+          "id": "FR-H10-AC-26",
+          "check": {
+            "kind": "test"
+          },
+          "then": "each layer of an agentic run (leaks, exposure, actions) says measured, partial or not measured with the reason; prompts the red team cannot see leave exposure not measured, an attempt that could not run leaves the run not measured, a run without a model has no exposure to measure, and nothing unmeasured is reported as passed or written as an empty SARIF"
+        },
+        {
+          "id": "FR-H10-AC-27",
+          "check": {
+            "kind": "test"
+          },
+          "then": "`python -m kernel.redteam agentic <project> --surface embed|assistant` prints the per-category summary, writes SARIF and markdown, and exits 0 when passed, 1 when failed, 2 on a usage error, 3 when the scope refuses and 4 when not measured; with --via http it starts the factory's own embed server or cockpit on 127.0.0.1 and drives it over loopback"
+        },
+        {
+          "id": "FR-H10-AC-30",
+          "check": {
+            "kind": "test"
+          },
+          "then": "every static bypass independent attackers reported (a source-encoding declaration that hides code, data on a binding other than the last assignment, shell, SQL, path, TLS, debug, binding, timeout, hash and deserialisation forms, aliases, JavaScript line terminators, regular expressions, sinks and sanitisers, HTML integrity, Dockerfile heredocs, ARG defaults and escape directives, Actions expressions, and secret names and formats) is a seeded defect in tests/fixtures/redteam/bypass_app caught at its line with nothing else reported, and the safe forms and false alarms they found in tests/fixtures/redteam/bypass_clean yield no finding, every layer measured"
+        },
+        {
+          "id": "FR-H10-AC-31",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the GitHub Actions rules apply to a workflow by its real folder, so scanning the repository, its .github folder, its workflows folder or one workflow file finds the same injections"
+        },
+        {
+          "id": "FR-H10-AC-32",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a static scan reads nothing outside its target (a symbolic link, a Windows junction or a file whose real path leaves the tree is not read and is listed), lists every folder it skips by name with its file count and reads a product package named like a virtual environment, lists the paths a person excluded, and reads paths longer than the Windows limit"
+        },
+        {
+          "id": "FR-H10-AC-33",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a canary marker silences a secret only in a test suite; in the product's own code the secret is reported, and every planted canary reaches the security gate as a SARIF result to review (kind review, level note, suppressed in source)"
+        },
+        {
+          "id": "FR-H10-AC-34",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the scope cannot be widened from code: a surface counts only through the handle issued for a server or process the factory started on the run's home, a name that is a machine's is not a person who may authorise, a scope record in the ledger is checked again as authorise checks it, a slot whose process is gone or whose file claims another place is not deployed, a URL scope is bound to the deployment it named, and an expiry offset cannot stretch a scope past 31 days in UTC"
+        },
+        {
+          "id": "FR-H10-AC-35",
+          "check": {
+            "kind": "test"
+          },
+          "then": "no dynamic probe changes data: undeclared write methods go only to a path with a parameter set to a value that names no record, the rate-limit probe sends JSON cut short, and on production nothing that writes is sent and those layers say not measured; an origin echoed without credentials and a body cap above what a form needs are not reported"
+        },
+        {
+          "id": "FR-H10-AC-36",
+          "check": {
+            "kind": "test"
+          },
+          "then": "an agentic run checks the scope before every turn and every question to the model and stops, recorded and not measured, when it was revoked or expired mid-run; only a server the factory started is driven; every leak form in tests/fixtures/redteam/agentic/leaks_missed.json, a canary split between fields or over turns, a canary reaching the prompt whatever the attacker sent, and a write to an existing or untracked record are found, while near misses stay quiet"
+        }
+      ]
     }
   ],
   "tasks": [
@@ -4154,6 +4368,108 @@
         "write": [
           "kernel/spec.py",
           "tests/test_governance_fix.py"
+        ]
+      }
+    },
+    {
+      "id": "V-90",
+      "title": "Rihmasto's own security checks: the red team core (findings, coverage, SARIF, scope) and the static layer, every rule proven by a seeded defect and a clean twin",
+      "criteria": [
+        "FR-H10-AC-1",
+        "FR-H10-AC-2",
+        "FR-H10-AC-3",
+        "FR-H10-AC-4",
+        "FR-H10-AC-5",
+        "FR-H10-AC-6",
+        "FR-H10-AC-7",
+        "FR-H10-AC-8",
+        "FR-H10-AC-9"
+      ],
+      "scope": {
+        "write": [
+          "kernel/redteam/**",
+          "tests/test_redteam*.py",
+          "tests/fixtures/redteam/**",
+          "docs/guides/security.md"
+        ]
+      }
+    },
+    {
+      "id": "V-91",
+      "title": "Rihmasto's own dynamic red team: probes of a deployment the factory runs, inside an authorised scope checked before every request, each probe proven by a seeded server and a clean twin",
+      "criteria": [
+        "FR-H10-AC-10",
+        "FR-H10-AC-11",
+        "FR-H10-AC-12",
+        "FR-H10-AC-13",
+        "FR-H10-AC-14"
+      ],
+      "depends_on": [
+        "V-90"
+      ],
+      "scope": {
+        "write": [
+          "kernel/redteam/dynamic.py",
+          "kernel/redteam/client.py",
+          "kernel/redteam/probing.py",
+          "kernel/redteam/contentprobes.py",
+          "kernel/redteam/protocolprobes.py",
+          "kernel/redteam/rules.py",
+          "kernel/redteam/report.py",
+          "kernel/redteam/__main__.py",
+          "kernel/redteam/__init__.py",
+          "tests/test_redteam_dynamic.py",
+          "tests/fixtures/redteam/dynamic/**",
+          "docs/guides/security.md"
+        ]
+      }
+    },
+    {
+      "id": "V-92",
+      "title": "Rihmasto's own agentic red team: the embed chat and the cockpit assistant attacked with a payload corpus, scored by canaries, against a worst-case model, inside a scope a person authorised",
+      "criteria": [
+        "FR-H10-AC-20",
+        "FR-H10-AC-21",
+        "FR-H10-AC-22",
+        "FR-H10-AC-23",
+        "FR-H10-AC-24",
+        "FR-H10-AC-25",
+        "FR-H10-AC-26",
+        "FR-H10-AC-27"
+      ],
+      "scope": {
+        "write": [
+          "kernel/redteam/**",
+          "tests/test_redteam*.py",
+          "tests/fixtures/redteam/**",
+          "docs/guides/security.md"
+        ]
+      }
+    },
+    {
+      "id": "V-93",
+      "title": "Close what independent attackers found in Rihmasto's own red team: static bypasses, scope escapes, data-changing probes and missed agentic leaks, each a seeded defect or a test that failed before",
+      "criteria": [
+        "FR-H10-AC-30",
+        "FR-H10-AC-31",
+        "FR-H10-AC-32",
+        "FR-H10-AC-33",
+        "FR-H10-AC-34",
+        "FR-H10-AC-35",
+        "FR-H10-AC-36"
+      ],
+      "depends_on": [
+        "V-90",
+        "V-91",
+        "V-92"
+      ],
+      "scope": {
+        "write": [
+          "kernel/redteam/**",
+          "tests/test_redteam*.py",
+          "tests/fixtures/redteam/**",
+          "docs/guides/security.md",
+          "docs/README.md"
         ]
       }
     }

@@ -29,6 +29,8 @@ built and what is not.
 
 - [Existing solutions, your own terminal, security findings](brownfield.md): adopting a
   repository, workspaces for your own agent, and SARIF findings.
+- [Security: Rihmasto checks what it builds](guides/security.md): its own static scan, dynamic
+  probes and agentic red team, the scope a person authorises, and what they do not catch.
 - [MCP](mcp.md): the MCP server for your own coding agent, with its tools, resources and safety
   boundary.
 - [The cockpit](cockpit.md): every view, the lenses, the assistant and the JSON API.

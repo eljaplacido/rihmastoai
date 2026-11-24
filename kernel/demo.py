@@ -703,6 +703,17 @@ def _prepare_home(home: Path) -> None:
     home.mkdir(parents=True, exist_ok=True)
 
 
+def _new(b: Any, title: str, **how: str) -> Any:
+    """A demo project, set outright to build without waiting for a go-ahead on its spec (kernel/go_ahead.py): a
+    scripted demo never stops on a look a person did not ask for."""
+    from kernel.go_ahead import choose
+
+    p = b.factory.new_project(title, **how)
+    choose(p, wait=False, person=PRODUCT[0], persona=PRODUCT[1], where="the scripted demo",
+           reason="the demo runs unattended")
+    return p
+
+
 def _decide(project: Any, card_id: str, verdict: str, who: tuple, reason: str) -> dict:
     from kernel.canon import Canon
 
@@ -778,7 +789,7 @@ def _webhook(b: _Build) -> Any:
     from kernel.intake import intake
     from kernel.packs import build_pack
 
-    webhook = b.factory.new_project(TITLES[WEBHOOK], maturity="explore", mode="assume")
+    webhook = _new(b, TITLES[WEBHOOK], maturity="explore", mode="assume")
     intake(webhook, REQUESTS[WEBHOOK], model=b.model, requested_by=PRODUCT[0])
     cell = ScriptedCell(WEBHOOK, b.clock, lazy={"T-002": 3})
     first = b.advance(webhook, cell)
@@ -859,7 +870,7 @@ def _access(b: _Build) -> Any:
     from kernel.intake import intake
 
     b.clock.at(hours=20)
-    access = b.factory.new_project(TITLES[ACCESS], maturity="demo", mode="assume")
+    access = _new(b, TITLES[ACCESS], maturity="demo", mode="assume")
     intake(access, REQUESTS[ACCESS], model=b.model, requested_by=COMPLIANCE[0])
     waiting = b.advance(access, ScriptedCell(ACCESS, b.clock, lazy={"T-002": 99}))
     if waiting["state"] != "waiting":
@@ -897,7 +908,7 @@ def _loans(b: _Build) -> Any:
     from kernel.intake import intake
 
     b.clock.at(hours=40)
-    loans = b.factory.new_project(TITLES[LOANS], maturity="demo", mode="mixed")
+    loans = _new(b, TITLES[LOANS], maturity="demo", mode="mixed")
     intake(loans, REQUESTS[LOANS], model=b.model, requested_by=OWNER[0])
     b.clock.at(hours=41)
     canon = Canon(loans)
@@ -924,7 +935,8 @@ def _existing_repo(path: Path, at: str) -> None:
 def _adopt(b: _Build) -> Any:
     """A demo developer adopts the existing service to maintain it: mirrored with its upstream
     fetch-only, inventoried and specified as it is by rule, and its own suite run once as the
-    characterisation baseline. Nothing is built until a change arrives."""
+    characterisation baseline. Nothing is built until a change arrives. The demo developer names its kind of
+    work, so the scripted demo never waits on the question an unclear adoption asks (kernel/adopt_kind.py)."""
     from kernel.adopt import adopt
 
     b.clock.at(hours=42)
@@ -932,7 +944,7 @@ def _adopt(b: _Build) -> Any:
     _existing_repo(repo, b.clock.stamp())
     b.clock.advance(minutes=20)
     return adopt(b.factory, TITLES[STOCK], source=repo, intent="maintain", person=DEVELOPER[0],
-                 persona=DEVELOPER[1], maturity="production", timeout=120)
+                 persona=DEVELOPER[1], maturity="production", timeout=120, profile="web_service")
 
 
 def _square(b: _Build, webhook: Any) -> None:

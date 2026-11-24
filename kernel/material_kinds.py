@@ -7,7 +7,9 @@ kind (docs/guides/inputs.md). kernel/material.py walks the folder and keeps to t
   text holds a credential (`secretscan.check_secrets`) is not read either. Both are listed as
   "skipped: may hold secrets", never with their contents.
 - **Kinds**: brief or spec, plan, review or comments, handover, notes, deploy or run log, data, slides,
-  code, other: by the file's format, then its name, then its words. The most telling are read first.
+  code, other: by the file's format, then its name, then its words. The most telling are read first. The
+  files a project's AI tools read (CLAUDE.md, AGENTS.md, Cursor rules, skills, MCP servers) are "agent
+  context", recognised by kernel/agent_context.py before any of these.
 - **Code** is never read as text: it becomes an inventory (languages by extension with file counts,
   entry points, test folders, dependency manifests with the packages they name, CI workflows, Dockerfiles).
 """
@@ -30,8 +32,9 @@ SKIP_DIRS = frozenset({
     ".eggs", "obj", ".ipynb_checkpoints", ".dart_tool", "Pods", ".gnomon", ".factory-tasks"})
 KIND_LABEL = {"brief": "brief or spec", "plan": "plan", "review": "review or comments", "handover": "handover",
               "notes": "notes", "log": "deploy or run log", "data": "data", "slides": "slides", "code": "code",
-              "other": "other"}
-PRIORITY = {"brief": 0, "plan": 1, "review": 1, "handover": 1, "code": 1, "notes": 2, "slides": 2, "other": 2,
+              "other": "other", "agent": "agent context"}
+PRIORITY = {"agent": 0,                     # agent context ranks first by its own rule (kernel/material.py _rank)
+            "brief": 0, "plan": 1, "review": 1, "handover": 1, "code": 1, "notes": 2, "slides": 2, "other": 2,
             "data": 3, "log": 3}
 LANGUAGES = {
     ".py": "Python", ".pyi": "Python", ".ipynb": "Jupyter notebook", ".js": "JavaScript", ".mjs": "JavaScript",

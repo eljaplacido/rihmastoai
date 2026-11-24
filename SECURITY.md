@@ -77,27 +77,48 @@ The cockpit is the operator's web page and the Inbox's write path ([docs/cockpit
 - **Single operator** (no access file, the default). Whoever holds the session can pick any persona,
   and the cockpit says so: "single operator: personas are self-declared". Treat it as one person's
   tool.
-- **Enforced** (an access file in mode `enforced`). Rihmasto stores no passwords. People sign in
-  through the organisation's identity provider at an identity-aware proxy IT runs beside the cockpit,
-  which stays on 127.0.0.1. The cockpit takes the identity only from the proxy's configured headers,
-  and only on a request that also carries the proxy's shared secret, compared in constant time; any
-  other request is refused. A session answers only the identity it was opened for. Every write that
-  records a person's decision or answer signs as that identity's name and needs the persona granted on
-  that project by IT's access file; the command line and the MCP server sign as the local operating
-  system user the file names. A request that repeats the user, email, secret or groups header is
-  refused. The cockpit takes the shared secret out of its own environment once it has read it, so no
-  process it starts (a job, the gate's run of a project's own tests, a road's product, a Gnomon call)
-  inherits it. The access file lives in a folder of its own (`projects/_factory/access/`) that only IT
-  should write; the kernel never writes there. A file that cannot be read or checked refuses every
-  decision, and so does a removed one once access was enforced, even with the factory ledger moved
-  away. Each change to it is recorded in the factory ledger with its sha256, what the file claims about
-  who changed it, the file's owner and who noticed.
+- **Enforced** (an access file in mode `enforced`). Rihmasto stores no passwords and the cockpit holds
+  no shared secret. People sign in through the organisation's identity provider at an identity-aware
+  proxy IT runs beside the cockpit, which stays on 127.0.0.1. The proxy forwards the token the provider
+  signed (oauth2-proxy, Google IAP, an AWS Application Load Balancer or another OIDC proxy), and the
+  cockpit verifies it with the provider's public keys from a key file in the access folder: RS256 or
+  ES256 as the access file names, never `none` or `HS*`, with the issuer, audience, expiry, not-before
+  and issued-at checked. Nothing the cockpit's process can read, from its environment to its memory,
+  lets anyone sign in as someone else. Any request without a valid token is refused, and so is one that
+  repeats the token header. A session answers only the identity it was opened for and ends with the
+  token. Every write that records a person's decision or answer signs as that identity's name and needs
+  the persona granted on that project by IT's access file; the command line and the MCP server sign as
+  the local operating system user the file names. The groups come from the token's own claim, each name
+  whole. A name from the token that looks like a listed person's name under another identity (by its
+  skeleton: case, spacing, accents, invisible characters and lookalike letters do not count), or that
+  hides an invisible character or mixes lookalike scripts, is never recorded as it is: the subject
+  follows it. The key file takes public keys only: a key with private members
+  (`d`, `p`, `q` and the like) makes it unusable. The access file and the key file live in a folder of their own (`projects/_factory/access/`)
+  that only IT should write; the kernel never writes there. A file that cannot be read or checked
+  refuses every decision, and so does a removed one once access was enforced, even with the factory
+  ledger moved away. Each change to either file is recorded in the factory ledger with its sha256, what
+  the file claims about who changed it, the file's owner and who noticed.
+- **Untrusted code is isolated** while access is enforced. The gate's run of a project's own tests,
+  adoption's baseline run of an existing repository's tests, a product on the local road and every
+  Gnomon cell run only through the isolation runner the access file names: a container with no network
+  and a read-only checkout, or a separate operating-system account through sudo. Without one the kernel
+  refuses that work (adoption records its baseline as not measured, saying why) and the cockpit refuses
+  to start it, and both say why. A cell can write its lane's `.git`, so before the kernel's own git runs
+  there the lane is scrubbed: no hook, no config key a clone does not set, origin the product repository
+  again, no `commondir` file, and every kernel git call names an empty hooks folder and turns fsmonitor,
+  signing, submodule recursion and replace refs off. A lane whose `.git` was replaced is cloned anew. A
+  cell's work that holds a nested repository (a `.git` below the lane's top, or a gitlink) is refused
+  before the kernel's git looks inside it; the scrub removes replace refs, grafts, a `shallow` file and
+  object alternates, and resets origin's fetch refspec; the next checkout removes nested repositories and
+  every change to a tracked file, and takes its base from the product repository. The gate's base gets
+  the head's tests copied from git, never from the lane's files, so a link a cell left under `tests/` is
+  never followed as Rihmasto's account.
 
 Limits: provisioning (SCIM) and separation of duties are not built yet. A surface verifies who acts,
 but the identity recorded beside a person is only as strong as the factory home's file permissions:
 code running as an account that can write the home can write a record naming any identity, with the
-ledger's hash chain intact. Groups arrive as one comma-joined header, so bind groups by ids no user can
-choose ([docs/guides/access.md](docs/guides/access.md#groups)).
+ledger's hash chain intact. That is why untrusted code never runs as those accounts while access is
+enforced. Bind groups by ids no user can choose ([docs/guides/access.md](docs/guides/access.md#groups)).
 
 ### Embeds
 

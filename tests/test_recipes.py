@@ -125,8 +125,9 @@ class MatchTest(RecipeTestCase):
         self.assertEqual([(q["text"], q["blocking"]) for q in open_], [("Which kinds of items are lent?", True)])
         self.assertEqual(canon.get_card(open_[0]["card"])["kind"], "question")   # put to a person
         self.assertIn("From recipe RC-001", canon.brief)
-        out = advance(new, model=model())                                          # nothing built around it
-        self.assertEqual((out["state"], out["stage"]), ("waiting", 4))
+        out = advance(new, model=model())                                          # nothing built around it:
+        self.assertEqual((out["state"], out["stage"], out["waiting_on"]),          # the run waits on the question
+                         ("waiting", 2, [open_[0]["card"]]))
         self.assertFalse(new.path("contract.json").exists())
         used = factory_project(self.factory).ledger().of_kind("recipe_used")[-1]["event"]["payload"]
         self.assertEqual((used["project"], used["by"], used["open"]), (new.pid, "Aino", [open_[0]["id"]]))

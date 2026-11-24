@@ -27,6 +27,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
+from kernel import assistant_status as status_q
 from kernel.assistant_rules import (
     ACTIONS,
     CONTROL_PAGES,
@@ -44,6 +45,7 @@ from kernel.assistant_rules import (
     honest,
     normalize,
     route_ok,
+    take_me_there,
     ui_map,
     words,
 )
@@ -57,7 +59,7 @@ from kernel.assistant_snapshot import (
     snapshot,
 )
 from kernel.confidential import confidential as is_confidential
-from kernel.confidential import refusal
+from kernel.confidential import refusal, require_local
 from kernel.filelock import LockHeld
 from kernel.model import Model, ModelError, extract_json, run_gnomon_task
 
@@ -307,6 +309,8 @@ def from_map(question: str, project: Any, *, hidden: Collection[str] = ()) -> di
     to act or to reshape the cockpit is told plainly that the map cannot, and where to do it oneself. What
     a module that is not enabled shows (``hidden``) is never pointed to; asked for, it is named."""
     act = asks_for_action(question)
+    if project is not None and not act and status_q.asks_status(question):   # how this project is doing
+        return status_q.status_answer(project)
     views, controls = _by_id()
     hits, off = _map_hits(question, act, controls, hidden)
     if off is not None:
@@ -359,26 +363,30 @@ class AssistantModel(Model):
         return output
 
 
-def assistant_model(root: str | Path | None = None) -> AssistantModel:
-    """The assistant's model, in ``<lanes root>/assistant/analyst``: a toolless analyst lane of its own."""
+def assistant_model(root: str | Path | None = None, *, local: bool = False) -> AssistantModel:
+    """The assistant's model, in ``<lanes root>/assistant/analyst``: a toolless analyst lane of its own. With
+    ``local`` (a confidential project), in ``assistant-local``, compiled without a hosted fallback."""
+    from kernel.confidential import without_hosted_fallbacks
     from kernel.lanes import ensure_analyst_lane, lanes_root, load_routing
 
-    return AssistantModel(ensure_analyst_lane(load_routing(), root=Path(root or lanes_root()) / "assistant"))
+    routing = without_hosted_fallbacks(load_routing()) if local else load_routing()
+    where = Path(root or lanes_root()) / ("assistant-local" if local else "assistant")
+    return AssistantModel(ensure_analyst_lane(routing, root=where))
 
 
 _OWN_LANES: dict[str, Model] = {}
 
 
-def _own_lane(model: Model) -> Model:
-    """A GnomonModel for the factory's analyst lane is asked through the assistant's own lane beside it
-    (`assistant_model`), so a question never waits on that lane's lock behind a long run."""
+def _own_lane(model: Model, local: bool = False) -> Model:
+    """A GnomonModel for the factory's analyst lane is asked through the assistant's own lane beside it (never
+    waiting on that lane's lock behind a long run); a confidential project's through one with no hosted fallback."""
     from kernel.model import GnomonModel
 
     if not isinstance(model, GnomonModel):
         return model
-    key = str(model.lane_dir)
+    key = f"{model.lane_dir}|{'local' if local else 'any'}"
     if key not in _OWN_LANES:
-        _OWN_LANES[key] = assistant_model(Path(key).parent)
+        _OWN_LANES[key] = assistant_model(Path(model.lane_dir).parent, local=local)
     return _OWN_LANES[key]
 
 
@@ -390,6 +398,14 @@ _ACTION_CONTROL = {"answer_question": "answer", "let_rihma_assume": "assume", "d
                    "create_embed": "create_embed"}
 
 
+def _widgets_off(target: Any, ops: list[Any]) -> list[str | None]:
+    """The modules that own the widgets a layout edit adds and that are not on here."""
+    from kernel import modules
+
+    added = [str(o.get("widget")) for o in ops if isinstance(o, dict) and o.get("op") == "add"]
+    return [modules.owner("widgets", w) for w in added if not modules.shown(target, "widgets", w)]
+
+
 def _module_off(target: Any, p: dict, hidden: Collection[str]) -> str | None:
     """Why a proposal is not offered because what it acts through, a view it opens, a control or a widget it
     adds, belongs to a module that is not enabled here (FR-MOD5); None when it is on."""
@@ -397,8 +413,7 @@ def _module_off(target: Any, p: dict, hidden: Collection[str]) -> str | None:
 
     args = p.get("args") or {}
     if p["action"] == "layout_edit":
-        added = [str(o.get("widget")) for o in args.get("ops") or [] if isinstance(o, dict) and o.get("op") == "add"]
-        found = [modules.owner("widgets", w) for w in added if not modules.shown(target, "widgets", w)]
+        found = _widgets_off(target, args.get("ops") or [])
     else:
         name = _route_view(str(args.get("route") or "")) if p["action"] == "open" else _ACTION_CONTROL.get(p["action"])
         found = [(modules.offering(name) or {}).get("id")] if name in hidden else []
@@ -451,14 +466,19 @@ def ask(factory: Any, question: str, *, persona: str, project_id: str | None = N
         raise ValueError("the question is empty")
     from kernel.modules import hidden_ids
 
-    project = factory.project(project_id) if project_id else None
+    project, about = status_q.resolve(factory, question, project_id)   # a pasted link names the project
+    if about is not None:
+        return about
     hidden = hidden_ids(project if project is not None else factory)   # the map of what is enabled there
     model, kept_local = _local_only(project, model)
     if model is None:
         return from_map(question, project, hidden=hidden) | kept_local
+    secret = project is not None and is_confidential(project)
+    if secret:      # a local assistant whose fallback is hosted: the fallback is skipped, and the skip recorded
+        require_local(project, ("assistant",), where="assistant")
     snap = snapshot(factory, project=project, persona=persona)
     try:
-        raw = extract_json(_own_lane(model).ask(prompt(question, snap, persona=persona, view=view, ui=ui,
+        raw = extract_json(_own_lane(model, secret).ask(prompt(question, snap, persona=persona, view=view, ui=ui,
                                                        hints=find_in_map(question, hidden=hidden), hidden=hidden),
                                                 role="assistant"))
         if not isinstance(raw, dict):
@@ -466,13 +486,12 @@ def ask(factory: Any, question: str, *, persona: str, project_id: str | None = N
     except (ModelError, OSError, RuntimeError, ValueError) as exc:   # LockHeld is a RuntimeError
         return _fallback(question, project, exc, hidden)
     proposals, dropped, unasked = _offered(factory, project, persona, question, raw.get("propose"), ui, hidden)
+    views, controls = _by_id()
+    nav, dropped = take_me_there(raw.get("navigate"), dropped, {**views, **controls})
     answer, note = honest(str(raw.get("answer") or "").strip(), proposals, dropped)
     sources = [str(s) for s in raw.get("sources") or [] if isinstance(s, (str, int)) and str(s).strip()]
-    held = known(factory, project, snap)
-    out = {"answer": answer, "navigate": _checked_nav(raw.get("navigate"), factory, project, hidden),
-           "propose": proposals,
+    held = known(factory, project, snap) | set(views) | set(controls)   # a view or control of the map is a source too
+    out = {"answer": answer, "navigate": _checked_nav(nav, factory, project, hidden), "propose": proposals,
            "dropped": dropped, "unasked": unasked, "sources": sources,
            "unbacked_sources": [s for s in sources if not backed(s, held, snap)], "by": "assistant"}
-    if note:
-        out["note"] = note
-    return out
+    return out | ({"note": note} if note else {})

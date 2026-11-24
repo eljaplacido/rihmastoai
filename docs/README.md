@@ -12,6 +12,7 @@ built and what is not.
 - [The demo](demo.md): what the demo factory holds, and what each persona sees in it.
 - [How it works](how-it-works.md): the chain step by step, the delivery square, personas and
   lenses, and what Gnomon does beside the kernel.
+- [The acceptance matrix](acceptance.md): every use case and mode, measured, and the live acid test.
 - [Use only what you need](guides/use-only-what-you-need.md): the modules and the presets (spec only,
   gate my code, assess, security or evidence only, a capability, the full factory), and changing them.
 
@@ -28,6 +29,12 @@ built and what is not.
 - [Autopilot, delegation and staying on track](guides/autopilot-and-tracking.md): let Rihmasto run
   on its own in a sandbox, or keep a tight hold with checkpoints, and see whether a project stays on
   track against its approved plan.
+- [Automations](guides/automations.md): a trigger, a guard, an action and a scope, per project or
+  across them, run with their owner's rights; the templates, and the lines that run them from cron or
+  Windows Task Scheduler.
+- [Postures and priority weights](guides/postures.md): prototype, balanced, production or
+  regulated, tuned by weights; what each does, previewed before you choose, and changing it during
+  the run.
 - [Work profiles](guides/profiles.md): the kinds of work, and what each one asks.
 - [Change anything, go back a step, never get stuck](guides/change-anything.md): change a project's
   kind of work, mode, maturity or title with a preview of what it means, send it back to its material,
@@ -46,8 +53,15 @@ built and what is not.
   repository, workspaces for your own agent, and SARIF findings.
 - [Security: Rihmasto checks what it builds](guides/security.md): its own static scan, dynamic
   probes and agentic red team, the scope a person authorises, and what they do not catch.
+- [Your IDE and Rihmasto](guides/ide-and-rihmasto.md): where the line is between the IDE and
+  terminal (the inner loop) and Rihmasto (the outer loop); how Rihmasto reads a project's CLAUDE.md,
+  AGENTS.md, Cursor rules, skills and MCP servers and follows them; MCP configuration for Claude Code,
+  Cursor and Codex, and `rihmasto ide`.
 - [MCP](mcp.md): the MCP server for your own coding agent, with its tools, resources and safety
   boundary.
+- [Small capabilities](guides/small-capabilities.md): an automation, a single workflow or one agentic
+  capability, from a two-sentence need to a running capability reached over MCP, an OpenAI-compatible
+  endpoint, a website chat or HTTP, behind its pack guard.
 - [The cockpit](cockpit.md): every view, the lenses, the assistant and the JSON API.
 - [Running fully local](guides/local-models.md): every role on your own hardware.
 - [Recipes, sandbox trials, measured fit and offline bundles](guides/recipes-and-fit.md): reuse of
@@ -64,9 +78,13 @@ built and what is not.
 
 - [Models setup](guides/models-setup.md): which model answers for each role (a local server or a
   hosted OpenAI-compatible provider), its key, and a Test, from the cockpit or `rihmasto models`.
+- [Harnesses](guides/harnesses.md): who runs the factory's cells. Gnomon by default (in-run policy
+  enforced), or Claude Code, Codex, OpenCode or a command you name, approved by IT with its version
+  pinned and checked after every run; the docker sandbox; adding a command runner.
 - [Access](guides/access.md): who may decide as which persona. Single-operator and enforced modes,
   the access file, and setting up an identity-aware proxy (oauth2-proxy with Entra ID, Okta, Google
-  or Keycloak; Google IAP; an AWS load balancer).
+  or Keycloak; Google IAP; an AWS load balancer) whose signed token the cockpit verifies, and the
+  isolation runner untrusted code runs through.
 - [Deploying on paved roads](guides/deploying.md): the short version of how a product lands.
 - [Paved roads](paved-roads.md): the full reference: configuring a road, what each maturity does,
   and what is real and what is not.
@@ -78,6 +96,8 @@ built and what is not.
   tool calls.
 - [Events, doorbells and connectors](guides/integrations.md): signed events and notices out,
   verified webhooks in, and the connector model, as far as they are built.
+- [Data integrations](guides/data-integrations.md): how a capability reaches a database, a data
+  warehouse, cloud storage or an ERP, who approves each binding, and where credentials live.
 - [Portability](portability.md) (*design, phase 1 built*): running a release anywhere, with its pins
   and evidence.
 - [Security](../SECURITY.md): how to report a vulnerability, and the threat model in short.

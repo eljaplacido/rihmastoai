@@ -2,8 +2,9 @@
 
 A webhook is a doorbell, never a decision. IT names each source in the factory home
 (`<home>/hooks/sources.json`, through `rihmasto hooks add`): its scheme, the environment variable that
-holds its secret (the secret itself is never stored), and what a ring becomes. A delivery is accepted
-only when:
+holds its secret (the secret itself is never stored), and what a ring becomes. IT may bind a source to
+projects (`--bind`, `rihmasto hooks bind`): each ring is then recorded in their ledgers too, so their
+automations react to it (kernel/automations.py). A delivery is accepted only when:
 
 - its body is at most MAX_BODY bytes;
 - its signature verifies: Standard Webhooks v1 (`webhook-id`, `webhook-timestamp` within the
@@ -11,8 +12,8 @@ only when:
   `X-GitHub-Delivery`;
 - its id was not seen before (replay protection; a repeat is answered 200 and stores nothing).
 
-An accepted ring keeps only external ids (an event name, an action, a repository, a number, a
-`ref`), never text from the body, and becomes one **signal** in the delivery square, or one **change
+An accepted ring keeps only external ids (an event name, an action, a repository, a number, a pushed
+branch, a `ref`), never text from the body, and becomes one **signal** in the delivery square, or one **change
 proposal** on a named project, with its ref. A second ring for a ref whose signal is still new, or
 whose change card is still open, adds nothing. Nothing an outside system sends decides a card.
 Reading the item itself is a connector's job, through Gnomon (kernel/connectors.py).
@@ -125,9 +126,16 @@ def _it_signs(person: str, persona: str) -> None:
         raise DecisionRefused(f"a {persona} may not configure inbound webhooks: IT does")
 
 
+def _bound(factory: Factory, projects: list[str] | None) -> list[str]:
+    return [factory.project(str(p)).pid for p in dict.fromkeys(projects or [])]
+
+
 def add_source(factory: Factory, source_id: str, *, scheme: str, secret_env: str, person: str, persona: str,
-               becomes: str = "signal", project: str | None = None, tolerance: int = TOLERANCE) -> dict[str, Any]:
-    """IT names an inbound source: its scheme, its secret's variable and what a ring becomes."""
+               becomes: str = "signal", project: str | None = None, tolerance: int = TOLERANCE,
+               bind: list[str] | None = None) -> dict[str, Any]:
+    """IT names an inbound source: its scheme, its secret's variable and what a ring becomes. ``bind`` names
+    the projects the source belongs to: each ring is recorded in their ledgers too, so their automations
+    react to it (kernel/automations.py, a hook trigger)."""
     _it_signs(person, persona)
     if not SOURCE_ID.match(source_id):
         raise ValueError("a source id is lower-case letters, digits and hyphens, at most 40")
@@ -143,13 +151,28 @@ def add_source(factory: Factory, source_id: str, *, scheme: str, secret_env: str
     if not 30 <= int(tolerance) <= 3600:
         raise ValueError("the tolerance is 30 to 3600 seconds")
     src = {"id": source_id, "scheme": scheme, "secret_env": secret_env, "becomes": becomes, "project": project,
-           "tolerance": int(tolerance), "state": "active", "by": person, "persona": persona,
-           "at": factory.clock.stamp()}
+           "projects": _bound(factory, bind), "tolerance": int(tolerance), "state": "active", "by": person,
+           "persona": persona, "at": factory.clock.stamp()}
     with updating_json(_path(factory, "sources.json"), {"schema": "rihma.hook-sources/1", "sources": []}) as data:
         data["sources"] = [s for s in data["sources"] if s["id"] != source_id] + [src]
-    keys = ("id", "scheme", "becomes", "project", "by", "persona")
+    keys = ("id", "scheme", "becomes", "project", "projects", "by", "persona")
     factory_project(factory).log("hook_source_added", {k: src[k] for k in keys})
     return src
+
+
+def bind_source(factory: Factory, source_id: str, projects: list[str], *, person: str,
+                persona: str) -> dict[str, Any]:
+    """IT binds an inbound source to projects (none: to the factory only): its rings go to their ledgers too."""
+    _it_signs(person, persona)
+    pids = _bound(factory, projects)
+    with updating_json(_path(factory, "sources.json"), {"schema": "rihma.hook-sources/1", "sources": []}) as data:
+        src = next((s for s in data["sources"] if s["id"] == source_id and s["state"] == "active"), None)
+        if src is None:
+            raise KeyError(f"no active inbound source {source_id!r}")
+        src["projects"] = pids
+    factory_project(factory).log("hook_source_bound", {"id": source_id, "projects": pids, "by": person,
+                                                       "persona": persona})
+    return dict(src)
 
 
 def remove_source(factory: Factory, source_id: str, *, person: str, persona: str) -> dict[str, Any]:
@@ -202,6 +225,9 @@ def doorbell_ids(src: dict[str, Any], headers: Mapping[str, str], body: bytes) -
     ids = _github_ids(headers, doc) if src["scheme"] == "github" else _standard_ids(src["id"], doc)
     if "ref" not in ids:
         raise HookRefused(422, "the ring names no item: a ref, a subject or an id")
+    pushed = doc.get("ref")             # a push names its branch: refs/heads/<name>
+    if isinstance(pushed, str) and pushed.startswith("refs/heads/") and _REF.match(pushed[11:]):
+        ids["branch"] = pushed[11:]
     return ids
 
 
@@ -284,5 +310,16 @@ def receive(factory: Factory, source_id: str, headers: Mapping[str, str], body: 
         became = _become(factory, src, ids)
         _remember(seen, source_id, msg_id, now, keep)
     if "repeat_of" not in became:
-        factory_project(factory).log("hook_received", {"source": source_id, "id": msg_id, "ref": ids["ref"], **became})
+        _record_ring(factory, src, msg_id, ids, became)
     return {"status": 202, "accepted": True, **became}
+
+
+def _record_ring(factory: Factory, src: dict[str, Any], msg_id: str, ids: dict[str, Any],
+                 became: dict[str, Any]) -> None:
+    """``hook_received`` in the factory's ledger, and in each project the source is bound to, so their
+    automations react to it (kernel/automations.py)."""
+    record = {"source": src["id"], "id": msg_id, "ref": ids["ref"], **became,
+              **({"branch": ids["branch"]} if ids.get("branch") else {})}
+    factory_project(factory).log("hook_received", record)
+    for pid in src.get("projects") or []:
+        factory.project(pid).log("hook_received", record)

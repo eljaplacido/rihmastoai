@@ -17,6 +17,7 @@ import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 
+from kernel import git_guard
 from kernel.filelock import LockHeld, locked
 from kernel.store import REPO_ROOT, read_json, write_json, write_text
 
@@ -242,8 +243,9 @@ def protected_paths(repo_dir: Path, base: str, head: str) -> list[str]:
     """The paths a change from ``base`` to ``head`` touches that no cell may write. Renames count
     as a delete and an add (so a protected file moved away is seen), names are not quoted, and the
     match ignores case: `.GNOMON/roles.toml` is `.gnomon/roles.toml` on Windows and macOS."""
-    proc = subprocess.run(["git", "-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", "-z",
-                           f"{base}...{head}", "--"], cwd=repo_dir, capture_output=True)
+    proc = subprocess.run(["git", *git_guard.flags(), "-c", "core.quotePath=false", "diff", "--name-only",
+                           "--no-renames", "-z", f"{base}...{head}", "--"], cwd=repo_dir, capture_output=True,
+                          env={**os.environ, **git_guard.env()}, stdin=subprocess.DEVNULL)  # no replace ref
     if proc.returncode != 0:
         raise RuntimeError(f"git diff {base[:12]}...{head[:12]} failed in {repo_dir}: "
                            f"{proc.stderr.decode('utf-8', 'replace').strip()}")
@@ -324,10 +326,11 @@ def ensure_analyst_lane(routing: dict, root: Path | None = None) -> Path:
 
 def _git(cwd: Path, *args, check: bool = True) -> str:
     """Run the kernel's git. It names itself (KERNEL_GIT_ENV), which a guarded product repository
-    asks of anyone who moves main (``guard_repo``)."""
-    env = dict(os.environ)
-    env[KERNEL_GIT_ENV] = "1"
-    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", env=env)
+    asks of anyone who moves main (``guard_repo``), and runs no hook, fsmonitor or signing program
+    the folder names (``kernel.git_guard``)."""
+    env = {**os.environ, **git_guard.env(), KERNEL_GIT_ENV: "1"}      # no replace ref, no graft
+    proc = subprocess.run(["git", *git_guard.flags(), *args], cwd=cwd, capture_output=True, text=True,
+                          encoding="utf-8", env=env, stdin=subprocess.DEVNULL)
     if check and proc.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed in {cwd}: {proc.stderr.strip()}")
     return proc.stdout.strip()
@@ -376,23 +379,49 @@ def guard_repo(repo: Path) -> bool:
 
 
 class Lane:
+    """A lane a cell works in. The cell can write its ``.git`` too, so before the kernel's own git runs
+    there (as the account that runs Rihmasto) the folder is scrubbed: only the keys a clone sets stay in
+    its config, origin is the product repository again, and no hook is left (``kernel.git_guard``)."""
+
+    READS = ("rev-parse", "rev-list", "merge-base", "cat-file")     # run nothing the repository names
+
     def __init__(self, path: Path):
         self.path = Path(path)
         self.name = self.path.name
+        self.origin: str | None = None
+        self.base: str | None = None             # the product's commit the last checkout started from
 
     def git(self, *args, check: bool = True) -> str:
+        if args and args[0] in ("push", "fetch", "pull") and self.origin is None:
+            raise RuntimeError(f"git {args[0]} in {self.name} before checkout: origin is not known to be the product's")
+        if not args or args[0] not in self.READS:
+            git_guard.scrub(self.path, self.origin)
         return _git(self.path, *args, check=check)
 
     def checkout(self, repo: Path, branch: str, base: str = "main") -> str:
-        """A clean working tree on a new branch from the product's ``base``."""
+        """A clean working tree on a new branch from the product's ``base``, as the product repository itself
+        names it (never the lane's own refs). A lane whose ``.git`` an earlier cell replaced is cloned anew;
+        a repository a cell left inside it is removed, and so is every change to a tracked file."""
+        self.origin = str(repo)
+        if (self.path / ".git").exists() or (self.path / ".git").is_symlink():
+            try:
+                git_guard.scrub(self.path, self.origin)
+                git_guard.unnest(self.path)
+            except git_guard.Tampered:
+                git_guard.remove(self.path)
         if not (self.path / ".git").exists():
             self.path.parent.mkdir(parents=True, exist_ok=True)
             _git(self.path.parent, "clone", "-q", str(repo), self.path.name)
         else:
             self.git("remote", "set-url", "origin", str(repo))
         self.git("fetch", "-q", "origin")
-        self.git("checkout", "-q", "-B", branch, f"origin/{base}")
-        self.git("clean", "-q", "-fdx", "-e", ".gnomon-audit", "-e", ".gnomon-sessions", "-e", ".factory-tasks")
+        heads = [line.split("\t") for line in self.git("ls-remote", "origin", f"refs/heads/{base}").splitlines()]
+        sha = next((s for s, ref in heads if ref == f"refs/heads/{base}"), None)
+        if sha is None:
+            raise RuntimeError(f"the product repository has no branch {base!r}")
+        self.git("checkout", "-q", "-f", "-B", branch, sha)
+        self.base = sha
+        self.git("clean", "-q", "-ffdx", "-e", ".gnomon-audit", "-e", ".gnomon-sessions", "-e", ".factory-tasks")
         exclude = self.path / ".git" / "info" / "exclude"
         text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
         missing = [i for i in IGNORED if i not in text]
@@ -404,10 +433,14 @@ class Lane:
         return self.git("rev-parse", "HEAD")
 
     def changed(self) -> list[str]:
+        git_guard.scrub(self.path, self.origin)
+        git_guard.refuse_nested(self.path, self.base)    # git would run a nested repository's own filters
         out = self.git("status", "--porcelain", "--untracked-files=all")
         return [line[3:] for line in out.splitlines() if line.strip()]
 
     def commit_all(self, message: str) -> str:
+        git_guard.scrub(self.path, self.origin)
+        git_guard.refuse_nested(self.path, self.base)
         self.git("add", "-A")
         if not self.git("status", "--porcelain"):
             return self.head()

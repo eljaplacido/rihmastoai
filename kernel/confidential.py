@@ -4,9 +4,15 @@ A person marks a project confidential when they create or adopt it (`--confident
 "Confidential: keep on local models" box). The setting is recorded in the project and the ledger. While it
 is set, intake and every model call for the project may only go to an endpoint on this machine (loopback)
 or on a private network address: the routes in kernel/routing.json with this machine's
-kernel/routing.local.json over them, the role's fallback included. A role that would go to a hosted
-endpoint is refused with a message naming the role and how to configure a local model
-(docs/guides/local-models.md), and the refusal is recorded. Nothing is ever sent silently.
+kernel/routing.local.json over them. A role whose primary endpoint is hosted is refused with a message
+naming the role and how to configure a local model (docs/guides/local-models.md), and the refusal is
+recorded. Nothing is ever sent silently.
+
+A role whose primary endpoint is local but whose fallback is hosted is not refused (the owner's decision of
+2026-11-24, "Skip"): the hosted fallback is skipped and never called. The lanes a confidential project's
+calls run in are compiled without it (``without_hosted_fallbacks``: the analyst lane under
+``<lanes>/confidential``, and the product's own surface), so Gnomon has no hosted endpoint to fall back to;
+the ledger records ``confidential_fallback_skipped`` once per run, naming the role and the host.
 
 An endpoint is local by its address: `localhost`, a name reserved for private networks (.local, .lan,
 .internal, .home.arpa), a loopback, private, link-local or shared (100.64.0.0/10, a Tailscale or carrier
@@ -17,10 +23,14 @@ name. Any other host name is taken as hosted: Rihmasto does not resolve names, s
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import urllib.parse
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextvars import ContextVar
 from typing import Any
+
+from kernel.model import GnomonModel
 
 GUIDE = "docs/guides/local-models.md"
 ROLES = ("analyst", "holdout_author", "builder", "verifier")     # every role a project's work asks
@@ -82,49 +92,148 @@ def _host(url: str | None) -> str:
 
 
 def refusal(roles: Iterable[str], routing: dict[str, Any] | None = None) -> str:
-    """Why confidential material may not be sent for ``roles``, or "" when every route is local."""
-    hosted = [r for r in routes(roles, routing) if not r["local"]]
+    """Why confidential material may not be sent for ``roles``, or "" when every role's primary endpoint is
+    local. A hosted fallback is no reason: it is skipped (``skipped``), never called."""
+    hosted = [r for r in routes(roles, routing) if r["which"] == "primary" and not r["local"]]
     if not hosted:
         return ""
-    named = "; ".join(f"the {r['role']} role{' (its fallback)' if r['which'] == 'fallback' else ''} would go to "
-                      f"the hosted endpoint {r['endpoint']!r} ({_host(r['url'])})" for r in hosted)
+    named = "; ".join(f"the {r['role']} role would go to the hosted endpoint {r['endpoint']!r} ({_host(r['url'])})"
+                      for r in hosted)
     return (f"refused: this project is confidential (keep on local models), and {named}. Nothing was sent. "
-            "Route those roles, fallbacks included, to a model on this machine or your private network in "
+            "Route those roles to a model on this machine or your private network in Models setup or "
             f"kernel/routing.local.json ({GUIDE}), then run it again.")
+
+
+def skipped(roles: Iterable[str], routing: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """The hosted fallbacks of roles whose primary endpoint is local: a confidential project never calls them."""
+    rs = routes(roles, routing)
+    local = {r["role"] for r in rs if r["which"] == "primary" and r["local"]}
+    return [r for r in rs if r["which"] == "fallback" and not r["local"] and r["role"] in local]
+
+
+def without_hosted_fallbacks(routing: dict[str, Any]) -> dict[str, Any]:
+    """The routing with every role's hosted fallback left out, for the lanes a confidential project's calls run
+    in: Gnomon cannot fall back to an endpoint its surface does not name."""
+    endpoints = routing.get("endpoints") or {}
+    roles = {}
+    for name, spec in (routing.get("roles") or {}).items():
+        fb = spec.get("fallback") if isinstance(spec, dict) else None
+        ep = endpoints.get(fb.get("endpoint")) if isinstance(fb, dict) else None
+        if isinstance(fb, dict) and not is_local((ep or {}).get("url"), ep):
+            spec = {k: v for k, v in spec.items() if k != "fallback"}
+        roles[name] = spec
+    return {**routing, "roles": roles}
 
 
 def confidential(project: Any) -> bool:
     return bool((project.meta or {}).get("confidential"))
 
 
+def routing_for(project: Any, routing: dict[str, Any]) -> dict[str, Any]:
+    """The routing a project's own lane is compiled from: without hosted fallbacks while it is confidential."""
+    return without_hosted_fallbacks(routing) if confidential(project) else routing
+
+
+_RUN: ContextVar[set[tuple[str, str, str]] | None] = ContextVar("confidential_run", default=None)
+
+
+@contextlib.contextmanager
+def one_run() -> Iterator[None]:
+    """A run (kernel/pipeline.py advance): a skipped fallback is recorded once in it, however often it asks."""
+    token = _RUN.set(set())
+    try:
+        yield
+    finally:
+        _RUN.reset(token)
+
+
+def _record_skips(project: Any, roles: list[str], routing: dict[str, Any] | None, where: str) -> None:
+    """Record each hosted fallback skipped for ``roles``: once per run, naming the role and the host. Outside
+    a run each call is its own."""
+    seen = _RUN.get()
+    for r in skipped(roles, routing):
+        key = (str(getattr(project, "pid", "")), r["role"], r["endpoint"])
+        if seen is not None and key in seen:
+            continue
+        if seen is not None:
+            seen.add(key)
+        project.log("confidential_fallback_skipped", {"role": r["role"], "endpoint": r["endpoint"],
+                                                      "host": _host(r["url"]), "where": where,
+                                                      "why": "confidential: the hosted fallback is never called"})
+
+
 def require_local(project: Any, roles: Iterable[str] = ROLES, *, where: str,
                   routing: dict[str, Any] | None = None) -> None:
-    """Refuse, and record the refusal, when a confidential project's call for ``roles`` would leave for a
-    hosted endpoint. A project that is not confidential is never refused here."""
+    """Refuse, and record the refusal, when a confidential project's call for ``roles`` would go to a hosted
+    primary endpoint; record the hosted fallbacks it skips. A project that is not confidential is never
+    refused here."""
     if not confidential(project):
         return
     roles = list(roles)
     why = refusal(roles, routing)
     if why:
-        hosted = [{k: r[k] for k in ("role", "which", "endpoint")} for r in routes(roles, routing) if not r["local"]]
+        hosted = [{k: r[k] for k in ("role", "which", "endpoint")} for r in routes(roles, routing)
+                  if r["which"] == "primary" and not r["local"]]
         project.log("confidential_refused", {"where": where, "hosted": hosted, "guide": GUIDE})
         raise ConfidentialRefused(why)
+    _record_skips(project, roles, routing, where)
+
+
+class LocalLaneModel(GnomonModel):
+    """Gnomon in an analyst lane compiled for confidential work (``<lanes>/confidential/analyst``): every
+    role's hosted fallback is left out of its surface, so Gnomon has none to fall back to. It is compiled
+    again from the routing before each call, as Models setup's lane is."""
+
+    confidential_lane = True
+
+    def __init__(self, timeout: int = 900, deadline: int | None = None) -> None:
+        from kernel.lanes import lanes_root
+
+        super().__init__(lanes_root() / "confidential" / "analyst", timeout=timeout, deadline=deadline)
+
+    def ask(self, prompt: str, *, role: str) -> str:
+        from kernel import lanes
+
+        routing = without_hosted_fallbacks(lanes.load_routing())
+        with lanes.lane_lock(self.lane_dir):
+            self.lane_dir = lanes.ensure_analyst_lane(routing, root=self.lane_dir.parent)
+        return super().ask(prompt, role=role)
+
+
+def local_lane(model: Any) -> Any:
+    """A Gnomon model whose lane cannot fall back to a hosted endpoint, for a confidential project's call;
+    any other model (a scripted one) as it is."""
+    if not isinstance(model, GnomonModel) or getattr(model, "confidential_lane", False):
+        return model
+    return LocalLaneModel(timeout=model.timeout, deadline=model.deadline)
+
+
+def guard(project: Any, model: Any, roles: Iterable[str], *, where: str) -> Any:
+    """``require_local``, then the model the call may use: for a confidential project, one whose lane has no
+    hosted fallback (``local_lane``)."""
+    require_local(project, roles, where=where)
+    return local_lane(model) if confidential(project) else model
 
 
 def local_model(project: Any, model: Any, role: str) -> Any:
-    """``model`` when the project may send to ``role``'s endpoints, else None: a caller that can work by
-    rule alone (a change's triage) does so for a confidential project rather than send."""
-    if model is None or not confidential(project) or not refusal([role]):
+    """``model`` when the project may send to ``role``'s endpoints (in a lane with no hosted fallback while it
+    is confidential), else None: a caller that can work by rule alone (a change's triage) does so for a
+    confidential project rather than send."""
+    if model is None or not confidential(project):
         return model
-    project.log("confidential_by_rule", {"role": role, "why": "the role's endpoint is hosted: worked by rule"})
-    return None
+    if refusal([role]):
+        project.log("confidential_by_rule", {"role": role, "why": "the role's endpoint is hosted: worked by rule"})
+        return None
+    _record_skips(project, [role], None, "a change")
+    return local_lane(model)
 
 
 def mark(project: Any, *, person: str | None, persona: str | None, on: bool = True) -> None:
     """Record the setting in the project and the ledger, with who set it and which routes it holds to."""
     project.update_meta(confidential=on)
     project.log("confidential_set", {"confidential": on, "person": person, "persona": persona,
-                                     "rule": "only endpoints on loopback or a private network address",
+                                     "rule": "only endpoints on loopback or a private network address; a hosted "
+                                             "fallback is skipped",
                                      "routes": routes(ROLES)})
 
 

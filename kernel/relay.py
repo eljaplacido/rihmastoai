@@ -24,7 +24,8 @@ hash-chained), which names no secret and no URL: an error that quotes one reads 
 A receiver is https, or http on this machine for testing; a redirect is an answer, never followed.
 
 A subscription starts at each ledger's head when it is made: it receives what happens next, not the
-history. Nothing is sent while no subscription exists.
+history. Nothing is sent while no subscription exists. A subscription that names projects (`--project`) is
+those projects' own receiver: no other project's events go to it.
 
 IT marks a subscription (`mark`): `sandbox`, a receiver inside a test sandbox, the only kind that receives
 a project's events while an autopilot run binds that project to its sandbox (the others wait, in order,
@@ -205,19 +206,22 @@ def _sink(sink: str, *, url: str | None, url_env: str | None, secret_env: str | 
 def subscribe(factory: Factory, *, sink: str, person: str, persona: str, url: str | None = None,
               url_env: str | None = None, secret_env: str | None = None, types: list[str] | None = None,
               personas: list[str] | None = None, kinds: list[str] | None = None,
-              mail: dict[str, Any] | None = None) -> dict[str, Any]:
-    """IT adds a subscription. It starts at every ledger's head: what happens next goes out."""
+              mail: dict[str, Any] | None = None, projects: list[str] | None = None) -> dict[str, Any]:
+    """IT adds a subscription. It starts at every ledger's head: what happens next goes out. ``projects``
+    makes it a project's own receiver: only those projects' events go to it."""
     _it_signs(person, persona)
     spec = _sink(sink, url=url, url_env=url_env, secret_env=secret_env, types=types, personas=personas,
                  kinds=kinds, mail=mail)
+    only = [factory.project(str(p)).pid for p in dict.fromkeys(projects or [])]
     with updating_json(_dir(factory) / "subscriptions.json", config(factory)) as cfg:
         numbers = [int(s["id"].split("-")[1]) for s in cfg["subscriptions"]]
-        sub = {"id": f"SUB-{max(numbers, default=0) + 1:03d}", "sink": sink, **spec, "state": "active",
-               "by": person, "persona": persona, "at": factory.clock.stamp(), "start": heads(factory)}
+        sub = {"id": f"SUB-{max(numbers, default=0) + 1:03d}", "sink": sink, **spec, "projects": only,
+               "state": "active", "by": person, "persona": persona, "at": factory.clock.stamp(),
+               "start": heads(factory)}
         cfg["subscriptions"].append(sub)
     factory_project(factory).log("relay_subscribed", {"id": sub["id"], "sink": sink, "types": sub.get("types"),
-                                                      "personas": sub.get("personas"), "by": person,
-                                                      "persona": persona})
+                                                      "personas": sub.get("personas"), "projects": only,
+                                                      "by": person, "persona": persona})
     return sub
 
 
@@ -420,7 +424,7 @@ def _one(rnd: _Round, sub: dict[str, Any], state: dict[str, Any]) -> dict[str, A
     if missing:
         return {"id": sub["id"], "state": "not configured", "missing": missing}
     counts: dict[str, int] = {}
-    for pid in rnd.streams:
+    for pid in [p for p in rnd.streams if not sub.get("projects") or p in sub["projects"]]:   # a project's own
         if not _stream(rnd, sub, state, pid, counts):
             return {"id": sub["id"], "state": "waiting", "next_at": state["next_at"], **counts}
     return {"id": sub["id"], "state": "up to date", **counts}

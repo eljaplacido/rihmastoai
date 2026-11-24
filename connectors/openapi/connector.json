@@ -1,0 +1,30 @@
+{
+  "schema": "rihma.connector/1",
+  "system": "openapi",
+  "title": "ERP or business API by OpenAPI (read-only)",
+  "namespace": "api",
+  "server": {
+    "transport": "stdio",
+    "command": ["python", "server.py", "--document", "openapi.json"],
+    "pin": {
+      "name": "Rihmasto's narrow read-only OpenAPI server, in this folder, reading this folder's openapi.json",
+      "version": "1",
+      "sha256": "1992627b1dffd51347c7c57c9d105711527746a50c268bbf8c5a1a4ffc834761"
+    }
+  },
+  "tools_sha256": "200471de4c4ab9347abd8346373df5cb4c907ce11452b9ded8e324957d38cf44",
+  "read_tools": [
+    {"name": "list_operations", "maps_to": "note", "example_args": {}},
+    {"name": "call_operation", "maps_to": "observation",
+     "example_args": {"operation_id": "listOrders", "parameters": {"status": "open"}}}
+  ],
+  "write_tools": [],
+  "forbidden_tools": ["call_write_operation", "create_record", "update_record", "delete_record"],
+  "data_classes": ["internal", "confidential"],
+  "credentials": [
+    {"name": "OPENAPI_BASE_URL", "ref": "env:RIHMA_ERP_BASE_URL"},
+    {"name": "OPENAPI_TOKEN", "ref": "os:RIHMA_ERP_TOKEN"}
+  ],
+  "setup": "README.md",
+  "notes": "One connector for any system an OpenAPI document describes: SAP (OData services publish OpenAPI), Dynamics 365, NetSuite REST, or a generic business API. Copy the folder per system (connectors/<system>/), replace openapi.json with that system's document, and give the base URL and the token by reference."
+}

@@ -142,7 +142,8 @@ class UiModulesTest(unittest.TestCase):
         b.click("#modal button", text="Start with this", what="Start with this")
         b.wait("!document.querySelector('#modal').open && !document.querySelector('#sb-nav a[href=\"#/square\"]')",
                "the dialog closed and the set in force")
-        self.assertEqual(self.nav_pages(), ["#/home", "#/projects", "#/inbox", "#/jobs"])
+        self.assertEqual(b.eval("document.querySelector('#pc-name').textContent"), PERSON)   # the name shows at once
+        self.assertEqual(self.nav_pages(), ["#/home", "#/projects", "#/inbox", "#/jobs", "#/automations"])
         rec = self.records()[-1]
         self.assertEqual((rec["preset"], rec["by"], rec["persona"], rec["reason"]),
                          ("spec_only", PERSON, "business_owner", "the first-run choice"))
@@ -185,7 +186,7 @@ class UiModulesTest(unittest.TestCase):
         self.step("home")
         self.sign_in()
         b.wait("!!document.querySelector('#grid .widget')", "the dashboard")
-        self.assertEqual(self.nav_pages(), ["#/home", "#/projects", "#/inbox", "#/jobs"])
+        self.assertEqual(self.nav_pages(), ["#/home", "#/projects", "#/inbox", "#/jobs", "#/automations"])
         self.assertFalse(b.eval("!!document.querySelector('#bottombar a[href=\"#/square\"]')"))
         types = b.eval("[...document.querySelectorAll('#grid .widget')].map((w) => w.dataset.type)")
         self.assertFalse({"square", "catalogue"} & set(types))                    # the business lens's two of them

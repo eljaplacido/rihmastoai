@@ -25,7 +25,6 @@ from kernel.store import Project
 PIPELINE_STATES = ("waiting", "stopped", "apparatus_failure", "progress", "paused", "capped", "failed", "done",
                    "monitoring", "refused")
 ADVANCERS = ("business_owner", "product_owner", "developer", "operations", "it")    # kernel/safestop.py MAY_PAUSE
-SETTING_UP = ("it", "developer")
 LOOKERS = ("business_owner", "product_owner", "developer", "it", "operations", "compliance")  # kernel/track.py
 EVERYONE = tuple(PERSONAS)
 # The ledger records that show where a run got to; the last of them says whether a model endpoint failed.
@@ -70,10 +69,18 @@ def _report(pid: str) -> dict[str, Any]:
 
 
 def _model_setup(pid: str) -> list[dict[str, Any]]:
-    return [_act("set_up_model", "Set up the model endpoints", SETTING_UP, command="rihmasto doctor",
-                 where="`rihmasto doctor` says which endpoint keys are set; kernel/routing.json names each role's "
-                       "endpoint; docs/guides/local-models.md runs every role on your own hardware"),
+    # Any persona sets a model (FR-MDL1), so anyone may open Models setup from here.
+    return [_act("set_up_model", "Open Models setup", EVERYONE, page="models", command="rihmasto models list",
+                 where="Models setup (Settings, Models) sets and tests each role's model and key, written to "
+                       "kernel/routing.local.json over the shipped kernel/routing.json; `rihmasto doctor` says which "
+                       "keys are set; docs/guides/local-models.md runs every role on your own hardware"),
             _advance(pid, "Run again")]
+
+
+def _raise_cap(pid: str) -> dict[str, Any]:
+    return _act("raise_autonomy", "Open the autonomy cap", ("business_owner", "it", "compliance"), control="autonomy",
+                view="overview", command=f"rihmasto autonomy set 3 --project {pid} --reason \"...\" --person ... "
+                                     "--persona business_owner")
 
 
 # -- from the records ----------------------------------------------------------------------------------------
@@ -81,7 +88,7 @@ def _model_setup(pid: str) -> list[dict[str, Any]]:
 def _working(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
     if not ctx["running"]:
         return None
-    return _situation("working", "a job runs for it now; the page says when it ends",
+    return _situation("working", "the job that runs for it now to end; the page says when it does",
                       [_act("watch", "Watch the work", EVERYONE, view="tasks"),
                        _act("pause", "Pause at the next safe point", ADVANCERS, control="pause", view="overview")])
 
@@ -103,8 +110,16 @@ def _not_own(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
                            *_card_actions(ctx["canon"], pid)])
     if kind != "adopted" or project.ledger().of_kind("change_applied"):
         return None
+    first = "Describe what to improve" if project.meta.get("intent") == "improve" else None
+    asked = [q for q in ctx["canon"].questions("open") if q.get("card")]   # which kind of work it is (adopt_kind)
+    if asked:
+        return _situation("adopted", f"{len(asked)} question(s) answered first: " + asked[0]["text"],
+                          [*_question_actions(pid, asked),
+                           _settings(pid, "Choose the kind of work in Project settings")])
     return _situation("adopted", "a change, a workspace submission or a decision on an open card",
-                      [*_card_actions(ctx["canon"], pid), _report(pid)])
+                      [*_card_actions(ctx["canon"], pid), {**_report(pid), **({"label": first} if first else {})},
+                       _act("workspace", "Work on it in your own terminal", ("developer",),
+                            command=f"rihmasto workspace open {pid} --person ... --persona developer --agent shell")])
 
 
 def _halted(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
@@ -152,10 +167,12 @@ def _question_actions(pid: str, qs: list[dict[str, Any]]) -> list[dict[str, Any]
     out = []
     for q in qs[:SHOWN]:
         out.append(_act("answer", f"Answer {q['id']}: {q['text'][:90]}", CARD_DECIDERS["question"], control="answer",
-                        view="questions", question=q["id"], card=q.get("card")))
+                        view="questions", question=q["id"], card=q.get("card"),
+                        command=f"rihmasto answer {pid} {q['id']} \"...\" --person ... --persona ..."))
         if str((q.get("opinions") or {}).get(q["perspective"]) or "").strip():
             out.append(_act("assume", f"Let the factory assume {q['id']}", CARD_DECIDERS["question"],
-                            control="assume", view="questions", question=q["id"], card=q.get("card")))
+                            control="assume", view="questions", question=q["id"], card=q.get("card"),
+                            command=f"rihmasto assume {pid} {q['id']} --person ... --persona ..."))
     return out
 
 
@@ -174,13 +191,35 @@ def _card_actions(canon: Canon, pid: str) -> list[dict[str, Any]]:
     cards = [c for c in canon.cards() if c["kind"] != "question"
              and (c["kind"] != "change" or (c["payload"].get("triage") or {}).get("needs_decision", True))]
     return [_act("decide", f"Decide {c['id']}: {c['title'][:90]}", CARD_DECIDERS[c["kind"]], control="decide",
-                 view="inbox", card=c["id"], kind=c["kind"]) for c in cards[:SHOWN]]
+                 view="inbox", card=c["id"], kind=c["kind"],
+                 command=f"rihmasto decide {pid} {c['id']} <verdict> --person ... --persona ...") for c in cards[:SHOWN]]
+
+
+def _go_ahead(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
+    """The look at the spec before the first build (kernel/go_ahead.py): Go or Skip, one click either way."""
+    from kernel.canon import deciders_of
+    from kernel.go_ahead import open_card
+
+    card = open_card(project)
+    if card is None:
+        return None
+    pid, who = project.pid, deciders_of(card)
+    say = {"go": "Go: build it", "skip": "Skip: build without my look"}
+    return _situation("go_ahead", "a look at the spec before the first build: Go builds it, Skip builds it without "
+                                  "the look", [_act("look_spec", "Look at the spec", EVERYONE, view="spec"),
+                                               *[_act(f"go_ahead_{v}", say[v], who, control="go_ahead", card=card["id"],
+                                                      verdict=v, command=f"rihmasto decide {pid} {card['id']} {v} "
+                                                                         "--person ... --persona ...")
+                                                 for v in ("go", "skip")],
+                                               _settings(pid, "Build without waiting for me")])
 
 
 def _cards(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
     acts = _card_actions(ctx["canon"], project.pid)
     if not acts:
         return None
+    if (ctx["last"] or {}).get("material_read"):     # a plan written before the material: going back is a choice too
+        acts.append(_rewind(project.pid, "spec"))
     return _situation("decisions", f"{len(acts)} decision card(s) decided by the people who may", acts)
 
 
@@ -210,6 +249,9 @@ def _waiting(project: Project, last: dict[str, Any]) -> list[dict[str, Any]]:
                      view="track")]
     if last.get("attached"):
         return [_act("repo_gate", "Gate a change", ("developer",), command=f"rihmasto repo gate {pid}")]
+    if last.get("material_read"):
+        return [*_question_actions(pid, [q for q in Canon(project).questions("open") if q.get("card")])[:2],
+                _rewind(pid, "spec"), _advance(pid, "Go on with the spec as it is")]
     return [_advance(pid, "Run on: what it waited on is decided")]
 
 
@@ -223,8 +265,7 @@ def from_run(project: Project, last: dict[str, Any]) -> dict[str, Any]:
         "progress": ("another run: the last one went as far as one run goes", [_advance(pid, "Run on")]),
         "paused": ("a person to resume it", [_act("resume", "Resume", ADVANCERS, control="resume", view="overview")]),
         "capped": ("a higher autonomy cap, or a person to do this step: " + why,
-                   [_act("raise_autonomy", "Open the autonomy cap", ("business_owner", "it", "compliance"),
-                         control="autonomy", view="overview"), _advance(pid, "Run again once the cap allows")]),
+                   [_raise_cap(pid), _advance(pid, "Run again once the cap allows")]),
         "failed": ("the step that failed, run again or changed: " + why, _failed(project, why)),
         "done": ("nothing: " + (why or "the last run finished"), [_report(pid)]),
         "refused": ("a local model for each role: the project is confidential and " + (why or "a role is hosted"),
@@ -254,13 +295,77 @@ def _released(project: Project) -> dict[str, Any] | None:
                       [_report(pid)])
 
 
-def next_step(project: Project, *, last: dict[str, Any] | None = None, running: bool = False) -> dict[str, Any]:
+def _capped(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
+    """A compiled plan the autonomy cap forbids the factory to build: the records say so, with or without the
+    last run's result (the command line has none)."""
+    from kernel import autonomy
+
+    if not project.path("contract.json").exists() or kr.releases(project) or autonomy.cap_of(project) >= \
+            autonomy.BUILD_LEVEL:
+        return None
+    cap = autonomy.cap_of(project)
+    return _situation("capped", f"a higher autonomy cap, or a person to do this step: building needs autonomy level "
+                                f"{autonomy.BUILD_LEVEL} ({autonomy.LEVELS[autonomy.BUILD_LEVEL]}); the cap is {cap} "
+                                f"({autonomy.LEVELS[cap]})", [_raise_cap(project.pid), _report(project.pid)])
+
+
+# What a person does to a project between runs: a run's result from before it no longer says what it waits for.
+CHANGED_SINCE = ("rewound", "project_changed", "material_added")
+
+
+def _stale(project: Project, last_started: str | None) -> bool:
+    """True when a person went back a step, changed a setting or added material after the last run began."""
+    if not last_started:
+        return False
+    return any(str(r["event"].get("at") or "") > last_started for r in project.ledger().of_kind(*CHANGED_SINCE))
+
+
+def _paused_automations(project: Project) -> list[dict[str, Any]]:
+    """An automation on this project that the circuit breaker paused: what it says, and Resume where it is."""
+    from kernel import automations as au
+
+    return [_act("automation_paused", f"Automation {a['id']} ({a['name']}) is paused: {a['paused_why']}",
+                 ("it", a["owner"]["persona"]), control="automations_resume", view="automations",
+                 command=f"rihmasto automations resume {a['id']} --person ... --persona ...")
+            for a in au.automations(project.factory) if a["state"] == "paused" and a.get("paused_by") == "breaker"
+            and au.in_scope(project, a["scope"])][:SHOWN]
+
+
+def _runner_waiting(project: Project) -> list[dict[str, Any]]:
+    """A cell runner chosen for this project, or for every project, that waits on IT's card in the factory's Inbox
+    (kernel/runners/choice.py): IT approves or declines it on the Runners page. Until then Gnomon runs the cells."""
+    from kernel.learn import factory_project
+
+    fp = factory_project(project.factory, False)
+    if fp is None or fp.pid == project.pid:
+        return []
+    cards = [c for c in Canon(fp).cards(kind="runner") if (c.get("refs") or {}).get("project") in (None, project.pid)]
+    return [_act("runner_waiting", f"IT decides {c['id']}: {c['title'][:90]}", CARD_DECIDERS["runner"],
+                 control="runners_decide", page=f"runners/{project.pid}", card=c["id"], kind="runner",
+                 command=f"rihmasto decide {fp.pid} {c['id']} approve|decline --person ... --persona it")
+            for c in cards[:SHOWN]]
+
+
+def next_step(project: Project, *, last: dict[str, Any] | None = None, running: bool = False,
+              last_started: str | None = None) -> dict[str, Any]:
     """What the project waits for, who can act, and the actions that move it forward (see the docstring).
-    ``last`` is the result of its last run when the caller has it (a cockpit job's outcome); ``running``
-    says a job runs for it now."""
+    ``last`` is the result of its last run when the caller has it (a cockpit job's outcome), started at
+    ``last_started``: a person's change since then sets it aside. ``running`` says a job runs for it now.
+    An automation on it that the circuit breaker paused is said too (kernel/automations.py), and a cell runner
+    for it that waits on IT (kernel/runners/choice.py)."""
+    out = _next_step(project, last=last, running=running, last_started=last_started)
+    more = _paused_automations(project) + _runner_waiting(project)
+    return dict(out, actions=out["actions"] + more) if more else out
+
+
+def _next_step(project: Project, *, last: dict[str, Any] | None, running: bool,
+               last_started: str | None) -> dict[str, Any]:
     canon = Canon(project)
+    if last is not None and _stale(project, last_started):
+        last = None
     ctx: dict[str, Any] = {"last": last, "running": running, "canon": canon}
-    for read in (_working, _paused, _not_own, _halted, _no_material, _again, _questions, _cards, _model_down):
+    for read in (_working, _paused, _not_own, _halted, _no_material, _again, _questions, _go_ahead, _cards,
+                 _model_down, _capped):
         found = read(project, ctx)
         if found is not None:
             return found

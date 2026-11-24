@@ -123,7 +123,7 @@ def checkout(project: Project, revision: str) -> Iterator[Path]:
 
 # -- the repository's own code -----------------------------------------------------------------------------
 
-ISOLATION = "kernel.access_isolation"   # the access stream's isolation runner (D-0016), once it is merged here
+ISOLATION = "kernel.access_isolation"   # IT's isolation runner (D-0016)
 
 
 class IsolationNeeded(AccessRefused):
@@ -266,12 +266,26 @@ def attach(factory: Factory, title: str, *, repo: str | Path, person: str, perso
         project.update_meta(attached={"repo": str(folder), "branch": branch, "head_at_attach": head}, stage=5)
         project.log("repo_attached", {"repo": str(folder), "branch": branch, "head": head, "person": person,
                                       "persona": persona})
+        _agent_context(project, folder, head)
         give_contract(project, person=person, persona=persona, contract=contract, spec=spec,
                       branch_file=contract is None and spec is None)
     except BaseException:
         shutil.rmtree(project.dir, ignore_errors=True)        # nothing is left half-attached
         raise
     return project
+
+
+def _agent_context(project: Project, folder: Path, head: str) -> None:
+    """How the team's AI tools are set up, read from the attached commit's objects (never the working tree,
+    and nothing found is run): kept for the project page and `rihmasto ide` (kernel/ide.py, FR-AGC1)."""
+    from kernel.agent_context import from_git
+    from kernel.ide import record
+
+    try:
+        ctx = from_git(folder, head)
+    except (RuntimeError, OSError, ValueError):
+        return
+    record(project, ctx, at=head)
 
 
 def attached(factory: Factory) -> list[dict[str, Any]]:

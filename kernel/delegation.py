@@ -16,7 +16,9 @@ The rules (``RULES``), one per kind, each deterministic:
   a test the gate runs, every criterion names a check the factory runs (a test, a holdout scenario or a
   probe), the spec compiles to a contract with no violation, and nothing in it contradicts the paved road;
 - ``escalation``: **retry_once** retries an escalated builder task once; when it escalates again, the
-  rule stops and the card waits for a person. It never accepts work as it is, and never stops a build.
+  rule stops and the card waits for a person. It never accepts work as it is, and never stops a build;
+- ``go_ahead``: **go** says Go to the look at the spec before a first build at explore or demo maturity
+  (kernel/go_ahead.py): the delegating person lets the spec be built as written.
 
 Some kinds are never delegated, whatever the persona (``NEVER``): the deploy gate (it opens production),
 trust (the owner's own act), a holdout ruling (the product or its scenario may be wrong, and only a person
@@ -49,6 +51,8 @@ RULES: dict[str, dict[str, str]] = {
                                      "and nothing in it contradicts the paved road"},
     "escalation": {"retry_once": "retry an escalated task once; when it escalates again, stop and wait for a "
                                  "person (never accept as is, never stop the build)"},
+    "go_ahead": {"go": "say Go to the look at the spec before the first build (explore and demo): the delegating "
+                       "person lets the spec be built as written"},
 }
 DEFAULT_RULE = {kind: next(iter(rules)) for kind, rules in RULES.items()}
 NEVER = {
@@ -58,6 +62,8 @@ NEVER = {
                       "which; the scenario stays in its custody",
     "connector": "turning a connector on lets Rihmasto reach an outside system: IT decides it, every time (D-0015)",
     "road": "a paved road is configured by IT on its own infrastructure, and the record names who did it",
+    "runner": "a cell runner decides whether the rules are enforced during a run or checked after it: IT decides it, "
+              "every time (D-0019)",
     "concept": "a concept is the factory's own card, not one project's",
 }
 _RELATIVE = re.compile(r"\+?(\d{1,4})\s*([mhd])\Z")
@@ -284,8 +290,14 @@ def _retry_once(project: Project, card: dict[str, Any], d: dict[str, Any]) -> Ve
     return "retry", f"{task} is retried once under the rule", {"task": task, "objections": len(objections)}
 
 
+def _go(project: Project, card: dict[str, Any], d: dict[str, Any]) -> Verdict:
+    spec = project.read("spec.json") or {}
+    return "go", f"the spec is built as written ({len(spec.get('requirements') or [])} requirements)", \
+        {"spec_version": (card.get("refs") or {}).get("spec_version")}
+
+
 RULE_FN: dict[str, Callable[[Project, dict[str, Any], dict[str, Any]], Verdict]] = {
-    "assume": _assume, "plan_when_tested": _plan_when_tested, "retry_once": _retry_once}
+    "assume": _assume, "plan_when_tested": _plan_when_tested, "retry_once": _retry_once, "go": _go}
 
 
 # -- the pipeline asks before it waits -------------------------------------------------------------

@@ -59,4 +59,4 @@ rihma-embed = "embed.server:main"
 rihma-mcp = "mcp.server:main"
 
 [tool.setuptools]
-packages = ["kernel", "adapters", "cockpit", "embed", "mcp"]
+packages = ["kernel", "kernel.runners", "adapters", "cockpit", "embed", "mcp"]

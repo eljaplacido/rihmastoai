@@ -36,28 +36,25 @@ CARD_VERDICTS = {
     "incident": ("acknowledge", "rollback", "open_defect"),
     "change": ("accept", "reject", "defer"),
     "escalation": ("retry", "accept_as_is", "stop"),
-    "road": ("configured", "declined"),
-    "trust": ("granted", "declined"),
+    "road": ("configured", "declined"), "trust": ("granted", "declined"), "runner": ("approve", "decline"),
     "holdout_ruling": ("product_defect", "scenario_defect"),
     "concept": ("validate", "park", "reject"),                   # the delivery square's concept check
     "update": ("trial", "decline", "defer"),                     # the updates inbox: a model, a CVE, drift
-    "connector": ("enable", "decline"),                          # an integration through Gnomon (D-0015)
+    "connector": ("enable", "decline"), "go_ahead": ("go", "skip"),   # Gnomon (D-0015); a look at the spec first
 }
 
 # Who may decide each kind of card. Questions are open to everyone.
 CARD_DECIDERS = {
-    "question": PERSONAS,
+    "question": PERSONAS, "go_ahead": ("business_owner", "product_owner", "developer"),
     "approval": ("business_owner", "product_owner", "developer"),
     "validation": ("business_owner", "product_owner"),
-    "deploy_gate": ("it",),
-    "incident": ("operations", "it", "developer"),
+    "deploy_gate": ("it",), "incident": ("operations", "it", "developer"),
     "change": ("business_owner", "product_owner"),
     "escalation": ("developer", "business_owner", "product_owner"),
-    "road": ("it",), "trust": ("it", "developer"),
+    "road": ("it",), "trust": ("it", "developer"), "runner": ("it",),  # a cell runner (D-0019)
     "holdout_ruling": ("developer", "product_owner", "business_owner"),
     "concept": ("business_owner", "product_owner"),
-    "update": ("product_owner", "business_owner", "it", "developer", "compliance"),
-    "connector": ("it",),
+    "update": ("product_owner", "business_owner", "it", "developer", "compliance"), "connector": ("it",),
 }
 APPROVING = {("approval", "approve"), ("validation", "accept"), ("deploy_gate", "approve"),
              ("change", "accept"), ("escalation", "accept_as_is")}
@@ -69,6 +66,10 @@ DECISION_ON_CARD = ("id", "verdict", "person", "persona", "reason", "at", "reaso
 
 class DecisionRefused(ValueError):
     """A decision the Inbox does not accept: not a person, wrong persona, wrong verdict, or closed card."""
+
+
+def deciders_of(card: dict) -> tuple:   # who may decide: the card's own where they narrow its kind's (a posture may)
+    return tuple(p for p in (card.get("deciders") or CARD_DECIDERS[card["kind"]]) if p in CARD_DECIDERS[card["kind"]])
 
 
 def _rests_on(decision: dict, req_ids: set) -> bool:
@@ -286,14 +287,13 @@ class Canon:
 
     # -- the Inbox ----------------------------------------------------------------------------
 
-    def cards(self, *, state: str | None = "open", kind: str | None = None,
-              persona: str | None = None) -> list:
+    def cards(self, *, state: str | None = "open", kind: str | None = None, persona: str | None = None) -> list:
         """The Inbox's cards as the decision record has them, by state, kind and who may decide them."""
         inbox, decided = self.dir / "inbox", self._decided()
         paths = sorted(inbox.glob("C-*.json")) if inbox.exists() else []
         every = [self._as_recorded(read_json(p), decided) for p in paths]
         return [c for c in every if (state is None or c["state"] == state) and (kind is None or c["kind"] == kind)
-                and (persona is None or persona in CARD_DECIDERS[c["kind"]])]
+                and (persona is None or persona in deciders_of(c))]
 
     def get_card(self, card_id: str) -> dict:
         c = read_json(self.dir / "inbox" / f"{card_id}.json")
@@ -338,15 +338,15 @@ class Canon:
                 raise KeyError(card_id)
             yield self._as_recorded(c, self._decided())
 
-    def _check_decider(self, kind: str, verdict: str, person: str, persona: str) -> None:
+    def _check_decider(self, kind: str, verdict: str, person: str, persona: str, only: list | None = None) -> None:
         if not is_person(person):
             raise DecisionRefused(f"{person!r} is not a person; a decision needs a named person")
         if persona not in PERSONAS:
             raise DecisionRefused(f"persona must be one of {PERSONAS}, got {persona!r}")
         if verdict not in CARD_VERDICTS[kind]:
             raise DecisionRefused(f"a {kind} card takes {CARD_VERDICTS[kind]}, not {verdict!r}")
-        if persona not in CARD_DECIDERS[kind]:
-            raise DecisionRefused(f"a {persona} may not decide a {kind} card (deciders: {CARD_DECIDERS[kind]})")
+        if persona not in (allowed := deciders_of({"kind": kind, "deciders": only})):
+            raise DecisionRefused(f"a {persona} may not decide a {kind} card (deciders: {allowed})")
         from kernel.access import require
         require(self.project, person, persona)   # with access enforced: the verified identity, granted here
 
@@ -407,7 +407,7 @@ class Canon:
             c = self.get_card(card_id)
             if c["state"] != "open":
                 raise DecisionRefused(f"{card_id} is {c['state']}")
-            self._check_decider(c["kind"], verdict, person, persona)
+            self._check_decider(c["kind"], verdict, person, persona, c.get("deciders"))  # a card may narrow them
             reason, held = self._custody(c, reason)
             d = self._record_decision(card_id, c["kind"], verdict, person, persona, reason, c["refs"], held)
             write_json(self.dir / "inbox" / f"{card_id}.json", self._as_recorded(c, {card_id: d}))

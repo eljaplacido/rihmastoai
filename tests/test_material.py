@@ -283,8 +283,7 @@ class ConfidentialTest(MaterialCase):
         kinds = [r["event"]["kind"] for r in p.ledger().records()]
         self.assertIn("confidential_set", kinds)
         self.assertEqual(p.ledger().of_kind("confidential_refused")[-1]["event"]["payload"]["hosted"],
-                         [{"role": "analyst", "which": "primary", "endpoint": "go"},
-                          {"role": "analyst", "which": "fallback", "endpoint": "go"}])
+                         [{"role": "analyst", "which": "primary", "endpoint": "go"}])   # a fallback is skipped
         # with every role on loopback or a private address, it goes on
         with routing(LOCAL):
             out = intake(p, str(folder), model=model, requested_by="Aino")
@@ -341,6 +340,8 @@ class ConfidentialTest(MaterialCase):
             card = submit(p, persona="end_user", person="Tester", text="The sign-in button is too small.")
             result = triage(p, card["id"], model=model)                   # a change is triaged by rule instead
             self.assertEqual(result["by"], "rules")
+        hosted = {**SHIPPED, "roles": {**SHIPPED["roles"], "assistant": {"model": "glm-5.3", "endpoint": "go"}}}
+        with routing(hosted):
             answer = ask(self.factory, "Where is the Questions view?", persona="developer", project_id=p.pid,
                          model=model)
             self.assertIn("confidential", answer["note"])
@@ -357,7 +358,8 @@ class ConfidentialTest(MaterialCase):
             self.assertEqual(confidential.is_local(url), local, url)
         self.assertEqual(confidential.refusal(["analyst"], LOCAL), "")
         self.assertIn("the builder role would go to", confidential.refusal(["builder"], SHIPPED))
-        self.assertIn("(its fallback)", confidential.refusal(["assistant"], SHIPPED))
+        self.assertEqual(confidential.refusal(["assistant"], SHIPPED), "")        # local, its hosted fallback skipped
+        self.assertEqual([r["endpoint"] for r in confidential.skipped(["assistant"], SHIPPED)], ["go"])
 
 
 if __name__ == "__main__":

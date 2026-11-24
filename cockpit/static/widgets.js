@@ -125,7 +125,7 @@ function kpis(d) {
 export function decideButtons(item, opts) {
   const o = opts || {};
   const kind = item.kind;
-  if (!decides(kind)) return h("span", { class: "muted small" }, "Waits on " + orList(item.deciders || []));
+  if (!decides(kind, item.deciders)) return h("span", { class: "muted small" }, "Waits on " + orList(item.deciders || []));
   const box = h("div", { class: "inline-decide" });
   const verdicts = (item.verdicts || []).filter((v) => !(kind === "question" && v === "assume"));
   if (kind === "question") return h("a", { class: "btn small", href: link(item.project, "questions", (item.refs || {}).question) }, "Answer");
@@ -152,7 +152,7 @@ export function decideButtons(item, opts) {
 }
 
 function decisionRow(it) {
-  const mine = decides(it.kind);
+  const mine = decides(it.kind, it.deciders);
   return h("li", { class: "dec-row" + (mine ? " mine" : "") },
     h("span", { class: "dec-ic" }, icon(KIND_ICON[it.kind] || "inbox")),
     h("div", { class: "dec-b" },
@@ -279,7 +279,7 @@ DEF.decisions = {
   render: (d, w) => {
     // as the Inbox orders them: yours first, then what holds work up, the panel's open questions last, oldest first
     const holds = (x) => (x.blocking || x.kind !== "question" ? 1 : 0);
-    const items = (d.decisions || []).slice().sort((a, b) => (decides(b.kind) - decides(a.kind)) || (holds(b) - holds(a))
+    const items = (d.decisions || []).slice().sort((a, b) => (decides(b.kind, b.deciders) - decides(a.kind, a.deciders)) || (holds(b) - holds(a))
       || ((b.age_hours || 0) - (a.age_hours || 0)));
     if (!items.length) return empty("check-circle", "Nothing waits on a person right now.");
     if (w.view === "chart") {
@@ -287,7 +287,7 @@ DEF.decisions = {
       items.forEach((i) => { by[i.kind] = (by[i.kind] || 0) + 1; });
       return bars({ rows: Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, n]) => ({ label: KIND_LABEL[k] || k, icon: KIND_ICON[k], value: n })), unit: "cards waiting" });
     }
-    const mine = items.filter((i) => decides(i.kind)).length;
+    const mine = items.filter((i) => decides(i.kind, i.deciders)).length;
     return h("div", null, h("p", { class: "w-sum" }, h("b", null, String(mine)), " yours to decide as " + personaLabel(S.persona),
       h("span", { class: "muted" }, " · " + items.length + " waiting in all")),
     h("ul", { class: "dec-list" }, items.slice(0, w.size === "S" ? 4 : 8).map(decisionRow)),

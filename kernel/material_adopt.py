@@ -106,5 +106,9 @@ def hold(project: Any, taken: dict[str, Any], *, person: str, persona: str, conf
               "coming assessment; nothing was sent to a model"}
         material.record(project, mp, person=person, persona=persona, confirmed="adopted: scanned, not sent")
         write_text(project.path("material.md"), text + "\n" if text else "")
+        if mp.get("agent_context"):           # how the team's AI tools are set up (kernel/agent_context.py)
+            from kernel.ide import record
+
+            record(project, mp["agent_context"], at=taken.get("baseline") or "")
     if confidential:
         mark(project, person=person, persona=persona)

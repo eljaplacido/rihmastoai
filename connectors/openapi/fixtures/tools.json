@@ -1,0 +1,22 @@
+{
+  "tools": [
+    {
+      "name": "list_operations",
+      "description": "The GET operations of the pinned OpenAPI document: each operationId, path, summary and parameters.",
+      "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
+    },
+    {
+      "name": "call_operation",
+      "description": "Call one GET operation of the pinned OpenAPI document by its operationId, with the parameters it declares.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operation_id": {"type": "string", "description": "an operationId from list_operations, such as listOrders"},
+          "parameters": {"type": "object", "description": "the operation's path and query parameters by name"}
+        },
+        "required": ["operation_id"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

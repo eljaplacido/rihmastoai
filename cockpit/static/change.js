@@ -6,9 +6,11 @@ import {
   S, $, h, fill, icon, chip, api, act, say, signed, needPerson, nav, enc, link, orList, cap, plural,
   openModal, closeModal, profileOf,
 } from "./core.js";
+import { postureChip, openPosture } from "./posture.js";
+import { projectRunnerLine } from "./runners.js";
 
 const STEP_LABEL = { material: "the material", questions: "the questions", spec: "the spec", plan: "the plan" };
-const FIELD_LABEL = { title: "Title", kind: "Kind of work", mode: "Mode", maturity: "Maturity" };
+const FIELD_LABEL = { title: "Title", kind: "Kind of work", mode: "Mode", maturity: "Maturity", build_without_waiting: "Build without waiting for me" };
 
 function changers() { return ((S.meta && S.meta.change) || {}).changers || []; }
 function adders() { return ((S.meta && S.meta.change) || {}).material_adders || []; }
@@ -52,18 +54,23 @@ export function openSettings(p) {
   const kind = select("ps-kind", profiles.map((x) => [x.id, x.label]), now.kind);
   const mode = select("ps-mode", Object.keys(S.meta.modes).map((m) => [m, cap(m) + ": " + S.meta.modes[m]]), now.mode);
   const maturity = select("ps-maturity", Object.keys(S.meta.maturities).map((m) => [m, cap(m) + ": " + S.meta.maturities[m]]), now.maturity);
+  // At explore and demo the factory waits once for a person's go-ahead on the spec before the first build (kernel/go_ahead.py).
+  const nowait = h("input", { type: "checkbox", id: "ps-nowait", "data-key": "ps-nowait", "data-control": "build_without_waiting",
+    checked: now.build_without_waiting !== false });
   const reason = h("input", { id: "ps-reason", "data-key": "ps-reason", maxlength: "2000", autocomplete: "off",
     placeholder: "for example: it is an integration, not a web app" });
   const impact = h("div", { class: "chg-impact", id: "ps-impact", "aria-live": "polite" },
     h("p", { class: "muted small" }, "Change a value, then preview what it means for the work already done. Nothing is saved until you save."));
   const redo = h("input", { type: "checkbox", id: "ps-redo", "data-key": "ps-redo" });
+  const runnerBox = h("div", { "data-slot": "runners", "aria-live": "polite" }, h("span", { class: "muted small" }, "Reading the runners…"));
   const redoRow = h("div", { class: "chg-redo", hidden: true }, redo, h("label", { for: "ps-redo" }, ""));
   const preview = h("button", { type: "button", class: "btn", "data-key": "ps-preview" }, icon("eye"), h("span", { class: "lbl" }, "Preview the impact"));
   const save = h("button", { type: "submit", class: "btn human primary", "data-key": "ps-save", disabled: true }, "Save the settings");
-  const values = () => ({ title: title.value.trim(), kind: kind.value, mode: mode.value, maturity: maturity.value });
+  const values = () => ({ title: title.value.trim(), kind: kind.value, mode: mode.value, maturity: maturity.value,
+    build_without_waiting: nowait.checked });
   let shown = null;
   const stale = () => { shown = null; save.disabled = true; };
-  [title, kind, mode, maturity].forEach((el) => el.addEventListener(el.tagName === "INPUT" ? "input" : "change", stale));
+  [title, kind, mode, maturity, nowait].forEach((el) => el.addEventListener(el.tagName === "INPUT" && el.type !== "checkbox" ? "input" : "change", stale));
   preview.addEventListener("click", async () => {
     if (!needPerson()) return;
     const asked = values();
@@ -80,10 +87,18 @@ export function openSettings(p) {
     h("div", { class: "row2" }, field("ps-kind", "Kind of work", kind, "The questions, checks and template follow it."),
       field("ps-maturity", "Maturity", maturity, "Which stages and gates run, and how big the spec is.")),
     field("ps-mode", "Mode", mode, "Who answers the panel's questions: people, the factory, or both."),
+    h("div", { class: "field chg-nowait" }, h("div", { class: "chg-redo" }, nowait,
+      h("label", { for: "ps-nowait" }, "Build without waiting for me")),
+      h("small", { class: "muted" }, "Off: at explore and demo the factory waits once, before the first build, for your Go or Skip on the spec. On: it builds the spec as written.")),
     // The posture (prototype, balanced, production, regulated) has its own change flow (kernel/posture_change.py):
-    // its chip sits here once that flow lands.
+    // its chip opens the Posture dialog in place of this one, with the kernel's preview of what changes now and later.
     h("div", { class: "field chg-posture", "data-slot": "posture" }, h("span", { class: "label-h" }, "Posture"),
-      h("p", { class: "muted small" }, "Set in its own flow: the posture's chip appears here.")),
+      h("div", { class: "chg-posture-row" }, postureChip(p, () => swap(() => openPosture(p))),
+        h("span", { class: "muted small" }, (p.meta.posture ? "Change it" : "Choose one")
+          + " in its own dialog: it previews what changes now and later before anyone saves, and a change that loosens it needs a "
+          + orList(((S.meta && S.meta.postures) || {}).looseners || []) + "."))),
+    // What runs this project's builder and verifier, and its assurance (D-0019): chosen in Settings > Runners, approved by IT.
+    h("div", { class: "field chg-runner" }, h("span", { class: "label-h" }, "Cell runners"), runnerBox),
     field("ps-reason", "Reason (required, recorded with your name)", reason),
     impact, redoRow,
     h("div", { class: "btns" }, preview, save),
@@ -107,6 +122,7 @@ export function openSettings(p) {
     });
   });
   openModal("Project settings · " + p.meta.title, form, { icon: "sliders", wide: true });
+  projectRunnerLine(runnerBox, pid);
 }
 
 function drawImpact(box, redoRow, out) {
@@ -119,7 +135,8 @@ function drawImpact(box, redoRow, out) {
   fill(box, h("h3", { class: "label-h" }, "What the change means"),
     h("ul", { class: "plain small chg-changes" }, changes.map(([f, c]) => h("li", null, h("b", null, FIELD_LABEL[f] + ": "),
       label(f, c.from), " → ", label(f, c.to)))),
-    h("ul", { class: "chg-list" }, (out.impact || []).map((r) => h("li", { "data-what": r.what }, r.says))));
+    h("ul", { class: "chg-list" }, (out.impact || []).map((r) => h("li", { "data-what": r.what }, r.says))),
+    out.questions ? keepsLine(out.questions) : null);
   const label2 = $("label", redoRow);
   if (out.rewind) {
     label2.textContent = "Also go back to " + STEP_LABEL[out.rewind] + " now. It undoes " + out.undoes + ".";
@@ -128,7 +145,17 @@ function drawImpact(box, redoRow, out) {
   }
   redoRow.hidden = !(out.rewind || (out.assumes || []).length);
 }
-function label(f, v) { return f === "kind" ? profileOf(v).label : String(v); }
+function label(f, v) {
+  if (f === "build_without_waiting") return v ? "on" : "off";
+  return f === "kind" ? profileOf(v).label : String(v);
+}
+// A new kind going back to the questions: what a person chose is kept, the factory's own assumptions are withdrawn.
+function keepsLine(q) {
+  return h("p", { class: "small chg-keeps", "data-key": "ps-keeps" },
+    h("b", null, "Kept: "), plural(q.kept_answers, "answer") + " and " + plural(q.kept_assumptions, "assumption") + " a person chose. ",
+    h("b", null, "Withdrawn: "), plural(q.withdrawn_open, "open question") + " and " + plural(q.withdrawn_assumptions, "assumption")
+      + " the factory made on its own, made for the old kind.");
+}
 
 // -- Go back a step ------------------------------------------------------------------------------------------
 
@@ -223,6 +250,14 @@ function runAction(p, a, btn) {
       if (nav.rerender) await nav.rerender();
     });
   }
+  if (a.control === "go_ahead") {      // the look at the spec before the first build: Go or Skip, signed like any decision
+    return act(btn.parentNode, async () => {
+      const out = await post(pid, "/cards/" + enc(a.card) + "/decide", { verdict: a.verdict, reason: a.label });
+      if (!out) return;
+      say(a.card + ": " + a.label + ", signed by " + S.person.trim() + ".", "good");
+      if (nav.rerender) await nav.rerender();
+    });
+  }
   if (a.control === "resume") {
     return act(btn.parentNode, async () => { if (await post(pid, "/resume")) { say(p.meta.title + " resumed.", "good"); if (nav.rerender) await nav.rerender(); } });
   }
@@ -243,8 +278,11 @@ export function nextStrip(p) {
   const buttons = acts.filter((a) => a.control || a.view || a.page).map((a, i) => {
     const ok = canAct(a);
     const target = a.question || a.card || a.step;
-    const b = h("button", { type: "button", class: "btn small" + (i === 0 && ok ? " primary" : ""), "data-key": "next:" + a.id + (target ? ":" + target : ""),
-      disabled: !ok, tip: ok ? null : "A " + orList(a.personas) + " persona can" }, h("span", { class: "lbl" }, a.label));
+    const look = a.control === "go_ahead";      // Go and Skip on the look at the spec stand out as a person's act
+    const b = h("button", Object.assign({ type: "button", class: "btn small" + (look ? " human" : "") + (i === 0 && ok ? " primary" : ""),
+      "data-key": "next:" + a.id + (target ? ":" + target : ""),
+      disabled: !ok, tip: ok ? null : "A " + orList(a.personas) + " persona can" }, look ? { "data-control": "go_ahead" } : {}),
+    h("span", { class: "lbl" }, a.label));
     b.addEventListener("click", () => runAction(p, a, b));
     return b;
   });

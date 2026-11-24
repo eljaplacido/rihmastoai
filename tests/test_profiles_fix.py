@@ -95,15 +95,17 @@ class ProfileConfidenceTest(FactoryTestCase):
         src = make_repo(self.tmp / "rihmasto", {"README.md": own_readme()})
         p = adopt(self.factory, "Rihmasto", source=str(src), intent="improve", person="Aino",
                   persona="product_owner", which=lambda name: None)
-        basis = p.ledger().of_kind("profile_chosen")[-1]["event"]["payload"]["basis"]
-        self.assertEqual((basis["by"], basis["confidence"]), ("rule", "uncertain"))
-        self.assertEqual(basis["candidates"][0], p.meta["profile"])
+        # Uncertain, it is no longer taken: a person is asked which kind (FR-X1-AC-4, kernel/adopt_kind.py).
+        self.assertEqual(p.ledger().of_kind("profile_chosen"), [])
+        self.assertIsNone(p.meta.get("profile"))
+        basis = p.ledger().of_kind("adopt_kind_asked")[-1]["event"]["payload"]
         self.assertGreaterEqual(len(basis["candidates"]), 2)
         self.assertTrue(basis["why"])
         recorded = p.read("adopted.json")["profile"]
-        self.assertEqual((recorded["confidence"], recorded["candidates"]), ("uncertain", basis["candidates"]))
+        self.assertEqual((recorded["by"], recorded["confidence"], recorded["candidates"]),
+                         ("rule", "uncertain", basis["candidates"]))
         brief = Canon(p).brief
-        self.assertIn("proposed by rule but **uncertain**", brief)
+        self.assertIn("a person is asked which kind of work it is", brief)
         for pid in basis["candidates"]:
             self.assertIn(PROFILES[pid]["label"], brief)
 

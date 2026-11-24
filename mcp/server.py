@@ -50,7 +50,7 @@ if __package__ in (None, ""):  # run as a file (python <repo>/mcp/server.py): fi
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from kernel import access as kaccess  # noqa: E402
-from kernel.canon import CARD_DECIDERS, Canon, DecisionRefused  # noqa: E402
+from kernel.canon import CARD_DECIDERS, Canon, DecisionRefused, deciders_of  # noqa: E402
 from kernel.custody import held_strings, ledger_record, redact  # noqa: E402
 from kernel.people import PERSONAS, Identity, is_person  # noqa: E402
 from kernel.store import HOME_ENV, RIHMA_HOME_ENV, STAGES, Factory  # noqa: E402
@@ -167,8 +167,8 @@ TOOLS: dict[str, Tool] = {
     "rihma_project": {
         "title": "One project", "read": True, "params": {"pid": PID_ARG},
         "description": "One project: now, health, evidence counts per state, open questions, the open cards your "
-                       "persona may decide (ids and titles only) and what its running cell is doing. Decisions "
-                       "are made in the cockpit."},
+                       "persona may decide (ids and titles only), what its running cell is doing and its posture "
+                       "(what it does and what holds the project now). Decisions are made in the cockpit."},
     "rihma_waiting": {
         "title": "What waits on you", "read": True, "params": {},
         "description": "The decisions waiting on your persona across projects, oldest first, with their age in "
@@ -185,6 +185,16 @@ TOOLS: dict[str, Tool] = {
         "title": "Evidence", "read": True, "params": {"pid": PID_ARG},
         "description": "Each acceptance criterion of a project with its evidence state: verified, claimed, held "
                        "out, failing or not measured, and what the state rests on."},
+    "rihma_assessment": {
+        "title": "Assessment", "read": True,
+        "params": {"pid": PID_ARG,
+                   "version": _p("Optional: which assessment, such as AS-2 (default: the latest).", required=False,
+                                 limit=16)},
+        "description": "An adopted system's assessment (the latest, or the one named): its findings from five "
+                       "perspectives (CI/CD governance, maintenance, security, compliance, architecture and "
+                       "operations), each with its evidence, severity and suggested change; the panel's "
+                       "model_proposed findings, kept apart and never facts; what was not measured and why; and "
+                       "what changed since the version before. A person files findings as changes in the cockpit."},
     "rihma_square": {
         "title": "Delivery square", "read": True, "params": {},
         "description": "The delivery square at a glance: signals waiting, concepts to validate, projects per "
@@ -518,6 +528,7 @@ class RihmaMCP:
             "cards_you_may_decide": [{"id": c["id"], "title": c["title"]}
                                      for c in canon.cards(state="open", persona=self.persona)],
             "live": self._safe(self._live, project),
+            "posture": self._safe(_posture, project),
             "lens": {"name": lens, "question": LENSES[lens]["question"]},
             "persona": self.persona, "note": DECIDE_IN_COCKPIT,
         }
@@ -527,7 +538,7 @@ class RihmaMCP:
 
         q = queue(self.factory)
         items = [{k: i[k] for k in ("project", "card", "kind", "title", "age_hours")} for i in q["items"]
-                 if self.persona in CARD_DECIDERS.get(i["kind"], ())]
+                 if i["kind"] in CARD_DECIDERS and self.persona in deciders_of(i)]   # a card may narrow them
         ages = [i["age_hours"] for i in items if i["age_hours"] is not None]
         return {"persona": self.persona, "count": len(items), "items": items,
                 "oldest_hours": max(ages) if ages else None, "note": DECIDE_IN_COCKPIT}
@@ -555,6 +566,20 @@ class RihmaMCP:
         text = {c["id"]: c.get("then") for r in contract.get("requirements", []) for c in r.get("acceptance", [])}
         rows = [{**e, "then": text.get(e["criterion"])} for e in evidence(project)]
         return {"project": pid, "criteria": rows, "counts": dict(Counter(e["state"] for e in rows))}
+
+    def tool_assessment(self, pid: str, version: str | None = None) -> dict:
+        from kernel.assess import history, load, summary
+
+        project = self._project(pid)
+        versions = [e.get("id") for e in history(project)]
+        if not versions:
+            return {"project": pid, "assessment": None,
+                    "note": "no assessment yet: a person runs it (rihmasto assess, or Assess now in the cockpit)"}
+        try:
+            record = load(project, version)
+        except LookupError as exc:
+            raise ToolError(str(exc.args[0] if exc.args else exc)) from None
+        return {"project": pid, "assessment": summary(record), "versions": versions}
 
     def tool_square(self) -> dict:
         from kernel.signals import square
@@ -721,6 +746,14 @@ class RihmaMCP:
                 "note": "Holdout scenarios and what they met stay in the holdout custody; such fields are "
                         "redacted, so a redacted record no longer matches its hash."}
         return _contents(uri, "application/json", json.dumps(_redact(body, held), ensure_ascii=False, indent=2))
+
+
+def _posture(project) -> dict:
+    """A project's posture as the cockpit's Posture dialog shows it: what it does and what holds the
+    project now, without the full rule set (kernel/posture_rules.py)."""
+    from kernel.posture_rules import view
+
+    return {k: v for k, v in view(project).items() if k != "effects"}
 
 
 def _contents(uri: str, mime: str, text: str) -> dict:

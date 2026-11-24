@@ -29,7 +29,7 @@ STACK = """The product is built on the paved road: one Python 3 standard-library
 (`app/server.py` gives `route(method, pattern)`, `load_data(name, default)` and `save_data(name, value)`).
 It serves a JSON API, plus plain HTML pages where people need a screen. Data is kept in JSON
 files. Tests call `handle(method, path, body)` directly. No third-party packages, no external
-database, no outbound network calls."""
+database, no outbound network calls, except to a system declared in "integrations"."""
 
 
 def road_facts() -> str:
@@ -44,8 +44,11 @@ def road_facts() -> str:
 
 
 def spec_prompt(project, feedback: str | None = None) -> str:
+    from kernel.posture_rules import extra_requirements
+    from kernel.posture_rules import spec_guidance as posture_guidance
+
     meta, canon = project.meta, Canon(project)
-    n = MAX_REQUIREMENTS[meta["maturity"]]
+    n = MAX_REQUIREMENTS[meta["maturity"]] + extra_requirements(project)  # one more per topic a posture requires
     previous = ""
     if feedback:
         old = project.read("spec.json") or {"requirements": []}
@@ -59,6 +62,7 @@ The previous plan's requirements were:
 {listing}
 Write a new plan that answers the reason. Keep what the reason does not touch.
 """
+    from kernel.integration_decl import guidance as integration_guidance
     from kernel.profiles import profile_of, spec_guidance
 
     return f"""You turn a brief into a software specification for a factory that builds and verifies it.
@@ -66,11 +70,13 @@ Write a new plan that answers the reason. Keep what the reason does not touch.
 {canon.brief}
 {previous}
 Target maturity: **{meta['maturity']}**: {MATURITY_MEANING[meta['maturity']]}.
-{spec_guidance(profile_of(project))}
+{spec_guidance(profile_of(project))}{posture_guidance(project)}
 The stack is fixed:
 {STACK}
 
 {road_facts()}
+
+{integration_guidance()}
 
 Write at most {n} requirements: the smallest set that delivers the goal at this maturity. If the
 request names its own requirement ids (for example FR-KRIT-001), keep the id of each requirement
@@ -99,7 +105,7 @@ Answer with this JSON in a ```json block:
   "interface": [{{"method": "GET", "path": "/items", "purpose": "list items"}}],
   "requirements": [{{"id": "", "statement": "...", "sources": ["request"], "priority": "must",
      "acceptance": [{{"given": "...", "when": "...", "then": "...", "kind": "test"}}]}}],
-  "out_of_scope": ["..."]}}
+  "out_of_scope": ["..."], "integrations": []}}
 """
 
 
@@ -246,9 +252,11 @@ def normalize(project, raw: dict) -> dict:
     """Give the analyst's draft fixed ids and rule-based provenance. What cannot be used is dropped,
     never silently: the spec's ``dropped`` list names each requirement, criterion and source left out
     and why (FR-P3-AC-2)."""
+    from kernel.posture_rules import extra_requirements
+
     meta, canon = project.meta, Canon(project)
     requested_by = (project.read("source.json", {}) or {}).get("requested_by")
-    limit = MAX_REQUIREMENTS[meta["maturity"]]
+    limit = MAX_REQUIREMENTS[meta["maturity"]] + extra_requirements(project)
     reqs: list[dict[str, Any]] = []
     dropped: list[dict[str, Any]] = []
     for n, item in enumerate(raw.get("requirements") or [], 1):
@@ -265,10 +273,16 @@ def normalize(project, raw: dict) -> dict:
     reqs = keep_authors(project, reqs, limit, dropped)   # an expert's own ids and wording (docs/guides/inputs.md)
     if not reqs:
         raise ValueError("the analyst's draft holds no usable requirement")
+    from kernel.integration_decl import spec_integrations  # each system it reaches is an INT- requirement (FR-DS1)
+
+    integrations, kernel_reqs = spec_integrations(project, raw, dropped, lambda s: _provenance(s, canon, requested_by))
+    reqs += kernel_reqs
     spec = {"title": str(raw.get("title") or meta["title"]).strip(), "summary": str(raw.get("summary", "")).strip(),
             "users": [str(u) for u in (raw.get("users") or [])][:8], "maturity": meta["maturity"],
             "stack": "python-stdlib-http", "look": look_of(canon), "interface": _interface(raw, reqs),
             "requirements": reqs, "out_of_scope": [str(o) for o in (raw.get("out_of_scope") or [])][:12]}
+    if integrations:
+        spec["integrations"] = integrations
     if dropped:
         spec["dropped"] = dropped
     return spec
@@ -289,6 +303,9 @@ def render_spec_md(spec: dict) -> str:
     lines = [f"# Spec: {spec['title']}", "", spec.get("summary", ""), "",
              f"Maturity: **{spec['maturity']}**. Stack: {spec['stack']}.", "",
              "## Interface", "", render_interface(spec), ""]
+    from kernel.integration_decl import lines as integration_lines
+
+    lines += ["## Data integrations", "", *integration_lines(spec), ""] if spec.get("integrations") else []
     for r in spec["requirements"]:
         who = f", decided by {r['decided_by']}" if r.get("decided_by") else ""
         lines += [f"## {r['id']} ({r['priority']}, {r['provenance']}{who})", "", r["statement"], "",
@@ -313,10 +330,11 @@ def render_spec_md(spec: dict) -> str:
 
 
 def make_spec(project, *, model, feedback: str | None = None) -> dict:
-    from kernel.confidential import require_local
+    from kernel.confidential import guard
+    from kernel.posture_rules import check_spec, questions_to_settle
 
-    require_local(project, ("analyst",), where="spec")     # a confidential project's spec stays on local models
-    still_open = blocking_open(project)
+    model = guard(project, model, ("analyst",), where="spec")     # a confidential project's spec stays local
+    still_open = blocking_open(project) or questions_to_settle(project)  # a confirming posture: every question
     if still_open:
         project.log("send_back", {"questions": [q["id"] for q in still_open]})
         raise SendBack(still_open)
@@ -326,6 +344,7 @@ def make_spec(project, *, model, feedback: str | None = None) -> dict:
     settle_profile_question(project)  # a person's answer to "which kind of work is this?" shapes the spec
     raw = _ask_json(model, spec_prompt(project, feedback))
     spec = normalize(project, raw)
+    check_spec(project, spec)  # the topics a posture requires, by rule; a gap makes the plan wait for a person
     conflicts = road_conflicts(spec)
     if conflicts:  # the plan review flags them for a person (kernel/plan.py)
         project.log("spec_road_conflicts", {"conflicts": [{k: c[k] for k in ("requirement", "criterion", "fact")}
@@ -335,5 +354,7 @@ def make_spec(project, *, model, feedback: str | None = None) -> dict:
     project.update_meta(stage=4)
     project.log("spec_written", {"requirements": len(spec["requirements"]),
                                  "criteria": sum(len(r["acceptance"]) for r in spec["requirements"]),
-                                 "dropped": len(spec.get("dropped", []))})
+                                 "dropped": len(spec.get("dropped", [])), "integrations": [
+                                     {k: d[k] for k in ("name", "kind", "access", "provenance")}
+                                     for d in spec.get("integrations", [])]})
     return spec

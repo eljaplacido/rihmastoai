@@ -468,6 +468,9 @@ def mark_created(factory: Factory, sid: str, project: Project, *, person: str, p
                                    "messages": len(conv["messages"]), "sha256": _digest(brief(conv))})
     _log(factory, "shape_created", {"shape": sid, "project": project.pid, "person": person, "persona": persona,
                                     **chose})
+    from kernel.go_ahead import choose as wait_or_not  # a look at the spec before the first build (explore, demo)
+
+    wait_or_not(project, wait=True, person=person, persona=persona, where="Shape it in chat")
     return conv
 
 

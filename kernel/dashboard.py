@@ -25,7 +25,7 @@ from kernel.store import STAGES, Project
 
 BANDS = (("Decide", (1, 2)), ("Shape", (3, 4)), ("Deliver", (5, 6)), ("Run", (7,)))
 DECISION_KINDS = ("question", "approval", "validation", "deploy_gate", "escalation", "holdout_ruling", "road",
-                  "trust", "incident", "change")
+                  "trust", "incident", "change", "go_ahead")
 AGENT_KINDS = {"cell_ran": "builder", "gate": "kernel", "merged": "kernel", "escalated": "kernel",
                "gnomon_run": "agent", "intake_done": "analyst", "spec_written": "analyst",
                "holdouts_authored": "holdout author", "contract_compiled": "kernel", "release_step": "kernel",

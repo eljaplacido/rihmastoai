@@ -263,11 +263,15 @@ class PackHeadTest(FactoryTestCase):
 
 # Write routes that record no state: a second sign-in link (kept in memory), the assistant (it proposes,
 # kernel/assistant.py), the profile proposal (a rule over text), a folder's material map (kernel/material.py,
-# read and shown, never kept) a settings change's preview (FR-CHG1)
+# read and shown, never kept) a settings change's preview (FR-CHG1), a posture's preview (kernel/posture.py)
 # and a model's Test (kernel/models_setup.py). Adopting records its request,
 # signed, before its job runs, so it is a signed write here.
 RECORD_NOTHING = {"post_link", "post_assistant", "post_profile_propose", "post_source_preview",
-                  "post_settings_preview", "post_model_test"}
+                  "post_settings_preview", "post_model_test", "post_posture_preview", "post_automation_preview",
+                  "post_automation_dry_run"}
+# An automation the write routes set (kernel/automations.py): a change proposal when a release is done.
+AUTOMATION = {"name": "When a release is done", "trigger": {"kind": "event", "types": ["release_done"]},
+              "action": {"kind": "change", "text": "{project} released: check the docs"}}
 NOTES = {"name": "notes.md", "text": "The tool store is open on weekdays."}
 MODEL = {"base_url": "http://127.0.0.1:9/v1", "model": "qwen3:32b"}   # set, never called
 # The one write route that takes no person: it starts the pipeline as a job. Recorded as not built in
@@ -306,6 +310,9 @@ class FactoryApiTest(CockpitTestCase):
 
         def sid(got: dict) -> str:                                           # the conversation post_shape opened
             return got["post_shape"]["shape"]["id"]
+
+        def aid(got: dict) -> str:                                           # the automation post_automation set
+            return got["post_automation"]["automation"]["id"]
         repo = self.tmp / "adopt-source"                                     # an existing project to adopt
         if not (repo / ".git").exists():
             repo.mkdir(parents=True, exist_ok=True)
@@ -372,6 +379,9 @@ class FactoryApiTest(CockpitTestCase):
                                "persona": "business_owner"}),
             ("put_project_autonomy", "PUT", f"/api/projects/{b}/autonomy",
              lambda who, got: {"level": 2, "reason": "answers and proposals", "person": who, "persona": "compliance"}),
+            ("put_posture", "PUT", f"/api/projects/{b}/posture",
+             lambda who, got: {"posture": "balanced", "reason": "a person says go", "person": who,
+                               "persona": "business_owner"}),
             ("post_evidence_export", "POST", f"/api/projects/{b}/evidence",
              lambda who, got: {"person": who, "persona": "compliance"}),
             ("post_pack_build", "POST", f"/api/projects/{b}/pack/build",
@@ -381,6 +391,10 @@ class FactoryApiTest(CockpitTestCase):
                                "persona": "business_owner"}),
             ("post_outputs_build", "POST", f"/api/projects/{b}/outputs/build",
              lambda who, got: {"targets": ["report"], "person": who, "persona": "compliance"}),
+            ("post_assessment", "POST", f"/api/projects/{b}/assessment",
+             lambda who, got: {"person": who, "persona": "developer"}),
+            ("post_assessment_changes", "POST", f"/api/projects/{b}/assessment/changes",
+             lambda who, got: {"findings": ["F-1"], "person": who, "persona": "developer"}),
             ("post_embed", "POST", "/api/embeds",
              lambda who, got: {"kind": "feedback", "origins": ["https://shop.example"], "project": b,
                                "label": "Shop feedback", "person": who, "persona": "it"}),
@@ -417,6 +431,25 @@ class FactoryApiTest(CockpitTestCase):
              lambda who, got: {"mode": "mixed", "maturity": "demo", "person": who, "persona": "business_owner"}),
             ("put_model", "PUT", "/api/models/assistant", lambda who, got: {**MODEL, "person": who, "persona": "it"}),
             ("post_model_remove", "POST", "/api/models/assistant/remove", lambda who, got: {"person": who, "persona": "it"}),
+            # Settings > Runners (kernel/runners, D-0019): back to Gnomon applies at once, in the factory's ledger
+            ("put_runner", "PUT", "/api/runners/builder", lambda who, got: {"runner": "gnomon", "person": who, "persona": "it"}),
+            # automations (kernel/automations.py, FR-AUT1), in the factory's ledger and the project's
+            ("post_automation", "POST", "/api/automations",
+             lambda who, got: {"automation": AUTOMATION | {"scope": {"kind": "project", "projects": [b]}},
+                               "person": who, "persona": "product_owner"}),
+            ("put_automation", "PUT", lambda got: f"/api/automations/{aid(got)}",
+             lambda who, got: {"automation": {"name": "When a release is done, again"}, "person": who,
+                               "persona": "it"}),                       # IT, or the owner, changes one
+            ("post_automation_run", "POST", lambda got: f"/api/automations/{aid(got)}/run",
+             lambda who, got: {"person": who, "persona": "product_owner"}),
+            ("post_automation_pause", "POST", lambda got: f"/api/automations/{aid(got)}/pause",
+             lambda who, got: {"reason": "audit week", "person": who, "persona": "product_owner"}),
+            ("post_automation_resume", "POST", lambda got: f"/api/automations/{aid(got)}/resume",
+             lambda who, got: {"person": who, "persona": "it"}),
+            ("post_automation_remove", "POST", lambda got: f"/api/automations/{aid(got)}/remove",
+             lambda who, got: {"person": who, "persona": "it"}),
+            ("put_project_tags", "PUT", f"/api/projects/{b}/tags",
+             lambda who, got: {"tags": ["ops"], "person": who, "persona": "product_owner"}),
         ]
 
     def ledgers(self) -> dict:
@@ -476,6 +509,11 @@ class FactoryApiTest(CockpitTestCase):
         isolated_routing(self, self.tmp)                                     # the analyst's key is not set: no call
         status, out, _ = self.call("POST", "/api/models/analyst/test", {"person": "Ilkka", "persona": "it"})
         self.assertEqual((status, out["test"]["ok"]), (200, False), out)
+        draft = AUTOMATION | {"scope": {"kind": "project", "projects": [pl.pid]}}
+        status, out, _ = self.call("POST", "/api/automations/preview", {"automation": draft, "person": "Dev",
+                                                                         "persona": "developer"})
+        self.assertEqual((status, out["ok"]), (200, True), out)
+        self.assertTrue(out["summary"].startswith("When a release is done, for project"), out)
         self.assertEqual(tree(home), before)
 
     def test_FR_N1_AC_1_every_read_model_answers_from_the_records_and_writes_nothing(self):

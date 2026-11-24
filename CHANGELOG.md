@@ -8,6 +8,85 @@ Every notable change to Rihmasto is recorded here, newest first. The format foll
 
 ### Added
 
+- **The owner's decisions of 2026-11-24** ("1. Yes 2. Skip 3. Agreed 4. Ask"), after a journey test walked
+  their real flows:
+  - **A new kind keeps only what a person chose** (FR-CHG1-AC-11): changing a project's kind of work and
+    going back to the questions withdraws the assumptions the factory made on its own, "made for the old
+    kind", and keeps the answers and assumptions a person chose; the settings preview counts what is kept
+    and withdrawn, and the panel that runs again is told only the person-settled ones.
+  - **Confidential work skips a hosted fallback** (FR-MAT1-AC-10): a role whose primary endpoint is local
+    but whose fallback is hosted is no longer refused; the lanes a confidential project's calls run in are
+    compiled without the hosted fallback, so Gnomon cannot reach it, and `confidential_fallback_skipped`
+    records the skip once per run. A hosted primary is still refused.
+  - **Look at the spec before building** (FR-CHG1-AC-12, AC-13): at explore and demo a project a person
+    makes waits once, before its first build, for Go or Skip on its spec, in What's next and the Inbox;
+    **Build without waiting for me** in New project and Project settings (`--build-without-waiting`) turns
+    it off; a delegation may say Go (`go_ahead`, rule `go`); pilot and up keep the plan's approval; the
+    scripted demo sets it off.
+  - **Adopting asks the kind when it is not clear** (FR-X1-AC-4): an adopted project whose kind is not
+    clear from its title, README and files gets the "Which kind of work is this?" question card with the
+    candidate kinds, instead of a web app; one clear candidate is taken and said with why.
+- **Models setup sees a key Gnomon holds** (FR-MDL1-AC-10): an endpoint whose key Gnomon keeps (`gnomon
+  key set`) reads "key set by Gnomon", by `gnomon key list` (names only), not "no key"; when Gnomon cannot
+  say but its credential store exists, "Gnomon may have its own key for this host". Rihmasto never opens
+  the store. `rihmasto doctor` counts such a key as set.
+- **Other harnesses as cell runners** (D-0019, FR-HRN1): the builder and the verifier can run with
+  Claude Code, Codex, OpenCode or any command a team names instead of Gnomon, per role, for the
+  factory or one project. Gnomon stays the default and the reference. Another runner is chosen on a
+  **Cell runner** card only IT decides, with the version found on the machine pinned; a run with
+  another version, a runner not found, or the docker sandbox where Docker does not answer does not
+  happen (`runner_refused`). Each harness gets the task's envelope, its write scope and protected
+  paths and the project's own conventions (AGENTS.md, CLAUDE.md, rules files), never the holdouts.
+  After its run the gate checks the write scope and the holdout custody beside the suite, the trace,
+  fail-first and the independent verifier (another model family, whichever runner); a change that
+  fails any of them never merges. The optional docker sandbox mounts only the working copy, with no
+  network but a proxy to the model endpoint. Every round's record, the ledger (`runner_ran`) and the
+  evidence pack (`cell-runners.json`) name the runner, its version and its assurance: "in-run policy
+  enforced by Gnomon" or "checked after the run", never the one shown as the other. Settings >
+  Runners, a runner line in Project settings, and `rihmasto runners list|check|set`
+  ([guide](docs/guides/harnesses.md)).
+- **Your IDE and Rihmasto** (FR-AGC1): a project's AI tool configuration is recognised by rule and
+  followed. The scan reads `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.cursorrules`, Cursor rules (with
+  their description, globs and alwaysApply), Copilot, Windsurf and Cline instructions right after
+  the README, then Claude skills (with their bundled files listed), subagents and slash commands;
+  hooks, permissions and MCP servers by name only; personal settings never. Nothing found is run.
+  The material map shows them as **How AI tools here are set up**. Intake's and the assessment's
+  panels are told the conventions; adoption's baseline runs the test command they state (shell
+  syntax never); a builder cell on an adopted project gets the instructions that apply to the files
+  it may write. An adopted or attached project's Overview shows **AI tools in this project** and
+  **Work on it from your IDE** (MCP configuration for Claude Code, Cursor and Codex, how a change
+  comes back, and a section to paste into your own AGENTS.md); `rihmasto ide <pid>` prints the same
+  and writes nothing ([guide](docs/guides/ide-and-rihmasto.md)).
+- **Automations** (FR-AUT1): a trigger (a schedule, a ledger event, an inbound webhook ringing, or new
+  commits on an attached or adopted repository), an optional guard, an action from an allow-list
+  (advance, gate, re-scan a folder, notify, open a change proposal or a signal, rebuild an output, run the
+  project's own tests in a sandbox, ask a model and post a comment), a scope (one project, a list, a tag,
+  a profile, a source, or the factory) and limits (runs per hour, a circuit breaker, quiet hours, a dry
+  run), owned and signed by a person and run with their rights, checked again before every run. Never a
+  decision. Recorded as `automation_set`, `automation_ran`, `automation_paused` and the like. The
+  cockpit ticks every minute while it runs; `rihmasto automations tick` runs from cron or Windows Task
+  Scheduler (`install-help` prints the line). The Automations page with scope filters, templates and a
+  builder that shows the kernel's plain-language summary before saving, and an Automations tab on each
+  project with its tags. Inbound sources bind to projects (`hooks add --bind`, `hooks bind`), and a relay
+  subscription can be one project's own (`relay subscribe --project`)
+  ([guide](docs/guides/automations.md)).
+- **The four together** (FR-HRN1-AC-11 to AC-13, FR-AUT1-AC-16): a harness other than Gnomon is given
+  the project's conventions recognised and matched as a Gnomon builder's envelope matches them, for
+  the files its task may write (and not twice on an adopted project, whose envelope already holds
+  them); a confidential project's role run by another harness on a hosted model, or outside the docker
+  sandbox, is refused as a hosted role is (`confidential_refused`); a runner card waiting on IT shows
+  in the project's What's next (opening Settings > Runners for it) and in the Inbox beside the trust
+  and road cards, as the go-ahead card does; an automation never says Go or Skip on the look at the
+  spec, nor approves or declines a runner.
+- **Automations on the life-cycle steps and their transitions** (FR-AUT1-AC-17, D-0023): a concept
+  validated, the spec or plan approved, the first build through the gate, a release on a test road, a
+  promotion to production, a rollback and a failed check are each a clear record an event trigger names
+  (`concept_validated`, `plan_approved`, `first_build_passed`, `release_reached_test`, `promoted`,
+  `rolled_back`, `check_failed`); `first_build_passed` and `release_reached_test` are new records. A
+  `probe` action runs the probe check where the release runs and, with `every`, keeps probing
+  production. Four templates: when a release reaches test, run its checks and notify; when promoted to
+  production, enable the probe check and notify; when a concept is validated, notify the product owner;
+  when the gate fails twice, open a change proposal.
 - **Change anything, go back a step, never get stuck** (FR-CHG1): a project's kind of work, mode,
   maturity and title change after it was made, with a preview of what the change means for the
   questions, spec and plan already done (`project_changed` in the ledger, before and after); a project
@@ -83,6 +162,33 @@ Every notable change to Rihmasto is recorded here, newest first. The format foll
   recorded for evidence (`repo releases`); `rihmasto contract export` ends spec only in files
   ([docs/guides/use-only-what-you-need.md](docs/guides/use-only-what-you-need.md)).
 
+- **Small capabilities** ([docs/guides/small-capabilities.md](docs/guides/small-capabilities.md)): the
+  `automation` profile and its capability template, a runtime declaration (`app/runtime.json`) judged
+  at the gate and carried in the pack with secrets by name, one image whose faces (MCP over stdio and
+  Streamable HTTP, an OpenAI-compatible chat also routed by the gateway, a website embed, HTTP) answer
+  only after the pack guard has checked the pack, verified webhook and relay triggers, a schedule,
+  results out as signed events, `rihmasto capability check` and `serve`, and the faces in
+  `compose.yaml`. A face the declaration does not name stays shut on every transport, MCP's stdio
+  included, and the openai face reports its token usage as not measured (the gateway's audit too),
+  never as zeros.
+- **Postures and priority weights** ([docs/guides/postures.md](docs/guides/postures.md)): prototype,
+  balanced, production or regulated, tuned by ux, security, compliance, speed and cost, previewed
+  before anyone chooses, recorded with who chose it, and changed during the run with what it changes
+  now and later (`rihmasto posture`, New project's **How it runs**, where *No posture* is chosen
+  until a person picks one, for a need and for an adopted project, and the **Posture** chip in the
+  header and in Project settings, whose maturity and mode changes keep to the posture).
+- **Brownfield assessment** ([docs/brownfield.md](docs/brownfield.md#assessing-an-adopted-system)):
+  `rihmasto assess` and the cockpit's **Assessment** view judge an adopted system from every
+  perspective by rule, versioned, with the panel's review apart, and file chosen findings as changes.
+- **Access with the identity provider's signed token** ([docs/guides/access.md](docs/guides/access.md)):
+  the cockpit verifies the provider's token (RS256 or ES256) and holds no shared secret; with access
+  enforced, untrusted code (a suite, an adopted suite, a product, a Gnomon cell) runs only through
+  IT's isolation runner, and the cockpit refuses to start a job that would need one it lacks.
+- **Data integrations** ([docs/guides/data-integrations.md](docs/guides/data-integrations.md)): a
+  product declares the databases, warehouses, cloud storage and business APIs it reaches, IT approves
+  each binding, delivery wires it in by name, and the gate tests it on stand-ins.
+- **The acceptance matrix** ([docs/acceptance.md](docs/acceptance.md)): every need, mode, maturity and
+  access column with its offline cells in `tests/acceptance`, and the live acid-test plan.
 - **Pull requests only.** `main` changes only through pull requests that pass the four CI jobs and
   the new DCO sign-off check, with a code owner's review, squash-merged
   ([CONTRIBUTING.md](CONTRIBUTING.md#how-changes-reach-main)).
@@ -110,6 +216,24 @@ Every notable change to Rihmasto is recorded here, newest first. The format foll
   the repository's security advisories ([SECURITY.md](SECURITY.md)).
 - The release export's exclude list matches paths in any case, so a left-out folder spelled
   otherwise on a disk that ignores case stays out too.
+
+### Fixed
+
+Found by walking the owner's journeys in a real cockpit with a local model:
+
+- New project no longer assumes a web app: **Let Rihma choose** is the default, and the intake proposes
+  the kind of work by rule from the need or the folder.
+- A project made from a folder, or adopted, opens its Project settings again (they read "unreadable"), and
+  material added to it is kept beside the folder's map instead of failing.
+- Material read with re-intake no longer goes on to build on the spec written before it; nothing is built
+  past an open blocking question (FR-CHG1-AC-10).
+- What's next drops a run's result from before a person went back a step, changed a setting or added
+  material; says when the autonomy cap stops the build, on the command line too; opens Models setup for
+  any persona when a model did not answer; names the command for every action; and offers an improved
+  adopted project's next steps.
+- The Jobs page opens the project an adoption made; the first-run name shows at once in the person menu;
+  Ask Rihma no longer flags a cockpit view or control it cites as "not found"; a confidential refusal and
+  Models setup say how to drop a hosted fallback; `rihmasto settings` and `rewind` previews need no signer.
 
 ## [1.0.0.dev0] - 2026-11-23
 

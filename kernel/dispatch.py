@@ -65,36 +65,43 @@ classes in `app/static/product.css`, and pass every value through `esc()`. Every
 empty state."""
 
 
-def envelope(project, contract: dict, task_id: str, *, base: str, round_no: int = 0,
-             objections=()) -> str:
+def _goal(contract: dict, task_id: str) -> list[str]:
+    """The envelope's goal: the task's requirements, its visible criteria, and how many more the factory checks."""
     task = next(t for t in contract["tasks"] if t["id"] == task_id)
     crit = {c["id"]: c for r in contract["requirements"] for c in r["acceptance"]}
-    req_ids = sorted({cid.rsplit("-AC-", 1)[0] for cid in task["criteria"]})
     reqs = {r["id"]: r for r in contract["requirements"]}
     visible = visible_criteria(contract, task_id)
-    lines = [f"# Envelope {task_id}" + (f", repair round {round_no}" if round_no else ""), "",
-             f"Product: {project.meta['title']} (maturity {project.meta['maturity']}). "
-             f"Contract {contract['revision'][:19]}. Base revision {base[:12]}.", "",
-             "Do this with your tools, now. Your answer is judged by the files you leave and by checks "
-             "the factory runs itself after you finish.", "", "## Goal", ""]
-    for rid in req_ids:
-        lines.append(f"- **{rid}**: {reqs[rid]['statement']}")
+    req_ids = sorted({cid.rsplit("-AC-", 1)[0] for cid in task["criteria"]})
+    lines = [f"- **{rid}**: {reqs[rid]['statement']}" for rid in req_ids]
     lines += ["", "## Acceptance criteria you must meet, each with a test named by its id", ""]
-    for cid in visible:
-        c = crit[cid]
-        lines.append(f"- **{cid}**: given {c['given']}; when {c['when']}; then {c['then']}")
+    lines += [f"- **{cid}**: given {crit[cid]['given']}; when {crit[cid]['when']}; then {crit[cid]['then']}"
+              for cid in visible]
     hidden = [cid for cid in task["criteria"] if cid not in visible]
     if hidden:
         lines += ["", f"{len(hidden)} more criteria for this requirement are checked end to end against the running "
                   "service by the factory. Build the requirement as stated, not only the tests above."]
+    return lines
+
+
+def envelope(project, contract: dict, task_id: str, *, base: str, round_no: int = 0,
+             objections=()) -> str:
+    task = next(t for t in contract["tasks"] if t["id"] == task_id)
+    lines = [f"# Envelope {task_id}" + (f", repair round {round_no}" if round_no else ""), "",
+             f"Product: {project.meta['title']} (maturity {project.meta['maturity']}). "
+             f"Contract {contract['revision'][:19]}. Base revision {base[:12]}.", "",
+             "Do this with your tools, now. Your answer is judged by the files you leave and by checks "
+             "the factory runs itself after you finish.", "", "## Goal", ""] + _goal(contract, task_id)
+    from kernel.agent_context_use import for_builder
     from kernel.outputs import builder_notes
     from kernel.roads import road_facts_for_builder
     from kernel.spec import render_interface
 
+    scope = task.get("scope", {}).get("write", [])
     lines += ["", "## The product's HTTP interface (fixed by the spec: use exactly these paths)", "",
               render_interface(project.read("spec.json") or {})] + builder_notes(project, base)  # req.user, CSRF
-    lines += ["", "## Scope", "", "Write only: " + ", ".join(task.get("scope", {}).get("write", [])) + ".",
-              "", "## How the product is built", "", STACK_NOTES, "",
+    lines += ["", "## Scope", "", "Write only: " + ", ".join(scope) + "."]
+    lines += for_builder(project, base, scope)   # an adopted project's own conventions (CLAUDE.md, rules: FR-AGC1)
+    lines += ["", "## How the product is built", "", STACK_NOTES, "",
               "## The paved road's platform facts (the road owns them)", "", road_facts_for_builder(), "",
               "## Rules", "",
               "- Write each criterion's test first, named `test_<ID with hyphens as underscores>_...`, "
@@ -133,10 +140,14 @@ def _set_task(project: Project, task_id: str, **changes: Any) -> dict:
 
 
 def _cell_summary(record: dict) -> dict:
+    """A round's cell as the ledger keeps it, with its runner, version and assurance (D-0019)."""
+    from kernel.runners.cell import runner_line
+
     esc = record.get("escalation") or {}
     return {k: record.get(k) for k in ("code", "bucket", "stop_reason", "tool_steps", "model", "verify")} | {
         "escalated": bool(esc), "final_model": esc.get("final_model") or record.get("model"),
-        "surface_hash": (record.get("trust") or {}).get("surface_hash") or record.get("surface_hash")}
+        "surface_hash": (record.get("trust") or {}).get("surface_hash") or record.get("surface_hash"),
+        "runner": runner_line(record)}
 
 
 def ingest_latest_run(project, lane_path, started: float, *, task: str, round_no: int):
@@ -200,15 +211,23 @@ def _run_cell(project: Project, lane: Lane, prompt: str, run_cell: Callable[[Pat
 def build_task(project, task_id: str, *, lanes: Lanes | None = None, max_rounds: int = 2,
                cell_runner=None, verifier_runner=None, deadline: int = 1500, lane_wait: float = 3600,
                reflex_backoff: tuple = (30, 120)) -> dict:
-    """Build one task. ``cell_runner(lane_path, prompt) -> record`` replaces gnomon in tests."""
+    """Build one task. ``cell_runner(lane_path, prompt) -> record`` replaces gnomon in tests. The runner chosen for
+    the project builds and reviews it (kernel/runners, D-0019); Gnomon unless IT approved another."""
+    from kernel.runners import cell as runners
     from kernel.safestop import paused, stop_here
 
     contract = _contract(project)
     lanes = lanes or Lanes()
-    run_cell = cell_runner or (lambda path, prompt: run_gnomon_task(
+    runners.require_local(project, builder=cell_runner is None, verifier=verifier_runner is None)  # confidential
+    why = runners.refusal(project, builder=cell_runner is None, verifier=verifier_runner is None)
+    if why:
+        return runners.refuse(project, task_id, why, _set_task)
+    other = None if cell_runner else runners.builder(project, contract, task_id, deadline)
+    run_cell = cell_runner or (other.run if other else lambda path, prompt: run_gnomon_task(
         path, prompt, role="builder", timeout=deadline + 600, deadline=deadline))
     _set_task(project, task_id, status="building")
     with lanes.lease(f"{project.pid}:{task_id}", wait=lane_wait) as lane:
+        verifier_runner = verifier_runner or runners.verifier(project, lane.path)
         base = lane.checkout(project.path("repo.git"), branch=f"cell/{task_id}")
         objections: list[str] = []
         rounds: list[dict[str, Any]] = []
@@ -220,7 +239,7 @@ def build_task(project, task_id: str, *, lanes: Lanes | None = None, max_rounds:
                 return {"status": "paused", "rounds": rounds}
             prompt = envelope(project, contract, task_id, base=base, round_no=round_no, objections=objections)
             record, attempts = _run_cell(project, lane, prompt, run_cell, task_id=task_id, round_no=round_no,
-                                         ingest=cell_runner is None, reflex_backoff=reflex_backoff)
+                                         ingest=cell_runner is None and other is None, reflex_backoff=reflex_backoff)
             head = lane.commit_all(f"{task_id} round {round_no}: cell work\n\nEnvelope for {task_id}, "
                                    f"contract {contract['revision'][:19]}, base {base[:12]}.")
             cell = _cell_summary(record)
@@ -230,7 +249,8 @@ def build_task(project, task_id: str, *, lanes: Lanes | None = None, max_rounds:
                 objections = [f"the harness failed {attempts} times (an apparatus failure, not the work): "
                               f"{record.get('stop_reason')}"]
                 break
-            result = judge(lane.path, contract, task_id, base, head, verifier_runner=verifier_runner)
+            result = other.judge(lane.path, base, head, verifier_runner) if other else \
+                judge(lane.path, contract, task_id, base, head, verifier_runner=verifier_runner)
             project.log("gate", gate_record(task_id, round_no, result))
             rounds.append({"round": round_no, "cell": cell, "gate": result.to_dict()})
             if result.warranted:
@@ -404,9 +424,13 @@ def build(project: Project, **kwargs: Any) -> dict:
     A task whose merge found main moved during its gate is built once more, on the new main."""
     from kernel.autopilot import pass_stopped
     from kernel.confidential import require_local
+    from kernel.runners import cell as runners
     from kernel.safestop import paused, stop_here
 
-    require_local(project, ("builder", "verifier"), where="build")   # the cells and the verifier read the code
+    # The cells and the verifier read the code: a role Gnomon runs by the routing, one another harness runs by
+    # the endpoints it may reach (kernel/runners/cell.py), each refused on a hosted model while confidential.
+    require_local(project, runners.gnomon_roles(project), where="build")
+    runners.require_local(project)
     contract = _contract(project)
     results: dict[str, str] = {}
     again: set[str] = set()
@@ -428,7 +452,10 @@ def build(project: Project, **kwargs: Any) -> dict:
             break
     state = _tasks_state(project)
     all_merged = all(state.get(t["id"], {}).get("status") == "merged" for t in contract["tasks"])
+    first = all_merged and not project.meta.get("built")
     if all_merged:
         project.update_meta(stage=6 if project.meta["maturity"] in ("pilot", "production") else 5, built=True)
     project.log("build_round", {"results": results, "all_merged": all_merged})
+    if first:     # a life-cycle transition an automation may react to (kernel/automations_events.py)
+        project.log("first_build_passed", {"tasks": len(contract["tasks"]), "stage": project.meta.get("stage")})
     return {"results": results, "all_merged": all_merged}

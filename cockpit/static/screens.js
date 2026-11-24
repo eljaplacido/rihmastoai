@@ -14,6 +14,7 @@ import { dataTable } from "./charts.js";
 import { currentTheme, setTheme, loadLayout, applyTheme } from "./dashboard.js";
 import { loadModules, modulesCard, moduleShows } from "./modules.js";
 import { scanStep, looksLikeFolder } from "./scan.js";
+import { postureSection } from "./posture.js";
 
 const CHANNEL_ICON = { chat: "message-square", feed: "signal", form: "file-check", email: "send", monitoring: "activity",
   meeting: "users", embed: "code", manual: "edit" };
@@ -504,7 +505,7 @@ function inboxCard(c, tries) {
 // Decisions that hold work up first (an escalation, a holdout that blocks a release, the approvals and
 // gates, the roads and trust a deploy waits on), then changes, updates to try and concepts, and the
 // panel's many questions last. Within a group a blocking card comes first, then the oldest.
-const INBOX_ORDER = ["escalation", "holdout_ruling", "approval", "validation", "deploy_gate", "incident", "road", "trust",
+const INBOX_ORDER = ["escalation", "holdout_ruling", "approval", "go_ahead", "validation", "deploy_gate", "incident", "road", "trust", "runner",
   "change", "update", "concept", "question"];
 
 export async function renderInboxAll(seq) {
@@ -723,11 +724,15 @@ export async function renderSettings(seq) {
   const offNote = embedsOn ? null : h("p", { class: "note warning", "data-key": "embeds-off" }, icon("alert"), h("span", null,
     h("b", null, "Integrations is off. "), "These chats take no messages while it is off. Revoke one here to stop it for good."));
   fill(main,
-    pageHead("Settings", "The models, the modules in use, embeds for websites, how the cockpit looks, and sign-in links.", { icon: "settings" }),
+    pageHead("Settings", "The models, the cell runners, the modules in use, embeds for websites, how the cockpit looks, and sign-in links.", { icon: "settings" }),
     card({ title: "Models", icon: "cpu", id: "set-models", tools: [h("a", { href: "#/models", class: "btn small primary", "data-control": "models_open", "data-key": "set:models" },
       icon("cpu"), h("span", { class: "lbl" }, "Open Models setup"))] },
     h("p", null, "Which model answers for each role (the analyst, the builder, the verifier, the assistant and more): a server on this machine or a hosted "
       + "OpenAI-compatible provider, with a Test that sends it a tiny prompt.")),
+    card({ title: "Runners", icon: "layers", id: "set-runners", tools: [h("a", { href: "#/runners", class: "btn small primary", "data-control": "runners_open", "data-key": "set:runners" },
+      icon("layers"), h("span", { class: "lbl" }, "Open Runners"))] },
+    h("p", null, "Which harness runs the factory's cells: Gnomon, which enforces the rules during a run, or another harness such as Claude Code, Codex or "
+      + "OpenCode, approved by IT with its version pinned and checked after every run.")),
     modulesCard(projects),
     !embedsOn && !em.embeds.length ? null : card({ title: "Embeds: a chat window for a website", icon: "message-square", id: "embeds", cls: "emb-card",
       tools: [embedsOn ? create : null],
@@ -798,7 +803,9 @@ function showProposal(target, out, warning, text) {
 
 export function newProjectModal() {
   const profiles = (S.meta && S.meta.profiles) || [];
-  let chosen = "web_service";
+  // Nothing is assumed: unless the person picks one, intake proposes the kind of work by rule from the
+  // material, and asks which it is when the words point to more than one (FR-DF4).
+  let chosen = "auto";
   const title = h("input", { maxlength: "200", placeholder: "for example: Equipment loans", "aria-label": "Title" });
   const source = h("textarea", { rows: "4", maxlength: "200000", placeholder: "For example: Our team keeps losing track of who borrowed the drills and laptops. We want a simple way to lend and return things.", "aria-label": "The need" });
   const by = h("input", { maxlength: "200", value: S.person, autocomplete: "name", "aria-label": "Requested by" });
@@ -812,7 +819,12 @@ export function newProjectModal() {
     b.setAttribute("aria-checked", String(on));
     b.tabIndex = on ? 0 : -1;
   });
-  fill(grid, profiles.map((p) => {
+  const auto = h("button", { type: "button", role: "radio", "aria-checked": "false", class: "prof-card", "data-key": "profile:auto" },
+    h("span", { class: "prof-top" }, h("span", { class: "cat-ic" }, icon("sparkles")), chip("neutral", "info", "Not sure")),
+    h("b", null, "Let Rihma choose"), h("span", { class: "prof-s" }, "Proposed from the need or the folder by rule when the intake reads it. If the words point to more than one kind, you are asked which."),
+    h("small", null, "change it later in Project settings"));
+  auto.addEventListener("click", () => { chosen = "auto"; draw(); });
+  fill(grid, [auto].concat(profiles.map((p) => {
     const preview = p.status === "preview";
     const b = h("button", { type: "button", role: "radio", "aria-checked": "false", class: "prof-card", "data-key": "profile:" + p.id },
       h("span", { class: "prof-top" }, h("span", { class: "cat-ic" }, icon(p.icon)),
@@ -822,7 +834,7 @@ export function newProjectModal() {
       h("small", null, (((S.meta.deliverables || {})[p.deliverable]) || "").split(":")[0]));
     b.addEventListener("click", () => { chosen = p.id; draw(); });
     return b;
-  }));
+  })));
   grid.addEventListener("keydown", (e) => {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
     const all = $$(".prof-card", grid);
@@ -857,8 +869,8 @@ export function newProjectModal() {
       setTimeout(() => card.classList.remove("just-proposed"), 1600);
     }
   }));
-  const maturity = segmented("np-maturity", Object.keys(S.meta.maturities).map((m) => [m, cap(m)]), "demo", () => {}, { label: "Maturity" });
-  const mode = segmented("np-mode", Object.keys(S.meta.modes).map((m) => [m, cap(m)]), "mixed", () => {}, { label: "Mode" });
+  // How it runs: a posture with its weights and the kernel's preview, or no posture (maturity and mode as before).
+  const how = postureSection({ profile: () => (chosen === "auto" ? null : chosen), watch: grid });
   const val = (seg) => (seg.querySelector('[aria-checked="true"]') || {}).dataset.key.split(":")[1];
   // Start from a need, or from an existing project: a local git folder or an address git clones without a
   // password. Adopting reads the repository (it never changes the folder) and records its tests as a baseline.
@@ -876,6 +888,11 @@ export function newProjectModal() {
   const secretField = h("div", { class: "field np-secret" },
     h("label", { class: "np-check", for: "np-confidential" }, secret, h("span", null, "Confidential: keep on local models")),
     h("small", { class: "muted" }, "Intake and every model call for this project may go only to a model on this machine or your private network. A role routed to a hosted model is refused, never sent."));
+  // At explore and demo the factory waits once for the person's Go or Skip on the spec before the first build (kernel/go_ahead.py).
+  const nowait = h("input", { type: "checkbox", id: "np-nowait", "data-control": "build_without_waiting" });
+  const nowaitField = h("div", { class: "field np-secret" },
+    h("label", { class: "np-check", for: "np-nowait" }, nowait, h("span", null, "Build without waiting for me")),
+    h("small", { class: "muted" }, "Unticked, Rihmasto shows you the spec before the first build at explore and demo maturity, with Go or Skip. Ticked, it builds the spec as written."));
   // A folder, in either path, is scanned first: the person sees what would be read before anything is sent.
   let startFrom = "need";
   const scanner = scanStep({ get adopting() { return startFrom === "existing"; }, confidential: () => secret.checked,
@@ -893,8 +910,7 @@ export function newProjectModal() {
   const needPart = h("div", { class: "np-part" },
     h("div", { class: "field" }, h("label", null, "The need, the idea or a written spec"), source,
       h("small", { class: "muted" }, "Or the path of a folder on this machine: Rihmasto scans any files in it (documents, slides, sheets, PDFs, code) and shows what it would read first.")),
-    h("div", { class: "np-prof-h" }, h("span", { class: "label-h" }, "Work profile"), propose), basis, grid);
-  const modeField = h("div", { class: "field" }, h("label", null, "Mode"), mode, h("small", { class: "muted" }, "Who answers the panel's questions: people, the factory, or both."));
+    h("div", { class: "np-prof-h" }, h("span", { class: "label-h" }, "Work profile"), propose), basis, grid, nowaitField);
   const repoPart = h("div", { class: "np-part" },
     h("div", { class: "field" }, h("label", null, "Folder or git address"), repo,
       h("small", { class: "muted" }, "A folder on this machine (a git repository or not), or an https address git clones without a password. For a private repository, clone it first and give the folder. Rihmasto scans it first, and never changes your folder.")),
@@ -925,7 +941,6 @@ export function newProjectModal() {
   const start = segmented("np-start", [["need", "A need or a spec"], ["existing", "An existing project"], ["chat", "Shape it in chat"]], "need", (k) => {
     startFrom = k;
     needPart.hidden = k !== "need";
-    modeField.hidden = k !== "need";
     repoPart.hidden = k !== "existing";
     chatPart.hidden = k !== "chat";
     formParts.forEach((el) => { el.hidden = k === "chat"; });
@@ -936,8 +951,7 @@ export function newProjectModal() {
     field.addEventListener("input", () => { if (scanner.source && scanner.source !== folderOf()) scanner.reset(); setSubmit(); });
   }
   formParts.push(h("div", { class: "field" }, h("label", null, "Title"), title),
-    h("div", { class: "row2" }, h("div", { class: "field" }, h("label", null, "Maturity"), maturity, h("small", { class: "muted" }, "Explore, demo, pilot or production: which stages and gates run.")),
-      modeField),
+    how.el,
     secretField,
     h("div", { class: "field" }, h("label", null, "Requested by"), by),
     h("div", { class: "btns" }, submit, submitNote));
@@ -954,21 +968,22 @@ export function newProjectModal() {
     }
     const picked = folder ? { exclude: scanner.exclude() } : {};
     if (startFrom === "existing") {
-      const data = Object.assign({ title: title.value.trim(), source: repo.value.trim(), intent: val(intent), maturity: val(maturity),
-        base_url: runsAt.value.trim(), person: by.value.trim(), persona: S.persona, confidential: secret.checked }, picked);
+      const data = Object.assign({ title: title.value.trim(), source: repo.value.trim(), intent: val(intent),
+        base_url: runsAt.value.trim(), person: by.value.trim(), persona: S.persona, confidential: secret.checked }, how.value(), picked);
       if (!data.title) { say("Give the project a title.", "warning"); title.focus(); return; }
       if (!data.source) { say("Give the folder or the git address of the existing project.", "warning"); repo.focus(); return; }
       if (!data.person) { say("Name the person who adopts it.", "warning"); by.focus(); return; }
       actKeep(form, submit, async () => {
         const out = await api("POST", "/api/adopt", data);
         closeModal();
-        say("Adopting " + data.title + " as job " + out.job.id + ": it appears in Projects once its baseline is recorded.", "good");
+        say("Adopting " + data.title + " as job " + out.job.id + ": when its baseline is recorded, Open the project here takes you to it.", "good");
         location.hash = "#/jobs";
       });
       return;
     }
-    const data = Object.assign({ title: title.value.trim(), source: folder || source.value, profile: chosen, maturity: val(maturity), mode: val(mode),
-      requested_by: by.value.trim(), persona: S.persona, confidential: secret.checked }, folder ? { folder: true, exclude: scanner.exclude() } : {});
+    const data = Object.assign({ title: title.value.trim(), source: folder || source.value, profile: chosen === "auto" ? null : chosen,
+      requested_by: by.value.trim(), persona: S.persona, confidential: secret.checked, build_without_waiting: nowait.checked }, how.value(),
+      folder ? { folder: true, exclude: scanner.exclude() } : {});
     if (!data.title || !data.source.trim()) { say("A new project needs a title and the need.", "warning"); (data.title ? source : title).focus(); return; }
     if (!data.requested_by) { say("Name the person who asks for it.", "warning"); by.focus(); return; }
     actKeep(form, form.querySelector('button[type="submit"]'), async () => {

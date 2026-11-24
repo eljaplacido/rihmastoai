@@ -21,9 +21,9 @@ eval set stays where it is; only scores leave).
   valid, and its acceptance says the release's state.
 - A pack is valid only while its acceptance holds: every criterion verified or held out and
   passing. Otherwise it says which criteria are not, and why.
-- What is not there is said: no SBOM generated, not signed (no signer configured), runtime
-  models not declared by the product template, "not measured: no security scan". Nothing is
-  claimed that was not done.
+- What is not there is said: no SBOM generated, not signed (no signer configured), no runtime
+  declared (only a small capability declares one, kernel/faces.py), "not measured: no security
+  scan". Nothing is claimed that was not done.
 - It names the latest security scan per tool (`kernel/security.py`): its counts and the risks a
   person accepted, with their expiry.
 
@@ -381,6 +381,7 @@ def build_pack(project, release_no: int | None = None) -> dict:
     ended, and holdout evidence from it and earlier releases only (see `acceptance`)."""
     from kernel.autonomy import cap_of
     from kernel.bundle import product_trees
+    from kernel.faces import pack_runtime
     from kernel.profiles import profile_of
     from kernel.security import summary as security_summary
 
@@ -408,7 +409,7 @@ def build_pack(project, release_no: int | None = None) -> dict:
             **product_trees(project, rel.get("revision")),
         },
         "smoke": SMOKE,
-        "runtime": {"declared": False, "note": "the product template does not declare runtime models yet"},
+        "runtime": pack_runtime(project, rel.get("revision")),   # app/runtime.json, judged (kernel/runtime_decl.py)
         "declared": declarations(project, models),
         "acceptance": acceptance(project, rel),
         "security": security_summary(project),

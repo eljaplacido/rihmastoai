@@ -19,6 +19,11 @@ import { trackPill, trackState, viewTrack } from "./track.js";
 import { viewOutputs } from "./outputs.js";
 import { viewOn, moduleShows } from "./modules.js";
 import { changeButtons, nextStrip } from "./change.js";
+import { postureChip } from "./posture.js";
+import { assuranceChip } from "./runners.js";
+import { viewAssessment } from "./assessment.js";
+import { aiTools } from "./aitools.js";
+import { viewAutomations } from "./automations.js";
 
 // -- shims the views were written against: a state is a chip with an icon and a word ---------------
 
@@ -553,6 +558,8 @@ function jobsSection(jobs, title) {
       h("div", { class: "facts" }, h("span", null, "started " + fmtAt(j.started)),
         j.by && j.by.person ? h("span", null, "by ", personBadge(j.by.person, j.by.persona)) : null,
         h("span", null, "python " + j.args.join(" ")), h("span", null, "log " + j.log)),
+      j.made ? h("p", null, h("a", { class: "btn small primary", href: "#/p/" + enc(j.made) + "/overview", "data-key": "job:open:" + j.id },
+        icon("arrow-right"), h("span", { class: "lbl" }, "Open the project"))) : null,
       j.log_tail.length ? h("pre", { "aria-label": "Last lines of the log" }, j.log_tail.join("\n"))
         : h("p", { class: "muted" }, "No output yet."))))
       : h("p", { class: "empty" }, "No jobs in this session."));
@@ -796,6 +803,7 @@ VIEW_FN.overview = function viewOverview(p, inbox, ctx) {
         h("a", { href: link(meta.id, "spec") }, "Evidence per criterion")) : null));
   out.push(h("div", { class: "two" }, waiting, attention));
   if (!healthFirst) out.push(h("div", { class: "section" }, healthCard(p)));
+  out.push(aiTools(p));   // an adopted or attached project: its AI tools, and working on it from an IDE (aitools.js)
   if (p.stale.length) {
     out.push(h("section", { class: "section", "aria-labelledby": "stale-h" },
       h("h3", { id: "stale-h" }, "Stale approvals: these must be given again"),
@@ -1474,7 +1482,7 @@ let uid = 0;   // unique ids for rows a person adds to a form
 function planBody(p, plan, where) {
   const pid = p.meta.id;
   const spec = plan.spec;
-  const canEdit = !!plan.card && !plan.compiled && decides("approval");
+  const canEdit = !!plan.card && !plan.compiled && decides("approval", plan.editors);
   const editors = orList(plan.editors || []);
   return h("div", { class: "plan" },
     spec.summary ? h("p", { class: "plan-sum" }, spec.summary) : null,
@@ -1486,8 +1494,25 @@ function planBody(p, plan, where) {
     h("div", { class: "cards plan-reqs" }, (spec.requirements || []).map((r) => planReq(pid, r, where, canEdit))),
     (spec.interface || []).length ? h("div", { class: "plan-if" }, label("Interface"),
       h("ul", { class: "plain mono small" }, spec.interface.map((e) => h("li", null, (e.method || "") + " " + (e.path || ""))))) : null,
+    planIntegrations(spec.integrations || [], where),
     (spec.out_of_scope || []).length ? h("p", { class: "plan-oos small" }, label("Out of scope"), " ",
       sepList(spec.out_of_scope.map((x) => h("span", null, x)))) : null);
+}
+
+// The systems the product reaches (kernel/integration_decl.py, FR-DS1): what each is, how it is reached,
+// whether the product may write there, and what data it touches. IT binds each on a paved road later.
+function planIntegrations(rows, where) {
+  if (!rows.length) return null;
+  const hid = "pi-" + where;
+  return h("section", { class: "plan-if plan-int", "data-control": "integrations", "aria-labelledby": hid },
+    label("Data integrations", { id: hid }),
+    h("ul", { class: "plain small" }, rows.map((d) => h("li", null,
+      h("span", { class: "mono" }, d.name), " · " + d.kind + (d.system ? " (" + d.system + ")" : "") + " via " + d.via + " · ",
+      h("strong", null, d.access === "read-write" ? "reads and writes" : "reads only"),
+      " · " + (d.data_classes || []).join(", ") + " data",
+      d.declared_by ? " · declared by " + d.declared_by : " · " + (d.provenance || "proposed")))),
+    h("p", { class: "muted small" }, "IT binds each one to a real system on the paved road of every environment, and "
+      + "approves it on a road card before delivery. Credentials are named here, never held."));
 }
 
 function planReq(pid, r, where, canEdit) {
@@ -1604,7 +1629,7 @@ function reqEditor(pid, r, fid) {
 
 // Approve, or reject with a required reason: the plan is then redrawn with that reason.
 function planDecide(pid, card, where) {
-  if (!decides("approval")) {
+  if (!decides("approval", card.deciders)) {
     return h("p", { class: "muted small plan-wait" }, glyph("human"), " Waits on a decision by " + orList(card.deciders) + ".");
   }
   const rid = "rej-" + where + "-" + card.id;
@@ -1790,7 +1815,7 @@ VIEW_FN.try = function viewTry(p, inbox, ctx) {
 
 // -- tasks: the work and what each gate saw
 
-const SIGNAL_LABEL = { tests: "tests", trace: "trace", fail_first: "fail-first", verifier: "verifier" };
+const SIGNAL_LABEL = { tests: "tests", trace: "trace", fail_first: "fail-first", verifier: "verifier", scope: "write scope", custody: "holdout custody" };
 
 const LANE_ICON = { pending: "○", building: "↻", merged: "✓", escalated: "!", stopped: "✕" };
 
@@ -1800,7 +1825,10 @@ function roundDetails(r) {
       r.gate ? badge(verdictKind(r.gate.verdict), "gate " + r.gate.verdict) : badge("nm", "no gate: the harness failed"),
       r.cell && r.cell.model ? h("span", { class: "facts" }, agentBadge("builder", r.cell.model),
         (r.cell.stop_reason ? " " + r.cell.stop_reason : "")
-        + (r.cell.tool_steps !== undefined && r.cell.tool_steps !== null ? ", " + r.cell.tool_steps + " tool steps" : "")) : null),
+        + (r.cell.tool_steps !== undefined && r.cell.tool_steps !== null ? ", " + r.cell.tool_steps + " tool steps" : "")) : null,
+      // who ran the round and what assurance applied (D-0019): a harness other than Gnomon is never shown as in-run
+      r.cell && r.cell.runner ? h("span", { class: "facts", "data-key": "runner:" + r.round }, r.cell.runner.label + (r.cell.runner.version ? " " + r.cell.runner.version : "") + " ",
+        assuranceChip({ assurance: r.cell.runner.name === "gnomon" ? "in_run" : "after_run", assurance_label: r.cell.runner.assurance_label })) : null),
     r.gate ? h("div", { class: "signals", role: "list", "aria-label": "Gate signals" }, r.gate.signals.map((s) =>
       h("span", { role: "listitem" }, badge(verdictKind(s.verdict), (SIGNAL_LABEL[s.name] || s.name) + ": " + s.verdict, s.detail || null)))) : null,
     r.gate && r.gate.signals.some((s) => s.detail) ? h("ul", { class: "objections" }, r.gate.signals.filter((s) => s.detail).map((s) =>
@@ -2132,6 +2160,9 @@ function orderedViews(p, ctx, planOpen) {
   if (S.allViews) Object.keys(VIEWS).forEach((v) => { if (!views.includes(v)) views.push(v); });
   if (!views.includes("evidence")) views.push("evidence");
   if (!views.includes("track")) views.push("track");     // staying on track, autopilot and delegations (track.js)
+  if (!views.includes("automations")) views.push("automations");   // what runs on its own here (automations.js)
+  // An adopted system brings its Assessment forward: what to fix, from every perspective.
+  if (p.meta.source_kind === "adopted" && !views.includes("assessment")) views.splice(1, 0, "assessment");
   views = views.filter((v) => v !== "plan" || planOpen);
   if (planOpen && !views.includes("plan")) views.splice(1, 0, "plan");
   return views.filter((v) => viewOn(v, p.meta.id));   // only the views of the project's modules that are on
@@ -2164,7 +2195,7 @@ async function drawProject(main, r, seq, done) {
   const view = r.view && VIEWS[r.view] && (isFactory ? FACTORY_VIEWS.includes(r.view) : viewOn(r.view, pid)) ? r.view : views[0];
   const shown = views.concat(views.includes(view) ? [] : [view]);
   const taskMode = viewChoice("tasks", "board");
-  const [findings, cellRows, planFirst, tryFirst, timeline, comments, attestation, pack, track, outputs] = await Promise.all([
+  const [findings, cellRows, planFirst, tryFirst, timeline, comments, attestation, pack, track, outputs, assessment] = await Promise.all([
     isFactory || view !== "overview" ? none : api("GET", base + "/alignment"),
     view === "cell" ? api("GET", base + "/cell") : none,
     !isFactory && view === "plan" ? api("GET", base + "/plan") : none,
@@ -2175,6 +2206,7 @@ async function drawProject(main, r, seq, done) {
     !isFactory && view === "releases" && (p.releases || []).length ? api("GET", base + "/pack").catch((e) => ({ error: e.message })) : none,
     !isFactory && view === "track" ? api("GET", base + "/track") : none,
     !isFactory && view === "outputs" ? api("GET", base + "/outputs") : none,
+    !isFactory && view === "assessment" ? api("GET", base + "/assessment").catch((e) => ({ error: e.message })) : none,
   ]);
   if (seq !== S.seq) return false;
   let plan = planFirst;
@@ -2200,7 +2232,7 @@ async function drawProject(main, r, seq, done) {
       v === "plan" && planOpen ? h("span", { class: "tab-wait", tip: "Waits on approval" }, icon("user")) : null)))),
   isFactory ? null : h("label", { class: "tabs-all" }, h("input", { type: "checkbox", checked: S.allViews, "data-key": "allviews",
     onchange: (e) => { S.allViews = e.target.checked; nav.route(true); } }), "Show all views"));
-  const ctxObj = { pid, focus: r.focus, cell: cellRows, plan, tryIt, planOpen, timeline, comments, attestation, pack, track, outputs };
+  const ctxObj = { pid, focus: r.focus, cell: cellRows, plan, tryIt, planOpen, timeline, comments, attestation, pack, track, outputs, assessment };
   let body = VIEW_FN[view](p, inbox, ctxObj);
   if (comments) decorateComments(body, pid, view, comments.comments || []);
   if (view === "overview" && !isFactory) {
@@ -2258,6 +2290,7 @@ function projectHead(p, isFactory, ctx) {
     // one on-track answer: the Track pill (it carries every reason the health reads), else the health
     trackPill(p) || healthChip(p.health),
     au ? autonomyChip(p) : null,
+    postureChip(p),                   // how it runs: the posture, what it does and what holds the project (posture.js)
     ledgerBadge(p.ledger),
     p.stale.length ? badge("warn", plural(p.stale.length, "stale approval")) : null,
     p.problems.length ? badge("crit", "unreadable: " + p.problems.join(", ")) : null,
@@ -2483,6 +2516,42 @@ function modelNames(v) {
   const all = Array.from(new Set((Array.isArray(v) ? v : []).map(String)));
   return all.filter((m) => m.includes("@") || !all.some((x) => x.startsWith(m + "@"))).join(", ");
 }
+// The runtime a small capability declares (kernel/runtime_decl.py) and how each of its faces is reached
+// (docs/guides/small-capabilities.md). A web-service product's pack declares none and says so in one line.
+const FACE_REACH = { mcp: ["MCP", "stdio, or POST /mcp"], openai: ["OpenAI-compatible chat", "POST /v1/chat/completions"],
+  http: ["HTTP", "POST /capability/run"], embed: ["Website embed", "GET /embed/widget.js"] };
+function startedBy(t) {
+  const k = (t || {}).kind;
+  if (k === "schedule") return "a schedule, every " + t.every_minutes + " minutes";
+  if (k === "webhook") return "a verified webhook" + (t.source ? " from " + t.source : "");
+  if (k === "event") return "a relay event: " + (t.types || []).join(", ");
+  return k === "manual" ? "a person, by hand" : "not declared";
+}
+function runtimeSection(pack, pid) {
+  const rt = pack.runtime || {};
+  if (!rt.declared) {
+    return h("p", { class: "muted small pack-runtime", "data-control": "capability_faces" }, "Runtime: ", rt.note || "not declared",
+      (rt.problems || []).length ? " (" + rt.problems.slice(0, 3).join("; ") + ")" : "");
+  }
+  const list = (xs, f, none) => (xs || []).map(f).join(", ") || none;
+  const rows = [["Kind", rt.kind], ["Started by", startedBy(rt.trigger)],
+    ["Its own tools", list(rt.tools, (t) => t.name + " (" + t.effect + ")", "none")],
+    ["Model roles", list(rt.model_roles, (r) => r.role + " via the gateway workload " + r.workload, "none")],
+    ["Integrations", list(rt.integrations, (i) => i.system + " via " + i.via + (i.writes ? ", writes" : ""), "none")],
+    ["Secrets, by name", list(rt.secrets, (s) => s, "none")]];
+  const first = (rt.faces || ["mcp"])[0];
+  const cmd = "rihmasto capability serve " + pid + " --face " + first + (first === "mcp" ? "" : " --port 8090");
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(cmd); say("The command is copied.", "good"); } catch (e) { say("Copy it by hand.", "warning"); }
+  };
+  return h("section", { class: "pack-runtime", "data-control": "capability_faces", "aria-labelledby": "pack-rt-h" },
+    h("h4", { id: "pack-rt-h" }, "Runtime and faces"),
+    h("dl", { class: "pins" }, rows.map(([k, v]) => h("div", null, h("dt", null, k), h("dd", null, String(v))))),
+    h("ul", { class: "faces", "aria-label": "Faces" }, (rt.faces || []).map((f) => h("li", null,
+      chip("accent", "plug", (FACE_REACH[f] || [f])[0]), h("span", { class: "mono small" }, (FACE_REACH[f] || ["", ""])[1])))),
+    h("p", { class: "small" }, "Serve it on this machine, behind its pack guard: ", h("code", { class: "mono" }, cmd)),
+    h("div", { class: "btns" }, button("Copy the command", { icon: "copy", kind: "small", key: "copy-serve", onclick: copy })));
+}
 function packCard(pk, pid) {
   if (!pk) return null;
   if (pk.error) return card({ title: "Capability pack", icon: "package" }, h("p", { class: "muted" }, pk.error));
@@ -2507,6 +2576,7 @@ function packCard(pk, pid) {
   !acc.valid && (acc.not_valid_because || []).length ? h("p", { class: "small" }, "Not valid because: ",
     sepList(acc.not_valid_because.slice(0, 8).map((x) => h("span", null, h("span", { class: "mono" }, x.criterion), " " + x.state.replace("_", " "))))) : null,
   h("dl", { class: "pins" }, rows.map(([k, v]) => h("div", null, h("dt", null, k), h("dd", { class: "mono" }, v ? String(v) : h("span", { class: "nm-text" }, "not recorded"))))),
+  runtimeSection(pack, pid),
   h("p", { class: "muted small" }, cap((pack.provenance || {}).signature_note || ""), " · SBOM ", (pack.provenance || {}).sbom_note || ""),
   pk.current === false ? h("p", { class: "note warning" }, icon("alert"), h("span", null, "This pack is for release " + pack.release
     + "; release " + pk.latest_release + " has none yet.")) : null,
@@ -2578,6 +2648,9 @@ function evidenceExport(pid) {
   return h("div", { class: "btns" }, b, note);
 }
 
+// Assessment: an adopted system judged from every perspective (cockpit/static/assessment.js).
+VIEW_FN.assessment = (p, inbox, ctx) => viewAssessment(p, ctx, { viewHead, run, settle });
+
 // Evidence: the attestation (never "compliant"), the control table, and the export.
 VIEW_FN.evidence = function viewEvidence(p, inbox, ctx) {
   const pid = p.meta.id;
@@ -2617,6 +2690,8 @@ VIEW_FN.evidence = function viewEvidence(p, inbox, ctx) {
 VIEW_FN.track = viewTrack;      // staying on track, the autopilot and delegations (track.js)
 // -- outputs: what each audience receives (cockpit/static/outputs.js, kernel/outputs.py) -----------------
 VIEW_FN.outputs = (p, inbox, ctx) => viewOutputs(p, ctx, { viewHead, run, settle });
+// -- automations: what runs on its own for the project (cockpit/static/automations.js, kernel/automations.py)
+VIEW_FN.automations = (p) => viewAutomations(p);
 
 // -- comments: a remark on a requirement, criterion, task, release or card decides nothing ----------
 

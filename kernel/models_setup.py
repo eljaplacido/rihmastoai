@@ -113,8 +113,17 @@ def gnomon_env(environ: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
+def gnomon_keys() -> frozenset[str] | None:
+    """The key variables Gnomon holds for itself, names only (kernel/gnomon_keys.py)."""
+    from kernel import gnomon_keys as gk
+
+    return gk.held()
+
+
 def _key_of(ep: dict[str, Any], environ: dict[str, str] | None = None) -> tuple[str, str | None]:
-    """How an endpoint's key is found ("none", "env" or "stored") and the key itself, never shown."""
+    """How an endpoint's key is found and the key itself, never shown: "none", "env", "stored", "gnomon" (Gnomon
+    holds it: `gnomon key list` names it; Rihmasto never sees the value) or "gnomon_maybe" (Gnomon could not say,
+    but its credential store exists)."""
     name = ep.get("api_key_env")
     if not name:
         return "none", None
@@ -122,7 +131,11 @@ def _key_of(ep: dict[str, Any], environ: dict[str, str] | None = None) -> tuple[
     if env.get(name):
         return "env", env[name]
     stored = stored_keys().get(name)
-    return ("stored", stored) if stored else ("env", None)
+    if stored:
+        return "stored", stored
+    from kernel.gnomon_keys import kind_of
+
+    return kind_of(name, gnomon_keys()), None
 
 
 # -- addresses ----------------------------------------------------------------------------------------
@@ -185,8 +198,14 @@ def _overlay() -> dict[str, Any]:
 
 
 def _readiness(url: str, local: bool, key: tuple[str, str | None], needs_key: bool, probe: bool) -> dict[str, str]:
-    if needs_key and not key[1]:
+    if needs_key and key[0] == "gnomon_maybe":
+        return {"state": "maybe_key", "why": "Gnomon may have its own key for this host: its credential store exists, "
+                                             "and Rihmasto never opens it (`gnomon key list` names the keys it holds)"}
+    if needs_key and not key[1] and key[0] != "gnomon":
         return {"state": "no_key", "why": "its key is not set"}
+    if not local and key[0] == "gnomon":
+        return {"state": "configured", "why": "a hosted endpoint whose key is set in Gnomon (`gnomon key list` names "
+                                              "it); Rihmasto never sees it, and Test cannot send it"}
     if not local:
         return {"state": "configured", "why": "a hosted endpoint with its key; Test sends it a prompt"}
     if not probe:
@@ -213,7 +232,7 @@ def role_view(routing: dict[str, Any], role: str, overlay: dict[str, Any], *, en
     fb = spec.get("fallback")
     return {"role": role, "label": role.replace("_", " ").capitalize(), "purpose": ROLE_PURPOSE.get(role, ""),
             "model": spec["model"], "family": lanes.model_family(routing, role), **where,
-            "key": {"kind": kind, "name": ep.get("api_key_env"), "set": bool(value)},
+            "key": {"kind": kind, "name": ep.get("api_key_env"), "set": bool(value) or kind == "gnomon"},
             "set_here": role in (overlay.get("roles") or {}),
             "fallback": {"model": fb["model"], **_endpoint_view(routing, fb["endpoint"])} if fb else None,
             "readiness": _readiness(where["url"], where["local"], (kind, value), bool(ep.get("api_key_env")), probe)}
@@ -313,6 +332,18 @@ def _ledger(factory: Factory, kind: str, payload: dict[str, Any]) -> None:
     canon.log(kind, payload)
 
 
+def _fallback_note(role: str, merged: dict[str, Any]) -> dict[str, Any]:
+    """A local role that kept a hosted fallback says so: a confidential project skips that fallback, never calls it."""
+    from kernel.confidential import skipped
+
+    hosted = skipped([role], merged)
+    if not hosted:
+        return {}
+    return {"note": f"Its fallback goes to the hosted endpoint {hosted[0]['endpoint']!r}: a confidential project "
+                    "skips it (never calls it) and records the skip in its ledger. Set the role again without the "
+                    "fallback (untick Keep the fallback, or --no-fallback) to drop it for every project."}
+
+
 def set_role(factory: Factory, role: str, *, base_url: str, model: str, person: str, persona: str,
              family: str | None = None, key_env: str | None = None, key: str | None = None,
              keep_fallback: bool = True, private: bool = False) -> dict[str, Any]:
@@ -332,6 +363,7 @@ def set_role(factory: Factory, role: str, *, base_url: str, model: str, person: 
     if key:
         _write_keys({**stored_keys(), str(name): key.strip()})
     view = role_view(merged, role, overlay, probe=False)
+    view.update(_fallback_note(role, merged))
     _ledger(factory, "models_set", {
         "role": role, "model": model, "family": view["family"], "endpoint": endpoint, "host": view["host"],
         "local": view["local"], "key": "stored" if key else "env" if name else "none", "person": person,
@@ -393,8 +425,12 @@ def probe_role(role: str, *, environ: dict[str, str] | None = None, timeout: flo
     routing = _role_routing(role)
     spec = routing["roles"][role]
     ep = routing.get("endpoints", {}).get(spec["endpoint"]) or {}
-    url, key = str(ep.get("url") or ""), _key_of(ep, environ)[1]
+    url, (kind, key) = str(ep.get("url") or ""), _key_of(ep, environ)
     out: dict[str, Any] = {"role": role, "model": spec["model"], "host": urlsplit(url).hostname, "ok": False}
+    if ep.get("api_key_env") and not key and kind in ("gnomon", "gnomon_maybe"):
+        return {**out, "error": f"the key for {ep['api_key_env']} is " + ("set in Gnomon" if kind == "gnomon" else
+                                "perhaps held by Gnomon") + ", which Rihmasto never reads, so Test cannot send it; a run "
+                                "goes through Gnomon and uses it. To test here, set the variable or store a key"}
     if ep.get("api_key_env") and not key:
         return {**out, "error": f"its key is not set: set {ep['api_key_env']} or store a key in Models setup"}
     body = json.dumps({"model": spec["model"], "messages": [{"role": "user", "content": TEST_PROMPT}],

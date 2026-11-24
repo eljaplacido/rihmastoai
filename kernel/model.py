@@ -91,13 +91,17 @@ class GnomonModel(Model):
 def run_gnomon_task(cwd: str | Path, prompt: str, *, role: str, timeout: int = 1800,
                     deadline: int | None = None, extra: tuple = ()) -> dict:
     """Run one `gnomon task` in ``cwd`` and return its JSON record. The caller holds the lane."""
+    from kernel.access_isolation import cell, share
+
     cwd = Path(cwd)
+    start = cell(gnomon_cmd(), cwd)     # access enforced: through IT's isolation runner, or refused (D-0016)
     tasks = cwd / ".factory-tasks"
     tasks.mkdir(parents=True, exist_ok=True)
     fd, task_file = tempfile.mkstemp(prefix=f"{role}-", suffix=".md", dir=tasks)
     with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(prompt)
-    cmd = gnomon_cmd() + ["task", "--task-file", task_file, "--role", role, "--json", "--yes", *extra]
+    share(Path(task_file))              # a separate account reads it (mkstemp made it 0600)
+    cmd = start + ["task", "--task-file", task_file, "--role", role, "--json", "--yes", *extra]
     if deadline:
         cmd += ["--deadline", str(deadline)]
     from kernel.models_setup import gnomon_env  # a key stored in Models setup reaches Gnomon in its variable

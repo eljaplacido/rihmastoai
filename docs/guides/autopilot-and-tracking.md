@@ -45,6 +45,7 @@ name and persona. Nothing outside the delegation is decided.
 | question | `assume` | every open question is assumed with the proposal of the perspective that asked it, as an assumption with a due date; a question with no proposal waits |
 | approval | `plan_when_tested` | the plan (and only the plan) is approved when every requirement has a test the gate runs, every criterion names a check the factory runs (a test, a holdout scenario or a probe), the spec compiles to a contract with no violation, and nothing contradicts the paved road |
 | escalation | `retry_once` | an escalated builder task is retried once; when it escalates again, the rule stops and the card waits for a person. It never accepts work as it is and never stops a build |
+| go_ahead | `go` | says Go to the look at the spec before a first build at explore or demo maturity ([change-anything.md](change-anything.md#look-at-the-spec-before-building)): the delegating person lets the spec be built as written |
 
 Never delegated, whatever the persona, and refused with the reason:
 

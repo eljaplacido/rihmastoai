@@ -15,6 +15,8 @@ The bundle holds:
 - the full project ledger, with the result of verifying its hash chain at export;
 - the governance map where the latest release runs (`governance-map.json`): each of the five
   guarantees of docs/portability.md held, partial or lost, as the release's deploy gate card shows it;
+- the assessment of the system (`assessment.json`, kernel/assess.py): the latest version in short, with
+  the panel's model-proposed findings kept apart, and every version with its sha256 checked;
 - `MANIFEST.json`, holding the sha256 of every file.
 
 The export itself is recorded in the ledger, with the person who asked for it.
@@ -43,6 +45,7 @@ from typing import Any
 from kernel.canon import DecisionRefused
 from kernel.ledgerstore import LedgerStore
 from kernel.people import is_person
+from kernel.runners import evidence_line, evidence_rows
 
 EXPORTERS = ("compliance", "it", "business_owner", "product_owner", "developer")
 # Where the cockpit keeps each project's last verified ledger head, under the factory home.
@@ -162,11 +165,32 @@ def _gather(project) -> tuple[dict, bytes]:
         "gates.json": _of(records, "gate"),
         "holdout-scores.json": (pack.get("acceptance") or {}).get("holdout_scores"),
         "gnomon-runs.json": runs,
+        "cell-runners.json": evidence_rows(_of(records, "cell_ran")),   # who ran each round, its assurance (D-0019)
         "ledger-check.json": _ledger_check(records, kept),
         "security.json": security_summary(project),
         "governance-map.json": _governance(project),
+        "assessment.json": _assessment(project),
     }
     return files | evidence_files(project), raw     # an attached repository's own releases (evidence only)
+
+
+def _assessment(project: Any) -> dict:
+    """The system's assessment (kernel/assess_cards.py): the latest in short, every version with its sha256."""
+    from kernel.assess_cards import for_evidence
+
+    try:
+        return for_evidence(project)
+    except (*_UNREADABLE, LookupError, OSError) as exc:
+        return {"note": f"the assessment could not be read ({type(exc).__name__})"}
+
+
+def _assessment_line(project: Any) -> str:
+    from kernel.assess_cards import evidence_line
+
+    try:
+        return evidence_line(project)
+    except (*_UNREADABLE, LookupError, OSError) as exc:
+        return f"the assessment could not be read ({type(exc).__name__})"
 
 
 # -- the governance map (docs/portability.md): which guarantee holds where a release runs --------------
@@ -381,11 +405,13 @@ def _readme(project, files: dict) -> str:
              _pack_line(pack),
              f"- Decisions by people: {len(files['decisions.json'])}. Gate verdicts: {len(files['gates.json'])}.",
              f"- Gnomon runs: {len(files['gnomon-runs.json'])}, of which audit chain not intact: {broken_runs}.",
+             evidence_line(files.get("cell-runners.json") or []),
              _ledger_line(lc),
              f"- Security: {_security_line(files.get('security.json') or {})}.",
              *([f"- The repository's own releases: {len(files['repository-releases.json'])}, each with its tag, commit "
                 "and what the kernel checked there (`repository-releases.json`; dates as git states them)."]
                if files.get("repository-releases.json") else []),
+             f"- Assessment: {_assessment_line(project)}.",
              "", "## Governance map", "", where, "", *governance_lines(gov.get("map") or []),
              "", "## Not in this bundle", "",
              "- Holdout scenarios: they stay in their own custody. Only their scores are here.",

@@ -73,6 +73,10 @@ default, or `$GNOMONFACTORY_HOME/paved_roads.json`). IT edits it, then decides t
   records the reads replayed to it in its own traffic log, which is why `twin` is the default.
 - **`volatile`** (optional) lists the JSON keys shadow ignores; the default is `id`, `created`,
   `updated`, `at`, `version`.
+- **`sandbox: true`** (optional) is IT's word that a road for `preview` or `demo` is a test sandbox:
+  an autopilot run may deliver there on its own. The built-in `local-preview` road is one; staging
+  and production never are, whatever a road says
+  ([autopilot and tracking](guides/autopilot-and-tracking.md)).
 
 ### Road kinds
 

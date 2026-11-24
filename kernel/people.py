@@ -7,7 +7,9 @@ the same test.
 When access is enforced (D-0016, `kernel/access.py`), a person is also a verified identity: the
 organisation's identity provider vouched for them through IT's proxy, or they are a local user the
 access file names. ``SIGNER`` holds that identity while a surface carries out one of their writes,
-so the record of the write can name it beside the person (``signed_identity``).
+so the record of the write can name it beside the person (``signed_identity``). ``DELEGATION`` holds
+the delegation a decision is made under (kernel/delegation.py), so the record names it beside the
+person who delegated.
 """
 
 from __future__ import annotations
@@ -40,9 +42,13 @@ class Identity:
 
 # The verified identity signing the write being carried out now (kernel.access.signing), or None.
 SIGNER: ContextVar[Identity | None] = ContextVar("rihmasto_signer", default=None)
+# The delegation a decision is being made under (kernel.delegation): its id and the person who delegated.
+DELEGATION: ContextVar[tuple[str, str] | None] = ContextVar("rihmasto_delegation", default=None)
 
 
 def signed_identity(name: object) -> dict[str, str]:
-    """``{"identity": <id>}`` when a verified identity signs the current write as ``name``, else {}."""
-    signer = SIGNER.get()
-    return {"identity": signer.id} if signer is not None and signer.name == name else {}
+    """``{"identity": <id>}`` when a verified identity signs the current write as ``name``, and
+    ``{"delegation": <id>}`` when ``name`` delegated the decision being made (kernel/delegation.py); else {}."""
+    signer, held = SIGNER.get(), DELEGATION.get()
+    out = {"identity": signer.id} if signer is not None and signer.name == name else {}
+    return out | ({"delegation": held[0]} if held is not None and held[1] == name else {})

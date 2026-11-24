@@ -14,7 +14,7 @@ export const PAGE_ROUTES = {
   "assumptions": "#/p/{pid}/assumptions", "plan": "#/p/{pid}/plan", "spec": "#/p/{pid}/spec",
   "tasks": "#/p/{pid}/tasks", "cell": "#/p/{pid}/cell", "releases": "#/p/{pid}/releases",
   "try": "#/p/{pid}/try", "changes": "#/p/{pid}/changes", "ledger": "#/p/{pid}/ledger",
-  "evidence": "#/p/{pid}/evidence"
+  "evidence": "#/p/{pid}/evidence", "track": "#/p/{pid}/track", "outputs": "#/p/{pid}/outputs"
 };
 export const TOP_PAGES = Object.keys(PAGE_ROUTES).filter((k) => !PAGE_ROUTES[k].includes("{pid}"));
 export const PROJECT_VIEWS = Object.keys(PAGE_ROUTES).filter((k) => PAGE_ROUTES[k].includes("{pid}"));
@@ -43,6 +43,8 @@ export const VIEWS = {
   changes: { label: "Changes", icon: "refresh" },
   ledger: { label: "Ledger", icon: "layers" },
   evidence: { label: "Evidence", icon: "shield" },
+  track: { label: "Track", icon: "flag" },
+  outputs: { label: "Outputs", icon: "send" },
 };
 export const FACTORY_VIEWS = ["overview", "inbox", "ledger"];
 export const STAGE_ICON = { 1: "briefcase", 2: "lightbulb", 3: "code", 4: "file-check", 5: "hammer", 6: "users", 7: "server" };

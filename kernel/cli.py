@@ -62,7 +62,7 @@ from typing import Any
 
 from adapters import sarif
 from kernel import access, autonomy, embeds, evidence_pack, graph_ask, integrations, observations, packs
-from kernel import security, signals
+from kernel import autopilot_cli, input_summary, modules, outputs, security, signals, standalone
 from kernel.canon import Canon, DecisionRefused
 from kernel.dashboard import catalogue
 from kernel.people import PERSONAS, is_person
@@ -111,8 +111,7 @@ def status(factory: Factory, pid: str | None) -> dict:
             "open_cards": [{"id": c["id"], "kind": c["kind"], "title": c["title"][:80]} for c in canon.cards()],
             "questions": {s: len(canon.questions(s)) for s in ("open", "answered", "assumed")},
             "overdue_assumptions": [a["id"] for a in canon.overdue()],
-            "tasks": {t: s.get("status") for t, s in tasks.items()},
-            "ledger_intact": p.ledger().verify().intact,
+            "tasks": {t: s.get("status") for t, s in tasks.items()}, "ledger_intact": p.ledger().verify().intact,
         })
     print(f"{PROG} status: access: {access.describe(access.load(factory))}", file=sys.stderr)   # stdout stays JSON
     return {"projects": out}
@@ -156,7 +155,7 @@ def _chain_parsers(sub: Any) -> None:
     s.add_argument("--profile", default="auto",
                    help="the kind of work: auto (proposed from the request by rule), or one of the work profiles")
     _sources(_add(sub, "intake", "pid"))
-    for name in ("run", "spec", "compile", "build"):
+    for name in ("run", "spec", "compile", "build", "operate"):
         _add(sub, name, "pid")
     _add(sub, "status").add_argument("pid", nargs="?")
     _signed(_add(sub, "answer", "pid", "qid", "text"))
@@ -166,7 +165,6 @@ def _chain_parsers(sub: Any) -> None:
     _add(sub, "apply", "pid", "card")
     _add(sub, "deliver", "pid").add_argument(
         "--new", action="store_true", help="start a new release even if this revision was delivered")
-    _add(sub, "operate", "pid")
     _add(sub, "learn")
     _add(sub, "tick", about="carry out decided concept cards: a validated concept becomes a project")
     _add(sub, "resurface", "pid").add_argument("--reason", default="routing changed")
@@ -261,7 +259,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--home", help=f"the factory home (default: the first set of {envs}, else ./var)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for add in (_chain_parsers, _brownfield_parsers, _evidence_parsers, _embed_autonomy_parsers, _square_parsers,
-                graph_ask.add_parsers):     # `rihmasto graph ...`: the knowledge graph, read only
+                graph_ask.add_parsers, input_summary.add_parsers, autopilot_cli.add_parsers, outputs.add_parsers,
+                standalone.add_parsers):
         add(sub)
     return integrations.add_parsers(sub, ap)  # relay, hooks and connector (D-0015)
 
@@ -460,7 +459,7 @@ CAPABILITY: dict[str, Handler] = {
     "security status": _security_status, "pack": _pack, "evidence": _evidence, "embed create": _embed_create,
     "embed list": lambda f, a: _print({"embeds": [embeds.public(e) for e in embeds.embeds(f)]}),
     "embed revoke": lambda f, a: _print(embeds.public(embeds.revoke(f, a.id, person=a.person, persona=a.persona))),
-    "autonomy show": _autonomy_show, "autonomy set": _autonomy_set,
+    "autonomy show": _autonomy_show, "autonomy set": _autonomy_set, **outputs.handlers(_print),
     "signal log": lambda f, a: _print(signals.receive(f, a.text, channel=a.channel, source=a.source,
                                                       person=a.person, persona=a.persona, ref=a.ref)),
     "signal list": lambda f, a: _print({"signals": signals.signals(f, a.state)}),
@@ -469,7 +468,8 @@ CAPABILITY: dict[str, Handler] = {
     "concept apply": lambda f, a: _print({"applied": signals.apply_concepts(f)}), **integrations.handlers(_print),
     "updates apply": lambda f, a: _print({"project": a.pid, "applied": observations.apply_updates(f.project(a.pid))}),
     "square": lambda f, a: _print(signals.square(f)), "catalogue": lambda f, a: _print(catalogue(f)),
-}
+    **input_summary.handlers(_print, lambda: _model(), print), **autopilot_cli.handlers(_print, _model),
+    **standalone.handlers(_print, _model)}
 
 
 def command_of(args: Args) -> str:
@@ -483,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     factory = Factory(args.home)
     name = command_of(args)
     try:
-        with access.cli_signing(factory, args, name):     # access enforced: the local user signs (D-0016)
+        with access.cli_signing(factory, args, name), modules.allowed(factory, name, args):  # D-0016, FR-MOD2
             if name in HANDLERS:
                 return HANDLERS[name](factory, args) or 0
             if getattr(args, "person", None) is not None and not is_person(args.person):

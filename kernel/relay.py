@@ -25,6 +25,11 @@ A receiver is https, or http on this machine for testing; a redirect is an answe
 
 A subscription starts at each ledger's head when it is made: it receives what happens next, not the
 history. Nothing is sent while no subscription exists.
+
+IT marks a subscription (`mark`): `sandbox`, a receiver inside a test sandbox, the only kind that receives
+a project's events while an autopilot run binds that project to its sandbox (the others wait, in order,
+until a person stops the run: kernel/autopilot.py); and `digest`, a notice sink that also gets the daily
+Track digest (kernel/track.py), once a day, with one link to the cockpit's Home.
 """
 
 from __future__ import annotations
@@ -228,6 +233,28 @@ def unsubscribe(factory: Factory, sub_id: str, *, person: str, persona: str) -> 
     return dict(sub)
 
 
+def mark(factory: Factory, sub_id: str, *, person: str, persona: str, sandbox: bool | None = None,
+         digest: str | None = None) -> dict[str, Any]:
+    """IT marks a subscription as a sandbox receiver (or not), or has a notice sink get the daily Track
+    digest (`digest` "daily", or "off")."""
+    _it_signs(person, persona)
+    if digest not in (None, "daily", "off"):
+        raise ValueError("a digest is daily, or off")
+    with updating_json(_dir(factory) / "subscriptions.json", config(factory)) as cfg:
+        sub = next((s for s in cfg["subscriptions"] if s["id"] == sub_id and s["state"] == "active"), None)
+        if sub is None:
+            raise KeyError(f"no active subscription {sub_id!r}")
+        if digest == "daily" and sub["sink"] not in NOTICE_SINKS:
+            raise ValueError("the digest is a notice: a Teams, Slack or email subscription takes it")
+        if sandbox is not None:
+            sub["sandbox"] = bool(sandbox)
+        if digest is not None:
+            sub["digest"] = None if digest == "off" else digest
+    factory_project(factory).log("relay_marked", {"id": sub_id, "sandbox": sub.get("sandbox"),
+                                                  "digest": sub.get("digest"), "by": person, "persona": persona})
+    return dict(sub)
+
+
 def set_cockpit(factory: Factory, url: str, *, person: str, persona: str) -> dict[str, Any]:
     """IT gives the cockpit's address as people reach it (behind IT's proxy): every deep link starts there."""
     _it_signs(person, persona)
@@ -281,12 +308,17 @@ def _send(rnd: _Round, sub: dict[str, Any], event: dict[str, Any]) -> int:
                    "webhook-timestamp": str(rnd.now),
                    "webhook-signature": sign_standard(key, event["event_id"], rnd.now, body)}
         return rnd.post(check_url(url), body, headers)
-    notice = notices.notice_of(event) or {}
+    return _post_notice(rnd, sub, notices.notice_of(event) or {})
+
+
+def _post_notice(rnd: _Round, sub: dict[str, Any], notice: dict[str, Any]) -> int:
+    """Hand one notice (a card's, or the daily digest) to a notice sink; the HTTP status (250: mailed)."""
     if sub["sink"] == "email":
         mail = sub["mail"]
         rnd.send(mail, notices.render_email(notice, sender=mail["from"], to=mail["to"], now=rnd.factory.clock.now()),
                  rnd.env)
         return 250
+    url = rnd.env.get(sub.get("url_env") or "", "")
     render = notices.render_teams if sub["sink"] == "teams" else notices.render_slack
     return rnd.post(check_url(url), encode(render(notice)), {"Content-Type": "application/json"})
 
@@ -325,6 +357,8 @@ def _deliver(rnd: _Round, sub: dict[str, Any], event: dict[str, Any], state: dic
 def _stream(rnd: _Round, sub: dict[str, Any], state: dict[str, Any], pid: str, counts: dict[str, int]) -> bool:
     """Deliver one ledger's new events to one subscription; False when it must wait for a retry."""
     project, records, halted = rnd.streams[pid]
+    if _sandbox_held(rnd, sub, state, project):
+        return True                     # this stream waits for a person; the other streams go on
     cursors = state.setdefault("streams", {})
     for record in records[int(cursors.get(pid, sub.get("start", {}).get(pid, -1))) + 1:]:
         event = to_event(project, record, cockpit=rnd.cockpit, held=rnd.held)
@@ -338,6 +372,45 @@ def _stream(rnd: _Round, sub: dict[str, Any], state: dict[str, Any], pid: str, c
         state["halted"][pid] = halted
         rnd.log.append("halted", {"subscription": sub["id"], "project": pid, "broken_seq": halted})
     return True
+
+
+def _sandbox_held(rnd: _Round, sub: dict[str, Any], state: dict[str, Any], project: Project) -> bool:
+    """While an autopilot run binds the project to its sandbox, a subscription not marked as a sandbox
+    receiver gets none of its events: they wait, in order (kernel/autopilot.py). Logged once per hold."""
+    from kernel.autopilot import outbound_hold
+
+    why, marks = outbound_hold(project, sub), state.setdefault("sandbox_held", {})
+    if why is None:
+        marks.pop(project.pid, None)
+        return False
+    if marks.get(project.pid) != why:
+        marks[project.pid] = why
+        rnd.log.append("sandbox_held", {"subscription": sub["id"], "project": project.pid, "why": why})
+    return True
+
+
+def _digest(rnd: _Round, sub: dict[str, Any], state: dict[str, Any]) -> str | None:
+    """The daily Track digest (kernel/track.py) for a notice sink that asks for it, once a UTC day; a
+    failed one is tried again on the next round. Logged like any delivery."""
+    day = rnd.factory.clock.today().isoformat()
+    if sub.get("digest") != "daily" or sub["sink"] not in NOTICE_SINKS or state.get("digest_on") == day \
+            or _missing(sub, rnd.env):
+        return None
+    from kernel.track import digest_notice
+
+    notice = digest_notice(rnd.factory, cockpit=rnd.cockpit, sub_id=sub["id"], day=day, subscription=sub)
+    try:
+        status: int | None = _post_notice(rnd, sub, notice)
+        error = None if status is not None and 200 <= status < 300 else f"HTTP {status}"
+    except (OSError, ValueError, KeyError, smtplib.SMTPException, http.client.HTTPException) as exc:
+        status, error = None, _scrub(f"{type(exc).__name__}: {exc}", sub, rnd.env)
+    outcome = "delivered" if error is None else "retry"
+    if error is None:
+        state["digest_on"] = day
+    rnd.log.append("digest", {"subscription": sub["id"], "sink": sub["sink"], "day": day, "outcome": outcome,
+                              "status": status, "error": error, "counts": notice["counts"],
+                              "sandbox_held": notice["held"]})
+    return outcome
 
 
 def _one(rnd: _Round, sub: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
@@ -369,6 +442,9 @@ def run(factory: Factory, *, environ: Mapping[str, str] | None = None, post: Pos
             cursors = read_json(_dir(factory) / "cursors.json", {}) or {}
             for sub in subs:
                 results.append(_one(rnd, sub, cursors.setdefault(sub["id"], {})))
+                digest = _digest(rnd, sub, cursors[sub["id"]])
+                if digest:
+                    results[-1]["digest"] = digest
                 write_json(_dir(factory) / "cursors.json", cursors)
     except LockHeld:
         return {"subscriptions": len(subs), "busy": "another relay round is running"}

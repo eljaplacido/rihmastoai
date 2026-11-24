@@ -64,7 +64,7 @@ APPROVING = {("approval", "approve"), ("validation", "accept"), ("deploy_gate", 
 
 # Cards whose reasons may describe a holdout scenario: those reasons live in the holdout custody.
 CUSTODY_KINDS = ("holdout_ruling",)
-DECISION_ON_CARD = ("id", "verdict", "person", "persona", "reason", "at", "reason_custody")   # a card's copy
+DECISION_ON_CARD = ("id", "verdict", "person", "persona", "reason", "at", "reason_custody", "delegation")  # a copy
 
 
 class DecisionRefused(ValueError):
@@ -360,8 +360,8 @@ class Canon:
             if held is not None:
                 d["reason_custody"] = held
             items.append(d)
-        keys = ("id", "card", "kind", "verdict", "person", "persona", "identity", "refs", "reason_custody")
-        self._log("decision", {k: d[k] for k in keys if k in d})
+        ks = ("id", "card", "kind", "verdict", "person", "persona", "identity", "delegation", "refs", "reason_custody")
+        self._log("decision", {k: d[k] for k in ks if k in d})
         return d
 
     def _custody(self, card: dict, reason: str) -> tuple[str, dict | None]:

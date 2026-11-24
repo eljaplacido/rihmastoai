@@ -14,6 +14,10 @@ import {
 } from "./core.js";
 import { waterfall, dataTable, tipBox, bars } from "./charts.js";
 import { ATTEST, liveState } from "./widgets.js";
+import { intakeSummary } from "./inputs.js";
+import { trackPill, trackState, viewTrack } from "./track.js";
+import { viewOutputs } from "./outputs.js";
+import { viewOn, moduleShows } from "./modules.js";
 
 // -- shims the views were written against: a state is a chip with an icon and a word ---------------
 
@@ -188,11 +192,14 @@ function healthCard(p) {
   const measured = f.median_task_minutes !== null && f.median_task_minutes !== undefined;
   const nm = () => h("span", { class: "nm-text" }, "not measured");
   const row = (name, value) => h("div", null, h("dt", null, name), h("dd", null, value));
-  return card({ title: "Health", icon: "heart", cls: "health", info: "On track, at risk or off track, from the project's own records. "
+  // the answer's own reasons (the track's), then any health reason the track does not already name
+  const tw = p.track ? p.track.reasons.map((r) => r.why) : [];
+  const why = tw.concat(hl.reasons.filter((r) => !tw.some((t) => t.startsWith(r))));
+  return card({ title: "Health", icon: "heart", cls: "health", info: "The project's one answer: its Track against the approved plan (not measured before a plan is approved). "
     + "Each reason names its record. The forecast comes from this project's merged tasks, or says not measured." },
-  h("div", { class: "health-st" }, healthChip(hl)),
-  hl.reasons.length
-    ? h("ul", { class: "reasons", "aria-label": "Why" }, hl.reasons.map((r) => h("li", null, icon("alert"), h("span", null, linkIds(pid, r)))))
+  h("div", { class: "health-st" }, p.track ? trackState(p.track) : healthChip(hl)),   // the header's one answer
+  why.length
+    ? h("ul", { class: "reasons", "aria-label": "Why" }, why.map((r) => h("li", null, icon("alert"), h("span", null, linkIds(pid, r)))))
     : h("p", { class: "muted small" }, "Nothing holds it back: no escalation, no stopped task, nothing overdue or stale."),
   h("dl", { class: "forecast" },
     // Before the contract is compiled there are no tasks to count: not known yet, never 0.
@@ -1271,7 +1278,8 @@ VIEW_FN.questions = function viewQuestions(p, inbox, ctx) {
   });
   const out = [viewHead("Questions", "What does the panel still need to know? Each perspective's opinion is kept "
     + "side by side, never averaged away."), h("div", { class: "viewbar" }, h("span", { class: "muted small" },
-    open.length + " open of " + p.questions.length), h("span", { class: "vb-r" }, one, S.oneAtATime ? null : toggle))];
+    open.length + " open of " + p.questions.length), h("span", { class: "vb-r" }, one, S.oneAtATime ? null : toggle)),
+  intakeSummary(p)];   // from your input, asked, assumed (cockpit/static/inputs.js)
   if (S.oneAtATime && !ctx.focus) {
     out.push(oneAtATime(p, open));
     return h("div", null, out);
@@ -1737,6 +1745,7 @@ function tryPanel(pid, tr, opts) {
 
 // "Report what you saw" on one check: a change, named after its criterion, signed by the tester.
 function reportForm(pid, it, id) {
+  if (!moduleShows("controls", "report", pid)) return null;       // the change loop's module is off here
   const rid = id + "-rep";
   const options = OBSERVATIONS[S.persona] || DEFAULT_OBSERVATIONS;
   const kind = h("select", { id: rid + "-k", "data-key": rid + "-k" }, options.map(([, t], i) => h("option", { value: String(i) }, t)));
@@ -1950,6 +1959,7 @@ function decidedLine(c) {
   if (c.decision) {
     const d = c.decision;
     return h("p", { class: "answerline" }, VERDICT_LABEL[d.verdict] || d.verdict, " by ", personBadge(d.person, d.persona),
+      d.delegation ? h("a", { href: link(S.project ? S.project.meta.id : "", "track"), class: "muted" }, " by delegation " + d.delegation) : null,
       d.reason ? ": " + d.reason : "", h("span", { class: "muted" }, " · " + fmtAt(d.at)));
   }
   if (c.closed) return h("p", { class: "answerline" }, cap(c.state) + " by ", agentBadge("the kernel"), ": " + c.closed.why);
@@ -2033,7 +2043,8 @@ function decisionsTable(decisions) {
     h("thead", null, h("tr", null, ["Decision", "Card", "Verdict", "Accountable person", "At", "Stale"].map((t) => h("th", { scope: "col" }, t)))),
     h("tbody", null, decisions.slice().reverse().map((d) => h("tr", { "data-id": d.id }, h("td", { class: "mono" }, d.id),
       h("td", { class: "mono" }, d.card || "-"), h("td", null, VERDICT_LABEL[d.verdict] || d.verdict),
-      h("td", null, personBadge(d.person, d.persona)), h("td", { class: "num" }, fmtAt(d.at)),
+      h("td", null, personBadge(d.person, d.persona), d.delegation ? h("span", { class: "muted small" }, " by delegation " + d.delegation) : null),
+      h("td", { class: "num" }, fmtAt(d.at)),
       h("td", null, d.stale ? badge("warn", "stale" + (d.stale_reason ? ": " + d.stale_reason : "")) : ""))))));
 }
 
@@ -2115,9 +2126,10 @@ function orderedViews(p, ctx, planOpen) {
   if (!views.includes("overview")) views.push("overview");
   if (S.allViews) Object.keys(VIEWS).forEach((v) => { if (!views.includes(v)) views.push(v); });
   if (!views.includes("evidence")) views.push("evidence");
+  if (!views.includes("track")) views.push("track");     // staying on track, autopilot and delegations (track.js)
   views = views.filter((v) => v !== "plan" || planOpen);
   if (planOpen && !views.includes("plan")) views.splice(1, 0, "plan");
-  return views;
+  return views.filter((v) => viewOn(v, p.meta.id));   // only the views of the project's modules that are on
 }
 
 export async function renderProject(r, keep, seq) {
@@ -2144,10 +2156,10 @@ async function drawProject(main, r, seq, done) {
   const planOpen = !isFactory && (p.open_cards || []).some(isPlanCard);
   // The Plan tab stays where it was while it is the view in front, also once the plan is approved.
   const views = orderedViews(p, ctx, planOpen || (!isFactory && r.view === "plan"));
-  const view = r.view && VIEWS[r.view] && (isFactory ? FACTORY_VIEWS.includes(r.view) : true) ? r.view : views[0];
+  const view = r.view && VIEWS[r.view] && (isFactory ? FACTORY_VIEWS.includes(r.view) : viewOn(r.view, pid)) ? r.view : views[0];
   const shown = views.concat(views.includes(view) ? [] : [view]);
   const taskMode = viewChoice("tasks", "board");
-  const [findings, cellRows, planFirst, tryFirst, timeline, comments, attestation, pack] = await Promise.all([
+  const [findings, cellRows, planFirst, tryFirst, timeline, comments, attestation, pack, track, outputs] = await Promise.all([
     isFactory || view !== "overview" ? none : api("GET", base + "/alignment"),
     view === "cell" ? api("GET", base + "/cell") : none,
     !isFactory && view === "plan" ? api("GET", base + "/plan") : none,
@@ -2156,6 +2168,8 @@ async function drawProject(main, r, seq, done) {
     isFactory ? none : api("GET", base + "/comments").catch(() => null),
     !isFactory && view === "evidence" ? api("GET", base + "/attestation") : none,
     !isFactory && view === "releases" && (p.releases || []).length ? api("GET", base + "/pack").catch((e) => ({ error: e.message })) : none,
+    !isFactory && view === "track" ? api("GET", base + "/track") : none,
+    !isFactory && view === "outputs" ? api("GET", base + "/outputs") : none,
   ]);
   if (seq !== S.seq) return false;
   let plan = planFirst;
@@ -2181,7 +2195,7 @@ async function drawProject(main, r, seq, done) {
       v === "plan" && planOpen ? h("span", { class: "tab-wait", tip: "Waits on approval" }, icon("user")) : null)))),
   isFactory ? null : h("label", { class: "tabs-all" }, h("input", { type: "checkbox", checked: S.allViews, "data-key": "allviews",
     onchange: (e) => { S.allViews = e.target.checked; nav.route(true); } }), "Show all views"));
-  const ctxObj = { pid, focus: r.focus, cell: cellRows, plan, tryIt, planOpen, timeline, comments, attestation, pack };
+  const ctxObj = { pid, focus: r.focus, cell: cellRows, plan, tryIt, planOpen, timeline, comments, attestation, pack, track, outputs };
   let body = VIEW_FN[view](p, inbox, ctxObj);
   if (comments) decorateComments(body, pid, view, comments.comments || []);
   if (view === "overview" && !isFactory) {
@@ -2236,7 +2250,8 @@ function projectHead(p, isFactory, ctx) {
   const chips = isFactory ? [ledgerBadge(p.ledger)] : [
     chip("neutral", "layers", "Maturity: " + meta.maturity, { tip: (S.meta.maturities || {})[meta.maturity] || "" }),
     chip("neutral", "comment", "Mode: " + meta.mode, { tip: (S.meta.modes || {})[meta.mode] || "" }),
-    healthChip(p.health),
+    // one on-track answer: the Track pill (it carries every reason the health reads), else the health
+    trackPill(p) || healthChip(p.health),
     au ? autonomyChip(p) : null,
     ledgerBadge(p.ledger),
     p.stale.length ? badge("warn", plural(p.stale.length, "stale approval")) : null,
@@ -2440,6 +2455,7 @@ function hhmm(at) { return at ? String(at).replace("T", " ").replace(/:\d\dZ$/, 
 // Reading the pack never builds one (GET only reads what was written). Building is its own signed
 // write: POST .../pack/build, which records a new version only when what the pack names changed.
 function buildPackButton(pid, pk) {
+  if (!moduleShows("controls", "build_pack", pid)) return null;  // the capability layer's module is off here
   const may = (pk.builders || []).includes(S.persona);
   const who = orList(pk.builders || []);
   const b = button(pk.pack ? "Build again" : "Build the capability pack", { icon: "package", kind: pk.pack ? "small" : "small primary",
@@ -2592,6 +2608,10 @@ VIEW_FN.evidence = function viewEvidence(p, inbox, ctx) {
         { label: "Evidence", value: (c) => { const s = STATUS[c.status] || ["nm", "dashed", c.status]; return chip(s[0], s[1], s[2]); } },
         { label: "Where", key: "by" }], a.controls || [], "Controls the evidence pack covers")));
 };
+
+VIEW_FN.track = viewTrack;      // staying on track, the autopilot and delegations (track.js)
+// -- outputs: what each audience receives (cockpit/static/outputs.js, kernel/outputs.py) -----------------
+VIEW_FN.outputs = (p, inbox, ctx) => viewOutputs(p, ctx, { viewHead, run, settle });
 
 // -- comments: a remark on a requirement, criterion, task, release or card decides nothing ----------
 

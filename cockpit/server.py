@@ -84,13 +84,19 @@ from urllib.parse import parse_qs, urlsplit
 from kernel import access as kaccess
 from kernel import assistant as kassistant
 from kernel import autonomy as kautonomy
+from kernel import autopilot as kautopilot
 from kernel import dashboard as kdash
+from kernel import delegation as kdelegation
 from kernel import embeds as kembeds
 from kernel import evidence_pack as kevidence
+from kernel import input_summary as kinputs
+from kernel import outputs as koutputs
+from kernel import modules as kmodules
 from kernel import packs as kpacks
 from kernel import plan as kplan
 from kernel import profiles as kprofiles
 from kernel import signals as ksignals
+from kernel import track as ktrack
 from kernel.canon import CARD_DECIDERS, CARD_VERDICTS, PERSPECTIVES, Canon, DecisionRefused
 from kernel.change import CLASSES, NEEDS_DECISION, WAY_BACK, submit, triage
 from kernel.insight import alignment, change_impact, impact
@@ -191,20 +197,22 @@ WIDGETS = {
     "feed_health": ("Feed health", "plug", "Are the integration feeds fresh?"),
     "eval_trend": ("Eval trend", "flask", "Do the evals still hold?"),
     "try_it": ("Try it", "play", "What can people try right now?"),
+    "track": ("Staying on track", "flag", "Is each project on track against its approved plan?"),
 }
 # Read-only presets per lens; a person's first edit duplicates one into a personal layout.
 LENS_DEFAULTS = {
-    "business": [("kpi_strip", "L"), ("decisions", "M"), ("catalogue", "M"), ("square", "L"), ("health", "M"),
-                 ("activity", "M")],
+    "business": [("kpi_strip", "L"), ("decisions", "M"), ("catalogue", "M"), ("square", "L"), ("track", "M"),
+                 ("health", "M"), ("activity", "M")],
     "concept": [("decisions", "M"), ("square", "M"), ("coverage", "M"), ("pipeline", "M")],
     "delivery": [("live", "M"), ("gate_trend", "M"), ("timeline", "L"), ("decisions", "M"), ("activity", "M")],
-    "operations": [("health", "M"), ("updates", "M"), ("decisions", "M"), ("activity", "M"), ("spend", "L")],
+    "operations": [("health", "M"), ("track", "M"), ("updates", "M"), ("decisions", "M"), ("activity", "M"),
+                   ("spend", "L")],
     "compliance": [("evidence_packs", "L"), ("autonomy", "M"), ("coverage", "M"), ("activity", "M"), ("updates", "M")],
     "insight": [("kpi_strip", "L"), ("gate_trend", "M"), ("models", "M"), ("coverage", "M"), ("spend", "M"),
                 ("pipeline", "L")],
 }
 # The view a preset shows first: a list where the widget is a list of things, else its chart.
-LIST_FIRST = {"decisions", "catalogue", "live", "activity", "health", "updates", "evidence_packs", "try_it"}
+LIST_FIRST = {"decisions", "catalogue", "live", "activity", "health", "updates", "evidence_packs", "try_it", "track"}
 MAX_WIDGETS = 24
 LAYOUT_VIEWS = ("chart", "table", "list")
 EXPORT_TTL = 600             # seconds a one-time download link stays valid
@@ -250,7 +258,7 @@ EVIDENCE_STATES = ("verified", "held_out", "claimed", "failing", "not_measured")
 # in a role, or the kernel's own rule. The model is shown where the ledger records one.
 AGENT_ROLE = {
     "intake_done": "analyst", "question_added": "analyst", "opinion_added": "analyst", "spec_written": "analyst",
-    "holdouts_authored": "holdout author", "cell_ran": "builder",
+    "holdouts_authored": "holdout author", "cell_ran": "builder", "input_refined": "analyst",
 }
 PERSON_KEYS = ("person", "by", "chosen_by", "stopped_by", "accepted_as_is_by")
 
@@ -289,6 +297,9 @@ ROUTES = [
     ("GET", rf"/api/projects/{PID}/comments", "get_comments"),
     ("GET", rf"/api/projects/{PID}/pack", "get_pack"),
     ("GET", rf"/api/projects/{PID}/attestation", "get_attestation"),
+    ("GET", rf"/api/projects/{PID}/outputs", "get_outputs"),
+    ("PUT", rf"/api/projects/{PID}/outputs", "put_outputs"),
+    ("POST", rf"/api/projects/{PID}/outputs/build", "post_outputs_build"),
     ("POST", r"/api/signals", "post_signal"),
     ("POST", rf"/api/signals/{SIGNAL_ID}/triage", "post_signal_triage"),
     ("POST", rf"/api/concepts/{CARD_ID}/edit", "post_concept_edit"),
@@ -303,7 +314,11 @@ ROUTES = [
     ("PUT", r"/api/layout", "put_layout"),
     ("PUT", r"/api/autonomy", "put_autonomy"),
     ("PUT", rf"/api/projects/{PID}/autonomy", "put_project_autonomy"),
+    ("GET", r"/api/modules", "get_modules"),      # the parts of Rihmasto in use (kernel/modules.py)
+    ("PUT", r"/api/modules", "put_modules"),
+    ("PUT", rf"/api/projects/{PID}/modules", "put_project_modules"),
     ("POST", r"/api/projects", "post_project"),
+    ("POST", r"/api/adopt", "post_adopt"),
     ("POST", rf"/api/projects/{PID}/cards/(?P<cid>C-\d{{1,9}})/decide", "post_decide"),
     ("POST", rf"/api/projects/{PID}/questions/(?P<qid>Q-\d{{1,9}})/answer", "post_answer"),
     ("POST", rf"/api/projects/{PID}/questions/(?P<qid>Q-\d{{1,9}})/assume", "post_assume"),
@@ -313,6 +328,12 @@ ROUTES = [
     ("POST", rf"/api/projects/{PID}/plan/requirements/{RID}", "post_plan_requirement"),
     ("POST", rf"/api/projects/{PID}/pause", "post_pause"),
     ("POST", rf"/api/projects/{PID}/resume", "post_resume"),
+    ("GET", rf"/api/projects/{PID}/track", "get_track"),
+    ("PUT", rf"/api/projects/{PID}/tracking", "put_tracking"),
+    ("POST", rf"/api/projects/{PID}/checkpoints/(?P<stage>[2-7])/look", "post_checkpoint_look"),
+    ("POST", rf"/api/projects/{PID}/autopilot", "post_autopilot_start"),
+    ("POST", rf"/api/projects/{PID}/autopilot/stop", "post_autopilot_stop"),
+    ("POST", rf"/api/projects/{PID}/delegations/(?P<did>DL-\d{{1,9}})/revoke", "post_delegation_revoke"),
     ("POST", r"/api/links", "post_link"),
 ]
 ROUTES = [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ROUTES]
@@ -842,6 +863,8 @@ class CockpitHandler(BaseHTTPRequestHandler):
         api = Api(self.server, access, identity)
         try:
             with kaccess.signing(identity):     # enforced access: the records name the identity
+                if method != "GET":             # a write of a module not enabled there is refused (FR-MOD2)
+                    kmodules.require_route(self.server.factory, name, match.groupdict().get("pid"))
                 status, out = getattr(api, name)(body=body, query=query, **match.groupdict())
         except ApiError as exc:
             return self._error(exc.status, exc.message)
@@ -1152,6 +1175,10 @@ class Api:
             "autonomy": {"levels": {str(n): {"name": kautonomy.LEVELS[n], "meaning": kautonomy.MEANING[n]}
                                     for n in kautonomy.LEVELS}, "setters": list(kautonomy.SETTERS)},
             "update_triggers": {k: v["label"] for k, v in TRIGGERS.items()},
+            # autopilot, delegation and tracking (kernel/autopilot.py, kernel/delegation.py, kernel/track.py)
+            "autopilot": {"may_run": list(kautopilot.MAY_RUN), "rules": kdelegation.RULES,
+                          "never": kdelegation.NEVER, "max_days": kdelegation.MAX_DAYS,
+                          "track_setters": list(ktrack.SETTERS), "checkpoint_lookers": list(ktrack.LOOKERS)},
             "assistant": "map" if self.server.assistant_model is None
             else "gnomon" if type(self.server.assistant_model).__name__ == "GnomonModel" else "model",
         }
@@ -1222,6 +1249,8 @@ class Api:
             "goal": canon.goal,
             "brief": canon.brief,
             "readings": self._read(project, "readings.json", {}, problems),
+            # what the input stated, what was asked, what was assumed (docs/guides/inputs.md)
+            "intake_summary": kinputs.summary(project, self._read(project, "inputs.json", None, problems) or {}),
             "questions": [self._question_view(q, canon) for q in canon.questions()],
             "assumptions": assumptions,
             "decisions": decisions,
@@ -1238,6 +1267,7 @@ class Api:
             "profile": kprofiles.public(meta.get("profile") or kprofiles.DEFAULT_PROFILE)
             if (meta.get("profile") or kprofiles.DEFAULT_PROFILE) in kprofiles.PROFILES else None,
             "autonomy": None if pid == FACTORY_PID else self._autonomy_of(project),
+            "track": None if pid == FACTORY_PID else self._status(ktrack.summary, project, problems),
             "running": self._running(project),
             "last_cell": None if pid == FACTORY_PID else self._last_cell(project),
             "problems": problems,
@@ -1550,10 +1580,13 @@ class Api:
             raise ApiError(400, f"profile must be one of {', '.join(kprofiles.PROFILES)}")
         requested_by, persona = self._sign(requested_by, persona, FACTORY_PID)
         _require_person(requested_by, persona)
+        outputs = self._intake_outputs(body, persona)
         try:
             project = self.factory.new_project(title, maturity=maturity, mode=mode, profile=profile)
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
+        if outputs:
+            koutputs.choose(project, outputs, person=requested_by, persona=persona, when="intake")
         # With access enforced the record carries the request's digest: the intake job, which runs as the
         # cockpit's own account, carries out this signed request and no other (kernel.access.cli_signing).
         signed = {"request_sha256": kaccess.request_digest(source)} if self.access.enforced else {}
@@ -1565,6 +1598,34 @@ class Api:
                                      "--requested-by", requested_by],
                                     {"person": requested_by, "persona": persona})
         return 201, {"project": project.meta, "job": self.server.job_view(job)}
+
+    def post_adopt(self, body: dict, **_):
+        """Adopt an existing project from a local git folder or an address git clones without credentials.
+        It runs as a job: adopting reads the repository and runs its own test suites for a baseline."""
+        from kernel.adopt import INTENTS, AdoptionRefused, check_source
+
+        title = _text(body, "title", required=True, limit=200)
+        source = _text(body, "source", required=True, limit=2000).strip()
+        intent = _text(body, "intent", limit=16) or "improve"
+        maturity = _text(body, "maturity", limit=32) or "production"
+        base_url = _text(body, "base_url", limit=500).strip() or None
+        if intent not in INTENTS:
+            raise ApiError(400, f"intent must be one of {', '.join(INTENTS)}")
+        if maturity not in MATURITIES:
+            raise ApiError(400, f"maturity must be one of {', '.join(MATURITIES)}")
+        person, persona = self._sign(_text(body, "person", limit=200), _text(body, "persona", limit=64), FACTORY_PID)
+        _require_person(person, persona)
+        try:
+            kind, _ = check_source(source)
+        except (AdoptionRefused, OSError) as exc:
+            raise ApiError(400, str(exc)) from None
+        # The request is on record, signed, before the job runs (D-0017: no path skips the record).
+        self._audit(self._factory_canon(), "adopt_requested", title, person, persona, source_kind=kind, intent=intent,
+                    maturity=maturity)
+        args = ["-m", "kernel.cli", "adopt", title, "--source", source, "--intent", intent, "--person", person,
+                "--persona", persona, "--maturity", maturity, *(["--base-url", base_url] if base_url else [])]
+        job = self.server.start_job("adopt", FACTORY_PID, args, {"person": person, "persona": persona})
+        return 201, {"job": self.server.job_view(job)}
 
     def post_advance(self, pid: str, body: dict, **_):
         project = self._project(pid)
@@ -1646,6 +1707,85 @@ class Api:
         resume(project, person=person, persona=persona)
         self._audit(project, "resume", pid, person, persona)
         return 200, {"now": now(project)}
+
+    # -- autopilot, delegation and staying on track (kernel/autopilot.py, kernel/track.py, D-0017) -------
+
+    def get_track(self, pid: str, **_: object) -> tuple[int, dict]:
+        """A project against its approved plan, with its checkpoints, autopilot and delegations. A read
+        (Rihma's own canon has no plan: its track is not measured)."""
+        project = self._project(pid)
+        return 200, {"track": ktrack.track(project), "autopilot": kautopilot.status(project),
+                     "settings": ktrack.settings(project)}
+
+    def put_tracking(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """A plan owner sets the checkpoints, whether a due one holds the run, and the budget."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        stages, hold, amount = body.get("checkpoints"), body.get("hold"), body.get("budget")
+        if stages is not None and not (isinstance(stages, list) and all(type(s) is int for s in stages)):
+            raise ApiError(400, "checkpoints is a list of stage numbers")
+        if hold is not None and not isinstance(hold, bool):
+            raise ApiError(400, "hold is true or false")
+        if amount is not None and type(amount) not in (int, float):
+            raise ApiError(400, "budget is a number")
+        out = ktrack.set_tracking(project, person=person, persona=persona, stages=stages, hold=hold,
+                                  due=body["due"] if isinstance(body.get("due"), str) else None, amount=amount,
+                                  currency=_text(body, "currency", limit=8) or None)
+        self._audit(project, "tracking_set", pid, person, persona)
+        return 200, {"settings": out, "track": ktrack.summary(project)}
+
+    def post_checkpoint_look(self, pid: str, stage: str, body: dict, **_: object) -> tuple[int, dict]:
+        """A person records that they looked at a checkpoint; a run it held goes on at its next pass."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        cps = ktrack.look(project, int(stage), person=person, persona=persona, note=_text(body, "note", limit=2000))
+        self._audit(project, "checkpoint_look", stage, person, persona)
+        return 200, {"checkpoints": cps, "track": ktrack.summary(project)}
+
+    def post_autopilot_start(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """Arm an autopilot (its delegation in the signer's name, bound to the sandbox) and run its passes
+        as a job. The kernel refuses a kind that is never delegated, or one the persona may not decide."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        kinds, rules = body.get("kinds"), body.get("rules") or {}
+        if not isinstance(kinds, list) or not all(isinstance(k, str) for k in kinds):
+            raise ApiError(400, "kinds is a list of card kinds")
+        if not isinstance(rules, dict) or not all(isinstance(v, str) for v in rules.values()):
+            raise ApiError(400, "rules maps a card kind to its rule")
+        running = self.server.running_job(pid)
+        if running is not None:
+            raise ApiError(409, f"job {running['id']} is still running for {pid}")
+        run = kautopilot.start(project, until=_text(body, "until", required=True, limit=64), kinds=kinds,
+                               person=person, persona=persona, rules=rules, reason=_text(body, "reason", limit=2000))
+        self._audit(project, "autopilot_start", run["id"], person, persona)
+        job = self.server.start_job("autopilot", project.pid, ["-m", "kernel.cli", "autopilot", "run", project.pid],
+                                    {"person": person, "persona": persona})
+        return 201, {"run": run, "job": self.server.job_view(job)}
+
+    def post_autopilot_stop(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """A person stops the autopilot: its delegation is revoked and what it held back is released. Its
+        job, if one still runs a pass, delivers nothing more and ends at the pass's next safe point."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        run = kautopilot.stop(project, person=person, persona=persona, reason=_text(body, "reason", limit=2000))
+        self._audit(project, "autopilot_stop", run["id"], person, persona)
+        job = self.server.running_job(pid)
+        ending = None if job is None or job["kind"] != "autopilot" else self.server.job_view(job) | {
+            "ending": "the pass under way delivers nothing and ends at its next safe point; a cell already "
+                      "working finishes its step first"}
+        return 200, {"run": run, "track": ktrack.summary(project), "job": ending}
+
+    def post_delegation_revoke(self, pid: str, did: str, body: dict, **_: object) -> tuple[int, dict]:
+        """Stop a delegation at once: its next card waits for a person."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        try:
+            d = kdelegation.revoke(project, did, person=person, persona=persona,
+                                   reason=_text(body, "reason", limit=2000))
+        except KeyError:
+            raise ApiError(404, f"no delegation {did} on {pid}") from None
+        self._audit(project, "delegation_revoke", did, person, persona)
+        return 200, {"delegation": d}
 
     def post_link(self, **_):
         bootstrap = self.server.issue_link(LINK_TTL)
@@ -1880,6 +2020,7 @@ class Api:
             "spend": {**fl["spend"], "currency": load_prices().get("currency", "USD"),
                       "runs": fl["overall"].get("runs")},
             "try_it": tries,
+            "track": safe("track", lambda: kdash.tracking(f), {"projects": [], "counts": {}, "autopilots": 0}),
             "feed_health": {"measured": False, "why": "no feed probe has reported yet: an integration's freshness "
                                                       "probe writes it once the feed runs"},
             "eval_trend": {"measured": False, "why": "no eval run is recorded over time yet: a model or agent "
@@ -2091,6 +2232,7 @@ class Api:
             raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
         ctx = project_context(project, persona, lens)
         ctx["default_lens"] = lens_for(persona)
+        ctx["views"] = [v for v in ctx["views"] if kmodules.shown(project, "views", v)]   # only what is enabled
         return 200, ctx
 
     # layouts: per person, persona and lens, in the cockpit's own folder, never in a project ledger
@@ -2340,6 +2482,29 @@ class Api:
         self._audit(project, "set_autonomy_cap", pid, person, persona, level=out["cap"])
         return 200, {**out, "autonomy": self._autonomy_view()}
 
+    # modules: the parts of Rihmasto in use, chosen by a person (kernel/modules.py, FR-MOD1)
+
+    def get_modules(self, **_: object) -> tuple[int, dict]:
+        return 200, kmodules.view(self.factory)
+
+    def _set_modules(self, target: Factory | Project, body: dict, pid: str) -> dict:
+        person, persona = self._who(body, pid)
+        listed = body.get("modules")
+        if listed is not None and not (isinstance(listed, list) and all(isinstance(m, str) for m in listed)):
+            raise ApiError(400, "modules is a list of module ids")
+        preset = _text(body, "preset", limit=64) or None
+        out = kmodules.set_modules(target, person=person, persona=persona, preset=preset, modules=listed,
+                                   inherit=body.get("inherit") is True, reason=_text(body, "reason", limit=2000))
+        return out | {"view": kmodules.view(self.factory)}
+
+    def put_modules(self, body: dict, **_: object) -> tuple[int, dict]:
+        return 200, self._set_modules(self.factory, body, FACTORY_PID)
+
+    def put_project_modules(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        if pid == FACTORY_PID:
+            raise ApiError(400, "choose the factory's modules with PUT /api/modules")
+        return 200, self._set_modules(self._project(pid), body, pid)
+
     # capability packs and evidence packs
 
     def get_pack(self, pid: str, **_: object) -> tuple[int, dict]:
@@ -2402,6 +2567,36 @@ class Api:
         if path is None:
             raise ApiError(404, "this download link was already used, has expired, or names no export")
         return 200, FileResponse(path)
+
+    # outputs per audience (kernel/outputs.py): the kernel records each choice and build with its person
+
+    @staticmethod
+    def _intake_outputs(body: dict, persona: str) -> list[str]:
+        """The outputs a new project's request names, chosen at intake; refused before the project is made when
+        the requester's persona may not choose them."""
+        outputs = koutputs.known_targets(body.get("outputs") or [])
+        if outputs and persona not in koutputs.CHOOSERS:
+            raise DecisionRefused(f"a {persona} may not choose outputs; {', '.join(koutputs.CHOOSERS)} may")
+        return outputs
+
+    def get_outputs(self, pid: str, **_: object) -> tuple[int, dict]:
+        return 200, koutputs.view(self._project(pid))
+
+    def put_outputs(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        person, persona = self._who(body, pid)
+        return 200, koutputs.choose(self._project(pid), body.get("targets"), person=person, persona=persona,
+                                    reason=_text(body, "reason", limit=500))
+
+    def post_outputs_build(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """Build the chosen targets into the exports folder; each built file is offered as a one-time download."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        out = koutputs.build(project, body.get("targets"), self.server.exports_dir, person=person, persona=persona)
+        for row in out["outputs"]:
+            row["files"] = sorted(row.get("files") or [])
+            if row.get("file"):
+                row["download"] = f"/api/exports/{self.server.offer_download(row['file'])}"
+        return 201, {**out, "expires_in": EXPORT_TTL, "view": koutputs.view(project)}
 
     # embeds: a chat window for a website, with exactly one capability
 
@@ -2479,11 +2674,12 @@ class Api:
             raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
         person, persona = self._sign(_text(body, "person", limit=200), persona, pid)
         layout, _ = self._layout_for(person, persona, lens)
-        ui = {"widgets": list(WIDGETS), "layout": layout}
+        where = self.factory.project(pid) if pid else self.factory      # the widgets and the model it may use
+        ui = {"widgets": [w for w in WIDGETS if kmodules.shown(where, "widgets", w)], "layout": layout}
         try:
             out = kassistant.ask(self.factory, question, persona=persona, project_id=pid,
                                  view=_text(body, "view", limit=64) or None, ui=ui,
-                                 model=self.server.assistant_model)
+                                 model=self.server.assistant_model if kmodules.is_on(where, "assistant") else None)
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
         out["lens"] = lens

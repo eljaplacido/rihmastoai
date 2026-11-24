@@ -164,9 +164,10 @@ class SignOffTest(DcoCase):
 
 class ContributionFilesTest(unittest.TestCase):
     def test_the_dco_workflow_checks_every_pull_request_with_read_only_access(self):
+        # the action versions are left to Dependabot: only their names are pinned here
         text = (ROOT / ".github" / "workflows" / "dco.yml").read_text(encoding="utf-8")
         for needle in ("pull_request:", "types: [opened, synchronize, reopened]", "permissions:\n  contents: read",
-                       "  dco:\n    name: DCO sign-off\n    runs-on: ubuntu-latest", "uses: actions/checkout@v4",
+                       "  dco:\n    name: DCO sign-off\n    runs-on: ubuntu-latest", "uses: actions/checkout@v",
                        "fetch-depth: 0", "github.event.pull_request.base.sha", "github.event.pull_request.head.sha",
                        "PR_AUTHOR: ${{ github.event.pull_request.user.login }}",
                        'python tools/dco_check.py --base "$BASE_SHA" --head "$HEAD_SHA" --pr-author "$PR_AUTHOR"'):

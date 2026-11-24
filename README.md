@@ -52,6 +52,14 @@ rihmasto demo && rihmasto-cockpit --home var/demo
 
 For a first real project, read [docs/getting-started.md](docs/getting-started.md).
 
+## Use only what you need
+
+Rihmasto is a set of modules. Use one small part, such as *spec only* (a need becomes a confirmed spec
+and a hashed contract, nothing is built) or *gate my code* (the gate judges changes in your own
+repository, and you merge), or the whole factory, and change it later with `rihmasto modules set` or in
+the cockpit's Settings. Every way records the same trail in the ledger.
+[docs/guides/use-only-what-you-need.md](docs/guides/use-only-what-you-need.md) walks through each preset.
+
 ## What you see in the demo
 
 The demo is the real kernel with a scripted model and a scripted builder standing in for Gnomon.
@@ -181,6 +189,13 @@ still change before 1.0.0.
 - the `web_service` and `integration` profiles;
 - the security gate for SARIF findings, capability packs, evidence packs, the autonomy ladder,
   signals, concepts and embeds;
+- delegated decisions, an autopilot bound to a sandbox, and Track, which says whether a project stays
+  on track against its approved plan, with human checkpoints
+  ([docs/guides/autopilot-and-tracking.md](docs/guides/autopilot-and-tracking.md));
+- outputs per audience, chosen by a person and built from the records: a web app with sign-in, a
+  container, an OpenAPI description, a delivery report, an evidence pack and the source
+  (`rihmasto output`, the cockpit's Outputs view; the MCP server output is planned,
+  [docs/guides/outputs.md](docs/guides/outputs.md));
 - access control, phase A: in enforced mode a decision is signed by the identity your organisation's
   sign-in verified, through IT's identity-aware proxy, as a persona an IT-owned access file grants on
   that project ([docs/guides/access.md](docs/guides/access.md)).

@@ -32,7 +32,7 @@ LENSES: dict[str, Lens] = {
     "business": {"label": "Business", "icon": "briefcase",
                  "question": "What is coming, when, and what does it need from me?",
                  "widgets": ["decisions", "pipeline", "health", "forecast", "coverage", "activity"],
-                 "views": ["overview", "inbox", "changes", "spec", "releases"]},
+                 "views": ["overview", "inbox", "changes", "spec", "releases", "outputs"]},
     "concept": {"label": "Concept", "icon": "lightbulb",
                 "question": "What do we assume, and what does the plan say?",
                 "widgets": ["decisions", "questions", "assumptions", "alignment", "coverage"],
@@ -40,7 +40,7 @@ LENSES: dict[str, Lens] = {
     "delivery": {"label": "Delivery", "icon": "hammer",
                  "question": "How is the run going, and why did something fail?",
                  "widgets": ["live", "gate_trend", "timeline", "board", "decisions", "activity"],
-                 "views": ["tasks", "cell", "spec", "inbox", "ledger"]},
+                 "views": ["tasks", "cell", "spec", "inbox", "ledger", "outputs"]},
     "operations": {"label": "Operations", "icon": "activity",
                    "question": "What runs in production, and is it healthy?",
                    "widgets": ["releases", "health", "incidents", "activity"],
@@ -61,7 +61,7 @@ PERSONA_LENS = {"business_owner": "business", "stakeholder": "business", "produc
 
 STAGE_FOCUS = {1: ["questions", "overview"], 2: ["questions", "assumptions"], 3: ["spec", "questions"],
                4: ["plan", "spec"], 5: ["tasks", "live", "spec"], 6: ["try", "inbox", "releases"],
-               7: ["releases", "changes"]}
+               7: ["releases", "changes", "outputs"]}
 
 
 def lens_for(persona: str, requested: str | None = None) -> str:

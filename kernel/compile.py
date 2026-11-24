@@ -25,6 +25,7 @@ from typing import Any
 from kernel import scaffold
 from kernel.intake import _ask_json
 from kernel.lanes import GIT_ID, _git, load_routing, write_product_surface
+from kernel.outputs import wants_sign_in
 from kernel.spec import render_interface
 from kernel.store import REPO_ROOT, Project, read_json, write_json, write_text
 
@@ -194,7 +195,9 @@ def init_repo(project, contract: dict, routing: dict | None = None) -> Path:
         work.mkdir()
         _git(work, "init", "-q", "-b", "main")
         look = (project.read("spec.json") or {}).get("look", "neutral")
-        for rel, text in scaffold.files(meta["title"], project.pid, meta["maturity"], look=look).items():
+        sign_in = wants_sign_in(project)  # a person chose a web app people sign in to (kernel/outputs.py)
+        for rel, text in scaffold.files(meta["title"], project.pid, meta["maturity"], look=look,
+                                        sign_in=sign_in).items():
             write_text(work / rel, text)
         write_json(work / "contract.json", contract)
         write_product_surface(work, routing, WRITE_SCOPE)

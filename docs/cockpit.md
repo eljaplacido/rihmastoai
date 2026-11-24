@@ -179,6 +179,7 @@ widget offers its data as a table too, so a value is never only in a chart or a 
 | Activity | What just happened, and who did it? | a feed with person and agent avatars, or people against agents per hour |
 | Builder models | Which models do the work well? | first-round warranted rate per builder model, with n |
 | Project health | Which projects are on track? | health, forecast and now line per project |
+| Staying on track | Is each project on track against its approved plan? | `kernel.track` per project, worst first: on track, at risk, off track or not measured, the first reasons, a checkpoint due and an autopilot holding ([autopilot and tracking](guides/autopilot-and-tracking.md)) |
 | Updates | What changed outside, and what should we try? | update cards, rendered for the lens: the business proposal, the expert sentence, or the developer JSON in Delivery and Insight; Start a trial, Decline or Defer |
 | Autonomy | How far may the factory act alone? | the ladder 1-4 with the cap; a business owner, IT or compliance sets it with a reason |
 | Evidence packs | Can we show it was checked? | each project's attestation and an Export button |
@@ -326,6 +327,17 @@ panel and the stage counts beside it.
 - **Evidence** shows the attestation (attestable, chain broken or insufficient evidence; never
   "compliant"), what the pack holds, the control table (evidenced, partial or not evidenced) and
   **Export evidence pack**.
+- **Track** (also the header's **Track** pill) shows whether the project stays on track against its
+  approved plan, with every figure's basis; the human checkpoints, with **I looked** and, for a plan
+  owner, **Set checkpoints and a budget**; the autopilot in a sandbox, with **Start the autopilot**
+  and **Stop the autopilot**; and the delegations, with **Revoke**
+  ([autopilot and tracking](guides/autopilot-and-tracking.md)).
+- **Outputs** shows what each audience receives: a web app with sign-in, a container, an API
+  description, an MCP server (planned), a delivery report, an evidence pack and the source, each with
+  what it holds and whether it is ready. **Save the choice** (`data-control="choose_outputs"`) records
+  which outputs the project delivers, signed and with a reason; **Build and download**
+  (`build_output`) and **Build every chosen output** (`build_outputs`) build them from the records
+  and the release, each file through a link that works once ([guides/outputs.md](guides/outputs.md)).
 - **Comments**: requirements, criteria, tasks, releases and cards have a **Comment** button that
   opens a small thread. A comment decides nothing; a product owner or business owner may
   **Promote to change**, which files and triages a change card.
@@ -382,6 +394,11 @@ The views as before:
   assumption with a due date. **One at a time** (a toggle in the Questions view, kept in the tab)
   shows only the first open question, with Answer, Let Rihma assume or **Skip for now**, then the
   next: the conversational intake pattern. A skipped question comes back after the others.
+- The **Intake summary** heads the Questions view: how the input was read (a need, a specification,
+  a plan or a folder), then **From your input** (each fact, decision and requirement with its
+  document and lines), **Asked** and **Assumed** side by side, the questions not asked because the
+  input already says it, and the facet checklist with each facet's state
+  ([guides/inputs.md](guides/inputs.md)).
 - **Inbox** and **Changes**: every change card shows **Impact if changed** before the decision
   buttons (FR-P5): the requirements, the criteria with the tests on the product's main that
   name them, the tasks that would reopen, the approvals that would go stale and who gave
@@ -523,7 +540,7 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `POST /api/projects/<pid>/plan/requirements/<rid>` | `{statement, acceptance: [{given, when, then, kind}], person, persona}` → `kernel.plan.edit_requirement`: the person becomes the requirement's owner, and the plan card is reissued (`kernel.plan.open_card`) where the maturity needs one. A non-person, a persona that may not edit the plan, or a plan already compiled is a 403 and nothing is recorded |
 | `POST /api/projects/<pid>/pause` | `{person, persona, reason}` → `kernel.safestop.request_pause`; a persona that may not pause is a 403, a project already paused a 409 |
 | `POST /api/projects/<pid>/resume` | `{person, persona}` → `kernel.safestop.resume`; a persona that may not resume is a 403, a project that is not paused a 409 |
-| `POST /api/projects` | `{title, source, profile, mode, maturity, requested_by}`; creates the project with its work profile and starts the intake job |
+| `POST /api/projects` | `{title, source, profile, mode, maturity, requested_by}`; creates the project with its work profile and starts the intake job. An optional `outputs` list is chosen at intake by the requester (`kernel/outputs.py`); a persona that may not choose outputs is refused before the project is made |
 | `POST /api/projects/<pid>/advance` | starts `kernel.cli run` |
 | `GET /api/jobs` | jobs with their state and the last lines of their logs; a finished run carries its `outcome` (the state and reason of the result it printed last), and one the autonomy cap stopped has the state `capped` |
 | `POST /api/links` | a new one-use sign-in link for another tab |
@@ -549,8 +566,15 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `GET /api/projects/<pid>/attestation` | what an export would attest, computed read-only |
 | `POST /api/projects/<pid>/evidence` | `{person, persona}` → `kernel.evidence_pack.export` into `<home>/_cockpit/exports/`; returns the file and a one-time `download` path |
 | `GET /api/exports/<token>` | that export, once, as an attachment, only from the exports folder |
+| `GET /api/projects/<pid>/outputs` · `PUT /api/projects/<pid>/outputs` | the output targets, what each holds, the choice and who made it, the last builds · `{targets, reason, person, persona}` → `kernel.outputs.choose`; a persona that may not choose is a 403 |
+| `POST /api/projects/<pid>/outputs/build` | `{targets, person, persona}` → `kernel.outputs.build` into `<home>/_cockpit/exports/`; each built file with a one-time `download` path; a target nobody chose is a 403 |
 | `GET /api/embeds` · `POST /api/embeds` · `POST /api/embeds/<eid>/revoke` | the embeds, never a key or its hash, with `embed_base` (null when unset) and `embed_base_local`; reading creates nothing · `{kind, origins, project, label, brief, person, persona}` → the embed, its `key` (in this answer only) and the `snippet`, which points at the embed server; a feedback embed on `_factory` is a 400 · revoke; an embed already revoked is a 409 and nothing is recorded |
 | `POST /api/assistant` | `{question, persona, project, view, person, lens}` → `kernel.assistant.ask` with the widget library and the person's layout; records nothing |
+| `GET /api/projects/<pid>/track` · `PUT /api/projects/<pid>/tracking` | the project against its approved plan (`kernel.track.track`), its autopilot and delegations, and its tracking settings; records nothing · `{checkpoints, hold, due, budget, currency, person, persona}`: a plan owner sets them |
+| `POST /api/projects/<pid>/checkpoints/<stage>/look` | `{note, person, persona}`: a person records a look at a checkpoint; a stage not reached is a 403 |
+| `POST /api/projects/<pid>/autopilot` · `POST /api/projects/<pid>/autopilot/stop` | `{kinds, until, rules?, reason, person, persona}` → `kernel.autopilot.start` and a job running `autopilot run`; a kind never delegated or one the persona may not decide is a 403 · `{reason, person, persona}` → `kernel.autopilot.stop` |
+| `POST /api/projects/<pid>/delegations/<DL-n>/revoke` | `{reason, person, persona}` → `kernel.delegation.revoke`; a persona that may not revoke it is a 403 |
+| `GET /api/modules` · `PUT /api/modules` · `PUT /api/projects/<pid>/modules` | the catalogue, the presets, the factory's set, the projects' own sets and `new_home`; reading creates nothing · `{preset | modules | inherit, reason, person, persona}` for the factory, or a project's own set; a business owner, product owner, IT, a developer or compliance; recorded in that ledger ([use only what you need](guides/use-only-what-you-need.md)). Any write of a module that is off is a 403 |
 
 Every GET is a read: none of them records a decision, marks an approval stale, appends
 to a ledger or creates Rihma's own canon on a home without one. `<pid>` may also be `_factory`,

@@ -9,6 +9,7 @@ import {
   openMenu, pageHead, empty, skeleton, chip, personaLabel, AuthError, ACCENTS,
 } from "./core.js";
 import { WIDGET_DEFS, SOURCES, PROV_NOTE } from "./widgets.js";
+import { widgetOn, offNote } from "./modules.js";
 
 const SIZES = ["S", "M", "L", "XL"];
 const SIZE_LABEL = { S: "Small", M: "Medium", L: "Wide", XL: "Wide and tall" };
@@ -246,7 +247,8 @@ function drawNotes() {
   const box = $("#dash-notes");
   if (!box) return;
   const d = S.dashboard || {};
-  fill(box,
+  const off = ((S.layout && S.layout.widgets) || []).filter((w) => !widgetOn(w.type)).length;
+  fill(box, off ? offNote(off, off === 1 ? "widget of this layout" : "widgets of this layout") : null,
     (d.problems || []).length ? h("p", { class: "w-warn page", role: "note" }, icon("alert"),
       h("span", null, "Some read models could not be read: " + d.problems.join(", ") + ". The widgets built on them say so.")) : null,
     D.error ? h("p", { class: "w-warn page", role: "alert" }, icon("alert"),
@@ -394,11 +396,11 @@ export function renderGrid(focus) {
   const keep = focus === undefined ? focusMark(document.activeElement) : focus;
   const d = S.dashboard || {};
   const widgets = S.layout.widgets || [];
-  if (!widgets.length) {
+  if (!widgets.some((w) => widgetOn(w.type))) {   // a widget whose module is off stays in the layout, not drawn
     fill(grid, h("div", { class: "grid-empty" }, empty("sliders", "This layout has no widgets.",
       button("Add a widget", { icon: "plus", kind: "primary", key: "grid:add", onclick: () => { if (!S.customizing) toggleCustomize(); openLibrary(); } }))));
   } else {
-    fill(grid, widgets.map((w, i) => widgetCard(w, i, d)));
+    fill(grid, widgets.map((w, i) => (widgetOn(w.type) ? widgetCard(w, i, d) : null)));
   }
   restoreFocus(keep && !widgets.length ? { fallback: '#grid [data-key="grid:add"]' } : keep);
   drawLayoutKind();
@@ -596,7 +598,9 @@ function openLibrary() {
   const draw = () => {
     const was = document.activeElement && list.contains(document.activeElement) ? document.activeElement.dataset.key : null;
     const term = q.value.trim().toLowerCase();
-    const all = Object.entries((S.meta && S.meta.widgets) || {});
+    const all = Object.entries((S.meta && S.meta.widgets) || {}).filter(([k]) => widgetOn(k));   // the modules that are on
+    const offLib = Object.keys((S.meta && S.meta.widgets) || {}).filter((k) => !widgetOn(k)).length;
+    if (!list.nextSibling && offLib) list.after(offNote(offLib, "more widgets"));
     fill(list, all.filter(([k, v]) => !term || (k + " " + v.title + " " + v.question).toLowerCase().includes(term)).map(([k, v]) => {
       const n = (S.layout.widgets || []).filter((w) => w.type === k).length;
       const add = button("Add", { icon: "plus", kind: "small", key: "lib:" + k, aria: "Add " + v.title, onclick: () => {

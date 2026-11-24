@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Collection
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
@@ -80,24 +81,27 @@ def _score(q: set, it: dict) -> float:
     return best + 2.0 * len(q & named) / len(q) + 0.25 * len(q & text)
 
 
-def find_in_map(question: str, *, limit: int = 3) -> list:
-    """Views and controls whose label, synonyms or purpose share words with the question, best first."""
+def find_in_map(question: str, *, limit: int = 3, hidden: Collection[str] = ()) -> list:
+    """Views and controls whose label, synonyms or purpose share words with the question, best first;
+    none of the ``hidden`` ones (their module is not enabled, kernel/modules.py)."""
     q, m = words(question), ui_map()
     scored = [(_score(q, it), kind, it) for kind, items in (("view", m["views"]), ("control", m["controls"]))
-              for it in items]
+              for it in items if it["id"] not in hidden]
     scored = sorted((x for x in scored if x[0] > 0), key=lambda x: -x[0])
     return [{"kind": k, **it} for _, k, it in scored[:limit]]
 
 
 # -- the prompt ------------------------------------------------------------------------------------
 
-def _catalogue() -> str:
+def _catalogue(hidden: Collection[str] = ()) -> str:
     """What every assistant prompt starts with, word for word: the rules, the cockpit's views,
-    controls and actions, and the answer's shape. It never changes between calls, so an endpoint
-    that caches prompt prefixes reads it once (FR-Z1-AC-4)."""
+    controls and actions, and the answer's shape. It never changes between calls for one set of modules,
+    so an endpoint that caches prompt prefixes reads it once (FR-Z1-AC-4); what a module that is not
+    enabled shows is left out (``hidden``, FR-MOD2)."""
     m = ui_map()
-    views = "\n".join(f"- {v['id']} ({v['route']}): {v['purpose']}" for v in m["views"])
-    controls = "\n".join(f"- {c['id']}: {c['label']}, {c['where']}; {c['does']}" for c in m["controls"])
+    views = "\n".join(f"- {v['id']} ({v['route']}): {v['purpose']}" for v in m["views"] if v["id"] not in hidden)
+    controls = "\n".join(f"- {c['id']}: {c['label']}, {c['where']}; {c['does']}" for c in m["controls"]
+                         if c["id"] not in hidden)
     actions = "\n".join(f"- {a}({', '.join(args)})" for a, args in ACTIONS.items())
     return f"""You are Rihma's cockpit assistant. You help a person use the cockpit and understand their projects.
 
@@ -165,9 +169,10 @@ def _layout_line(ui: dict | None) -> str:
     return f"Their current layout: {layout}\n"
 
 
-def prompt(question: str, snap: dict, *, persona: str, view: str | None, hints: list, ui: dict | None = None) -> str:
+def prompt(question: str, snap: dict, *, persona: str, view: str | None, hints: list, ui: dict | None = None,
+           hidden: Collection[str] = ()) -> str:
     """The static catalogue first, then who is asking and what, and the snapshot last."""
-    return (_catalogue() + _ui_rules(ui)
+    return (_catalogue(hidden) + _ui_rules(ui)
             + f"\nThe person is the {persona} persona, looking at the {view or 'projects'} view.\n"
             + _layout_line(ui)
             + f"Map entries that match the question: {json.dumps([h['id'] for h in hints])}\n\n"
@@ -202,19 +207,39 @@ def _by_id() -> tuple[dict, dict]:
     return {v["id"]: v for v in m["views"]}, {c["id"]: c for c in m["controls"]}
 
 
-def _checked_nav(nav: Any, factory: Any, project: Any) -> dict | None:
+def _route_view(route: str) -> str:
+    """The map id of the view a route opens: `#/p/<pid>/releases` is releases, `#/inbox` is inbox_all."""
+    parts = route.lstrip("#/").split("/")
+    if parts[0] == "p":
+        return parts[2] if len(parts) > 2 else "overview"
+    return "inbox_all" if parts[0] == "inbox" else parts[0]
+
+
+def _visible(hidden: Collection[str]) -> tuple[dict, dict]:
+    """The map's views and controls that a module that is on shows."""
+    views, controls = _by_id()
+    return ({k: v for k, v in views.items() if k not in hidden}, {k: v for k, v in controls.items() if k not in hidden})
+
+
+def _followable(route: Any, factory: Any, hidden: Collection[str]) -> bool:
+    return bool(route_ok(route, factory)) and _route_view(str(route)) not in hidden
+
+
+def _checked_nav(nav: Any, factory: Any, project: Any, hidden: Collection[str] = ()) -> dict | None:
     """Where Take me there goes: a route the cockpit has, and a control from the map. A view named as a
-    control opens that view, and a control without a route opens the page it is on."""
+    control opens that view, and a control without a route opens the page it is on. Nothing of a module
+    that is not enabled (``hidden``) is followed."""
     if not isinstance(nav, dict):
         return None
     views, controls = _by_id()
+    on_views, on_controls = _visible(hidden)
     route, control = nav.get("route") or None, nav.get("control") or None
-    if control in views:
+    if control in on_views:
         route, control = route or _target(views[control], project, views)[0], None
-    if control not in controls:
+    if control not in on_controls:
         control = None
-    if route and not route_ok(route, factory):
-        route = None  # a route the cockpit does not have is never followed
+    if route and not _followable(route, factory, hidden):
+        route = None  # a route the cockpit does not have, or does not show, is never followed
     if control and not route:
         route, note = _target(controls[control], project, views)
         control = None if note else control   # not on the page that opens, or not in this project
@@ -255,12 +280,35 @@ def _reshape(question: str, controls: dict) -> list | None:
     return [{"kind": "control", **controls["customize"]}] if said & _LAYOUT_WORDS else None
 
 
-def from_map(question: str, project: Any) -> dict:
+def _not_enabled(item: dict) -> dict:
+    """The answer about a view or a control whose module is not enabled here: which module adds it, what
+    else it adds, and Take me there to Settings, Modules, where a person turns it on (FR-MOD2)."""
+    from kernel.modules import offering
+
+    mod = offering(item["id"]) or {"id": None, "label": "a module", "adds": "more"}
+    return {"answer": f"{item['label']} is part of {mod['label']}, which is not enabled here. It adds {mod['adds']}. "
+                      "Settings, Modules turns it on.", "navigate": {"route": "#/settings", "control": "modules"},
+            "propose": [], "dropped": [], "sources": [], "by": "map", "matches": [item["id"]],
+            "not_enabled": mod["id"]}
+
+
+def _map_hits(question: str, act: bool, controls: dict, hidden: Collection[str]) -> tuple[list, dict | None]:
+    """The map's best matches that are on, or none and the best match when that one is off."""
+    hits = (_reshape(question, controls) if act else None) or find_in_map(question)
+    if hits and hits[0]["id"] in hidden:
+        return [], hits[0]
+    return [h for h in hits if h["id"] not in hidden], None
+
+
+def from_map(question: str, project: Any, *, hidden: Collection[str] = ()) -> dict:
     """An answer from the cockpit's map alone: where a view or a control is, and Take me there. A request
-    to act or to reshape the cockpit is told plainly that the map cannot, and where to do it oneself."""
+    to act or to reshape the cockpit is told plainly that the map cannot, and where to do it oneself. What
+    a module that is not enabled shows (``hidden``) is never pointed to; asked for, it is named."""
     act = asks_for_action(question)
     views, controls = _by_id()
-    hits = (_reshape(question, controls) if act else None) or find_in_map(question)
+    hits, off = _map_hits(question, act, controls, hidden)
+    if off is not None:
+        return _not_enabled(off)
     nav = None
     if hits:
         top = hits[0]
@@ -334,8 +382,32 @@ def _own_lane(model: Model) -> Model:
 
 # -- answering -----------------------------------------------------------------------------------------
 
-def _offered(factory: Any, project: Any, persona: str, question: str, raw: Any, ui: dict | None) -> tuple:
-    """The model's proposals, each checked, and how many it made that the person did not ask for."""
+# The map control a proposal acts through: one whose control a module that is off shows is not offered.
+_ACTION_CONTROL = {"answer_question": "answer", "let_rihma_assume": "assume", "decide": "decide", "pause": "pause",
+                   "resume": "resume", "report_change": "report", "comment": "comment", "theme": "theme",
+                   "create_embed": "create_embed"}
+
+
+def _module_off(target: Any, p: dict, hidden: Collection[str]) -> str | None:
+    """Why a proposal is not offered because what it acts through, a view it opens, a control or a widget it
+    adds, belongs to a module that is not enabled here (FR-MOD5); None when it is on."""
+    from kernel import modules
+
+    args = p.get("args") or {}
+    if p["action"] == "layout_edit":
+        added = [str(o.get("widget")) for o in args.get("ops") or [] if isinstance(o, dict) and o.get("op") == "add"]
+        found = [modules.owner("widgets", w) for w in added if not modules.shown(target, "widgets", w)]
+    else:
+        name = _route_view(str(args.get("route") or "")) if p["action"] == "open" else _ACTION_CONTROL.get(p["action"])
+        found = [(modules.offering(name) or {}).get("id")] if name in hidden else []
+    off = next((m for m in found if m), None)
+    return f"{modules.MODULES[off]['label']} is not enabled here: Settings, Modules turns it on" if off else None
+
+
+def _offered(factory: Any, project: Any, persona: str, question: str, raw: Any, ui: dict | None,
+             hidden: Collection[str] = ()) -> tuple:
+    """The model's proposals, each checked, none of a module that is off, and how many it made that the
+    person did not ask for."""
     asked, proposals, dropped, unasked = asks_for_action(question), [], [], 0
     for p in raw if isinstance(raw, list) else []:
         if not isinstance(p, dict):
@@ -344,7 +416,8 @@ def _offered(factory: Any, project: Any, persona: str, question: str, raw: Any, 
         if not asked and p["action"] != "open":
             unasked += 1  # a question about how things stand gets an answer, not a proposal
             continue
-        why_not = check_proposal(factory, project, persona, p, ui)
+        why_not = (check_proposal(factory, project, persona, p, ui)
+                   or _module_off(project if project is not None else factory, p, hidden))
         if why_not:
             dropped.append({**p, "refused": why_not})
         else:
@@ -352,8 +425,8 @@ def _offered(factory: Any, project: Any, persona: str, question: str, raw: Any, 
     return proposals, dropped, unasked
 
 
-def _fallback(question: str, project: Any, exc: Exception) -> dict:
-    out = from_map(question, project)
+def _fallback(question: str, project: Any, exc: Exception, hidden: Collection[str] = ()) -> dict:
+    out = from_map(question, project, hidden=hidden)
     out["note"] = (f"the assistant's model was busy for {LANE_WAIT:.0f} seconds with another question; this answer "
                    "comes from the cockpit map. Ask again in a moment" if isinstance(exc, LockHeld) else
                    f"the assistant model gave no usable answer ({exc}); this answer comes from the cockpit map")
@@ -366,22 +439,27 @@ def ask(factory: Any, question: str, *, persona: str, project_id: str | None = N
     proposals checked, its sources checked against the records, and its wording kept to proposing."""
     if not question.strip():
         raise ValueError("the question is empty")
+    from kernel.modules import hidden_ids
+
     project = factory.project(project_id) if project_id else None
+    hidden = hidden_ids(project if project is not None else factory)   # the map of what is enabled there
     if model is None:
-        return from_map(question, project)
+        return from_map(question, project, hidden=hidden)
     snap = snapshot(factory, project=project, persona=persona)
     try:
-        raw = extract_json(_own_lane(model).ask(prompt(question, snap, persona=persona, view=view,
-                                                       hints=find_in_map(question), ui=ui), role="assistant"))
+        raw = extract_json(_own_lane(model).ask(prompt(question, snap, persona=persona, view=view, ui=ui,
+                                                       hints=find_in_map(question, hidden=hidden), hidden=hidden),
+                                                role="assistant"))
         if not isinstance(raw, dict):
             raise ModelError("the answer is not a JSON object")
     except (ModelError, OSError, RuntimeError, ValueError) as exc:   # LockHeld is a RuntimeError
-        return _fallback(question, project, exc)
-    proposals, dropped, unasked = _offered(factory, project, persona, question, raw.get("propose"), ui)
+        return _fallback(question, project, exc, hidden)
+    proposals, dropped, unasked = _offered(factory, project, persona, question, raw.get("propose"), ui, hidden)
     answer, note = honest(str(raw.get("answer") or "").strip(), proposals, dropped)
     sources = [str(s) for s in raw.get("sources") or [] if isinstance(s, (str, int)) and str(s).strip()]
     held = known(factory, project, snap)
-    out = {"answer": answer, "navigate": _checked_nav(raw.get("navigate"), factory, project), "propose": proposals,
+    out = {"answer": answer, "navigate": _checked_nav(raw.get("navigate"), factory, project, hidden),
+           "propose": proposals,
            "dropped": dropped, "unasked": unasked, "sources": sources,
            "unbacked_sources": [s for s in sources if not backed(s, held, snap)], "by": "assistant"}
     if note:

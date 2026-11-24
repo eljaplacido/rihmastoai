@@ -47,12 +47,19 @@ FACTORY_PID, FACTORY_VIEWS = "_factory", ("overview", "inbox", "ledger")   # coc
 # (None, None) is the shell, on every page. Take me there opens that page, then highlights the control.
 CONTROL_PAGES: dict[str, tuple[str | None, str | None]] = {
     "persona": (None, None), "lens": (None, None), "palette": (None, None), "assistant": (None, None),
-    "theme": (None, None), "density": (None, None), "new_project": (None, "projects"), "customize": (None, "home"),
+    "theme": (None, None), "density": (None, None), "new_project": (None, "projects"),
+    "adopt_project": (None, "projects"), "customize": (None, "home"),
     "pause": ("overview", None), "resume": ("overview", None), "autonomy": ("overview", None),
     "answer": ("questions", "inbox_all"), "assume": ("questions", None), "decide": ("inbox", "inbox_all"),
     "report": ("changes", None), "comment": ("spec", None), "log_signal": (None, "square"),
     "validate_concept": (None, "square"), "export_evidence": ("evidence", None), "build_pack": ("releases", None),
-    "create_embed": (None, "settings")}
+    "create_embed": (None, "settings"), "intake_summary": ("questions", None),
+    "track_pill": ("overview", None), "track_settings": ("track", None),
+    "checkpoint_look": ("track", None), "autopilot_start": ("track", None), "autopilot_stop": ("track", None),
+    "revoke_delegation": ("track", None),
+    "choose_outputs": ("outputs", None), "build_output": ("outputs", None),
+    "build_outputs": ("outputs", None), "download_output": ("outputs", None), "modules": (None, "settings"),
+    "revoke_embed": (None, "settings")}
 # As the cockpit names them (cockpit/server.py PERSONA_INFO), for the reasons a proposal is not offered.
 PERSONA_LABEL = {"business_owner": "Business owner", "product_owner": "Product owner", "it": "IT / partner",
                  "concept_evaluator": "Concept evaluator", "end_user": "End-user tester", "developer": "Developer",

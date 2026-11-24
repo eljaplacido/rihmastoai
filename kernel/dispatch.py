@@ -87,11 +87,12 @@ def envelope(project, contract: dict, task_id: str, *, base: str, round_no: int 
     if hidden:
         lines += ["", f"{len(hidden)} more criteria for this requirement are checked end to end against the running "
                   "service by the factory. Build the requirement as stated, not only the tests above."]
+    from kernel.outputs import builder_notes
     from kernel.roads import road_facts_for_builder
     from kernel.spec import render_interface
 
     lines += ["", "## The product's HTTP interface (fixed by the spec: use exactly these paths)", "",
-              render_interface(project.read("spec.json") or {})]
+              render_interface(project.read("spec.json") or {})] + builder_notes(project, base)  # req.user, CSRF
     lines += ["", "## Scope", "", "Write only: " + ", ".join(task.get("scope", {}).get("write", [])) + ".",
               "", "## How the product is built", "", STACK_NOTES, "",
               "## The paved road's platform facts (the road owns them)", "", road_facts_for_builder(), "",
@@ -401,6 +402,7 @@ def ready_tasks(project: Project) -> list:
 def build(project: Project, **kwargs: Any) -> dict:
     """Build every task in dependency order. Stop at the first escalation: later tasks build on it.
     A task whose merge found main moved during its gate is built once more, on the new main."""
+    from kernel.autopilot import pass_stopped
     from kernel.safestop import paused, stop_here
 
     contract = _contract(project)
@@ -412,6 +414,8 @@ def build(project: Project, **kwargs: Any) -> dict:
             break
         if paused(project):  # a safe point: between tasks (FR-J3)
             stop_here(project, where=f"before {ready[0]}")
+            break
+        if pass_stopped(project):  # an autopilot pass a person stopped ends here too (kernel/autopilot.py)
             break
         outcome = build_task(project, ready[0], **kwargs)
         results[ready[0]] = outcome["status"]

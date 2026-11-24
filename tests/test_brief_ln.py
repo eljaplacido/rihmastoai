@@ -9,6 +9,7 @@ signing a ledger head and anchoring it off this machine (FR-L3), state rebuilt f
 
 import hashlib
 import json
+import subprocess
 import sys
 import threading
 import unittest
@@ -294,6 +295,13 @@ class FactoryApiTest(CockpitTestCase):
         """Every signed write route, in an order where each one's target exists: (route name, method, path,
         body for a person). Paths may name what an earlier write made, through ``got``."""
         b, a, pl = w["built"].pid, w["asking"].pid, w["planning"].pid
+        repo = self.tmp / "adopt-source"                                     # an existing project to adopt
+        if not (repo / ".git").exists():
+            repo.mkdir(parents=True, exist_ok=True)
+            (repo / "README.md").write_text("# Order tracker\n", encoding="utf-8")
+            for cmd in (["init", "-q"], ["add", "-A"],
+                        ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "x"]):
+                subprocess.run(["git", *cmd], cwd=repo, check=True, capture_output=True)
         return [
             ("post_signal", "POST", "/api/signals",
              lambda who, got: {"text": "The loans page should show overdue loans first", "channel": "chat",
@@ -305,6 +313,9 @@ class FactoryApiTest(CockpitTestCase):
             ("post_project", "POST", "/api/projects",
              lambda who, got: {"title": "Parking permits", "source": "We hand out parking permits by email.",
                                "requested_by": who, "persona": "business_owner"}),
+            ("post_adopt", "POST", "/api/adopt",                       # an existing project, adopted as a job
+             lambda who, got: {"title": "Order tracker", "source": str(repo), "intent": "maintain",
+                               "person": who, "persona": "developer"}),
             ("post_decide", "POST", f"/api/projects/{b}/cards/{w['change']}/decide",
              lambda who, got: {"verdict": "accept", "reason": "worth it", "person": who, "persona": "product_owner"}),
             ("post_answer", "POST", f"/api/projects/{a}/questions/Q-001/answer",
@@ -337,11 +348,31 @@ class FactoryApiTest(CockpitTestCase):
              lambda who, got: {"person": who, "persona": "compliance"}),
             ("post_pack_build", "POST", f"/api/projects/{b}/pack/build",
              lambda who, got: {"person": who, "persona": "compliance"}),
+            ("put_outputs", "PUT", f"/api/projects/{b}/outputs",     # outputs per audience (kernel/outputs.py)
+             lambda who, got: {"targets": ["report"], "reason": "for the owner", "person": who,
+                               "persona": "business_owner"}),
+            ("post_outputs_build", "POST", f"/api/projects/{b}/outputs/build",
+             lambda who, got: {"targets": ["report"], "person": who, "persona": "compliance"}),
             ("post_embed", "POST", "/api/embeds",
              lambda who, got: {"kind": "feedback", "origins": ["https://shop.example"], "project": b,
                                "label": "Shop feedback", "person": who, "persona": "it"}),
             ("post_embed_revoke", "POST", lambda got: f"/api/embeds/{got['post_embed']['embed']['id']}/revoke",
              lambda who, got: {"person": who, "persona": "it"}),
+            # autopilot, delegation and tracking (FR-AP2, FR-AP3)
+            ("post_autopilot_start", "POST", f"/api/projects/{a}/autopilot",
+             lambda who, got: {"kinds": ["question"], "until": "8h", "person": who, "persona": "developer"}),
+            ("post_delegation_revoke", "POST", f"/api/projects/{a}/delegations/DL-001/revoke",
+             lambda who, got: {"person": who, "persona": "business_owner"}),
+            ("post_autopilot_stop", "POST", f"/api/projects/{a}/autopilot/stop",
+             lambda who, got: {"person": who, "persona": "developer"}),
+            ("put_tracking", "PUT", f"/api/projects/{a}/tracking",
+             lambda who, got: {"checkpoints": [2], "person": who, "persona": "product_owner"}),
+            ("post_checkpoint_look", "POST", f"/api/projects/{a}/checkpoints/2/look",
+             lambda who, got: {"note": "seen", "person": who, "persona": "product_owner"}),
+            ("put_modules", "PUT", "/api/modules",                      # every module stays on (kernel/modules.py)
+             lambda who, got: {"preset": "full", "reason": "the whole factory", "person": who, "persona": "it"}),
+            ("put_project_modules", "PUT", f"/api/projects/{b}/modules",
+             lambda who, got: {"preset": "full", "person": who, "persona": "developer"}),
             ("put_layout", "PUT", "/api/layout?persona=developer&lens=delivery",
              lambda who, got: {"person": who, "layout": LAYOUT}),
         ]

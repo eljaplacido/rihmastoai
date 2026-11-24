@@ -168,3 +168,49 @@ def signing_rules(names: list[str]) -> str:
             "that secret, in the header (\"prefix\": \"sha256=\" puts text before the digest). The header is one\n"
             "of the product's own (never Host, Content-Length or Content-Type). Never write a\n"
             "secret's value in a scenario: name it. " + known)
+
+
+# -- the paved road's sign-in (kernel/scaffold_auth.py) ----------------------------------------------------------
+# A product people sign in to answers a request without a session with 401 and {"sign_in": "/sign-in"}. The
+# runner, its probes and the shadow replay of recorded traffic carry no session yet (a test account for them is
+# planned, docs/guides/outputs.md), so what that wall answers measures the runner, not the product: such a step
+# or request is not measured, never failed and never passed.
+SIGNED_OUT = "not measured: the product asks for sign-in and the factory's runner carries no session yet"
+
+
+def sign_in_wall(observed: dict | None) -> bool:
+    """Whether a response (an http_request result or an observed record) is the road's sign-in turning it away."""
+    if not isinstance(observed, dict) or observed.get("status") != 401:
+        return False
+    body = observed.get("json") if "is_json" in observed else observed.get("body")
+    return isinstance(body, dict) and body.get("sign_in") == "/sign-in"
+
+
+def judged(step: dict, r: dict, reason: str) -> dict:
+    """A step that did not hold: failed, or not measured when the sign-in turned it away and it expected no 401."""
+    if sign_in_wall(r) and str(step.get("expect_status")) != "401":
+        return {"verdict": "not measured", "reason": SIGNED_OUT}
+    return {"verdict": "failed", "reason": reason}
+
+
+def set_apart_signed_out(replayed: dict) -> dict:
+    """A shadow replay with every entry the sign-in answered, on either side, set apart as signed out: it is
+    neither a difference nor a match, and the canary leaves it out of its sample."""
+    entries = replayed.get("entries") or []
+    for e in entries:
+        if sign_in_wall(e.get("current")) or sign_in_wall(e.get("candidate")):
+            e.update(signed_out=True, differences=[])
+    differing = [e for e in entries if e["differences"]]
+    return {**replayed, "differing": len(differing), "differences": differing,
+            "signed_out": sum(1 for e in entries if e.get("signed_out"))}
+
+
+def shadow_verdict(report: dict) -> dict:
+    """Failed on a difference; else not measured while any replayed request met the sign-in; else passed."""
+    if report.get("differing"):
+        return {"verdict": "failed"}
+    if report.get("signed_out"):
+        return {"verdict": "not measured",
+                "reason": f"{report['signed_out']} of {report.get('replayed')} replayed requests met the sign-in: "
+                          + SIGNED_OUT}
+    return {"verdict": "passed"}

@@ -477,6 +477,27 @@ def cli_writes(pid: str, tmp: Path) -> dict:
         "relay unsubscribe": ["relay", "unsubscribe", "SUB-1", *who, "--persona", "it"],
         "connector enable": ["connector", "enable", "example", *who, "--persona", "it"],
         "connector disable": ["connector", "disable", "example", *who, "--persona", "it"],
+        "inputs refine": ["inputs", "refine", pid, *who, "--persona", "product_owner"],   # who asks a model to read
+        "autopilot start": ["autopilot", "start", pid, "--until", "8h", "--delegate", "question", *who,
+                            "--persona", "developer", "--arm-only"],
+        "autopilot stop": ["autopilot", "stop", pid, *who, "--persona", "developer"],
+        "autopilot relay": ["autopilot", "relay", "SUB-1", *who, "--persona", "it"],
+        "delegation grant": ["delegation", "grant", pid, "--kinds", "question", "--until", "8h", *who,
+                             "--persona", "business_owner"],
+        "delegation revoke": ["delegation", "revoke", pid, "DL-001", *who, "--persona", "business_owner"],
+        "tracking set": ["tracking", "set", pid, "--checkpoints", "5", *who, "--persona", "product_owner"],
+        "tracking look": ["tracking", "look", pid, "5", *who, "--persona", "product_owner"],
+        "tracking digest": ["tracking", "digest", "SUB-1", "daily", *who, "--persona", "it"],
+        "output": ["output", pid, "--choose", "report", *who, "--persona", "business_owner"],
+        # the modules and an attached repository of your own (kernel/standalone.py)
+        "modules set": ["modules", "set", "--preset", "full", *who, "--persona", "it"],
+        "repo attach": ["repo", "attach", "Old app", "--repo", str(tmp), *who, "--persona", "developer"],
+        "repo contract": ["repo", "contract", pid, "--contract", "contract.json", *who, "--persona", "developer"],
+        "repo gate": ["repo", "gate", pid, *who, "--persona", "developer"],
+        "repo holdouts": ["repo", "holdouts", pid, "--base-url", "http://127.0.0.1:9", *who, "--persona", "it"],
+        "repo scan": ["repo", "scan", pid, *who, "--persona", "it"],
+        "repo releases": ["repo", "releases", pid, *who, "--persona", "compliance"],
+        "contract export": ["contract", "export", pid, "--out", str(tmp / "out"), *who, "--persona", "product_owner"],
     }
 
 

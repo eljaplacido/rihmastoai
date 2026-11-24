@@ -1227,6 +1227,10 @@ main > .card { margin-bottom: var(--gap); }
 .acc-blue { background: #2f6fd6; } .acc-green { background: #2f8a3c; } .acc-rose { background: #d6416b; }
 .np-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
 .np-form .field { margin: 0; }
+/* New project: the need part and the existing-project part keep the form's spacing and never widen it. */
+.np-part { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); min-width: 0; }
+.np-part[hidden] { display: none; }
+.np-part .field input { min-width: 0; width: 100%; }
 .np-prof-h { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .propose-basis { margin: 0; min-height: 0; }
 .proposal { display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s3) var(--s4); border-radius: var(--r-md);
@@ -1378,3 +1382,67 @@ main > .card { margin-bottom: var(--gap); }
 }
 
 .brand-text .brand-tld { color: var(--accent); font-weight: 600; }
+
+/* -- the intake summary (cockpit/static/inputs.js): from your input, asked, assumed, side by side -------- */
+
+.intake-sum .is-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--s3); }
+.is-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); }
+.is-col { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--raised); }
+.is-col-h { display: flex; align-items: center; gap: 6px; font-size: var(--fs-base); font-weight: 600; margin-bottom: 4px; }
+.is-count { margin-left: auto; font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.is-list { gap: 10px; margin-top: var(--s2); }
+.is-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-size: var(--fs-md); overflow-wrap: anywhere; }
+.is-item .chip { flex: none; }
+.is-quote { flex: 1 1 12rem; min-width: 0; }
+.is-where { flex-basis: 100%; font-size: var(--fs-xs); color: var(--text-3); }
+.is-answer { flex-basis: 100%; color: var(--text-2); }
+.is-not-asked, .is-model, .is-more { margin-top: var(--gap); }
+.is-more > summary { cursor: pointer; font-weight: 500; }
+.is-facets { width: 100%; border-collapse: collapse; margin-top: var(--s2); font-size: var(--fs-md); table-layout: fixed; }
+.is-facets th, .is-facets td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; }
+.is-facets thead th { font-size: var(--fs-sm); color: var(--text-3); font-weight: 500; }
+.is-facets caption { text-align: left; padding-bottom: 4px; }
+.is-facets .chip { height: auto; min-height: 22px; white-space: normal; }
+.is-facets .is-note { display: block; margin-top: 2px; }
+@media (max-width: 900px) { .is-cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* Track: staying on track, the autopilot and delegations (track.js) */
+.kpi-v.tr-v { font-size: var(--fs-xl); line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; }
+.tr-reasons li { line-height: 1.6; }
+.tr-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 var(--s3); }
+.tr-details > summary { cursor: pointer; font-weight: 500; }
+.tr-details[open] > summary { margin-bottom: var(--s3); }
+.tr-cp + .tr-cp, .tr-dl + .tr-dl { border-top: 1px solid var(--border); padding-top: var(--s2); }
+.tr-cp p, .tr-dl p { margin: 4px 0 0; }
+.track-pill { text-decoration: none; }
+.tr-counts { margin: 0 0 var(--s2); }
+/* -- outputs per audience (project.js, the Outputs view) ------------------------------------------- */
+.out-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--s2) var(--s4); }
+.out-pick .check { align-items: flex-start; font-weight: 400; }
+.out-pick .check input { margin-top: 3px; }
+.out-grid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--gap); }
+.out-card { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.out-card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; color: var(--text-2); }
+.out-card .btns { margin-top: auto; }
+.out-last { font-size: var(--fs-sm); color: var(--text-3); overflow-wrap: anywhere; margin: 0; }
+/* -- modules: the parts of Rihmasto in use (cockpit/static/modules.js) ------------------------------- */
+.mod-card .set-row select { width: 100%; min-width: 0; flex: 1 1 260px; max-width: 520px; }
+.mod-gets { margin: 0 0 var(--s2); }
+.mod-now { margin: 0 0 var(--s2); color: var(--text-2); }
+.mod-list { list-style: none; margin: var(--s2) 0 var(--s3); padding: 0; display: grid; gap: var(--s2);
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
+.mod-row { display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s2) var(--s3); border: 1px solid var(--border);
+  border-radius: var(--r-md); background: var(--surface); min-width: 0; }
+.mod-row.on { border-color: var(--accent-border); }
+.mod-row input[type="checkbox"] { margin-top: 3px; }
+.mod-b { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.mod-b label { color: var(--text); font-weight: 600; }
+.mod-b p { margin: 4px 0 0; line-height: 1.4; }
+.mod-status:empty { display: none; }
+.mod-status { display: flex; gap: 6px; align-items: flex-start; color: var(--critical); margin: var(--s2) 0 0; }
+.chk-l { display: inline-flex; align-items: center; gap: 8px; }
+.mod-note a { margin-left: 4px; }
+.mod-off .btn { margin-top: var(--s2); }
+.fr-who { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: var(--s3); margin-top: var(--s3); }
+.mod-presets { margin-top: var(--s3); }
+.mod-card .btn:focus-visible, .mod-off .btn:focus-visible, .mod-note a:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }

@@ -107,7 +107,8 @@ function openSet(r) {
       const out = await api("PUT", "/api/models/" + enc(r.role), Object.assign({ base_url: base.value.trim(), model: model.value.trim(),
         family: family.value.trim(), keep_fallback: !r.fallback || keep.checked, private: priv.checked }, key.value(), signed()));
       closeModal();
-      say(r.label + " now uses " + out.role.model + " at " + out.role.host + ".", "good");
+      say(r.label + " now uses " + out.role.model + " at " + out.role.host + "." + (out.role.note ? " " + out.role.note : ""),
+        out.role.note ? "warning" : "good");
       HOME.at = 0;
       await renderModels(S.seq);
     });

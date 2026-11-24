@@ -124,7 +124,7 @@ PROFILES: dict[str, dict[str, Any]] = {
         "deliverable": "capability_pack", "label": "Agent or assistant", "icon": "bot", "status": "preview", "template": "web-service",
         "summary": "An AI agent, assistant or multi-step workflow: inside an app or standalone for a process, using tools, with people approving what matters.",
         "keywords": ["agent", "agentic", "workflow", "assistant", "chatbot", "copilot", "llm", "rag", "tool use",
-                     "automation", "orchestrat*", "agentt*", "avustaj*"],
+                     "orchestrat*", "agentt*", "avustaj*"],
         "panel_focus": {
             "business": "what the agent may decide alone and what needs a person",
             "it_security": "the tools and data the agent may touch, and what it must refuse",
@@ -196,6 +196,42 @@ PROFILES: dict[str, dict[str, Any]] = {
         "widgets": ["evidence_packs"],
         "vocabulary": {"release": "report", "criterion": "check"},
         "note": "Mode B of the capability layer: the factory's own agents do the work and deliver the proof.",
+    },
+    "automation": {
+        "deliverable": "capability_pack", "label": "Automation or small capability", "icon": "clock", "status": "ready",
+        "template": "capability",
+        "summary": "A scheduled or triggered job with no screens, a single workflow or one agentic capability, "
+                   "delivered where it must run: MCP, an OpenAI-compatible endpoint, a website chat or HTTP.",
+        "keywords": ["automation", "automate*", "scheduled", "nightly", "every night", "every morning", "every hour",
+                     "cron", "batch job", "trigger*", "mcp", "mcp server", "single workflow", "small capability",
+                     "digest", "automaatio*", "ajasta*", "eräajo*"],
+        "panel_focus": {
+            "business": "what starts a run, what one run must produce, and who acts on its result",
+            "it_security": "the systems it reads and writes, the secrets it needs (by name only), and where it "
+                           "must be reachable",
+            "operations": "how often it runs, what a failed run does, and where its results go",
+        },
+        "seed_questions": [
+            {"text": "What starts a run?", "perspective": "operations",
+             "proposed": "a schedule, every night",
+             "options": ["a schedule, every night", "a webhook from another system, verified by its signature",
+                         "an event from Rihmasto itself, through the relay", "a person, by hand"]},
+            {"text": "Where must it be reachable?", "perspective": "it_security",
+             "proposed": "as an MCP server for people's own AI assistants, and over HTTP",
+             "options": ["as an MCP server for people's own AI assistants, and over HTTP",
+                         "as an OpenAI-compatible model through the capability gateway", "as a chat on our website",
+                         "over HTTP only"]},
+        ],
+        "screens": False,
+        "spec_guidance": "It is a small capability with no screens. Its runtime declaration (app/runtime.json, "
+                         "rihma.runtime/1) says what starts a run, its tools, model roles, integrations, secrets by "
+                         "name and its faces. Write each criterion against a run: POST /capability/run with an "
+                         "input, or a declared tool through MCP, and test app.job.run(trigger) itself. Simulate "
+                         "every system it calls in tests. A run end to end through a face is a holdout.",
+        "widgets": ["releases"],
+        "vocabulary": {"release": "capability version"},
+        "note": "One capability image, several faces: MCP (stdio and HTTP), an OpenAI-compatible chat, a website "
+                "embed and HTTP, each checked by the pack guard (docs/guides/small-capabilities.md).",
     },
 }
 

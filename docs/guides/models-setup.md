@@ -41,7 +41,9 @@ checked on its port; a hosted endpoint with a key reads "Key set" until you test
   `RIHMASTO_SECRETS_FILE` names), outside the repository, and handed to Gnomon in the variable
   `RIHMASTO_KEY_<ROLE>` when it runs. It is never shown again, never logged and never put in the
   ledger.
-- **Keep the fallback**: a role that has one keeps it unless you untick it.
+- **Keep the fallback**: a role that has one keeps it unless you untick it (`--no-fallback`). A local role
+  that keeps a hosted fallback says so when you save it: a confidential project refuses that role until the
+  fallback goes, and the refusal says how to drop it.
 
 **Save** writes the role to `kernel/routing.local.json`, this machine's overlay (gitignored, merged
 over the shipped `kernel/routing.json`, which is never written). The merged routing is checked as the

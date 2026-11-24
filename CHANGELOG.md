@@ -83,6 +83,33 @@ Every notable change to Rihmasto is recorded here, newest first. The format foll
   recorded for evidence (`repo releases`); `rihmasto contract export` ends spec only in files
   ([docs/guides/use-only-what-you-need.md](docs/guides/use-only-what-you-need.md)).
 
+- **Small capabilities** ([docs/guides/small-capabilities.md](docs/guides/small-capabilities.md)): the
+  `automation` profile and its capability template, a runtime declaration (`app/runtime.json`) judged
+  at the gate and carried in the pack with secrets by name, one image whose faces (MCP over stdio and
+  Streamable HTTP, an OpenAI-compatible chat also routed by the gateway, a website embed, HTTP) answer
+  only after the pack guard has checked the pack, verified webhook and relay triggers, a schedule,
+  results out as signed events, `rihmasto capability check` and `serve`, and the faces in
+  `compose.yaml`. A face the declaration does not name stays shut on every transport, MCP's stdio
+  included, and the openai face reports its token usage as not measured (the gateway's audit too),
+  never as zeros.
+- **Postures and priority weights** ([docs/guides/postures.md](docs/guides/postures.md)): prototype,
+  balanced, production or regulated, tuned by ux, security, compliance, speed and cost, previewed
+  before anyone chooses, recorded with who chose it, and changed during the run with what it changes
+  now and later (`rihmasto posture`, New project's **How it runs**, where *No posture* is chosen
+  until a person picks one, for a need and for an adopted project, and the **Posture** chip in the
+  header and in Project settings, whose maturity and mode changes keep to the posture).
+- **Brownfield assessment** ([docs/brownfield.md](docs/brownfield.md#assessing-an-adopted-system)):
+  `rihmasto assess` and the cockpit's **Assessment** view judge an adopted system from every
+  perspective by rule, versioned, with the panel's review apart, and file chosen findings as changes.
+- **Access with the identity provider's signed token** ([docs/guides/access.md](docs/guides/access.md)):
+  the cockpit verifies the provider's token (RS256 or ES256) and holds no shared secret; with access
+  enforced, untrusted code (a suite, an adopted suite, a product, a Gnomon cell) runs only through
+  IT's isolation runner, and the cockpit refuses to start a job that would need one it lacks.
+- **Data integrations** ([docs/guides/data-integrations.md](docs/guides/data-integrations.md)): a
+  product declares the databases, warehouses, cloud storage and business APIs it reaches, IT approves
+  each binding, delivery wires it in by name, and the gate tests it on stand-ins.
+- **The acceptance matrix** ([docs/acceptance.md](docs/acceptance.md)): every need, mode, maturity and
+  access column with its offline cells in `tests/acceptance`, and the live acid-test plan.
 - **Pull requests only.** `main` changes only through pull requests that pass the four CI jobs and
   the new DCO sign-off check, with a code owner's review, squash-merged
   ([CONTRIBUTING.md](CONTRIBUTING.md#how-changes-reach-main)).
@@ -110,6 +137,24 @@ Every notable change to Rihmasto is recorded here, newest first. The format foll
   the repository's security advisories ([SECURITY.md](SECURITY.md)).
 - The release export's exclude list matches paths in any case, so a left-out folder spelled
   otherwise on a disk that ignores case stays out too.
+
+### Fixed
+
+Found by walking the owner's journeys in a real cockpit with a local model:
+
+- New project no longer assumes a web app: **Let Rihma choose** is the default, and the intake proposes
+  the kind of work by rule from the need or the folder.
+- A project made from a folder, or adopted, opens its Project settings again (they read "unreadable"), and
+  material added to it is kept beside the folder's map instead of failing.
+- Material read with re-intake no longer goes on to build on the spec written before it; nothing is built
+  past an open blocking question (FR-CHG1-AC-10).
+- What's next drops a run's result from before a person went back a step, changed a setting or added
+  material; says when the autonomy cap stops the build, on the command line too; opens Models setup for
+  any persona when a model did not answer; names the command for every action; and offers an improved
+  adopted project's next steps.
+- The Jobs page opens the project an adoption made; the first-run name shows at once in the person menu;
+  Ask Rihma no longer flags a cockpit view or control it cites as "not found"; a confidential refusal and
+  Models setup say how to drop a hosted fallback; `rihmasto settings` and `rewind` previews need no signer.
 
 ## [1.0.0.dev0] - 2026-11-23
 

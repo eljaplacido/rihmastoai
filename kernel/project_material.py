@@ -76,7 +76,11 @@ def add_material(project: Project, *, person: str, persona: str, text: str | Non
     digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
     source = project.read("source.json")
     stamp = project.factory.clock.stamp()
-    with updating_json(project.path("material.json"), {"original": None, "added": []}) as kept:
+    # material.json may already hold a folder's material map (kernel/material.py): the added material is kept
+    # beside it, under its own keys, and the map stays as it was.
+    with updating_json(project.path("material.json"), {}) as kept:
+        kept.setdefault("original", None)
+        kept.setdefault("added", [])
         if kept["original"] is None and source:
             kept["original"] = {"kind": source.get("kind"), "text": source.get("text"),
                                 "requested_by": source.get("requested_by")}
@@ -206,6 +210,7 @@ def _settle(project: Project, canon: Canon, new: list[dict[str, Any]]) -> tuple[
 
 
 def material(project: Project) -> dict[str, Any]:
-    """The original request and what was added, as kept."""
-    kept: dict[str, Any] = project.read("material.json") or {"original": None, "added": []}
-    return kept
+    """The original request and what was added, as kept (beside a folder's material map, when it has one)."""
+    kept = project.read("material.json") or {}
+    kept = kept if isinstance(kept, dict) else {}
+    return {"original": kept.get("original"), "added": list(kept.get("added") or [])}

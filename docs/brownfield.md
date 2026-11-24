@@ -1,8 +1,8 @@
 # Brownfield: existing solutions, a terminal beside the chat, and security findings
 
-Rihma started greenfield: a need becomes a spec, a contract and a product. This page covers three
-pieces that let it hold solutions that already exist, let a person work on them by hand, and take
-security findings from any scanner. They follow the same rules of evidence: named verdicts, "not
+Rihma started greenfield: a need becomes a spec, a contract and a product. This page covers the
+pieces that let it hold solutions that already exist, assess what they should fix from every
+perspective, let a person work on them by hand, and take security findings from any scanner. They follow the same rules of evidence: named verdicts, "not
 measured" as a state, everything in the ledger, and people decide.
 
 ## Adopting an existing solution
@@ -113,6 +113,141 @@ upstream after a fetch that worked (a default branch renamed from `master` to `m
 ("not measured: the tracked branch ... is no longer upstream", `upstream_branch_gone`) and opens
 one change card naming the new default branch; the project keeps tracking the old name until a
 person decides. For a monitored project, `rihma sync` also runs a probe round.
+
+## Assessing an adopted system
+
+```
+rihmasto assess <pid> --person Aino --persona developer [--with-model] [--ref main]
+rihmasto assessment list <pid>
+rihmasto assessment show <pid> [--version AS-2] [--full]
+rihmasto assessment compare <pid> [--from AS-1] [--to AS-2]
+rihmasto assessment change <pid> F-3 P-1 --person Aino --persona developer [--as new_requirement]
+```
+
+In the cockpit, an adopted project has an **Assessment** tab beside its Overview. An assessment
+tells you what the system should fix, from five perspectives, and lets you turn what matters into
+changes that go round the factory's change loop (`kernel/assess.py`, `kernel/assess_cards.py`).
+
+**What it reads.** One revision of the project's own mirror: `main`, what the factory holds, unless
+`--ref` names another (`upstream/main` reads the upstream's head after a `sync`). The files are read
+from git's objects, never checked out: no filter, hook or LFS helper runs, nothing reaches the
+upstream, and nothing of the repository is executed. A link is not followed, a submodule is not
+fetched, a name this machine cannot hold or a file over 2 MB is not written; each is said in the
+record's notes. The kernel's own `.gnomon/` surface on main is the factory's, not the system's, and
+is left out.
+
+**The perspectives, by rule first.**
+
+| Perspective | The rules look at |
+|---|---|
+| CI/CD governance | a pipeline (GitHub Actions, GitLab CI, Azure Pipelines, Jenkins and others), whether it runs the tests, whether it runs on pull requests, actions pinned to a commit, a workflow's token permissions, a release process |
+| Maintenance | a test suite found by rule, the adoption's characterisation baseline, coverage configured, dependencies pinned (or a lock file), when the dependencies last changed, an update bot, the README, code owners |
+| Security | the red team's static layer over the revision (Python, JavaScript, HTML, Dockerfiles, Actions and secrets, D-0014) and what it could read, a SECURITY.md, environment files kept out of git |
+| Compliance | a licence, a NOTICE for vendored code, fields named like personal data and whether a document says how they are handled, an audit trail in the code, the factory's own records of the system (the ledger's chain, decisions, the controls an evidence pack covers) and whether a security scan is on record |
+| Architecture and operations | entry points, a health endpoint, configuration from the environment, logging through a library, a container and its `.dockerignore` |
+
+Each check is passed, failed, not applicable or not measured. A failed check is a **finding**
+(`F-1`, `F-2`, ...): its perspective, a severity (critical, high, medium, low), its evidence (a file
+and a line with the line itself, masked as the red team masks a secret, or a measured fact) and a
+suggested change. A check that cannot know says **not measured** and why, never passed: whether
+`main` is protected and which checks a merge requires are set in the hosting service, not in the
+files, so they always read "not measured" until someone records the answer; a route the kernel's
+simple patterns miss makes the health check "not measured", not "no health endpoint"; coverage is
+"configured", its value not measured, because the kernel does not instrument the suite; the age of
+each package is not measured, because no registry is read offline; the characterisation baseline
+reads passed or failed only at the revision its suite ran at (the adoption's upstream revision), and
+"not measured" at any other, `main` included (it adds the kernel's surface commit), with the result at
+adoption in the reason: assess `--ref <that revision>` to read the run itself. Dates are the mirror's
+commit dates, never this machine's clock.
+
+A rule passes only on what shows its claim, never on a word in passing. A match inside a comment
+does not count. Configuration "comes from the environment" only where the code reads it (`os.environ`,
+`getenv`, `process.env` and their kind), and a `config.get(...)` on a dict does not. An audit trail
+counts when the code names one (`audit_log`, `AuditTrail`, `@Audited`, a history library), not the
+bare word "audit"; what it records is not checked. How personal data is handled counts as written
+down when a document is named for it (`PRIVACY.md`, `data-protection.md`, a DPIA) or a Markdown
+document has a section headed for it ("## Personal data", "## Privacy", "## Retention"); a README
+that only mentions privacy does not, and what such a section says is not checked by rule.
+
+**The panel second.** With `--with-model` (in the cockpit, **Ask the panel too**, which uses the
+cockpit's own model), each perspective of the intake panel (business, end user, IT and security,
+operations, delivery) reads the inventory and the rules' results and proposes up to three findings
+the rules cannot see (`P-1`, `P-2`, ...; `kernel/assess_panel.py`). A proposal is **model_proposed**:
+an opinion, never a fact, never counted with the rules' findings. What it says it rests on is
+checked (a finding id or a file of the repository is "found"; anything else is "not found in the
+repository"). The repository's own words reach the model as quoted data it cannot close. A
+perspective whose model call fails is "not measured" in the record, and the assessment is still
+recorded. The record and its trace name the model that answered each perspective where the harness
+says which (a Gnomon run does), and "not recorded" where it does not.
+
+**A record, comparable over time.** Each assessment is a version, `AS-<n>`, in the project's
+`assessments/` folder, with the red team's SARIF beside it (`AS-<n>.sarif`, ready for
+`rihmasto security ingest`). Its sha256 is in `assessments/index.json` and in the ledger
+(`assessment_recorded`), with the trace every path writes (D-0017): who asked, what decided (the
+rules, no model), what was delegated to whom (the panel's model, by the person who asked, kept as
+model_proposed), what was assumed (each check that could not know, with its reason) and what proves
+it (the revision and the SARIF's sha256). A record is checked against the sha256 in the ledger,
+whose hash chain protects it, not only against the index, a plain file beside it: a record that no
+longer hashes to the ledger's sha256 (even with its index entry edited to match) shows as "changed
+since recorded". Each version says what changed since the one before: findings new,
+resolved, still open and no longer measured; `rihmasto assessment compare` takes any two.
+
+**Into the change loop.** Tick findings and file them (or `rihmasto assessment change`): each becomes
+a change card signed by you, its first line the finding's title with the assessment and finding id,
+its text the perspective, severity, who found it (the rules, or the panel as an opinion), the
+evidence and the suggested change. The card carries its origin (`refs.origin: "assessment"`, and
+the assessment, the finding and its key in `payload.origin`) and is triaged by rule like any change,
+as a **new requirement** unless you choose another class, so a business owner or product owner
+decides it before anything is built. A finding whose card is still open is not filed twice
+(`assessments/filed.json`); once that card is decided it may be filed again. Each card is
+`assessment_change_opened` in the ledger.
+
+**Where else it shows.** The evidence pack carries `assessment.json` (the latest version in short,
+every version with its sha256 checked against the ledger) and a line in its README. The MCP server reads it with
+`rihma_assessment` ([mcp.md](mcp.md)); it files nothing.
+
+### Tutorial: assess, read, file, assess again
+
+1. **Adopt the system** (above), or open the demo's *Stock levels service*, an adopted project.
+2. **Assess it.** Open the project's **Assessment** tab and press **Assess now** (signed with the
+   name and persona in your person chip), or run `rihmasto assess <pid> --person Aino --persona
+   developer`. The rules take seconds, and the record is there when the button is ready again. With
+   **Ask the panel too** the panel's model reviews it in the background: the tab says "Assessing"
+   until the record is written.
+3. **Read it by perspective.** The summary says how many findings by severity, and what changed
+   since the version before. Each perspective lists its findings with their evidence and suggested
+   change, then what was not measured and why; what passed is folded away.
+4. **Choose what matters.** Tick the findings to fix, choose how to file them (a new requirement by
+   default) and press **File the ticked findings as changes**. Each finding shows the card it became.
+5. **Decide.** A business owner or product owner finds the cards in the Inbox and accepts, rejects or
+   defers each; an accepted one goes back to its stage, and the work is built and gated like any
+   change.
+6. **Assess again.** After the change merged, or after `rihmasto sync` when the upstream moved
+   (`--ref upstream/main`), assess again: the summary says what was resolved, what is new and what is
+   still open. `rihmasto assessment compare <pid> --from AS-1 --to AS-3` compares any two.
+7. **Ask Rihma.** "Where do I assess an existing system?" and **Take me there** open the tab; "How
+   do I file findings as changes?" points at the button.
+
+### Built, and planned
+
+Built and covered by tests (`tests/test_assess.py`, `tests/test_ui_assess.py`): the rules of the five
+perspectives over a revision read from git's objects, the red team's static layer and its SARIF, the
+panel's proposals kept apart, the versioned record with its sha256 in the ledger (each version
+checked against it) and its trace, the comparison of versions, findings filed as change cards with
+their origin, the command line, the
+cockpit's Assessment tab, the MCP read, the evidence pack's `assessment.json`, and the assistant's
+map entries.
+
+Planned, not built:
+- reading branch protection and required checks from the hosting service through Gnomon's
+  integration lane (D-0015), so they are measured rather than "not measured";
+- coverage measured by running the suite under coverage in a sandbox, and each package's age read
+  from an offline mirror of its registry;
+- rules for more ecosystems' pipelines and manifests (Gradle and Maven versions, Go and Rust
+  workspaces) and for infrastructure as code;
+- an assessment after each `sync` on its own, and a cockpit view that compares any two versions (the
+  command line does today; the tab shows what changed since the version before);
+- ingesting the assessment's SARIF from the cockpit (today: `rihmasto security ingest`).
 
 ## Workspaces: a terminal beside the chat
 

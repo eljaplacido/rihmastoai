@@ -760,12 +760,20 @@ def run_baseline(root: Path, test: dict, *, timeout: int,
     argv = _command(test, which)
     if isinstance(argv, str):
         return base | {"verdict": "not measured", "reason": argv}
+    from kernel import access_isolation as isolation
+
     env = _offline_env()
     data_dir = tempfile.mkdtemp(prefix="adopt-data-")
     env["DATA_DIR"] = data_dir
+    try:  # access enforced: through IT's isolation runner, or not run at all (D-0016, FR-ID4-AC-1)
+        job = isolation.adopted_suite(argv, checkout=root, env=env, tool=test["tool"])
+    except isolation.IsolationRequired as exc:
+        shutil.rmtree(data_dir, ignore_errors=True)
+        return base | {"verdict": "not measured", "reason": f"not measured: {exc}"}
     started = time.monotonic()
     try:
-        code, stdout, stderr = _run(argv, cwd=root, env=env, timeout=timeout)
+        with job:
+            code, stdout, stderr = _run(job.argv, cwd=root, env=job.env, timeout=timeout)
     except subprocess.TimeoutExpired:  # stopped at its limit, with every process it started (FR-DF5)
         return base | {"verdict": "not measured", "limit_s": timeout,
                        "reason": f"not measured: timed out: the suite did not finish in {timeout}s"}
@@ -1082,14 +1090,16 @@ def _roll_back(project: Any) -> None:
 def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, persona: str,
           base_url: str | None = None, profile: str | None = None, maturity: str = "production",
           mode: str = "mixed", timeout: int = 600, which: Callable[[str], str | None] = shutil.which,
-          suite_timeout: int = SUITE_TIMEOUT, exclude: tuple[str, ...] = (), confidential: bool = False) -> Any:
+          suite_timeout: int = SUITE_TIMEOUT, exclude: tuple[str, ...] = (), confidential: bool = False,
+          posture: dict[str, Any] | None = None) -> Any:
     """Adopt an existing solution as a project. Returns the project.
 
     Everything that reads the upstream runs before the project exists, so an unreachable or
     unreadable source leaves nothing; a failure after the project exists removes it again.
     ``timeout`` bounds each git call; ``suite_timeout`` bounds each detected test suite's run.
     A folder that is not a git repository is snapshotted first (kernel/material_adopt.py); ``exclude``
-    drops files from the snapshot and the scanned documents; ``confidential`` keeps it on local models."""
+    drops files from the snapshot and the scanned documents; ``confidential`` keeps it on local models;
+    ``posture`` (kernel/posture.py) is recorded with who chose it, at the maturity and mode given."""
     from kernel.material_adopt import NoCode, snapshot
 
     _check_request(person, persona, intent, profile, maturity, mode)
@@ -1107,7 +1117,8 @@ def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, pe
                 raise AdoptionRefused(str(exc)) from None
         taken = _take(staging / "repo.git", location, base_url=req.base_url, timeout=timeout, which=which,
                       suite_timeout=suite_timeout, exclude=exclude) | {"snapshot": snap}
-        project = factory.new_project(title, maturity=maturity, mode=mode, source_kind="adopted", profile=profile)
+        project = factory.new_project(title, maturity=maturity, mode=mode, source_kind="adopted", profile=profile,
+                                      posture=posture)
         try:
             os.replace(staging / "repo.git", project.path("repo.git"))
             _hold(project, taken, req)

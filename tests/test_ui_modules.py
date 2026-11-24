@@ -142,6 +142,7 @@ class UiModulesTest(unittest.TestCase):
         b.click("#modal button", text="Start with this", what="Start with this")
         b.wait("!document.querySelector('#modal').open && !document.querySelector('#sb-nav a[href=\"#/square\"]')",
                "the dialog closed and the set in force")
+        self.assertEqual(b.eval("document.querySelector('#pc-name').textContent"), PERSON)   # the name shows at once
         self.assertEqual(self.nav_pages(), ["#/home", "#/projects", "#/inbox", "#/jobs"])
         rec = self.records()[-1]
         self.assertEqual((rec["preset"], rec["by"], rec["persona"], rec["reason"]),

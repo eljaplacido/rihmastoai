@@ -69,7 +69,8 @@ STATUS_STATES = ("valid", "suspended", "superseded", "withdrawn")
 WITHDRAWERS = ("it", "compliance", "product_owner")
 STATUS_DAYS = 30
 # The files the image copies besides app/ (the template's Dockerfile): their tree is pinned apart.
-RUNTIME_FILES = ("factory/look.json", "factory/pack_guard.py")
+RUNTIME_FILES = ("factory/look.json", "factory/pack_guard.py", "factory/faces.py", "factory/faces_http.py",
+                 "factory/runtime_decl.py")   # the last three: a small capability's (kernel/capability_template.py)
 CRLF, LF = b"\r\n", b"\n"
 Runner = Callable[[list, float], tuple]
 
@@ -309,7 +310,7 @@ def _site(project: Any, pack: dict, folder: Path) -> dict:
     if pkg is None:
         return {"deploy_package": None, "compose": None, "note": source}
     _write(folder / "deploy-package.json", _json(pkg))
-    rendered = render_compose(pkg)
+    rendered = render_compose(pkg, pack.get("runtime"))   # a small capability's faces, when it declares them
     if rendered["problems"]:
         return {"deploy_package": "deploy-package.json", "compose": None,
                 "note": "no compose.yaml: " + "; ".join(rendered["problems"])}

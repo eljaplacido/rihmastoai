@@ -129,15 +129,17 @@ def _refused(name: str, exc: Exception) -> int:
 
 def _new(factory: Any, args: argparse.Namespace, emit: Emit, model: Callable[[], Any]) -> int | None:
     from kernel.intake import intake
+    from kernel.posture_cli import choice
 
     persona = args.persona or "business_owner"
+    posture = choice(args)    # --posture and --weights (kernel/posture_cli.py): a misfit is a usage error first
     if args.confidential and (why := confidential.refusal(["analyst"])):
         return _refused("new", confidential.ConfidentialRefused(why))
     asked = _request(args)
     if asked is None:
         return 2
     src, mp = asked
-    p = factory.new_project(args.title, maturity=args.maturity, mode=args.mode,
+    p = factory.new_project(args.title, maturity=args.maturity, mode=args.mode, posture=posture,
                             profile=None if args.profile == "auto" else args.profile)
     if args.confidential:
         confidential.mark(p, person=args.requested_by, persona=persona)
@@ -168,10 +170,15 @@ def _intake(factory: Any, args: argparse.Namespace, emit: Emit, model: Callable[
 
 def _adopt(factory: Any, args: argparse.Namespace, emit: Emit) -> int | None:
     from kernel.adopt import adopt
+    from kernel.posture import for_new_project
+    from kernel.posture_cli import choice
 
+    posture = choice(args)      # --posture and --weights: its maturity and mode unless named, else production, mixed
+    maturity, mode, _ = for_new_project(posture, args.maturity, args.mode) if posture else \
+        (args.maturity or "production", args.mode or "mixed", None)
     p = adopt(factory, args.title, source=args.source, intent=args.intent, person=args.person, persona=args.persona,
-              base_url=args.base_url, maturity=args.maturity, profile=None if args.profile == "auto" else args.profile,
-              exclude=tuple(args.exclude), confidential=args.confidential)
+              base_url=args.base_url, maturity=maturity, mode=mode, posture=posture, exclude=tuple(args.exclude),
+              profile=None if args.profile == "auto" else args.profile, confidential=args.confidential)
     meta, adopted = p.meta, p.read("adopted.json") or {}
     mp = p.read("material.json") or {}
     emit({"project": p.pid, "stage": meta["stage"], "intent": meta.get("intent"), "profile": meta.get("profile"),

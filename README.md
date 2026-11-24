@@ -147,8 +147,10 @@ governance core ([docs/guides/profiles.md](docs/guides/profiles.md)).
 | `agentic_workflow` | an agent, assistant or tool-using workflow | preview |
 | `harness_engineering` | building or tuning an agent harness | preview |
 | `ops_agent` | a job done and proven, such as an access review | preview |
+| `automation` | a scheduled or triggered job with no screens, one workflow or one agentic capability | ready |
 
-Every profile builds on the one paved-road template today, a standard-library Python HTTP service.
+Every profile but `automation` builds on the one paved-road template today, a standard-library Python HTTP
+service; `automation` has its own, one image with several faces ([small capabilities](docs/guides/small-capabilities.md)).
 *Preview* means the intake, spec and checks are shaped for the work, and its own template is still
 to come.
 
@@ -190,7 +192,8 @@ still change before 1.0.0.
 - the chain from intake to delivery on the local preview road: the panel, the spec rules, the
   compiled contract, the gate, holdouts in custody, the change loop and the ledger;
 - the command line, the demo, the cockpit and the MCP server;
-- the `web_service` and `integration` profiles;
+- the `web_service`, `integration` and `automation` profiles; a small capability is reached over MCP,
+  an OpenAI-compatible endpoint, a website chat or HTTP, behind its pack guard (`rihmasto capability serve`);
 - the security gate for SARIF findings, capability packs, evidence packs, the autonomy ladder,
   signals, concepts and embeds;
 - delegated decisions, an autopilot bound to a sandbox, and Track, which says whether a project stays
@@ -205,7 +208,7 @@ still change before 1.0.0.
   that project ([docs/guides/access.md](docs/guides/access.md)).
 
 **Preview:**
-- five of the seven profiles, which run on the web-service template;
+- five of the eight profiles, which run on the web-service template;
 - the docker road, which the tests run against a fake docker CLI, not a daemon;
 - the Azure Container Apps road, rendered and validated but never deployed;
 - recipes, sandbox trials, measured fit and offline bundles, which have no command or screen yet

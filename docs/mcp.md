@@ -104,11 +104,12 @@ Every tool answers with JSON as text (`content: [{type: "text", text}]`) and the
 | Tool | Arguments | What it does |
 |---|---|---|
 | `rihma_projects` | none | Every project: id, title, work profile, maturity, stage, `now` (state and one line) and `health` (on track, at risk or off track, with reasons and the forecast). |
-| `rihma_project` | `pid` | One project: now, health, evidence counts per state, open questions, the open cards this persona may decide (ids and titles only), the live cell, and the persona's lens. |
+| `rihma_project` | `pid` | One project: now, health, evidence counts per state, open questions, the open cards this persona may decide (ids and titles only), the live cell, its posture (what it does and what holds the project now: [guides/postures.md](guides/postures.md)), and the persona's lens. |
 | `rihma_waiting` | none | What waits on this persona across projects (`kernel.dashboard.queue`, kept to the card kinds `CARD_DECIDERS` lets it decide), oldest first, with age in hours. |
 | `rihma_floor` | none | The gate's judgement (first-round pass rate, merged, escalated, rounds), the harness outcomes of each Gnomon run with the harness note, runs by phase, and spend. |
 | `rihma_timeline` | `pid` | Each task's rounds: start, end, model and gate verdict, and when it merged or escalated. |
 | `rihma_evidence` | `pid` | Each criterion with its evidence state (verified, claimed, held out, failing, not measured), what the state rests on, and the criterion's text. |
+| `rihma_assessment` | `pid`, `version` (optional) | An adopted system's assessment ([brownfield.md](brownfield.md#assessing-an-adopted-system)), the latest or the version named (`AS-2`): its findings by perspective with evidence, severity and suggested change, the panel's model-proposed findings kept apart, what was not measured and why, and what changed since the version before. It files nothing. |
 | `rihma_square` | none | The delivery square: signals waiting, concepts to validate, projects per stage band, end-user feedback waiting for triage, what runs in production. |
 | `rihma_track` | `pid` (optional) | How a project is doing against its approved plan: on track, at risk, off track or not measured, with each reason and every figure's basis, and the checkpoints due; without `pid`, every project's line ([autopilot and tracking](guides/autopilot-and-tracking.md)). |
 | `rihma_autopilot` | `pid` | The project's autopilot run, the sandbox it is bound to, its delegations, the cards they decided and the ones they left to a person. Starting or stopping one is a person's act, in the cockpit or the command line. |

@@ -45,13 +45,14 @@ from urllib.parse import parse_qs, urlparse
 
 ROUTES = []
 GUARDS = []  # each runs before every route's handler (app/sign_in.py adds one when the product has it)
+HEADER_HOOKS = []  # functions (method, path, request headers, status) -> extra response headers
 _LOCK = threading.Lock()
 
 
 class Request:
-    def __init__(self, method, path, params, query, body, headers):
+    def __init__(self, method, path, params, query, body, headers, raw=b""):
         self.method, self.path, self.params = method, path, params
-        self.query, self.body, self.headers = query, body, headers
+        self.query, self.body, self.headers, self.raw = query, body, headers, raw
         self.handler, self.user, self.out_headers = None, None, []
 
 
@@ -103,9 +104,10 @@ def _shaped(result, extra):
     return status, payload, ctype, list(result[3] if len(result) > 3 else []) + list(extra)
 
 
-def _dispatch(method, path, body, headers, guards):
+def _dispatch(method, path, body, headers, guards, raw=b""):
     """Route one request: the guards first, in order, then its route's handler. A guard sees every
-    request, one that matches no route included, so it answers before a 404 or 405 would."""
+    request, one that matches no route included, so it answers before a 404 or 405 would. ``raw`` is
+    the body's bytes, for a signature."""
     method = method.upper()
     parsed = urlparse(path)
     query = {k: v[0] if len(v) == 1 else v for k, v in parse_qs(parsed.query).items()}
@@ -117,7 +119,7 @@ def _dispatch(method, path, body, headers, guards):
             if m == method:
                 found = (fn, match.groupdict())
                 break
-    req = Request(method, parsed.path, found[1] if found else {}, query, body, headers or {})
+    req = Request(method, parsed.path, found[1] if found else {}, query, body, headers or {}, raw)
     req.handler = found[0] if found else None
     try:
         result = next((r for r in (check(req) for check in guards) if r is not None), None)
@@ -131,17 +133,17 @@ def _dispatch(method, path, body, headers, guards):
     return _shaped(result, req.out_headers)
 
 
-def respond(method, path, body=None, headers=None):
+def respond(method, path, body=None, headers=None, raw=b""):
     """The service as the network sees it: every guard (app/sign_in.py adds one when the product has
     sign-in), then the route's handler. Returns (status, payload, content_type, headers), headers a
     list of (name, value). The HTTP server answers every request through it."""
-    return _dispatch(method, path, body, headers, GUARDS)
+    return _dispatch(method, path, body, headers, GUARDS, raw)
 
 
-def handle(method, path, body=None, headers=None):
+def handle(method, path, body=None, headers=None, raw=b""):
     """A route's handler, without the guards: a handler's own logic, as the product's tests check it.
     Returns (status, payload, content_type). respond() is what the network sees."""
-    return _dispatch(method, path, body, headers, ())[:3]
+    return _dispatch(method, path, body, headers, (), raw)[:3]
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -226,18 +228,21 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(raw)
             except json.JSONDecodeError:
                 body = raw.decode("utf-8", "replace")
-        status, payload, ctype, extra = respond(self.command, self.path, body, _headers(self.headers))
+        status, payload, ctype, extra = respond(self.command, self.path, body, _headers(self.headers), raw)
         data = payload.encode("utf-8") if isinstance(payload, str) else json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         for name, value in extra:
             self.send_header(name, value)
+        for hook in HEADER_HOOKS:
+            for key, value in hook(self.command, self.path, dict(self.headers), status).items():
+                self.send_header(key, value)
         self.end_headers()
         self.wfile.write(data)
         _record(self.command, self.path, body, status)
 
-    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = _serve
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = _serve
 
     def log_message(self, fmt, *args):
         return
@@ -428,21 +433,9 @@ VERIFY_SH = '''#!/bin/sh
 exec python3 -m unittest discover -s tests
 '''
 
-GITIGNORE = """__pycache__/
-data/
-.gnomon-audit/
-.gnomon-sessions/
-.gnomon-out/
-.gnomon-jobs/
-.gnomon-loops/
-.gnomon-shadow/
-.gnomon-skills/
-.gnomon-trials/
-.gnomon-inbox/
-.gnomon-proposals/
-.factory-tasks/
-.verify/
-"""
+GITIGNORE = "".join(f"{d}/\n" for d in ("__pycache__", "data", *(".gnomon-" + g for g in (
+    "audit", "sessions", "out", "jobs", "loops", "shadow", "skills", "trials", "inbox", "proposals")),
+    ".factory-tasks", ".verify"))
 
 
 def readme(title: str, pid: str, maturity: str) -> str:
@@ -464,9 +457,11 @@ links every release to the requirement, the criterion and the test it rests on.
 """
 
 
-def files(title: str, pid: str, maturity: str, look: str = "neutral", *, sign_in: bool = False) -> dict[str, str]:
-    """Every file of the template, by path. ``sign_in`` adds the road's sign-in (kernel/scaffold_auth.py),
-    for a product asked to be a login-ready web app."""
+def files(title: str, pid: str, maturity: str, look: str = "neutral", template: str = "web-service", *,
+          sign_in: bool = False) -> dict[str, str]:
+    """Every file of the template, by path: the web service's, or a small capability's built on it
+    (``template="capability"``, kernel/capability_template.py). ``sign_in`` adds the road's sign-in
+    (kernel/scaffold_auth.py), for a product asked to be a login-ready web app."""
     import json as _json
 
     from kernel.design_road import DESIGN_MD, LOOKS, PRODUCT_CSS
@@ -474,8 +469,8 @@ def files(title: str, pid: str, maturity: str, look: str = "neutral", *, sign_in
     if sign_in:
         from kernel.scaffold_auth import with_sign_in
 
-        return with_sign_in(files(title, pid, maturity, look))
-    return {
+        return with_sign_in(files(title, pid, maturity, look, template))
+    base = {
         "app/__init__.py": "",
         "app/server.py": SERVER_PY,
         "app/routes.py": ROUTES_PY,
@@ -491,3 +486,8 @@ def files(title: str, pid: str, maturity: str, look: str = "neutral", *, sign_in
         ".gitignore": GITIGNORE,
         "README.md": readme(title, pid, maturity),
     }
+    if template == "capability":
+        from kernel.capability_template import capability_files
+
+        return capability_files(base, title, pid, maturity)
+    return base

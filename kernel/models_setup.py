@@ -313,6 +313,18 @@ def _ledger(factory: Factory, kind: str, payload: dict[str, Any]) -> None:
     canon.log(kind, payload)
 
 
+def _fallback_note(role: str, merged: dict[str, Any]) -> dict[str, Any]:
+    """A local role that kept a hosted fallback says so: a confidential project refuses the role until it goes."""
+    from kernel.confidential import routes
+
+    rs = {r["which"]: r for r in routes([role], merged)}
+    if not (rs.get("primary", {}).get("local") and "fallback" in rs and not rs["fallback"]["local"]):
+        return {}
+    return {"note": f"Its fallback goes to the hosted endpoint {rs['fallback']['endpoint']!r}: a confidential project "
+                    "refuses this role while it has one. Set it again without the fallback (untick Keep the fallback, "
+                    "or --no-fallback) to keep confidential work here."}
+
+
 def set_role(factory: Factory, role: str, *, base_url: str, model: str, person: str, persona: str,
              family: str | None = None, key_env: str | None = None, key: str | None = None,
              keep_fallback: bool = True, private: bool = False) -> dict[str, Any]:
@@ -332,6 +344,7 @@ def set_role(factory: Factory, role: str, *, base_url: str, model: str, person: 
     if key:
         _write_keys({**stored_keys(), str(name): key.strip()})
     view = role_view(merged, role, overlay, probe=False)
+    view.update(_fallback_note(role, merged))
     _ledger(factory, "models_set", {
         "role": role, "model": model, "family": view["family"], "endpoint": endpoint, "host": view["host"],
         "local": view["local"], "key": "stored" if key else "env" if name else "none", "person": person,

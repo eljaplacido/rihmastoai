@@ -11,6 +11,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -66,7 +67,16 @@ class FiguresTest(TrackCase):
             self.assertTrue(fig["basis"], key)
         self.assertEqual(t["figures"]["blocking"]["value"], 1)                # the blocking question, with its age
         self.assertEqual(t["figures"]["blocking"]["cards"][0]["kind"], "question")
-        self.assertEqual(t["figures"]["posture"]["basis"], "no posture module yet (kernel/posture.py)")
+        self.assertEqual(t["figures"]["posture"]["basis"],
+                         "no posture chosen: the project runs by its mode, maturity and autonomy cap")
+        # with a posture, kernel/posture.py's hook says whether the run keeps it, and what drifted
+        held = self.factory.new_project("Held", posture={"name": "balanced", "by": "Aino", "persona": "business_owner"})
+        fig = track.track(held)["figures"]["posture"]
+        self.assertEqual((fig["value"], fig["measured"], fig["posture"]), (True, True, "balanced"))
+        held.update_meta(maturity="production")                      # set behind the posture's back
+        fig = track.track(held)["figures"]["posture"]
+        self.assertEqual((fig["value"], fig["drift"]), (False, ["maturity production is not one Balanced runs at "
+                                                                 "(demo, pilot)"]))
         # compiled at a maturity with no plan approval: the first compiled contract is the baseline
         q = self.compiled()
         t = track.track(q)
@@ -115,11 +125,8 @@ class FiguresTest(TrackCase):
         # the posture module's hook decides the posture figure, when it exists
         fake = types.ModuleType("kernel.posture")
         fake.track_posture = lambda project: {"posture": "prototype", "keeps": False, "basis": "a gate was skipped"}
-        sys.modules["kernel.posture"] = fake
-        try:
+        with mock.patch.dict(sys.modules, {"kernel.posture": fake}):   # the real module is back afterwards
             posture = track.track(p)["figures"]["posture"]
-        finally:
-            del sys.modules["kernel.posture"]
         self.assertEqual((posture["value"], posture["posture"], posture["basis"]), (False, "prototype",
                                                                                      "a gate was skipped"))
         self.assertEqual(self.without_at(track.track(p)), self.without_at(track.track(p)))   # deterministic

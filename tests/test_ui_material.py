@@ -219,9 +219,14 @@ class UiMaterialTest(unittest.TestCase):
                " && document.querySelector('form.np-form button[type=submit]').textContent.trim()"
                " === 'Create and start the intake' && !!document.querySelector('.scan-read')", "the need path, scanned")
         self.step("create from the material")
+        # nothing is assumed about the kind of work: unless a person picks one, the intake proposes it by rule
+        self.assertEqual(b.eval("[...document.querySelectorAll('form.np-form .prof-card[aria-checked=\"true\"]')]"
+                                ".map((c) => c.dataset.key)"), ["profile:auto", "posture:"])   # and no posture
         b.click("form.np-form button[type=submit]", text="Create and start the intake", what="Create")
         b.wait("location.hash.startsWith('#/p/')", "the new project")
         project = self.factory.projects()[-1]
+        self.assertIsNone(project.meta.get("profile"))
+        self.assertEqual(project.ledger().of_kind("profile_chosen"), [])
         scanned = project.ledger().of_kind("material_scanned")[-1]["event"]["payload"]
         self.assertEqual((scanned["person"], scanned["confirmed"]), (PERSON, "in the cockpit's scan step"))
         self.assertEqual(self.runner.started[-1][2:4], ["intake", project.pid])

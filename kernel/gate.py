@@ -29,6 +29,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kernel import access_isolation as isolation
+from kernel import integration_standins as standins
 from kernel.lanes import protected_paths
 from kernel.model import ModelError, extract_json, run_gnomon_task
 from kernel.verdicts import combine_verdicts
@@ -126,15 +128,16 @@ def _python() -> str:
 def run_suite(repo_dir: Path, *, pattern: str | None = None, timeout: int = 600) -> dict:
     """Run the unittest suite in ``repo_dir``; return the exit code, each test's outcome by name
     (``tests``, the worst when two share a name) and every outcome the runner saw (``seen``)."""
-    env = dict(os.environ)
-    env["DATA_DIR"] = tempfile.mkdtemp(prefix="gate-data-")
+    env = dict(os.environ, DATA_DIR=tempfile.mkdtemp(prefix="gate-data-"))
     env.pop("TRAFFIC_LOG", None)
     report = Path(env["DATA_DIR"] + "-outcomes.json")
     cmd = [_python(), "-c", _RUNNER, str(report), pattern or ""]
-    try:
-        proc = subprocess.run(cmd, cwd=repo_dir, capture_output=True, text=True, timeout=timeout,
-                              env=env, encoding="utf-8", errors="replace")
-        seen = _read_outcomes(report)
+    try:  # integrations on stand-ins (FR-DS3); access enforced: IT's isolation runner, or refused (D-0016)
+        with standins.running(repo_dir) as stand, \
+                isolation.suite(cmd, repo_dir=Path(repo_dir), env=env | stand.env, report=report) as run:
+            proc = subprocess.run(run.argv, cwd=repo_dir, capture_output=True, text=True, timeout=timeout,
+                                  env=run.env, encoding="utf-8", errors="replace")
+            seen, stood = _read_outcomes(run.report), stand.report()
     except subprocess.TimeoutExpired:
         return {"exit": None, "timeout": timeout, "tests": {}, "ran": 0, "seen": []}
     finally:
@@ -146,7 +149,7 @@ def run_suite(repo_dir: Path, *, pattern: str | None = None, timeout: int = 600)
         if name and _WORST.get(outcome, 4) >= _WORST.get(tests.get(name, "ok"), 4):
             tests[name] = outcome
     return {"exit": proc.returncode, "tests": tests, "ran": seen["ran"], "seen": seen["seen"],
-            "tail": proc.stderr.strip().splitlines()[-3:]}
+            "tail": proc.stderr.strip().splitlines()[-3:]} | stood
 
 
 def _read_outcomes(path: Path) -> dict:
@@ -241,8 +244,7 @@ def _not_run(run: dict, names: set, crits: list) -> dict[str, dict[str, str]]:
     return out
 
 
-def signal_fail_first(repo_dir: Path, base: str, contract: dict, task_id: str, *,
-                      run: dict | None = None) -> Signal:
+def signal_fail_first(repo_dir: Path, base: str, contract: dict, task_id: str, *, run: dict | None = None) -> Signal:
     """Copy the head's tests onto the base revision and run each criterion's tests there:
     they must fail. A test that passes, is skipped or never runs at base cannot show the change
     did anything; ``run`` is the suite's run at head, which says which tests to look for."""
@@ -282,8 +284,8 @@ def _template_check(repo_dir: Path, base: str, passed_at_base: dict, ids: dict, 
     be shown is that its tests can fail at all: they must fail on the bare paved-road template
     (the product's first commit). If they pass even there, they test nothing: the refusal. A test
     that does not run on the template is added to ``unseen``."""
-    root = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"], cwd=repo_dir, capture_output=True,
-                          text=True).stdout.split()
+    root = subprocess.run([*isolation.git(repo_dir), "rev-list", "--max-parents=0", "HEAD"], cwd=repo_dir,
+                          capture_output=True, text=True).stdout.split()      # no replace ref, no graft
     template = root[0] if root else None
     on_template = _passing_at(repo_dir, template, list(passed_at_base), ids) if template and template != base else None
     vacuous = on_template[0] if on_template is not None else None
@@ -307,11 +309,10 @@ def _passing_at(repo_dir: Path, revision: str, crits: list, ids: dict) -> tuple[
     cannot be checked out."""
     tmp = Path(tempfile.mkdtemp(prefix="gate-base-"))
     try:
-        subprocess.run(["git", "worktree", "add", "-q", "--detach", str(tmp / "b"), revision], cwd=repo_dir,
-                       capture_output=True, text=True, check=True)
+        subprocess.run([*isolation.git(repo_dir), "worktree", "add", "-q", "--detach", str(tmp / "b"), revision],
+                       cwd=repo_dir, capture_output=True, text=True, check=True)
         base_dir = tmp / "b"
-        shutil.rmtree(base_dir / "tests", ignore_errors=True)
-        shutil.copytree(Path(repo_dir) / "tests", base_dir / "tests")
+        isolation.copy_tests(Path(repo_dir), base_dir)      # from git: a link a cell left is never followed
         passing_by, unseen_by = {}, {}
         for cid in crits:
             res = run_suite(base_dir, pattern=cid.replace("-", "_"))
@@ -328,8 +329,8 @@ def _passing_at(repo_dir: Path, revision: str, crits: list, ids: dict) -> tuple[
     except subprocess.CalledProcessError:
         return None
     finally:
-        subprocess.run(["git", "worktree", "remove", "--force", str(tmp / "b")], cwd=repo_dir,
-                       capture_output=True, text=True)
+        subprocess.run([*isolation.git(repo_dir), "worktree", "remove", "--force", str(tmp / "b")],
+                       cwd=repo_dir, capture_output=True, text=True)
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -428,7 +429,7 @@ def judge(repo_dir: Path, contract: dict, task_id: str, base: str, head: str, *,
     guard = signal_protected(repo_dir, base, head)
     run = run_suite(repo_dir)
     signals = [signal_tests(repo_dir, run=run), signal_trace(repo_dir, contract, task_id, run=run),
-               signal_fail_first(repo_dir, base, contract, task_id, run=run)]
+               signal_fail_first(repo_dir, base, contract, task_id, run=run), *standins.signal(contract, run, task_id)]
     if guard is not None:  # the verifier would run under the surface the change rewrote: it does not run
         signals.append(guard)
     elif verifier:
@@ -491,8 +492,8 @@ def judge_change(repo_dir: Path, contract: dict, base: str, head: str, *, label:
     still run, and trace and fail-first are not applicable: no criterion is claimed."""
     if task_id is not None:
         return judge(repo_dir, contract, task_id, base, head, verifier_runner=verifier_runner)
-    prompt = change_verifier_prompt(contract, base, author)
-    signals = [signal_tests(repo_dir),
+    prompt, run = change_verifier_prompt(contract, base, author), run_suite(repo_dir)
+    signals = [*standins.signal(contract, run), signal_tests(repo_dir, run=run),
                Signal("trace", "not applicable", {"criteria": []}, "the change names no criterion"),
                Signal("fail_first", "not applicable", {}, "the change names no criterion"),
                signal_protected(repo_dir, base, head) or _verifier_signal(repo_dir, prompt, runner=verifier_runner)]

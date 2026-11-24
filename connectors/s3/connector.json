@@ -1,0 +1,32 @@
+{
+  "schema": "rihma.connector/1",
+  "system": "s3",
+  "title": "S3-compatible object storage (read-only)",
+  "namespace": "s3",
+  "server": {
+    "transport": "stdio",
+    "command": ["python", "server.py"],
+    "pin": {
+      "name": "Rihmasto's narrow read-only S3 server, in this folder",
+      "version": "1",
+      "sha256": "9eb181a547f2f6c204928dc2763a36bfb2af5c0ee332c3ef795e74d76b8dcd6f"
+    }
+  },
+  "tools_sha256": "12ba58bfe6fd7358e499061807b4763a4dbb4c407c26c9a1bdb1d0823c69f109",
+  "read_tools": [
+    {"name": "list_objects", "maps_to": "note", "example_args": {"prefix": "daily/"}},
+    {"name": "get_object_metadata", "maps_to": "note", "example_args": {"key": "daily/2026-11-22.csv"}},
+    {"name": "get_object_text", "maps_to": "note", "example_args": {"key": "daily/2026-11-22.csv"}}
+  ],
+  "write_tools": [],
+  "forbidden_tools": ["put_object", "copy_object", "delete_object"],
+  "data_classes": ["internal"],
+  "credentials": [
+    {"name": "S3_ENDPOINT_URL", "ref": "env:RIHMA_S3_ENDPOINT_URL"},
+    {"name": "S3_REGION", "ref": "env:RIHMA_S3_REGION"},
+    {"name": "S3_BUCKET", "ref": "env:RIHMA_S3_BUCKET"},
+    {"name": "S3_ACCESS_KEY_ID", "ref": "env:RIHMA_S3_ACCESS_KEY_ID"},
+    {"name": "S3_SECRET_ACCESS_KEY", "ref": "os:RIHMA_S3_SECRET_ACCESS_KEY"}
+  ],
+  "setup": "README.md"
+}

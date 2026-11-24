@@ -1,0 +1,31 @@
+{
+  "schema": "rihma.connector/1",
+  "system": "postgres",
+  "title": "PostgreSQL (read-only)",
+  "namespace": "pg",
+  "server": {
+    "transport": "stdio",
+    "command": ["postgres-mcp", "--access-mode=restricted"],
+    "pin": {
+      "name": "postgres-mcp (Postgres MCP Pro), installed on the host that runs the lane",
+      "version": "0.3.0"
+    }
+  },
+  "tools_sha256": "e56fb01410815643642f04c5797c0d53c05f44f426745275d297488bb0e34f2c",
+  "read_tools": [
+    {"name": "list_schemas", "maps_to": "note", "example_args": {}},
+    {"name": "list_objects", "maps_to": "note", "example_args": {"schema_name": "public"}},
+    {"name": "get_object_details", "maps_to": "note", "example_args": {"schema_name": "public", "object_name": "orders"}},
+    {"name": "execute_sql", "maps_to": "observation",
+     "example_args": {"sql": "SELECT id, customer, status FROM orders WHERE status = 'open' ORDER BY id"}}
+  ],
+  "write_tools": [],
+  "forbidden_tools": ["explain_query", "analyze_workload_indexes", "analyze_query_indexes", "analyze_db_health",
+                      "get_top_queries"],
+  "data_classes": ["internal", "confidential"],
+  "credentials": [
+    {"name": "DATABASE_URI", "ref": "env:RIHMA_POSTGRES_DSN"}
+  ],
+  "setup": "README.md",
+  "notes": "UNVERIFIED offline: the server's name, version 0.3.0, its --access-mode=restricted flag, the DATABASE_URI variable and its tools/list (fixtures/tools.json) come from its documentation, not from a running server. The live check compares the real tools/list with this pin; a difference stops the connector until a person reviews it and pins it again. explain_query is forbidden because analyze=true runs the statement."
+}

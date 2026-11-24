@@ -173,7 +173,9 @@ Each event is `{"kind": "gateway_request", "at": ..., "payload": ...}`. The payl
 - the status (`answered`, `deferred`, `failed` or `refused`) and the reason for a refusal;
 - the level that answered and whether the answer was degraded;
 - the upstream and the model, and the HTTP status;
-- the latency, and the token counts when the upstream returned them;
+- the latency, and the token counts when the upstream returned them, or `"tokens": "not measured"`
+  when it returned none (a capability's openai face counts no tokens, so its answers carry
+  `"usage": null` and are recorded this way, never as zeros);
 - each attempt (level, upstream, model, outcome and milliseconds), and each target skipped with the
   reason;
 - the deferred id, for a request queued at L4.
@@ -216,14 +218,30 @@ re-measures the capability and gives the pack a new version, not by editing the 
 alone. The L2 and L3 fallbacks are where the gateway may serve something other than the accepted
 model, and the gateway says so in every answer through its level and degraded flag.
 
+### A capability as a model
+
+A small capability that declares the `openai` face ([small capabilities](small-capabilities.md)) is
+itself a model: its pack names it under `runtime.agent`. `agent_workloads` makes the gateway workload
+of its name, whose L1 is the capability's own OpenAI-compatible endpoint:
+
+```python
+from gateway.packs import agent_workloads, workloads_from_pack
+entries = {**workloads_from_pack(pack, "digest"), **agent_workloads(pack, "digest")}
+# with the upstream {"digest": {"url": "http://127.0.0.1:8090/v1", "api_key_env": "DIGEST_FACES_TOKEN"}}
+```
+
+A client then names the capability as its model. `--check-pack` also reports an agent the pack offers
+that the gateway lacks or routes to another model. The capability's pack guard answers first: while
+its pack does not check out, its face answers 503 and the gateway says no upstream answered.
+
 See [the capability layer](../capability-layer.md) for packs, profiles and the change loop, and
 [running fully local](local-models.md) for serving models on your own hardware.
 
 ## Not built yet
 
-- **Packs do not declare runtime workloads yet.** [kernel/packs.py](../../kernel/packs.py) writes
-  `"runtime": {"declared": false}`, so `workloads_from_pack` returns nothing for today's packs. The
-  gateway reads the shape shown above when a pack provides it.
+- **Only small capabilities declare runtime workloads.** A web-service product's pack says
+  `"runtime": {"declared": false}`, so `workloads_from_pack` returns nothing for it; a small
+  capability's pack declares the workloads its model roles call.
 - **Streaming.** A request with `"stream": true` is refused with `400`. Send `"stream": false`.
 - **No `rihma-gateway` command.** The gateway runs as `python -m gateway.server` from a checkout.
   `pip install -e .` does not install a command for it yet.

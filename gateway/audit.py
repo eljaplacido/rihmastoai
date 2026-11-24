@@ -4,7 +4,8 @@ Records have the kernel's ledger shape (`seq`, `event`, `prev`, `hash`) and the 
 (`kernel.ledger.canonical_json` and `event_hash`), so `kernel.ledger.verify` checks the chain and
 `kernel.ledgerstore.LedgerStore` reads it. Each event is `{"kind": "gateway_request", "at": ...,
 "payload": ...}`. The payload says what happened: the workload, the level that answered, the
-upstream and model, latency, token counts when the upstream returned them, and the status. It never
+upstream and model, latency, token counts when the upstream returned them ("not measured" when it
+returned none), and the status. It never
 holds the prompt or the answer, unless the config sets `audit.content_capture` to true.
 
 A gateway appends often, so unlike `LedgerStore.append` this one does not re-read the whole file on

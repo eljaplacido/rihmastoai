@@ -961,6 +961,7 @@ article.card > .card-t { white-space: normal; margin-bottom: var(--s2); font-siz
 .plan-own { display: flex; gap: 8px; align-items: center; color: var(--text-2); margin: var(--s2) 0 var(--s3); }
 .plan-sum { font-size: var(--fs-lg); }
 .plan-reqs { margin: var(--s3) 0; }
+.plan-int { margin: var(--s3) 0; } .plan-int li { overflow-wrap: anywhere; margin: 2px 0; }
 .reqedit { margin-top: var(--s3); padding: var(--s3); border-radius: var(--r-md); border: 1px solid var(--border); background: var(--sunken); }
 .crow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: var(--s2); align-items: end; padding: var(--s2) 0; border-top: 1px solid var(--border); }
 .crow-n { grid-column: 1 / -1; }
@@ -1476,6 +1477,8 @@ label.scan-label { cursor: pointer; }
 .chg-form select, .chg-form input:not([type="checkbox"]):not([type="radio"]), .chg-form textarea { width: 100%; min-width: 0; }
 .chg-posture { padding: var(--s2) var(--s3); border: 1px dashed var(--border-strong); border-radius: var(--r-md); }
 .chg-posture p { margin: 0; }
+.chg-posture-row { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; min-width: 0; }
+.chg-posture-row > span { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
 .chg-impact { padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--sunken); overflow-wrap: anywhere; }
 .chg-impact p { margin: 0; }
 .chg-list { margin: var(--s2) 0 0; padding-left: var(--s5); display: grid; gap: 4px; }
@@ -1537,3 +1540,49 @@ label.scan-label { cursor: pointer; }
   .mdl-row { grid-template-columns: minmax(0, 1fr); }
   .mdl-tools { justify-content: flex-start; }
 }
+
+/* -- postures: the New project dialog's "How it runs" and a project's Posture dialog (posture.js) ----- */
+.pst-section { display: grid; gap: var(--s2); }
+.pst-section > p { margin: 0; }
+.pst-grid { grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 1fr)); }
+.pst-body { display: grid; gap: var(--s3); }
+.pst-body .field, .pst-form .field { margin: 0; }
+.pst-weights { display: grid; gap: 6px; }
+.pst-w { display: grid; grid-template-columns: 7rem auto minmax(0, 1fr); gap: var(--s2); align-items: center; }
+.pst-wl { font-size: var(--fs-sm); color: var(--text-2); }
+.pst-w .seg-b { min-width: 34px; justify-content: center; }
+.pst-w .seg-b:disabled { opacity: 0.4; cursor: not-allowed; }
+.pst-preview { display: grid; gap: var(--s2); padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--sunken); }
+.pst-preview > h3 { margin: 0; }
+.pst-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: var(--s3); }
+.pst-group { min-width: 0; overflow-wrap: anywhere; }
+.pst-group h4 { margin: 0 0 4px; font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.pst-group ul { gap: 4px; }
+.pst-out, .pst-change { display: grid; gap: var(--s2); }
+.pst-form { gap: var(--s3); }
+.pst-dialog .pst-preview { background: var(--raised); }
+.pst-section .seg-b:focus-visible, .pst-form .seg-b:focus-visible, .pst-form .btn:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+@media (max-width: 760px) {
+  .pst-w { grid-template-columns: 6rem auto; }
+  .pst-w small { grid-column: 2; }
+}
+
+/* The Assessment view (cockpit/static/assessment.js): findings with their evidence, by perspective. */
+.as-list { gap: var(--s2); }
+.as-row { padding: var(--s2) 0; border-top: 1px solid var(--border); min-width: 0; }
+.as-list > .as-row:first-child { border-top: 0; }
+.as-h { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; min-width: 0; }
+.as-h label { font-weight: 500; overflow-wrap: anywhere; }
+.as-h input[type="checkbox"] { width: 18px; height: 18px; flex: none; }
+.as-row p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.as-ev { margin: 4px 0 0; gap: 2px; font-size: var(--fs-sm); color: var(--text-2); }
+.as-ev li, .as-ev code { overflow-wrap: anywhere; word-break: break-word; }
+.as-fix { color: var(--text); }
+.as-check { display: inline-flex; align-items: center; gap: 6px; }
+.as-more summary { cursor: pointer; font-size: var(--fs-sm); color: var(--text-2); padding: 4px 0; }
+
+/* A small capability's runtime and faces, in its capability pack (project.js runtimeSection). */
+.pack-runtime h4 { margin: var(--s3) 0 0; font-size: var(--fs-sm); }
+.pack-runtime .faces { list-style: none; padding: 0; margin: var(--s2) 0; display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); }
+.pack-runtime .faces li { display: inline-flex; align-items: center; gap: 6px; }
+.pack-runtime code { overflow-wrap: anywhere; }

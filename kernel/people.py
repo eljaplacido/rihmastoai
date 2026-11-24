@@ -33,11 +33,14 @@ def is_person(name: object) -> bool:
 @dataclass(frozen=True)
 class Identity:
     """A verified identity (D-0016): ``id`` is ``<issuer>#<subject>`` from IT's sign-in proxy, or
-    ``local:<os user>`` on the operator's own machine; ``name`` is the person's display name."""
+    ``local:<os user>`` on the operator's own machine; ``name`` is the person's display name; ``expires``
+    is when the cockpit stops taking the signed token it came from (its expiry, plus the clock skew the
+    access file allows), else None."""
 
     id: str
     name: str
     groups: tuple[str, ...] = ()
+    expires: float | None = None
 
 
 # The verified identity signing the write being carried out now (kernel.access.signing), or None.

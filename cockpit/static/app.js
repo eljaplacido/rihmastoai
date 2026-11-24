@@ -95,7 +95,7 @@ function drawAccess() {
   const a = (S.meta && S.meta.access) || {};
   $("#access-note-text").textContent = a.note || "";
   $("#access-note").dataset.tip = a.note || "";
-  $("#access-pop").textContent = a.note || "";
+  $("#access-pop").textContent = a.detail || a.note || "";   // enforced: the sign-in, its end, where untrusted code runs
   for (const id of ["#access-note", "#access-pop"]) $(id).hidden = !a.note;
   $("#access-note").classList.toggle("enforced", enforced());
   if (!enforced()) return;
@@ -196,6 +196,8 @@ function closePerson(refocus) {
   if (refocus) $("#person-chip").focus();
 }
 nav.openPerson = openPerson;
+// A name and a persona set elsewhere (the first-run choice) show in the person menu at once.
+nav.personChanged = () => { $("#person").value = S.person; S.lens = lensFor(S.persona); drawPersonChip(); drawLens(); };
 
 function wirePerson() {
   S.person = store.get("gf.person") || "";

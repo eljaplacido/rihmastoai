@@ -91,12 +91,13 @@ every decision.
 With an access file in mode `enforced` ([guides/access.md](guides/access.md)), the cockpit stays on
 127.0.0.1 behind IT's identity-aware proxy, which runs beside it:
 
-- The identity comes only from the proxy's configured headers, and only on a request that also
-  carries the proxy's shared secret (compared in constant time with the environment variable the
-  access file names). Any other request is a 401, and so is a request that repeats the user, email,
-  secret or groups header; while the access file cannot be read or checked, every request is a 403
-  that says why. The cockpit takes the secret out of its own environment once read, so no job it
-  starts inherits it.
+- The identity comes only from the identity provider's signed token the proxy forwards, verified with
+  the provider's public keys from the access folder; the cockpit holds no shared secret. Any other
+  request is a 401, and so is a request that repeats the token header; while the access file or the
+  key file cannot be used, every request is a 403 that says why.
+- The session travels in `X-Rihmasto-Session` (the token may use `Authorization`) and ends when the
+  token it was opened with expires; the page then signs in again once through the proxy before it asks
+  the person. A run or a new project starts only when the access file names an isolation runner.
 - The page says the mode (`<meta name="rihmasto-access">`). An enforced page signs in with
   `POST /auth` and no bootstrap: the session is opened for the verified identity and answers only that
   identity. The printed one-use link is not needed, and **Link for another tab** is hidden. A single
@@ -110,8 +111,9 @@ With an access file in mode `enforced` ([guides/access.md](guides/access.md)), t
   differs is a 403) and needs the persona granted on its project; the factory's own writes need it on
   `_factory`. The decision, the ledger and `cockpit_write` record the identity beside the person.
 - The proxy's public address (the access file's `origin`) is accepted as `Host` and `Origin` beside
-  `127.0.0.1:<port>`. `GET /api/meta` carries the mode, and in enforced mode the identity and its
-  grants, under `access`.
+  `127.0.0.1:<port>`. `GET /api/meta` carries the mode, and in enforced mode the identity, its
+  grants, when the session ends and where untrusted code runs, under `access`; the person menu shows
+  that line.
 
 ## The shell
 
@@ -281,7 +283,10 @@ opens its project, or the concept on the square.
 the **work profile** as seven cards (web app or service, integration, mobile prototype, ML or data
 pipeline, agent or assistant, harness engineering, ops agent), each with its icon, summary,
 deliverable and a **Preview** badge where its template is still to come, with the profile's note on
-what is. The cards are a radiogroup: one tab stop, and the arrow keys move and choose. **Let Rihma propose**
+what is. The first card, **Let Rihma choose**, is chosen until a person picks another: nothing is assumed,
+and the intake proposes the profile by rule from the need or the folder, asking which kind it is when the
+words point to more than one; **Project settings** changes it later. The cards are a radiogroup: one tab
+stop, and the arrow keys move and choose. **Let Rihma propose**
 picks the profile by rule from the words of the need (`propose_profile`) and says which words; a
 keyword the rule found inside a longer word is shown with the person's own word ("train" in
 "trainees") and the proposal is marked uncertain. The button keeps the focus once Rihma has read the
@@ -330,7 +335,9 @@ question opens its options, the plan opens the plan, a concept opens it on the s
 ## A project
 
 The header carries the work profile, the title, the maturity and mode, health, the **autonomy
-cap** ("Autonomy 3 · prepare"), the ledger's state, the now line (with the real state: a running
+cap** ("Autonomy 3 · prepare"), the **Posture** chip (what the project's posture does, what holds
+the project now, and changing it with a reason: [guides/postures.md](guides/postures.md)), the
+ledger's state, the now line (with the real state: a running
 cell, apparatus failure, ready), a compact stepper of the seven stages with their icons and counts,
 and **Project settings**, **Pause** or **Resume** and **Advance**. The views are tabs with icons, in the
 order the stage and the lens bring forward; **Show all views** shows every view. The Overview has the
@@ -367,6 +374,14 @@ alignment panel and the stage counts beside it.
   which outputs the project delivers, signed and with a reason; **Build and download**
   (`build_output`) and **Build every chosen output** (`build_outputs`) build them from the records
   and the release, each file through a link that works once ([guides/outputs.md](guides/outputs.md)).
+- **Assessment** (an adopted project brings it forward, after the first view) judges the system's
+  repository from five perspectives: **Assess now** (`data-control="run_assessment"`) records a new
+  version by rule at once, and with **Ask the panel too** (when the cockpit has a model) in the
+  background; each
+  perspective lists its findings with evidence, severity and suggested change, then what was not
+  measured and why; the panel's proposals stay apart as opinions; ticked findings are filed with
+  **File the ticked findings as changes** (`data-control="assessment_changes"`). See
+  [brownfield.md](brownfield.md#assessing-an-adopted-system).
 - **Comments**: requirements, criteria, tasks, releases and cards have a **Comment** button that
   opens a small thread. A comment decides nothing; a product owner or business owner may
   **Promote to change**, which files and triages a change card.
@@ -596,6 +611,8 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `GET /api/projects/<pid>/pack` | the capability pack as last written (`kernel.packs.latest_pack` where the kernel has it, else the latest release's `capability-pack.json`), with its YAML, `history`, `latest_release`, `current` and the `builders`; `pack: null` with a `note` while the latest release has none. It never builds a pack and records nothing; 404 without a release |
 | `POST /api/projects/<pid>/pack/build` | `{person, persona}` → `kernel.packs.build_pack` for the latest release: a new version in `packs.json` and the ledger only when the content changed, and a `cockpit_write`. A persona that does not export evidence, or a non-person, is a 403 |
 | `GET /api/projects/<pid>/attestation` | what an export would attest, computed read-only |
+| `GET /api/projects/<pid>/assessment` | the system's assessment (`kernel.assess_cards.view`): the latest version, every version with its sha256 checked against the ledger's `assessment_recorded` (`intact`), what each finding was `filed` as and that card's state, `has_repo`, `run` (the background assessment's state, or null) and `panel_available` (whether the cockpit has a model). Records nothing |
+| `POST /api/projects/<pid>/assessment` · `POST .../assessment/changes` | `{person, persona, panel}` → `kernel.assess.assess`, signed by that person, outside the write lock (its records keep their own file locks): by rule it is recorded before the answer (201, with the record in short); with `panel: true` the cockpit's model reviews it in the background (202). `panel: true` without a model is a 409, a project with no repository a 400, a second while one runs a 409 · `{findings: ["F-3", "P-1"], version, as, person, persona}` → `kernel.assess_cards.to_changes`: change cards with `refs.origin: "assessment"`, triaged by rule; an unknown version is a 404. Each is a `cockpit_write` too ([brownfield.md](brownfield.md#assessing-an-adopted-system)) |
 | `POST /api/projects/<pid>/evidence` | `{person, persona}` → `kernel.evidence_pack.export` into `<home>/_cockpit/exports/`; returns the file and a one-time `download` path |
 | `GET /api/exports/<token>` | that export, once, as an attachment, only from the exports folder |
 | `GET /api/projects/<pid>/outputs` · `PUT /api/projects/<pid>/outputs` | the output targets, what each holds, the choice and who made it, the last builds · `{targets, reason, person, persona}` → `kernel.outputs.choose`; a persona that may not choose is a 403 |

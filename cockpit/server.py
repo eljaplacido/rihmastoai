@@ -304,6 +304,7 @@ ROUTES = [
     ("PUT", r"/api/autonomy", "put_autonomy"),
     ("PUT", rf"/api/projects/{PID}/autonomy", "put_project_autonomy"),
     ("POST", r"/api/projects", "post_project"),
+    ("POST", r"/api/adopt", "post_adopt"),
     ("POST", rf"/api/projects/{PID}/cards/(?P<cid>C-\d{{1,9}})/decide", "post_decide"),
     ("POST", rf"/api/projects/{PID}/questions/(?P<qid>Q-\d{{1,9}})/answer", "post_answer"),
     ("POST", rf"/api/projects/{PID}/questions/(?P<qid>Q-\d{{1,9}})/assume", "post_assume"),
@@ -1565,6 +1566,31 @@ class Api:
                                      "--requested-by", requested_by],
                                     {"person": requested_by, "persona": persona})
         return 201, {"project": project.meta, "job": self.server.job_view(job)}
+
+    def post_adopt(self, body: dict, **_):
+        """Adopt an existing project from a local git folder or an address git clones without credentials.
+        It runs as a job: adopting reads the repository and runs its own test suites for a baseline."""
+        from kernel.adopt import INTENTS, AdoptionRefused, check_source
+
+        title = _text(body, "title", required=True, limit=200)
+        source = _text(body, "source", required=True, limit=2000).strip()
+        intent = _text(body, "intent", limit=16) or "improve"
+        maturity = _text(body, "maturity", limit=32) or "production"
+        base_url = _text(body, "base_url", limit=500).strip() or None
+        if intent not in INTENTS:
+            raise ApiError(400, f"intent must be one of {', '.join(INTENTS)}")
+        if maturity not in MATURITIES:
+            raise ApiError(400, f"maturity must be one of {', '.join(MATURITIES)}")
+        person, persona = self._sign(_text(body, "person", limit=200), _text(body, "persona", limit=64), FACTORY_PID)
+        _require_person(person, persona)
+        try:
+            check_source(source)
+        except (AdoptionRefused, OSError) as exc:
+            raise ApiError(400, str(exc)) from None
+        args = ["-m", "kernel.cli", "adopt", title, "--source", source, "--intent", intent, "--person", person,
+                "--persona", persona, "--maturity", maturity, *(["--base-url", base_url] if base_url else [])]
+        job = self.server.start_job("adopt", FACTORY_PID, args, {"person": person, "persona": persona})
+        return 202, {"job": self.server.job_view(job)}
 
     def post_advance(self, pid: str, body: dict, **_):
         project = self._project(pid)

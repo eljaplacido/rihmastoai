@@ -1227,6 +1227,10 @@ main > .card { margin-bottom: var(--gap); }
 .acc-blue { background: #2f6fd6; } .acc-green { background: #2f8a3c; } .acc-rose { background: #d6416b; }
 .np-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
 .np-form .field { margin: 0; }
+/* New project: the need part and the existing-project part keep the form's spacing and never widen it. */
+.np-part { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); min-width: 0; }
+.np-part[hidden] { display: none; }
+.np-part .field input { min-width: 0; width: 100%; }
 .np-prof-h { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
 .propose-basis { margin: 0; min-height: 0; }
 .proposal { display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s3) var(--s4); border-radius: var(--r-md);

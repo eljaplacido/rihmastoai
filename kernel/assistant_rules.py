@@ -47,7 +47,8 @@ FACTORY_PID, FACTORY_VIEWS = "_factory", ("overview", "inbox", "ledger")   # coc
 # (None, None) is the shell, on every page. Take me there opens that page, then highlights the control.
 CONTROL_PAGES: dict[str, tuple[str | None, str | None]] = {
     "persona": (None, None), "lens": (None, None), "palette": (None, None), "assistant": (None, None),
-    "theme": (None, None), "density": (None, None), "new_project": (None, "projects"), "customize": (None, "home"),
+    "theme": (None, None), "density": (None, None), "new_project": (None, "projects"),
+    "adopt_project": (None, "projects"), "customize": (None, "home"),
     "pause": ("overview", None), "resume": ("overview", None), "autonomy": ("overview", None),
     "answer": ("questions", "inbox_all"), "assume": ("questions", None), "decide": ("inbox", "inbox_all"),
     "report": ("changes", None), "comment": ("spec", None), "log_signal": (None, "square"),

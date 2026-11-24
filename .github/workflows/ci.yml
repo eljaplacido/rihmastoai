@@ -3,7 +3,10 @@
 name: CI
 
 on:
+  # Pull requests run every check; a push runs them again only on main, so a pull request's branch is
+  # not tested twice for every commit.
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -13,7 +16,8 @@ jobs:
   checks:
     name: ${{ matrix.os }}, Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Windows starts processes several times slower than Linux, and the suite starts many: it needs longer.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 120 || 60 }}
     strategy:
       fail-fast: false
       matrix:

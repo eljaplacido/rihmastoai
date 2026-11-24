@@ -167,10 +167,10 @@ def refine(project: Any, model: Any, *, person: str, persona: str) -> dict[str, 
     reading = project.read("inputs.json", None)
     if not isinstance(reading, dict):
         raise ValueError(f"{project.pid} has no reading yet: its intake has not run")
-    from kernel.confidential import require_local
+    from kernel.confidential import guard
     from kernel.intake import _ask_json
 
-    require_local(project, ("analyst",), where="inputs refine")
+    model = guard(project, model, ("analyst",), where="inputs refine")
     lines = input_kind.split_lines((project.read("source.json", {}) or {}).get("text") or "")
     numbered = "\n".join(f"{n}: {x}" for n, x in enumerate(lines, 1))
     try:

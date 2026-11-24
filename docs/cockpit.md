@@ -91,12 +91,13 @@ every decision.
 With an access file in mode `enforced` ([guides/access.md](guides/access.md)), the cockpit stays on
 127.0.0.1 behind IT's identity-aware proxy, which runs beside it:
 
-- The identity comes only from the proxy's configured headers, and only on a request that also
-  carries the proxy's shared secret (compared in constant time with the environment variable the
-  access file names). Any other request is a 401, and so is a request that repeats the user, email,
-  secret or groups header; while the access file cannot be read or checked, every request is a 403
-  that says why. The cockpit takes the secret out of its own environment once read, so no job it
-  starts inherits it.
+- The identity comes only from the identity provider's signed token the proxy forwards, verified with
+  the provider's public keys from the access folder; the cockpit holds no shared secret. Any other
+  request is a 401, and so is a request that repeats the token header; while the access file or the
+  key file cannot be used, every request is a 403 that says why.
+- The session travels in `X-Rihmasto-Session` (the token may use `Authorization`) and ends when the
+  token it was opened with expires; the page then signs in again once through the proxy before it asks
+  the person. A run or a new project starts only when the access file names an isolation runner.
 - The page says the mode (`<meta name="rihmasto-access">`). An enforced page signs in with
   `POST /auth` and no bootstrap: the session is opened for the verified identity and answers only that
   identity. The printed one-use link is not needed, and **Link for another tab** is hidden. A single
@@ -110,8 +111,9 @@ With an access file in mode `enforced` ([guides/access.md](guides/access.md)), t
   differs is a 403) and needs the persona granted on its project; the factory's own writes need it on
   `_factory`. The decision, the ledger and `cockpit_write` record the identity beside the person.
 - The proxy's public address (the access file's `origin`) is accepted as `Host` and `Origin` beside
-  `127.0.0.1:<port>`. `GET /api/meta` carries the mode, and in enforced mode the identity and its
-  grants, under `access`.
+  `127.0.0.1:<port>`. `GET /api/meta` carries the mode, and in enforced mode the identity, its
+  grants, when the session ends and where untrusted code runs, under `access`; the person menu shows
+  that line.
 
 ## The shell
 
@@ -281,7 +283,10 @@ opens its project, or the concept on the square.
 the **work profile** as seven cards (web app or service, integration, mobile prototype, ML or data
 pipeline, agent or assistant, harness engineering, ops agent), each with its icon, summary,
 deliverable and a **Preview** badge where its template is still to come, with the profile's note on
-what is. The cards are a radiogroup: one tab stop, and the arrow keys move and choose. **Let Rihma propose**
+what is. The first card, **Let Rihma choose**, is chosen until a person picks another: nothing is assumed,
+and the intake proposes the profile by rule from the need or the folder, asking which kind it is when the
+words point to more than one; **Project settings** changes it later. The cards are a radiogroup: one tab
+stop, and the arrow keys move and choose. **Let Rihma propose**
 picks the profile by rule from the words of the need (`propose_profile`) and says which words; a
 keyword the rule found inside a longer word is shown with the person's own word ("train" in
 "trainees") and the proposal is marked uncertain. The button keeps the focus once Rihma has read the
@@ -310,6 +315,27 @@ local or hosted, its key variable and whether it is set (never the key), and whe
 and says the latency or the error; **Back to shipped** removes the role from this machine's
 `kernel/routing.local.json` ([guide](guides/models-setup.md)).
 
+## Runners
+
+**Runners** (`#/runners`, from Settings; `#/runners/<pid>` from a project's **Project settings**) says
+which harness runs each role's cells, for the factory and for each project with its own choice: the
+runner, its pinned version, and its assurance, **In-run policy enforced by Gnomon** or **Checked after
+the run**. **Check** looks for Gnomon, Claude Code, Codex, OpenCode and a named command on this machine
+and asks each its version, and says whether Docker can run the sandbox. **Choose a runner** sets a
+role's runner: Gnomon at once, any other on a **Cell runner** card in the factory's Inbox, which an IT
+persona approves or declines from the page's Choices. Project settings shows the project's builder and
+verifier with their assurance, and a task's rounds name the runner that ran each one
+([guide](guides/harnesses.md)).
+
+## Automations
+
+**Automations** (`#/automations`, in the sidebar) lists every automation with its plain-language summary,
+owner, state and last run, filtered by state, scope kind or the project it reaches, with templates and a
+builder that shows the kernel's summary before saving. Each has Run now, Dry run, Pause or Resume, Edit,
+Remove and its runs. Each project has an **Automations** tab with the ones that reach it, its tags and
+what ran on it; Home shows an automation the circuit breaker paused. The cockpit's scheduler ticks every
+minute while it runs ([guide](guides/automations.md)).
+
 ## Projects and the Inbox
 
 **Projects** shows every project as cards or a table: its work profile, its state with an icon and
@@ -330,7 +356,9 @@ question opens its options, the plan opens the plan, a concept opens it on the s
 ## A project
 
 The header carries the work profile, the title, the maturity and mode, health, the **autonomy
-cap** ("Autonomy 3 · prepare"), the ledger's state, the now line (with the real state: a running
+cap** ("Autonomy 3 · prepare"), the **Posture** chip (what the project's posture does, what holds
+the project now, and changing it with a reason: [guides/postures.md](guides/postures.md)), the
+ledger's state, the now line (with the real state: a running
 cell, apparatus failure, ready), a compact stepper of the seven stages with their icons and counts,
 and **Project settings**, **Pause** or **Resume** and **Advance**. The views are tabs with icons, in the
 order the stage and the lens bring forward; **Show all views** shows every view. The Overview has the
@@ -342,6 +370,13 @@ alignment panel and the stage counts beside it.
   and **Add material** (`add_material`) adds more of the request. The Overview's **What's next**
   (`next_step`) says what the project waits for, who can act, and has the buttons that move it on
   ([change anything](guides/change-anything.md)).
+- An adopted or attached project's Overview has **AI tools in this project** (`ai_tools`): how the
+  team's AI coding tools are set up in its repository (CLAUDE.md, AGENTS.md, Cursor rules, skills,
+  subagents, slash commands, hooks, MCP servers), each with where it is, read from the committed
+  revision and never run; and **Work on it from your IDE** (`ide_setup`): MCP configuration for
+  Claude Code, Cursor and Codex pointing at Rihmasto's MCP server, how a change comes back, and
+  **Copy the section** (`ide_section`) for your own AGENTS.md
+  ([your IDE and Rihmasto](guides/ide-and-rihmasto.md)). `GET /api/projects/<pid>/ai-tools` reads it.
 
 - **Tasks** is a board, a timeline (each round on one time axis, coloured by its gate's verdict)
   or a table. Ctrl+B cycles them; the choice is kept per view.
@@ -367,6 +402,14 @@ alignment panel and the stage counts beside it.
   which outputs the project delivers, signed and with a reason; **Build and download**
   (`build_output`) and **Build every chosen output** (`build_outputs`) build them from the records
   and the release, each file through a link that works once ([guides/outputs.md](guides/outputs.md)).
+- **Assessment** (an adopted project brings it forward, after the first view) judges the system's
+  repository from five perspectives: **Assess now** (`data-control="run_assessment"`) records a new
+  version by rule at once, and with **Ask the panel too** (when the cockpit has a model) in the
+  background; each
+  perspective lists its findings with evidence, severity and suggested change, then what was not
+  measured and why; the panel's proposals stay apart as opinions; ticked findings are filed with
+  **File the ticked findings as changes** (`data-control="assessment_changes"`). See
+  [brownfield.md](brownfield.md#assessing-an-adopted-system).
 - **Comments**: requirements, criteria, tasks, releases and cards have a **Comment** button that
   opens a small thread. A comment decides nothing; a product owner or business owner may
   **Promote to change**, which files and triages a change card.
@@ -596,6 +639,8 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `GET /api/projects/<pid>/pack` | the capability pack as last written (`kernel.packs.latest_pack` where the kernel has it, else the latest release's `capability-pack.json`), with its YAML, `history`, `latest_release`, `current` and the `builders`; `pack: null` with a `note` while the latest release has none. It never builds a pack and records nothing; 404 without a release |
 | `POST /api/projects/<pid>/pack/build` | `{person, persona}` → `kernel.packs.build_pack` for the latest release: a new version in `packs.json` and the ledger only when the content changed, and a `cockpit_write`. A persona that does not export evidence, or a non-person, is a 403 |
 | `GET /api/projects/<pid>/attestation` | what an export would attest, computed read-only |
+| `GET /api/projects/<pid>/assessment` | the system's assessment (`kernel.assess_cards.view`): the latest version, every version with its sha256 checked against the ledger's `assessment_recorded` (`intact`), what each finding was `filed` as and that card's state, `has_repo`, `run` (the background assessment's state, or null) and `panel_available` (whether the cockpit has a model). Records nothing |
+| `POST /api/projects/<pid>/assessment` · `POST .../assessment/changes` | `{person, persona, panel}` → `kernel.assess.assess`, signed by that person, outside the write lock (its records keep their own file locks): by rule it is recorded before the answer (201, with the record in short); with `panel: true` the cockpit's model reviews it in the background (202). `panel: true` without a model is a 409, a project with no repository a 400, a second while one runs a 409 · `{findings: ["F-3", "P-1"], version, as, person, persona}` → `kernel.assess_cards.to_changes`: change cards with `refs.origin: "assessment"`, triaged by rule; an unknown version is a 404. Each is a `cockpit_write` too ([brownfield.md](brownfield.md#assessing-an-adopted-system)) |
 | `POST /api/projects/<pid>/evidence` | `{person, persona}` → `kernel.evidence_pack.export` into `<home>/_cockpit/exports/`; returns the file and a one-time `download` path |
 | `GET /api/exports/<token>` | that export, once, as an attachment, only from the exports folder |
 | `GET /api/projects/<pid>/outputs` · `PUT /api/projects/<pid>/outputs` | the output targets, what each holds, the choice and who made it, the last builds · `{targets, reason, person, persona}` → `kernel.outputs.choose`; a persona that may not choose is a 403 |
@@ -610,7 +655,11 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `POST /api/shape/<id>/say` · `POST /api/shape/<id>/attach` · `PUT /api/shape/<id>/draft` | `{text, person, persona}` · `{attach: {path} or {name, text or data_base64}, person, persona}` · `{draft, person, persona}`; Rihma answers beside the request (`pending` until then); signed, in the factory's ledger |
 | `POST /api/shape/<id>/create` | `{profile?, mode?, maturity?, person, persona}`: the project from the draft, as `POST /api/projects` makes one, its intake a job; `shape_created` in the factory's ledger |
 | `GET /api/models` · `PUT /api/models/<role>` · `POST /api/models/<role>/test` · `POST /api/models/<role>/remove` | each role's model, endpoint, key state and readiness, the presets, `ready` · `{base_url, model, family?, key_env? or key?, keep_fallback?, person, persona}` into `kernel/routing.local.json` (a key never echoed) · a tiny prompt, records nothing · back to the shipped routing ([Models setup](guides/models-setup.md)) |
+| `GET /api/runners[?project=<pid>][&check=1]` · `PUT /api/runners/<role>` | what runs each role for the factory and each project with its own choice, every choice and its state; `check=1` also looks for each runner here and for Docker; reading writes nothing · `{runner, project?, version?, model?, family?, command?, sandbox?, image?, endpoints?, reason?, person, persona}`: Gnomon at once, another runner on a `runner` card IT decides through the factory's own decide route ([Harnesses](guides/harnesses.md)) |
 | `GET /api/modules` · `PUT /api/modules` · `PUT /api/projects/<pid>/modules` | the catalogue, the presets, the factory's set, the projects' own sets and `new_home`; reading creates nothing · `{preset | modules | inherit, reason, person, persona}` for the factory, or a project's own set; a business owner, product owner, IT, a developer or compliance; recorded in that ledger ([use only what you need](guides/use-only-what-you-need.md)). Any write of a module that is off is a 403 |
+| `GET /api/automations` · `GET /api/projects/<pid>/automations` · `PUT /api/projects/<pid>/tags` | every automation (`?state=`, `?project=`) with its summary and runs, and what the builder offers; reading writes nothing · those reaching a project, its tags and what ran on it · `{tags, person, persona}` ([automations](guides/automations.md)) |
+| `POST /api/automations` · `PUT /api/automations/<AU-n>` · `POST /api/automations/<AU-n>/pause` · `/resume` · `/remove` · `/run` | `{automation, person, persona}` signed where it acts, the kernel checking every scoped project · pause by anyone, the rest by its owner or IT · Run now recorded, carried out by the scheduler's next tick |
+| `POST /api/automations/preview` · `POST /api/automations/<AU-n>/dry-run` | a draft's summary and the projects it reaches · what the next tick would do; both signed, both record nothing |
 
 Every GET is a read: none of them records a decision, marks an approval stale, appends
 to a ledger or creates Rihma's own canon on a home without one. `<pid>` may also be `_factory`,

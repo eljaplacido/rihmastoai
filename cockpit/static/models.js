@@ -8,13 +8,17 @@ import { S, $, h, fill, icon, chip, api, act, say, signed, needPerson, enc, butt
 const READY = {
   ready: ["good", "check-circle", "Answers"], configured: ["info", "key", "Key set"], no_key: ["warning", "alert", "No key"],
   unreachable: ["critical", "x-circle", "Not answering"], unknown: ["nm", "dashed", "Not checked"],
+  maybe_key: ["info", "key", "Gnomon may have a key"],
 };
 const HOME = { at: 0, view: null };
 const HOME_MS = 60000;
 
+// A key Gnomon holds (`gnomon key set`) counts as set: Rihmasto sees only its name, never the value.
 function keyChip(k) {
   if (!k.name) return chip("neutral", "key", "No key needed");
-  const word = k.kind === "stored" ? "stored key " + k.name : k.set ? k.name + " is set" : k.name + " is not set";
+  if (k.kind === "gnomon_maybe") return chip("info", "key", "Gnomon may have its own key for this host", { tip: "Gnomon's credential store exists; Rihmasto never opens it. `gnomon key list` names the keys it holds." });
+  const word = k.kind === "stored" ? "stored key " + k.name : k.kind === "gnomon" ? "key set by Gnomon (" + k.name + ")"
+    : k.set ? k.name + " is set" : k.name + " is not set";
   return chip(k.set ? "good" : "warning", "key", word, { tip: "The key itself is never shown." });
 }
 
@@ -107,7 +111,8 @@ function openSet(r) {
       const out = await api("PUT", "/api/models/" + enc(r.role), Object.assign({ base_url: base.value.trim(), model: model.value.trim(),
         family: family.value.trim(), keep_fallback: !r.fallback || keep.checked, private: priv.checked }, key.value(), signed()));
       closeModal();
-      say(r.label + " now uses " + out.role.model + " at " + out.role.host + ".", "good");
+      say(r.label + " now uses " + out.role.model + " at " + out.role.host + "." + (out.role.note ? " " + out.role.note : ""),
+        out.role.note ? "warning" : "good");
       HOME.at = 0;
       await renderModels(S.seq);
     });

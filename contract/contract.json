@@ -1512,8 +1512,18 @@
             "kind": "test"
           },
           "then": "the assistant route answers 'where is' from the map with no model; an injected model's proposals come back checked and the route writes nothing; every view in the cockpit map is routable and every control is on the page"
+        },
+        {
+          "id": "FR-V1-AC-7",
+          "check": {
+            "kind": "test"
+          },
+          "given": "a project open in the cockpit, or its cockpit link pasted in the question, and no model",
+          "when": "a person asks how the project is doing, in English or Finnish (its status, what it waits for, what is next)",
+          "then": "the answer comes from the project's records (its now line, health, what it waits for, the next actions) with Take me there to the first action, not the map's Projects page; a 'where is' question still gets the map; asking records nothing"
         }
-      ]
+      ],
+      "notes": "AC-7: the owner, 2026-11-24, asked 'Whats the status of this project' on a project's page and got the Projects page."
     },
     {
       "id": "FR-I1",
@@ -2449,8 +2459,18 @@
             "kind": "test"
           },
           "then": "the pipeline gives an adopted solution a state by its intent instead of asking for an intake: to monitor, monitoring with the last probe result; to maintain or improve, waiting for a change, a workspace submission or a person; a change applied to it goes round the normal loop of build, gate and delivery"
+        },
+        {
+          "id": "FR-X1-AC-4",
+          "given": "an existing project adopted from the command line or the cockpit's An existing project, with no kind of work chosen",
+          "when": "its kind is not clear from its title, its README and its files (HTTP routes in its code count as an API)",
+          "then": "adoption asks a person which kind of work it is with the \"Which kind of work is this?\" question card intake uses, listing the candidate kinds, instead of taking a web app; the kind stays unset until a person answers, and the answer chooses the kind and the adopted brief says so; with one clear candidate it proceeds as before and says which kind and why (the brief, and rihmasto adopt's profile_basis)",
+          "check": {
+            "kind": "test"
+          }
         }
-      ]
+      ],
+      "notes": "Decided by the owner on 2026-11-24 after a journey test walked their real flows (\"1. Yes 2. Skip 3. Agreed 4. Ask\"): FR-X1-AC-4 is \"4. Ask\". kernel/adopt_kind.py, kernel/adopt.py."
     },
     {
       "id": "FR-W1",
@@ -3818,6 +3838,883 @@
       ]
     },
     {
+      "id": "FR-ID1",
+      "group": "M. Cockpit",
+      "statement": "With access enforced, the cockpit holds no shared secret: it verifies the identity provider's signed token that IT's proxy forwards (RS256 or ES256, with the standard library, keys from a JWKS file IT keeps in the access folder) and takes the identity, the name, the groups and the session's end from it (D-0016).",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-ID1-AC-1",
+          "given": "RS256 and ES256 keys in a JWKS (generated in pure Python, and RFC 6979's published P-256 vectors)",
+          "when": "kernel.jwt_verify verifies a token",
+          "then": "a token holds only when its signature verifies with the key its kid names, its algorithm is the access file's and its issuer, audience, expiry, not-before and issued-at hold within the clock skew; alg none, HS256 keyed with the public key, the other algorithm, an unknown kid, another key, a tampered header, payload or signature, crit, an encrypted or oversized token are refused; the whole PKCS#1 block is compared, so the e=3 forgery fails; the key file refuses symmetric keys, RSA keys under 2048 bits, points off P-256, keys without an id and an id listed twice",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID1-AC-2",
+          "given": "the cockpit enforced behind each preset: oauth2-proxy (the ID token in Authorization, or the access token in X-Forwarded-Access-Token), Google IAP (x-goog-iap-jwt-assertion, ES256), AWS ALB (x-amzn-oidc-data, ES256, signer and client in the header, padded base64) and a generic OIDC proxy",
+          "when": "a person signs in and a request arrives",
+          "then": "the identity is the issuer and the subject of the verified token (the subject claim the file names, such as Entra ID's oid), the name is the file's or the name claim's, and the groups are the configured claim's list (Entra ID roles, Keycloak realm_access.roles by path, Okta groups, Cognito cognito:groups) bound to personas per scope; a token another key signed, a token without the groups, another load balancer or client, and the ALB's plain headers sign no one in; the access file names the algorithm and refuses HS*, a shared secret or plain identity headers, an unknown preset, a header the preset does not use, the wrong issuer for Google IAP, an ALB without its signer, a key file outside the access folder and a clock skew over 300 seconds",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID1-AC-3",
+          "given": "a session opened through the proxy with a token",
+          "when": "the token it was opened with expires, or a request carries another subject's token or puts the session where the token goes",
+          "then": "the session ends with the token (expires_in is the token's, not the cockpit's 12 hours) and answers no one else; the session travels in X-Rihmasto-Session so the token may use Authorization; the cockpit's meta says when the session ends; a fresh token from the proxy opens a new session, and the page signs in again once through the proxy before it asks the person",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID1-AC-4",
+          "given": "access enforced and the provider's key file in the access folder",
+          "when": "IT rotates it, or a key file arrives that cannot be used",
+          "then": "each change is recorded in the factory ledger's access_changed record with the key file's sha256 (keys_sha256) and why it cannot be used (keys_error), beside the unchanged access file's sha256; an unusable key file refuses every cockpit sign-in with a message saying why, while the command line, which signs as the local user, works on",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID1-AC-5",
+          "given": "IT preparing access, with a test user's token saved from the proxy",
+          "when": "rihmasto access check --token-file and rihmasto access keys run",
+          "then": "access check shows the mode, the preset, the keys read, where untrusted code would run and the identity, name, groups and personas the token signs in as, never printing the token, writing nothing and exiting 2 when anything would be refused; access keys prints a JWKS for EC P-256 and RSA public keys in PEM form, and refuses an argument that is not <kid>=<file.pem>",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-ID2",
+      "group": "M. Cockpit",
+      "statement": "With access enforced, code a model or a developer wrote (the gate's run of a project's own tests, a product on the local road, a Gnomon cell) never runs as the account that runs Rihmasto: it runs through the isolation runner the access file names (a container through the docker CLI, or a separate operating-system account), and without one the kernel and the cockpit refuse it and say why (D-0016, D-0017).",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-ID2-AC-1",
+          "given": "access enforced and no isolation runner, or a separate account on a machine without sudo -u",
+          "when": "the gate would run a project's tests, a product would start on the local road, a Gnomon cell would run, or someone asks the cockpit for a run or a new project",
+          "then": "the kernel refuses each and says why, naming the access file's isolation, and nothing runs (no test, no product, no Gnomon process, no task file); the cockpit answers 403 with the reason and creates no project and starts no job, and its access line says no runner is named; with a runner named, the run starts; with a single operator the same work runs as before",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID2-AC-2",
+          "given": "a container runner",
+          "when": "the gate runs a suite, a suite outlives the gate's time, a product would start on the local road, or a Gnomon cell runs",
+          "then": "the suite runs through the docker CLI with no network, no capabilities, no new privileges, a read-only root, the checkout mounted read-only at /work and one writable outcome folder, its outcomes come back and the folder is removed afterwards; an overrunning container is removed by name; the local road is refused and points to a docker road; a cell runs as isolation.cells says with {cwd} filled in, never as $GNOMON_CMD, and without cells it is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID2-AC-3",
+          "given": "a separate operating-system account where sudo -u works",
+          "when": "a suite, a product or a cell starts, and the access file names a runner",
+          "then": "each runs as sudo -n -u <account> -- ...: the suite with only its data and outcome folders, the product with only HOST, PORT, DATA_DIR, TRAFFIC_LOG and APP_VERSION and write access to its data folder and traffic log, and Gnomon as that account; the access file checks the runner strictly (its kind, the image for a container, the account for a separate account, docker_cli for a container only, cells as a list of words, no unknown key, none in single-operator mode)",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-ID3",
+      "group": "M. Cockpit",
+      "statement": "Access control's remaining gaps are closed: a request replaced by intake is on record with who replaced it, the guide lists every command as signed or unsigned, and the docs say how the sign-in and the isolation work, what is built and what is planned (D-0016, D-0017).",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-ID3-AC-1",
+          "given": "a project with a request",
+          "when": "rihmasto intake replaces it, with a single operator or with access enforced",
+          "then": "a request_replaced record in the project's ledger names who replaced it (requested_by, and with access enforced the verified identity), the earlier requester and the sha256 of the request before and after; a first request replaces nothing and records none",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID3-AC-2",
+          "given": "the command line's parser and the access guide",
+          "when": "the guide's Signed and Unsigned lists are read",
+          "then": "every command is in exactly one list, the signed list is exactly the commands that take --person or --requested-by, and each list's count is its length",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID3-AC-3",
+          "given": "the access guide, SECURITY.md, docs/cockpit.md, docs/integrations.md and the cockpit map",
+          "when": "a person or the assistant looks for how access works",
+          "then": "the docs say the cockpit holds no shared secret, how each preset forwards the token, how the isolation runner works, what is built and planned, and a tutorial with rihmasto access check and rihmasto access keys; docs/integrations.md no longer says the standard library cannot verify RS256; the cockpit map's access control is found for who signs decisions, where untrusted code runs and the isolation runner, and the page tags the access note in the top bar and the person menu",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-ID4",
+      "group": "M. Cockpit",
+      "statement": "Access control's escapes found by the third attack are closed: adoption's baseline runs the adopted repository's tests only through the isolation runner, the kernel's own git in a lane runs nothing a cell planted in its .git, a token's name never passes for a listed person's, a separate account can read its cell's task file, and the key file takes public keys only (D-0016, D-0017).",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-ID4-AC-1",
+          "given": "access enforced, an existing repository whose own test leaves a mark when it runs",
+          "when": "rihmasto adopt adopts it with no isolation runner, with a container runner, or with a separate account",
+          "then": "with no runner the adoption goes ahead, the adopted test never runs and the baseline reads not measured with the reason naming the access file's isolation; with a container it runs through the docker CLI with no network, no capabilities, a read-only root, the checkout read-only at /work and the offline settings, and the baseline passes; with a separate account it runs as sudo -n -u <account> -- env with the offline settings only",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID4-AC-2",
+          "given": "a lane a cell worked in, whose .git the cell filled with hooks, a hooks path, fsmonitor, a filter driver, a signing program, an origin pointing at a repository with a receive hook of its own, and a commondir sending git to that repository's config, which names a filter of its own",
+          "when": "the kernel commits the cell's work, pushes it, checks out the next task there and the gate adds its base worktree; or the cell replaced .git with a gitdir file",
+          "then": "none of the planted commands runs, the work lands on the product repository's main, the lane's config keeps only the keys a clone sets and no hook is left; a replaced .git is refused for a commit and the next checkout clones the lane anew",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID4-AC-3",
+          "given": "access enforced with a group bound to a persona, and a token for an identity the file does not list whose name claim is a listed person's name (in any case, spacing or full-width form)",
+          "when": "that identity signs in to the cockpit and decides a card as that name",
+          "then": "its name carries its subject after it, the decision as the listed person's name is refused with 403 naming the real one, and the decision under the disambiguated name records it beside the identity; a listed identity keeps the file's name and a name nobody else holds is taken as it is",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID4-AC-4",
+          "given": "a separate-account runner",
+          "when": "a Gnomon cell starts, and the access guide is read",
+          "then": "the cell's task file is made readable to the lane's group (0640), never to everyone, before sudo -n -u <account> runs Gnomon; the guide gives the account write access to each lane folder (no longer read access only), explains the lane's .git scrub, adoption's baseline and a tutorial, and the cockpit map finds the access note for these",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID4-AC-5",
+          "given": "a key file whose JWK carries private members (an RSA d, p and q, an EC d), even on a key set aside",
+          "when": "the cockpit reads it",
+          "then": "it is refused, naming the private members found, and a file of public keys still reads",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-ID5",
+      "group": "M. Cockpit",
+      "statement": "Access control's escapes found by the fourth attack are closed: a repository a cell makes inside its lane never runs as the kernel and never carries over, the gate never follows a link a cell left under tests/, no replace ref, graft or forged fetch refspec chooses what the kernel's git sees in a lane, and a lookalike token name never passes for a listed person's (D-0016, D-0017).",
+      "provenance": "vendor-proposed",
+      "acceptance": [
+        {
+          "id": "FR-ID5-AC-1",
+          "given": "a lane where a cell made a repository of its own (sub/.git with a clean filter in its config, recorded as a gitlink and changed), changed a tracked file and left a .gitattributes naming the filter",
+          "when": "the kernel lists the cell's changes, commits its work, or checks out the next task in that lane",
+          "then": "listing and committing are refused with Tampered naming the nested repository, the planted filter never runs (an unguarded git add runs it) and main is unchanged; an untracked nested repository is found too; a gitlink the product's main already holds stays allowed while a .git in its folder is refused; the next checkout runs no filter, starts from the product's main, removes the nested repository and leaves every tracked file as the product holds it, with nothing changed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID5-AC-2",
+          "given": "a lane whose tests/ folder a cell replaced with a link (a junction on Windows) to a folder only the kernel's account can read",
+          "when": "the gate's fail-first check copies the head's tests onto its base checkout and runs the isolated suite there",
+          "then": "the suite's copy holds the head commit's tests (tests/test_a.py) and nothing of the linked folder, and is not a link",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID5-AC-3",
+          "given": "a lane where a cell committed a change to contract.json and then added a replace ref for its head showing the base's tree (packed), and grafts making the base and the head descend from a commit with the head's tree; or a replace ref showing a broken base; or a fetch refspec pointing elsewhere with refs/remotes/origin/main moved to its own commit",
+          "when": "the gate checks protected paths, checks out its base for the fail-first check, the lane is scrubbed, or the next task's checkout runs",
+          "then": "an unguarded git diff sees no change while the protected-path check names contract.json; the base checkout holds the real base; the scrub removes the grafts file and every replace ref; the next task's base is the product's main and the lane's fetch refspec is git's default",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID5-AC-4",
+          "given": "access enforced and a token for an identity the file does not list whose name claim looks like a listed person's name through a zero-width or joining character, a word joiner, a direction mark, a soft hyphen, a Cyrillic letter or a digit, or mixes Latin and Cyrillic letters",
+          "when": "the identity's display name is resolved",
+          "then": "each carries its subject after it, shown without the invisible characters; a name in one script nobody listed holds (Latin, Greek, Cyrillic, with accents) is taken as it is",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ID5-AC-5",
+          "given": "the access guide, SECURITY.md and the assistant's map",
+          "when": "a person reads them or asks Rihma about a nested repository, a lookalike name or replace refs",
+          "then": "the guide explains a repository inside the lane, links under tests/, what the kernel's git sees and lookalike names, with a tutorial; SECURITY.md names the nested repository, replace refs and the tests copied from git; the assistant takes the person to the access note",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-SC1",
+      "group": "SC. Small capabilities",
+      "provenance": "vendor-proposed",
+      "statement": "A scheduled or triggered job with no screens has its own work profile, automation, whose capability template is built through the gate and delivered on the local road like any product.",
+      "notes": "The owner's goal of 2026-11-23: small things (a single workflow, an automation, an agentic capability) delivered where they must run, through MCP, an API or other integrations; D-0015 and D-0017.",
+      "acceptance": [
+        {
+          "id": "FR-SC1-AC-1",
+          "given": "a two-sentence need for a nightly job reachable over MCP",
+          "when": "its profile is proposed and the product is scaffolded",
+          "then": "the proposal is the automation profile (capability pack, the capability template, ready); its spec guidance reaches the analyst; the product holds app/runtime.json, app/job.py and the faces in factory/ (protected), its Dockerfile copies them and starts through pack_guard, the pack pins them among the runtime files, its own road checks pass on the template, and Rihmasto's static red team finds nothing the web template would not",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC1-AC-2",
+          "given": "an automation project with a builder cell that writes its job, its declaration and a test per criterion",
+          "when": "it is specced, compiled, built and delivered at explore maturity",
+          "then": "the task merges with a passed gate, the release is done on the local preview road, and the running preview answers POST /capability/run and lists its tools over MCP",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC1-AC-3",
+          "given": "a capability whose declaration is not valid, whose job lacks a declared tool's function, or whose routes no longer import the faces",
+          "when": "the product's suite runs at the gate",
+          "then": "the road's capability check for that case fails, so the gate refuses it",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-SC2",
+      "group": "SC. Small capabilities",
+      "provenance": "vendor-proposed",
+      "statement": "A small capability declares what it needs where it runs (app/runtime.json, rihma.runtime/1), judged deterministically and carried in its capability pack with its secrets by name only.",
+      "notes": "The owner's goal of 2026-11-23: small things (a single workflow, an automation, an agentic capability) delivered where they must run, through MCP, an API or other integrations; D-0015 and D-0017.",
+      "acceptance": [
+        {
+          "id": "FR-SC2-AC-1",
+          "given": "declarations with an unknown key, a trigger whose secret is not declared, a schedule out of range, an event pattern outside rihma., a secret given a value, a tool named for a decision, a model role without a workload class, an embed face without origins, an integration naming an undeclared secret, a face named twice, and a string shaped like a live token",
+          "when": "each is validated",
+          "then": "each problem names its JSON path, a valid declaration has none, and the same declaration always gives the same pack section and declaration hash",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC2-AC-2",
+          "given": "a delivered capability release",
+          "when": "its pack is built",
+          "then": "runtime.declared is true with the trigger, faces, tools, model roles, the gateway workloads they call, the agent its openai face offers, integrations and secrets by name (never a value or a reference); a changed declaration changes the pack's content hash; a revision with no declaration says not declared and one with an invalid declaration says not declared with its problems",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC2-AC-3",
+          "given": "capabilities titled with words such as help desk, risk or task, and a declaration whose name and summary hold desk-assistant and risk-assessment",
+          "when": "each is scaffolded and its declaration validated",
+          "then": "the starter declaration is valid and the road's checks pass, no word is taken for a live token, and a token-shaped string that starts a word is still a problem",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-SC3",
+      "group": "SC. Small capabilities",
+      "provenance": "vendor-proposed",
+      "statement": "One capability image serves several faces (MCP over stdio and Streamable HTTP, an OpenAI-compatible chat also reached through the gateway, a website embed, HTTP), each checked by the pack guard before it answers, with reads and the capability's own tools only.",
+      "notes": "The owner's goal of 2026-11-23: small things (a single workflow, an automation, an agentic capability) delivered where they must run, through MCP, an API or other integrations; D-0015 and D-0017.",
+      "acceptance": [
+        {
+          "id": "FR-SC3-AC-1",
+          "given": "the capability's MCP face over stdio and over HTTP",
+          "when": "a client initializes, lists and calls tools, sends a notification, probes server/discover and sends a malformed line",
+          "then": "the protocol version is negotiated, the tools are the two reads then the declared tools in order with the pack's version in _meta, a declared tool runs and an undeclared one is refused (-32602), a wrong argument is an error result, server/discover is method not found, a notification gets no answer (202), stdout carries protocol lines only; over HTTP a set token is required, GET answers 405, an unsupported protocol version 400 and an undeclared Origin 403",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC3-AC-2",
+          "given": "the capability's openai face and a gateway configured from its pack",
+          "when": "a client asks for the capability's name as its model",
+          "then": "the face answers as the capability (another model is 404), the gateway's workload from agent_workloads routes the request to it, --check-pack passes for that config and names an agent routed elsewhere, and a wrong token reaches the client as no upstream answered; a model role the capability declares reaches, through the gateway, the workload its declaration names and the model the pack was accepted with",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC3-AC-3",
+          "given": "a capability with the embed face and declared origins",
+          "when": "the widget, a preflight and a message come from a declared origin, another origin and no origin",
+          "then": "only the declared origin is answered (with CORS for it alone), the widget writes no HTML from data, and a face the declaration does not name answers 404",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC3-AC-4",
+          "given": "the capability started as its image starts it, with its pack and status mounted beside it",
+          "when": "the status is valid, then withdrawn, and an app file is edited",
+          "then": "every face answers once the guard passes and 503 with the guard's reasons once the pack is withdrawn, and with an edited app file MCP over stdio answers a not-ready error",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC3-AC-5",
+          "given": "a delivered capability's openai face, which counts no tokens, and the capability gateway routing to it as the workload of the capability's name",
+          "when": "a chat completion is asked of the face and through the gateway",
+          "then": "the face's usage is null and its rihmasto block says not measured, never zeros, and the gateway's audit records the tokens as not measured",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC3-AC-6",
+          "given": "a capability whose declaration does not name the mcp face, and one that names it but is narrowed by RIHMA_FACES or --face",
+          "when": "MCP over stdio is asked to initialize and list its tools, with --face mcp, with --stdio alone and with no argument",
+          "then": "every request is answered with error -32001 and no tool is listed, while a capability that names the mcp face still answers over stdio",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-SC4",
+      "group": "SC. Small capabilities",
+      "provenance": "vendor-proposed",
+      "statement": "A verified webhook or a relay event runs a small capability, a schedule runs it on its own, and its result goes out as a signed event the factory's own doorbell accepts.",
+      "notes": "The owner's goal of 2026-11-23: small things (a single workflow, an automation, an agentic capability) delivered where they must run, through MCP, an API or other integrations; D-0015 and D-0017.",
+      "acceptance": [
+        {
+          "id": "FR-SC4-AC-1",
+          "given": "a capability started by a webhook whose secret is set",
+          "when": "deliveries arrive signed with Standard Webhooks (kernel/hooks.py), replayed, with a changed body, an old timestamp, another key, an oversized body, and to a capability whose secret is not set",
+          "then": "the verified delivery runs it once with the body as its input, a replay is answered 200 and not run, the others are refused (401, 413, 503) and run nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC4-AC-2",
+          "given": "a capability started by a rihma.signal.received event, subscribed to the relay by IT, with its results sent to a doorbell IT named",
+          "when": "a signal arrives and a relay round runs",
+          "then": "the relay's event runs it, an event of another type runs nothing, and its result goes out as a CloudEvent signed with Standard Webhooks that the factory accepts as one signal with the run's id as its ref, recorded as hook_received",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC4-AC-3",
+          "given": "a scheduled capability served with its schedule on",
+          "when": "it is due, and when its guard does not pass",
+          "then": "it runs on its own when due, and while the guard holds every face it runs nothing",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-SC5",
+      "group": "SC. Small capabilities",
+      "provenance": "vendor-proposed",
+      "statement": "rihmasto capability serve runs a delivered capability on this machine behind its pack guard and records the trace; capability check judges its declaration; the Compose file carries its faces.",
+      "notes": "The owner's goal of 2026-11-23: small things (a single workflow, an automation, an agentic capability) delivered where they must run, through MCP, an API or other integrations; D-0015 and D-0017.",
+      "acceptance": [
+        {
+          "id": "FR-SC5-AC-1",
+          "given": "a delivered capability release",
+          "when": "rihmasto capability serve runs with --face mcp (stdio) and with --face openai --port 0, or with a face it does not offer, no port for an HTTP face, or a release it does not have",
+          "then": "it answers from the release with the pack's version, on 127.0.0.1 only, and the ledger records capability_served with the local user, the pack status that decided it, what was assumed and the pack and declaration hashes; a refusal exits 2 and writes nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC5-AC-2",
+          "given": "a delivered capability release",
+          "when": "rihmasto capability check runs",
+          "then": "it prints the declaration as the pack judges it, writes nothing, and a release it does not have exits 2",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC5-AC-3",
+          "given": "a site's deploy package of a capability release",
+          "when": "its compose.yaml is rendered with the pack's runtime",
+          "then": "its one service carries RIHMA_FACES, the schedule when it is scheduled, every declared secret, the faces' token and the gateway's URL by name only, labels and header lines on how to reach each face; it validates and leaks nothing, and a web product's file is unchanged",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-SC5-AC-4",
+          "given": "a shell that sets RIHMA_SCHEDULE=on and RIHMA_FACES",
+          "when": "rihmasto capability serve plans the faces process with and without --schedule",
+          "then": "the faces process inherits neither, and capability_served records whether the schedule runs: only with --schedule and a scheduled trigger",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-SC6",
+      "group": "SC. Small capabilities",
+      "provenance": "vendor-proposed",
+      "statement": "Small capabilities are learnable and reachable (D-0017): the Releases tab shows a capability's runtime and faces, the assistant explains it and takes a person there, and the guide has a tutorial and says what is built and what is planned.",
+      "notes": "The owner's goal of 2026-11-23: small things (a single workflow, an automation, an agentic capability) delivered where they must run, through MCP, an API or other integrations; D-0015 and D-0017.",
+      "acceptance": [
+        {
+          "id": "FR-SC6-AC-1",
+          "given": "the cockpit's map and a project with a delivered capability",
+          "when": "a person asks the assistant how the capability is reached",
+          "then": "the map has the capability_faces control on the Releases tab, the answer takes the person to the project's Releases tab and that control, the page carries the control, and the guide has its tutorial and its built and planned lists",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-BA1",
+      "group": "B. Brownfield adoption",
+      "provenance": "vendor-proposed",
+      "statement": "An adopted system is assessed from every perspective: deterministic rules first, each finding with its evidence, severity and suggested change, and 'not measured' where the files cannot tell; the panel's model may propose more, kept apart; the assessment is a versioned record in the ledger, comparable over time and in the evidence pack; and a person turns chosen findings into change cards that go round the change loop.",
+      "notes": "The owner's goal of 2026-11-23 for brownfield use: adopt an existing system, get multi-perspective fixes, develop it further. D-0014 (the red team is Rihmasto's own), D-0017 (the same trace on every path; every feature learnable and reachable).",
+      "acceptance": [
+        {
+          "id": "FR-BA1-AC-1",
+          "given": "adopted good and poor fixture repositories (tests/fixtures/assess)",
+          "when": "each is assessed by rule",
+          "then": "the poor one fails rules in each of five perspectives (CI/CD governance, maintenance, security, compliance, architecture and operations), each finding with a severity, a suggested change and its evidence (a file and a line with the masked line, or a measured fact); the good one passes them; branch protection and required checks read 'not measured' with the reason, and nothing that could not be known reads passed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-2",
+          "given": "an adopted repository with a filter, an eol attribute, a link and a credential planted at run time",
+          "when": "it is assessed",
+          "then": "the revision is read from git's objects (no filter runs, the bytes are the blob's, the link is not followed and is said); the red team's static findings are security findings with their rule, CWE and masked evidence; the credential reaches neither the record, the SARIF nor the ledger; what was not read leaves the scan's coverage not measured; and the SARIF beside the record is ingested by the security gate, which the next version counts",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-3",
+          "given": "a scripted model",
+          "when": "the intake panel's perspectives review the inventory and the rules' results",
+          "then": "each proposal is model_proposed, numbered apart (P-n), never counted with the rules' findings, with what it rests on checked (found, or not found in the repository); a malformed proposal is dropped and counted; a perspective whose call fails is not measured and the assessment is still recorded; the repository's text cannot close the data fence",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-4",
+          "given": "two assessments of a project",
+          "when": "they are recorded",
+          "then": "each is a version AS-n with its sha256 in the index and in the ledger's assessment_recorded record, with the D-0017 trace (who asked, decided by rule, delegated to whom, each assumed check with its reason, the revision and the SARIF's sha256); the second says what is new, resolved, still open and no longer measured, and any two compare; a record changed afterwards shows as not intact; no person, no repository or a bad ref is refused and records nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-5",
+          "given": "an assessment",
+          "when": "a person files chosen findings (F-n and P-n)",
+          "then": "each becomes a change card signed by that person with origin 'assessment', triaged by rule as a new requirement that needs a business decision (or the class the person chose), its text naming the evidence, who found it and the suggested change; a finding whose card is still open is skipped; an unknown id, a non-person or an unknown class is refused; each card is assessment_change_opened in the ledger",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-6",
+          "given": "the command line",
+          "when": "rihmasto assess and rihmasto assessment list, show, compare and change run",
+          "then": "they assess, list every version with its sha256 checked, show one, compare two and file findings; a refusal exits 2 with the reason on stderr",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-7",
+          "given": "the cockpit's API",
+          "when": "a person assesses a project and files findings",
+          "then": "GET .../assessment reads; POST .../assessment assesses, signed by that person: by rule before it answers, with the panel through the cockpit's model in the background (409 without one; 400 without a repository; 403 for a non-person); POST .../assessment/changes files ticked findings as change cards; each write is also a cockpit_write",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-8",
+          "given": "an assessed project",
+          "when": "the MCP server and an evidence export read it",
+          "then": "rihma_assessment returns the latest or the named version and writes nothing; the evidence pack carries assessment.json with every version's sha256 checked, and a line in its README",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-9",
+          "given": "the cockpit's map and the guide",
+          "when": "a person asks Rihma where to assess a system",
+          "then": "the map's Assessment view and its two controls take the person there; docs/brownfield.md holds the guide, a tutorial and what is built and what is planned",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-10",
+          "given": "headless Chrome on the demo home",
+          "when": "a person opens the adopted project's Assessment tab",
+          "then": "they assess it, read its findings by perspective, tick one and file it as a change card, in dark and light, at 1440 and 390 px wide, with keyboard focus and accessible names, and with no console error, failed request or CSP violation",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-11",
+          "given": "an adopted system whose suite passed at adoption, and an upstream commit that adds a failing test",
+          "when": "main, the synced upstream and the adoption revision are assessed",
+          "then": "the characterisation baseline reads passed only at the adoption revision its suite ran at; at any other revision it is not measured, with a reason naming both revisions and the result at adoption, it is counted as not measured and listed among what was assumed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-12",
+          "given": "a recorded assessment",
+          "when": "its record and its index entry are edited together so that they agree",
+          "then": "the record is still not intact, because it is checked against the sha256 in the ledger's hash-chained assessment_recorded record: the command line's list, the cockpit's view and the evidence pack (assessment.json and its README line) all say it changed since it was recorded",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-13",
+          "given": "a revision holding a file and a folder of the same name, and a credential on a dependency line a rule cites",
+          "when": "it is assessed",
+          "then": "the assessment is recorded and its notes say the file under the folder was not read; the rule's evidence names the file and line with the credential masked, and the credential reaches neither the record nor the ledger",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-14",
+          "given": "a package.json and a pyproject.toml that declare no dependency, and two perspectives of the panel that propose the same finding",
+          "when": "the system is assessed with a scripted model and both proposals are filed",
+          "then": "neither manifest is judged: the pinning check names only the requirements file as pinned; each proposal keeps a key naming its perspective, so both are filed as their own change cards and neither is skipped as already open",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-15",
+          "given": "a repository whose code reads a hard-coded dict with config.get, names 'audit' as a word and os.environ and an audit_log only in a comment, and whose README mentions privacy in passing; and one that reads os.environ, keeps an audit_log and has a 'Personal data' section",
+          "when": "each is assessed by rule",
+          "then": "the first fails 'configuration comes from the environment', reads the audit trail as not measured and fails 'how personal data is handled is written down'; the second passes all three with the line that shows each, and the personal-data pass says what the section says is not checked by rule",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-16",
+          "given": "a scripted model that records which model answered for one perspective of the panel only",
+          "when": "a project is assessed with it",
+          "then": "the record and its trace name that model for that perspective and 'not recorded' for every other",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BA1-AC-17",
+          "given": "a mirrored repository",
+          "when": "its revision is read, and a read fails",
+          "then": "the reader of the mirror's objects (git cat-file) has exited and its output is closed in both cases",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-POS1",
+      "group": "POS. Postures",
+      "provenance": "vendor-proposed",
+      "statement": "A project runs under a posture a person chose (prototype, balanced, production or regulated), tuned by priority weights from 0 to 3 for ux, security, compliance, speed and cost; every effect is a rule in the kernel, previewed before anyone chooses and recorded with who chose it.",
+      "notes": "The owner chose presets plus weights (2026-11-23): a posture is one choice that sets how a project runs, changeable per project and during the run; every effect is a rule in the kernel (kernel/posture.py).",
+      "acceptance": [
+        {
+          "id": "FR-POS1-AC-1",
+          "given": "the four postures",
+          "when": "each is previewed (rihmasto posture preview, POST /api/postures/preview)",
+          "then": "prototype is assume mode at explore or demo with autonomy 3 and light gates; balanced is mixed at demo or pilot with autonomy 2 and standard gates; production runs at pilot or production with a security scan and the red team's static layer required, holdouts on staging, IT's deploy gate and an evidence pack; regulated is socratic at any maturity with autonomy 1, plan approval, confirmation by name, warnings blocking, the static and agentic layers and an attestable evidence pack; the same choice always gives the same preview, and a preview writes nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS1-AC-2",
+          "given": "a posture and priority weights",
+          "when": "they are previewed",
+          "then": "they set each perspective's question budget and emphasis, the spec's topics (accessibility for ux on work with screens, threat model for security, record-keeping and data protection for compliance), which findings block and the autonomy; a weight under the posture's floor is raised and the preview says so; an unknown weight or a value outside 0 to 3 is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS1-AC-3",
+          "given": "rihmasto new --posture, or a new project with a posture",
+          "when": "the project is made",
+          "then": "its mode and maturity are the posture's unless named; a maturity it does not run at or a looser mode is refused as a usage error and nothing is made; posture_chosen records the person, persona, weights and the preview they were shown; without a posture the project is made exactly as before",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-POS2",
+      "group": "POS. Postures",
+      "provenance": "vendor-proposed",
+      "statement": "The posture acts on the intake, the spec and the plan, by rule.",
+      "notes": "The owner chose presets plus weights (2026-11-23): a posture is one choice that sets how a project runs, changeable per project and during the run; every effect is a rule in the kernel (kernel/posture.py).",
+      "acceptance": [
+        {
+          "id": "FR-POS2-AC-1",
+          "given": "a project with a posture",
+          "when": "the panel reads its request",
+          "then": "each perspective's prompt carries its question budget and what it weighs, and no perspective files more questions than its budget",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS2-AC-2",
+          "given": "a posture whose weights require topics",
+          "when": "the spec is written and the plan reviewed",
+          "then": "the analyst's prompt carries each topic's guidance and one more requirement per topic; the kernel checks coverage by rule and a spec that misses a topic waits for a person at any maturity, with the missing topic on the plan card; a person's edit that covers it counts at once",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS2-AC-3",
+          "given": "a confirming posture (regulated, or compliance 3)",
+          "when": "it runs to the build",
+          "then": "every question is settled by a person before the spec, a person approves the plan at any maturity, approving confirms each requirement no named person confirmed in the approver's name (requirements_confirmed), and an open assumption holds the build until a person confirms or refutes it",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-POS3",
+      "group": "POS. Postures",
+      "provenance": "vendor-proposed",
+      "statement": "How much waits for a person follows the posture's autonomy, beneath the autonomy cap.",
+      "notes": "The owner chose presets plus weights (2026-11-23): a posture is one choice that sets how a project runs, changeable per project and during the run; every effect is a rule in the kernel (kernel/posture.py).",
+      "acceptance": [
+        {
+          "id": "FR-POS3-AC-1",
+          "given": "a posture whose autonomy is below a step's level",
+          "when": "the factory would build or deliver",
+          "then": "the step waits for one go-ahead card per step and revision; a person's approval lets it go on; a declined card asks again with the decline in its body; the autonomy cap still refuses a step above it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS3-AC-2",
+          "given": "a balanced project from an idea",
+          "when": "the pipeline runs it",
+          "then": "it stops at its blocking question, the go-ahead to build and the go-ahead to deliver, each decided by a named person and recorded in the ledger in that order, before the release starts",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-POS4",
+      "group": "POS. Postures",
+      "provenance": "vendor-proposed",
+      "statement": "The posture decides which signals block a release.",
+      "notes": "The owner chose presets plus weights (2026-11-23): a posture is one choice that sets how a project runs, changeable per project and during the run; every effect is a rule in the kernel (kernel/posture.py).",
+      "acceptance": [
+        {
+          "id": "FR-POS4-AC-1",
+          "given": "a posture that requires a scan",
+          "when": "the security gate is asked before a landing",
+          "then": "it holds the release until a security scan and the red team's static layer were ingested, and the agentic layer where the project has an active embed; each missing one is named with the command that provides it; warnings block at security 3; a preview or demo landing is held too; without a posture nothing changes",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS4-AC-2",
+          "given": "a release past IT's deploy gate under a posture with evidence",
+          "when": "it would enter production",
+          "then": "it waits until an evidence pack is exported for that release (attestable where the posture asks it), and a pack's security summary reports the findings alone",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-POS5",
+      "group": "POS. Postures",
+      "provenance": "vendor-proposed",
+      "statement": "A posture changed during the run says what it changes now and later, never silently.",
+      "notes": "The owner chose presets plus weights (2026-11-23): a posture is one choice that sets how a project runs, changeable per project and during the run; every effect is a rule in the kernel (kernel/posture.py).",
+      "acceptance": [
+        {
+          "id": "FR-POS5-AC-1",
+          "given": "a person changing a project's posture",
+          "when": "the change is made",
+          "then": "it needs a business owner, product owner, IT or compliance with a reason, and loosening it (a higher autonomy, a looser mode, a lower maturity or a dropped check) a business owner, IT or compliance; the result and posture_changed say what it changes now (such as reopened confirmation of open assumptions) and later (such as the next release's gate); go-ahead cards the new posture does not need are withdrawn",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS5-AC-2",
+          "given": "a project without a posture",
+          "when": "it runs",
+          "then": "it behaves exactly as before: no posture line in any prompt, no extra card, check or ledger record; it may take a posture the same way, compared with how it runs today",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-POS6",
+      "group": "POS. Postures",
+      "provenance": "vendor-proposed",
+      "statement": "Postures are reachable from the cockpit, the MCP server and the assistant.",
+      "notes": "The owner chose presets plus weights (2026-11-23): a posture is one choice that sets how a project runs, changeable per project and during the run; every effect is a rule in the kernel (kernel/posture.py).",
+      "acceptance": [
+        {
+          "id": "FR-POS6-AC-1",
+          "given": "the cockpit's API",
+          "when": "a posture is listed, previewed, chosen for a new project, read and changed",
+          "then": "GET /api/postures and POST /api/postures/preview record nothing; POST /api/projects takes posture and weights; GET and PUT /api/projects/<pid>/posture show what holds the project and change it signed and audited; a refused persona is a 403 and a bad value a 400",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS6-AC-2",
+          "given": "a coding agent on the MCP server and a person asking Rihma",
+          "when": "they read a project",
+          "then": "rihma_project carries the project's posture, what it does and what holds it, writing nothing; the cockpit's map names the posture control and Take me there opens the project at it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS6-AC-3",
+          "given": "a person in Chrome",
+          "when": "they choose a posture in New project and change it in the project's Posture dialog",
+          "then": "the preview shows before they choose and follows each choice; the keyboard moves through the postures; every control is named; dark and light, 1440 and 390 pixels fit without scrolling sideways; no console error or CSP violation",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-POS7",
+      "group": "POS. Postures",
+      "provenance": "vendor-proposed",
+      "statement": "What a posture holds is held where it says, and only the people it names release it.",
+      "notes": "An independent check of the postures stream (2026-11-23) found these holes; each criterion's test fails without its repair.",
+      "acceptance": [
+        {
+          "id": "FR-POS7-AC-1",
+          "given": "a posture tightened after the project's revision is built",
+          "when": "the run goes on",
+          "then": "it asks only for the go-ahead to deliver that revision, never to build it again; open assumptions under a confirming posture hold the next build, not the delivery of the revision already built",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS7-AC-2",
+          "given": "a confirming posture",
+          "when": "a developer approves the plan, edits a requirement or decides a go-ahead",
+          "then": "the kernel refuses it: the plan and go-ahead cards name a business owner or product owner, a plan that misses a required topic only a business owner, and the ledger records who decides (card_deciders_set); the cockpit offers the plan's approval and edits only to them",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS7-AC-3",
+          "given": "the regulated posture at pilot",
+          "when": "its release is on its way to staging",
+          "then": "the security gate holds it until an attestable evidence pack is exported for that release, the real export reaches attestable before staging, and the preview says so before anyone chooses",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS7-AC-4",
+          "given": "what a posture requires holds a release",
+          "when": "a person reads the hold or tries to accept it as a risk",
+          "then": "the hold says it is no risk to accept and how the release goes on, and `security accept` of a POSTURE row is refused with that reason",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS7-AC-5",
+          "given": "an open plan card",
+          "when": "a posture change removes the reason it waited, or changes who decides it or what it says",
+          "then": "the card is withdrawn (and opened again as the new posture says when the plan still waits), and the change lists it in what it applied",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-POS7-AC-6",
+          "given": "an open card a posture narrowed to fewer deciders than its kind's",
+          "when": "a persona outside them lists what they may decide: the canon's cards, the cockpit's project inbox and factory inbox, the MCP server's rihma_project and rihma_waiting, or the assistant's snapshot and its decide proposals",
+          "then": "none of them lists the card for that persona or offers to decide it, each lists it for a persona the card names, and the dashboard's decisions name the card's own deciders",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
       "id": "FR-MOD1",
       "group": "MOD. Modules",
       "provenance": "vendor-proposed",
@@ -4625,7 +5522,7 @@
       "decided_by": "owner",
       "decided_on": "2026-11-24",
       "statement": "Rihmasto scans whatever a project folder holds instead of expecting certain files: every file is read, summarised, listed or skipped with its reason, secrets are never read, the person sees what would leave before anything is sent to a model, confidential material stays on local models, and an existing project may be any folder.",
-      "notes": "The owner (2026-11-24): \"rihmasto should be smart enough to just scan what's going on with the given project instead of expecting strictly certain files\"; whatever is read is sent to the configured model endpoint, which may be a hosted provider, so the person must see what leaves before it leaves. Kernel: kernel/material.py, kernel/material_read.py, kernel/material_kinds.py, kernel/material_cli.py, kernel/material_adopt.py, kernel/confidential.py, kernel/source_guard.py; cockpit/static/scan.js. Docs: docs/guides/inputs.md, docs/brownfield.md.",
+      "notes": "The owner (2026-11-24): \"rihmasto should be smart enough to just scan what's going on with the given project instead of expecting strictly certain files\"; whatever is read is sent to the configured model endpoint, which may be a hosted provider, so the person must see what leaves before it leaves. Kernel: kernel/material.py, kernel/material_read.py, kernel/material_kinds.py, kernel/material_cli.py, kernel/material_adopt.py, kernel/confidential.py, kernel/source_guard.py; cockpit/static/scan.js. Docs: docs/guides/inputs.md, docs/brownfield.md. FR-MAT1-AC-10 was decided by the owner on 2026-11-24 after a journey test walked their real flows (\"1. Yes 2. Skip 3. Agreed 4. Ask\"): it is \"2. Skip\".",
       "acceptance": [
         {
           "id": "FR-MAT1-AC-1",
@@ -4707,6 +5604,15 @@
           "check": {
             "kind": "test"
           }
+        },
+        {
+          "id": "FR-MAT1-AC-10",
+          "given": "a confidential project whose role's primary endpoint is local and whose fallback is hosted, and one whose primary is hosted",
+          "when": "the project's intake, spec, holdouts, build, refinement, change or assistant asks that role",
+          "then": "the local role is not refused: the hosted fallback is skipped and never called, because the lanes the project's calls run in (the analyst lane, the assistant's, the product surface and an adopted project's) are compiled without it, so no request reaches a hosted endpoint even when the local one fails; the ledger records confidential_fallback_skipped once per run, naming the role and the host; a role whose primary endpoint is hosted is refused as before",
+          "check": {
+            "kind": "test"
+          }
         }
       ]
     },
@@ -4751,6 +5657,303 @@
           "given": "the release workflow",
           "when": "a person pushes a version tag, or runs the workflow by hand",
           "then": "the suite and the contract run before anything is built; the provenance attestation and the GitHub Release happen only for a pushed tag; the workflow reads by default, only the publishing job may write contents, no expression is expanded inside a script, and a run by hand publishes nothing",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AM1",
+      "group": "AM. Acceptance matrix",
+      "provenance": "vendor-proposed",
+      "statement": "The acceptance matrix the owner tests against is written down and kept true to its tests.",
+      "notes": "Proposed by the acceptance-matrix stream from the owner's goal (2026-11-23): before company use, every use case and mode works end to end. The criteria are the stream's own wording, for the owner to confirm or change. docs/acceptance.md is the matrix; tests/acceptance runs its offline cells.",
+      "acceptance": [
+        {
+          "id": "FR-AM1-AC-1",
+          "given": "docs/acceptance.md and the tests in tests/acceptance",
+          "when": "the matrix is checked",
+          "then": "every row (G1 to G4, B, W, A, C1, C2, I) and column (socratic, assume, mixed; explore, demo, pilot, production; prototype, balanced, production and regulated postures; single operator and enforced access) has a cell, and every row but B a production cell; each cell's state is passes, fails or pending; a passing cell names offline tests that exist and are not expected failures; a failing cell names its test marked as an expected failure; a pending cell says why; every acceptance test is named by a cell",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM1-AC-2",
+          "given": "the mode sweep's measured counts on docs/acceptance.md",
+          "when": "each need of the sweep is filed in mixed mode at demo",
+          "then": "each need's number of questions and of blocking questions is the one the page states",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM1-AC-3",
+          "given": "the matrix's requirements in contract/contract.json",
+          "when": "their provenance is read",
+          "then": "each is vendor-proposed, the stream's own wording, and none claims the owner decided it",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AM2",
+      "group": "AM. Acceptance matrix",
+      "provenance": "vendor-proposed",
+      "statement": "A need from one line, two vague lines, a written spec or another language is asked, specified, built through the gate and delivered, offline.",
+      "notes": "Proposed by the acceptance-matrix stream from the owner's goal (2026-11-23): before company use, every use case and mode works end to end. The criteria are the stream's own wording, for the owner to confirm or change. docs/acceptance.md is the matrix; tests/acceptance runs its offline cells.",
+      "acceptance": [
+        {
+          "id": "FR-AM2-AC-1",
+          "given": "the one-line need 'We need room booking for the office.' in mixed mode at demo maturity",
+          "when": "intake and the run go, and Aino answers the blocking questions and accepts the demo",
+          "then": "exactly the two blocking questions are cards, the rest assumed; no spec is written before the answers; each requirement's provenance follows its source (endorsed, confirmed by Aino, or proposed); every task merges through the gate; the holdout passes on the demo's twin from its custody; the pack is valid",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM2-AC-2",
+          "given": "the two-line vague need about customer service email, mixed, demo",
+          "when": "the run goes and Aino answers the three blocking questions and accepts the demo",
+          "then": "nothing is built before the answers; the AI requirement rests on Aino's answer; sending without a person is out of scope; the pack is valid",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM2-AC-3",
+          "given": "a written spec handed in as a markdown file with ids VIS-001 to VIS-004",
+          "when": "the run goes in mixed mode at demo and Aino accepts the demo",
+          "then": "the facet checklist asks the one blocking facet the spec leaves out (what data it holds and how sensitive it is) as the only card and assumes the rest; no spec is written before it is answered; the spec keeps the author's ids VIS-001 to VIS-004 and adds the retention rule as an assumption; every task passes the gate; the holdout passes; the pack is valid",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM2-AC-4",
+          "given": "a need in Finnish, mixed, explore",
+          "when": "the run goes after Aino answers the blocking question",
+          "then": "the profile is clear; the request, the questions and the spec stay in Finnish; the release lands on the preview with nobody after the answer; the pack is valid",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AM3",
+      "group": "AM. Acceptance matrix",
+      "provenance": "vendor-proposed",
+      "statement": "Each mode puts to a person exactly what it says, for every need, and both ends of the mode scale run end to end.",
+      "notes": "Proposed by the acceptance-matrix stream from the owner's goal (2026-11-23): before company use, every use case and mode works end to end. The criteria are the stream's own wording, for the owner to confirm or change. docs/acceptance.md is the matrix; tests/acceptance runs its offline cells.",
+      "acceptance": [
+        {
+          "id": "FR-AM3-AC-1",
+          "given": "each of the nine needs of the greenfield and small-thing rows",
+          "when": "intake runs in socratic, assume and mixed mode and the run takes one step",
+          "then": "socratic makes every question a card and assumes nothing; assume assumes every question with a proposal and puts only the unproposed profile question to a person; mixed puts exactly the blocking ones to a person; each assumption has a due date; no spec is written while a blocking question is open",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM3-AC-2",
+          "given": "the one-line need in socratic mode at demo",
+          "when": "Aino lets the factory assume one card, answers every other and accepts the demo",
+          "then": "every question was a card; the run waited for the blocking ones; every requirement resting on a question is customer-confirmed by Aino; the one assumption names her as its chooser",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM3-AC-3",
+          "given": "the one-line need in assume mode at demo",
+          "when": "the run goes and Aino accepts the demo",
+          "then": "no question card; the requirements resting on questions are assumptions due in 14 days; the acceptance is the only decision",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AM4",
+      "group": "AM. Acceptance matrix",
+      "provenance": "vendor-proposed",
+      "statement": "Every use case lands where its maturity says, after exactly the people the maturity names, up to production.",
+      "notes": "Proposed by the acceptance-matrix stream from the owner's goal (2026-11-23): before company use, every use case and mode works end to end. The criteria are the stream's own wording, for the owner to confirm or change. docs/acceptance.md is the matrix; tests/acceptance runs its offline cells.",
+      "acceptance": [
+        {
+          "id": "FR-AM4-AC-1",
+          "given": "the one-line need at explore, pilot and production",
+          "when": "the run goes and each card's owner says yes",
+          "then": "explore lands on the preview with nobody and records the dropped requirement; pilot waits for the plan approval and the user validation and lands on staging; production adds IT's deploy gate, a candidate and a canary that promotes, at stage 7; each release's steps are its maturity's plan",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM4-AC-2",
+          "given": "each greenfield and small-thing row at production maturity",
+          "when": "the run goes and the business owner approves the plan and accepts the validation and IT approves the deploy gate",
+          "then": "the release is promoted to production by the canary, the plan approval is recorded, the deploy gate is decided by IT, and the pack is valid",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AM5",
+      "group": "AM. Acceptance matrix",
+      "provenance": "vendor-proposed",
+      "statement": "An existing service is adopted, assessed and developed further through the gate, and the gaps on the way to delivery are measured.",
+      "notes": "Proposed by the acceptance-matrix stream from the owner's goal (2026-11-23): before company use, every use case and mode works end to end. The criteria are the stream's own wording, for the owner to confirm or change. docs/acceptance.md is the matrix; tests/acceptance runs its offline cells. Its expected-failure criteria propose behaviour the owner has not decided; they record a gap measured today, not a promise.",
+      "acceptance": [
+        {
+          "id": "FR-AM5-AC-1",
+          "given": "the stock levels repository with its own three unittest tests",
+          "when": "Olli adopts it, scans it with Rihmasto's own static layer, Pekka files the low-stock change, Aino accepts it and Olli applies it",
+          "then": "the baseline is 3 of 3 passed; the as-is spec is observed; the security gate goes from not measured to passed; the change is triaged as a new requirement needing a decision; T-002 merges with tests, trace and fail-first passed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM5-AC-2",
+          "given": "the adopted service with the change merged",
+          "when": "the run goes",
+          "then": "the developed service lands on the preview road (expected failure today: no paved road runs an adopted repository)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM5-AC-3",
+          "given": "an accepted change card on the adopted service",
+          "when": "the run goes, as the cockpit's Advance starts it",
+          "then": "the run carries out the accepted change (expected failure today: only rihmasto apply does, and the cockpit has no step for it)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM5-AC-4",
+          "given": "a repository whose unittest suite sits at its root beside its module, with no tests/ folder and no pytest marker",
+          "when": "Olli adopts it to improve it, and the gate's test signal is read on it",
+          "then": "the baseline runs the suite by unittest discovery from the root and measures it (2 of 2 passed); the gate, which discovers only under tests/, says not measured with no test run; docs/acceptance.md says both of the schedule candidate",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AM6",
+      "group": "AM. Acceptance matrix",
+      "provenance": "vendor-proposed",
+      "statement": "Small things (a workflow, an automation, an assistant, an ops agent, an integration) are delivered with their capability pack.",
+      "notes": "Proposed by the acceptance-matrix stream from the owner's goal (2026-11-23): before company use, every use case and mode works end to end. The criteria are the stream's own wording, for the owner to confirm or change. docs/acceptance.md is the matrix; tests/acceptance runs its offline cells.",
+      "acceptance": [
+        {
+          "id": "FR-AM6-AC-1",
+          "given": "the purchase approval workflow, mixed, explore",
+          "when": "Aino answers the blocking question and the run goes",
+          "then": "it is proposed as an agentic workflow, its own question is assumed, it lands on the preview, and the pack is a capability pack that says its holdout was not measured",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM6-AC-2",
+          "given": "the monthly invoice summary, assume, explore",
+          "when": "the run goes with no person",
+          "then": "the profile is a guess and says so; nothing goes to a person; every answer is an assumption on record; no requirement is customer-confirmed; it lands on the preview",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM6-AC-3",
+          "given": "the travel policy assistant, mixed, demo",
+          "when": "the run goes and Aino answers which kind of work it is and accepts the demo",
+          "then": "the profile question waits in every mode; the answer chooses the profile in Aino's name; the spec holds a refusal; the holdout passes; the pack is a capability pack",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM6-AC-4",
+          "given": "the access review ops agent, assume, demo",
+          "when": "the run goes and Aino accepts the demo",
+          "then": "the ops agent's own questions are assumed; its holdout passes against the demo; the pack is a report",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM6-AC-5",
+          "given": "the shipment webhook integration, assume, explore",
+          "when": "the demo's own webhook cell builds it",
+          "then": "its questions are assumed and the dead-letter requirement rests on one as an assumption; every gate signal passes on each task; it lands on the preview",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AM7",
+      "group": "AM. Acceptance matrix",
+      "provenance": "vendor-proposed",
+      "statement": "Decisions are self-declared by a single operator, and signed by granted, verified identities when access is enforced.",
+      "notes": "D-0016. Proposed by the acceptance-matrix stream from the owner's goal (2026-11-23): before company use, every use case and mode works end to end. The criteria are the stream's own wording, for the owner to confirm or change. docs/acceptance.md is the matrix; tests/acceptance runs its offline cells.",
+      "acceptance": [
+        {
+          "id": "FR-AM7-AC-1",
+          "given": "a factory home with no access file",
+          "when": "two people answer, each typing a name and a persona",
+          "then": "the factory says single operator: personas are self-declared, and the decisions carry the typed names and no identity",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM7-AC-2",
+          "given": "an enforced access file binding a group, a person and a person on one project",
+          "when": "the one-line need runs to production",
+          "then": "no identity, a typed name that is not the identity, a persona not granted and a project outside the scope are refused with nothing recorded; every decision of the run is recorded with the identity that signed it",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AM8",
+      "group": "AM. Acceptance matrix",
+      "provenance": "vendor-proposed",
+      "statement": "Every path writes the same trace to the ledger: who asked, who decided or let the factory assume, what was assumed and what proves it.",
+      "notes": "D-0017. Proposed by the acceptance-matrix stream from the owner's goal (2026-11-23): before company use, every use case and mode works end to end. The criteria are the stream's own wording, for the owner to confirm or change. docs/acceptance.md is the matrix; tests/acceptance runs its offline cells. Its expected-failure criteria propose behaviour the owner has not decided; they record a gap measured today, not a promise.",
+      "acceptance": [
+        {
+          "id": "FR-AM8-AC-1",
+          "given": "the quickest path (an automation in assume mode at explore) and the strictest (the one-line need in socratic mode at production)",
+          "when": "both run to their release and compliance exports the strict one's evidence pack",
+          "then": "both ledgers are intact with every gate, the release and the pack; the quick one holds every assumption and no decision, the strict one every decision by name and no assumption; the evidence pack is attestable",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AM8-AC-2",
+          "given": "a need filed through the kernel's intake, as the command line files it",
+          "when": "intake runs",
+          "then": "the ledger records who asked and who chose the mode (expected failure today: only the cockpit records them)",
           "check": {
             "kind": "test"
           }
@@ -4865,7 +6068,7 @@
       "decided_by": "owner",
       "decided_on": "2026-11-24",
       "statement": "A person can see and set which model answers for each of Rihmasto's roles: an OpenAI-compatible endpoint, a model name and an API key given as an environment variable's name or stored outside the repository, never shown again, never logged and never in the ledger; a Test sends a tiny prompt and says the latency or the error; changes go to this machine's routing overlay, never to the shipped routing.",
-      "notes": "The owner: \"is there now way for me to input the model endpoint / api for the platform itself?\" kernel/models_setup.py, kernel/shape_cli.py (`rihmasto models`), cockpit/shape_routes.py, cockpit/static/models.js, docs/guides/models-setup.md. Presets: llama.cpp, Ollama, vLLM on this machine, OpenCode Go, OpenAI, OpenRouter, another OpenAI-compatible provider. Every real model call still goes through Gnomon; Test is the one direct call.",
+      "notes": "The owner: \"is there now way for me to input the model endpoint / api for the platform itself?\" kernel/models_setup.py, kernel/shape_cli.py (`rihmasto models`), cockpit/shape_routes.py, cockpit/static/models.js, docs/guides/models-setup.md. Presets: llama.cpp, Ollama, vLLM on this machine, OpenCode Go, OpenAI, OpenRouter, another OpenAI-compatible provider. Every real model call still goes through Gnomon; Test is the one direct call. FR-MDL1-AC-10 came with the owner's decisions of 2026-11-24 after a journey test (\"1. Yes 2. Skip 3. Agreed 4. Ask\"), which saw the builder called on a hosted endpoint while Models setup said its key was not set: Gnomon held it (`gnomon key set`, its credential store per packages/gnomon-core/src/credentials.ts).",
       "acceptance": [
         {
           "id": "FR-MDL1-AC-1",
@@ -4947,6 +6150,15 @@
           "check": {
             "kind": "test"
           }
+        },
+        {
+          "id": "FR-MDL1-AC-10",
+          "given": "an endpoint whose key variable is set neither in the environment nor in Models setup's store, while Gnomon holds a key for it (gnomon key set)",
+          "when": "Models setup or rihmasto doctor shows it",
+          "then": "it reads \"key set by Gnomon\", not \"no key\", by asking `gnomon key list`, which prints names only; when Gnomon cannot say but its credential store exists, it reads \"Gnomon may have its own key for this host\"; Rihmasto never opens the store or reads a key's value, and Test says it cannot send a key Gnomon holds",
+          "check": {
+            "kind": "test"
+          }
         }
       ]
     },
@@ -4957,7 +6169,7 @@
       "decided_by": "owner",
       "decided_on": "2026-11-24",
       "statement": "Anything set when a project was made can change: a person changes its kind of work, mode, maturity or title with a preview of what the change means for the work already done, sends it back to its material, questions, spec or plan so that step runs again, and adds material later; nothing is deleted, every change is signed and recorded, and a project always says what it waits for, who can act and the actions that move it forward.",
-      "notes": "The owner, using Rihmasto daily on a customer project: \"I don't want to see stupid mistakes like me choosing a template for the project or me generating a spec, then I'm getting stuck somewhere because Rihmasto assumed the project template wrong. I want all that to be able to change.\" kernel/project_settings.py, kernel/rewind.py, kernel/project_material.py, kernel/next_step.py, kernel/change_cli.py, cockpit/static/change.js, docs/guides/change-anything.md. The posture has its own change flow (kernel/posture_change.py) and is not changed here.",
+      "notes": "The owner, using Rihmasto daily on a customer project: \"I don't want to see stupid mistakes like me choosing a template for the project or me generating a spec, then I'm getting stuck somewhere because Rihmasto assumed the project template wrong. I want all that to be able to change.\" kernel/project_settings.py, kernel/rewind.py, kernel/project_material.py, kernel/next_step.py, kernel/change_cli.py, cockpit/static/change.js, docs/guides/change-anything.md. The posture has its own change flow (kernel/posture_change.py) and is not changed here. FR-CHG1-AC-11 to AC-13 were decided by the owner on 2026-11-24 after a journey test walked their real flows (\"1. Yes 2. Skip 3. Agreed 4. Ask\"): AC-11 is \"1. Yes\", AC-12 and AC-13 are \"3. Agreed\" (kernel/go_ahead.py).",
       "acceptance": [
         {
           "id": "FR-CHG1-AC-1",
@@ -5036,6 +6248,601 @@
           "given": "the cockpit in a browser",
           "when": "a person follows What's next, changes the kind with its preview, adds material, goes back a step and advances",
           "then": "each write lands signed with their name; dark and light at 1440 and 390 pixels wide the overview and the three dialogs fit with nothing scrolling sideways, every control has an accessible name, and no step leaves a console error, a failed request or a Content-Security-Policy violation",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-10",
+          "given": "a project whose spec is written, and material added to it with re-intake, or a blocking question opened after the spec",
+          "when": "the project is advanced",
+          "then": "the run stops once the panel has read the material, waiting on its new blocking questions or on a person's choice to go back to the spec or go on with it as it is, and nothing is built past an open blocking question; What's next names those choices",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-11",
+          "given": "a project whose questions a person answered, a person let the factory assume, and the factory assumed on its own by its mode or a default",
+          "when": "a person changes its kind of work and goes back to the questions",
+          "then": "the settings preview says how many answers and assumptions a person chose are kept and how many open questions and assumptions the factory made on its own are withdrawn; saving withdraws those assumptions (question and assumption) with the reason \"made for the old kind\", keeps every one a person chose, and the panel that runs again is told only the person-settled ones; the records still agree with the ledger",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-12",
+          "given": "a project made by a person (New project, rihmasto new, Shape it in chat) at explore or demo maturity, whose spec is written and never built",
+          "when": "it is advanced",
+          "then": "the run waits once on a \"Look at the spec before building\" card with Go and Skip, shown in What's next and the Inbox; either verdict lets the build start, signed; \"Build without waiting for me\" (Project settings, New project, --build-without-waiting) turns it off for the project and withdraws an open card; a delegation's go rule may say Go; at pilot and up the plan's approval stays the look; a project made without saying, and the scripted demo, which sets it off explicitly, build as before",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-13",
+          "given": "the cockpit in a real browser, dark and light, 1440 and 390 px wide",
+          "when": "a person ticks Build without waiting for me in New project, previews a new kind of work in Project settings, and says Go on the Look at the spec card in What's next",
+          "then": "the option reaches the project, the preview counts what is kept and withdrawn, the Go lands signed and the card is decided; nothing scrolls sideways, every control has an accessible name, and there is no console error, failed request or CSP violation",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-DS1",
+      "group": "DS. Data systems",
+      "provenance": "vendor-proposed",
+      "statement": "A product declares the data systems it reaches (databases, data warehouses, cloud storage, ERPs and business APIs by OpenAPI, MCP servers, REST APIs), each with how it is reached, its access, its data classes and its credentials by name only; the spec and the plan list them, and each becomes a requirement a test must name (D-0015, D-0017).",
+      "acceptance": [
+        {
+          "id": "FR-DS1-AC-1",
+          "given": "declarations with an unknown kind, a way the kind does not allow, an access other than read or read-write, an unknown data class, an openapi one with no system, a credential that does not start with its settings' prefix or is a setting, a name whose settings would look like a secret or a road setting, an unknown key, or a secret-looking value",
+          "when": "they are validated, by the kernel or the command line",
+          "then": "each break is named by its JSON path, the command line refuses a broken declaration with exit 2 and lists every kind with its reference connector, and a valid declaration is declared",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DS1-AC-2",
+          "given": "an analyst's draft that declares integrations",
+          "when": "the spec is made and compiled",
+          "then": "each valid one reaches spec.json with a provenance by the spec's rules, an invalid or repeated one is dropped with its reason, each becomes an INT- requirement whose one test criterion names it in a fixed form that reads back from the compiled contract for every kind and way, and spec.md, the plan card and the ledger's spec_written list them with their access, data classes, settings and credential names",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DS1-AC-3",
+          "given": "an open plan",
+          "when": "a person declares or withdraws an integration",
+          "then": "only a named person with a plan editor's persona may; the declaration is theirs (customer-confirmed), the plan's version moves on, its open card is withdrawn, the ledger records who, as which persona and why, a redrafted spec keeps it, and it is refused once the plan is compiled; a plan whose product writes to a system it reaches, or touches confidential or restricted data there, waits for a person's approval at any maturity",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DS1-AC-4",
+          "given": "a spec with integrations",
+          "when": "the cockpit shows its plan",
+          "then": "the Plan view and the plan's approval card list each integration with its way, access and data classes (the integrations control in the cockpit's map), and Ask Rihma takes a person there",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-DS2",
+      "group": "DS. Data systems",
+      "provenance": "vendor-proposed",
+      "statement": "IT binds each declared integration to a concrete endpoint and secret references on the paved road of each environment and approves each binding on a road card; delivery wires the approved ones into the deploy package and the Compose file as settings and secrets by name (D-0015).",
+      "acceptance": [
+        {
+          "id": "FR-DS2-AC-1",
+          "given": "bindings that are missing, give an endpoint of the wrong scheme for the way or plain http off loopback, carry a password or a token in the endpoint or its query, give a secret a value or no reference, name a credential the declaration does not, or hold an unknown key",
+          "when": "they are checked against the declaration",
+          "then": "each problem is named, a valid binding has none, a road may bind each environment differently, and the binding's pin changes when the binding does",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DS2-AC-2",
+          "given": "a release whose product declares an integration",
+          "when": "it is delivered",
+          "then": "before anything is built, a road card that only IT decides shows what it reaches, the access, the data classes, the endpoint and where each credential lives, one card per binding and not one per call; configured lets the release go on, declined stops it, and a binding changed since withdraws the open card and opens a new one that names any problem",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DS2-AC-3",
+          "given": "an approved binding",
+          "when": "the deploy package and the site's Compose file are made",
+          "then": "the package lists the integration with the card that approved it and its settings, each credential as a secret reference and never a value; Compose gives each setting, and each secret by its name from the deployer's environment; a package whose integration no card approved, or whose endpoint carries a credential, is refused; a local process gets an env: secret's value (a docker product: FR-DS5)",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-DS3",
+      "group": "DS. Data systems",
+      "provenance": "vendor-proposed",
+      "statement": "The gate runs a product's own tests against stand-ins for the integrations its contract declares, and its integrations signal says whether the product's data access held to the declaration.",
+      "acceptance": [
+        {
+          "id": "FR-DS3-AC-1",
+          "given": "a contract that declares an integration",
+          "when": "the gate runs the product's suite",
+          "then": "the integration's settings point at a stand-in (a SQLite file seeded from the product's seed, or a loopback HTTP server answering from the product's fixture) with placeholder credentials, and a product whose INT- test reads through it is merged with the integrations signal passed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DS3-AC-2",
+          "given": "an integration declared read",
+          "when": "the product's tests write to it",
+          "then": "the integrations signal fails and names the write (the SQLite file changed; a PUT, PATCH or DELETE; a POST that is not a read query; an MCP tool whose name writes), and the change is not merged although its tests pass; a read-write object-store stand-in round-trips what the product puts",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DS3-AC-3",
+          "given": "a task whose INT- test never reaches its HTTP stand-in, or an INT- criterion edited so that it no longer names its integration",
+          "when": "the gate runs",
+          "then": "the integrations signal is not measured, with the reason; a contract that declares no integration starts no stand-in and adds no signal",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-DS4",
+      "group": "DS. Data systems",
+      "provenance": "vendor-proposed",
+      "statement": "Reference connectors reach PostgreSQL, Snowflake, S3-compatible storage and ERPs or business APIs by OpenAPI through Gnomon, read-only first, each passing the connector contract suite against a local fake (D-0015).",
+      "acceptance": [
+        {
+          "id": "FR-DS4-AC-1",
+          "given": "connectors/postgres, snowflake, s3 and openapi",
+          "when": "the contract suite runs",
+          "then": "each validates with no write tool, its forbidden tools listed, its credentials by reference and a local fake of its system; postgres runs its pinned server in restricted mode, snowflake pins its read-only service configuration, and what could not be confirmed offline is marked UNVERIFIED",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DS4-AC-2",
+          "given": "each connector's fake",
+          "when": "the suite runs against it",
+          "then": "a pinned vendor server faked in process answers its pin, its reads map to valid proposals of the declared kind, a write and a forbidden tool are refused and a rug pull is caught; a narrow server reads its fake backend signed (SigV4 for S3, a bearer token for the API), sends only GET and HEAD, is refused with the wrong credentials, refuses a write tool, a write operation and an endpoint that is not https or loopback, and no write reaches the backend",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DS4-AC-3",
+          "given": "the PostgreSQL live check",
+          "when": "it is run",
+          "then": "it runs only with RIHMA_LIVE_POSTGRES=1 and a DSN whose host is loopback, and is skipped otherwise with the reason; against a real database it checks the pinned tools/list, that the reads map to valid proposals, and that a statement that writes is refused and leaves nothing behind",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-DS5",
+      "group": "DS. Data systems",
+      "provenance": "vendor-proposed",
+      "statement": "A product on the docker road gets each approved integration's credential whose reference is env: by name only (docker run --env NAME), its value read on the deploying host at deploy time and handed to the docker CLI in that command's environment, so no argument, package or record holds it (D-0014, D-0015).",
+      "acceptance": [
+        {
+          "id": "FR-DS5-AC-1",
+          "given": "an approved integration whose credential lives in env: on the deploying host, and a docker road",
+          "when": "the product is deployed, with that variable set on the host and again without it",
+          "then": "docker run gets the integration's settings as values and the credential as --env NAME with no value in any argument, the value reaches the docker CLI's environment for that command only, no file in the project holds it, and a credential the host does not hold is not given",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-DS5-AC-2",
+          "given": "a declaration whose name, and so its settings and credentials, start like a variable the deploy tools read (DOCKER_HOST, DOCKER_CONFIG, HTTP_PROXY, HTTPS_PROXY, NO_PROXY, SSL_CERT_FILE, LD_PRELOAD and the rest of their families), a binding of one, a package that carries one approved before, and a docker run handed one",
+          "when": "it is declared, its binding is checked, the package is validated, or the docker CLI is to run",
+          "then": "the declaration is refused at /name, the binding has a problem that names the credential so no card can approve it, the package fails validation so it is not delivered, and the docker CLI refuses before it runs, so no such value ever reaches the CLI's own environment; a plain credential still does",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AUT1",
+      "group": "F. Scheduling",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "A person sets automations per project or across projects: a trigger (a schedule, a ledger event, an inbound webhook source ringing, or new commits on an attached or adopted repository), an optional guard, an allow-listed action run through the kernel's own path with the owner's rights and never beyond them, a scope and limits (runs per hour, a circuit breaker, quiet hours, a dry run), owned and signed by a person and persona and recorded in the ledger; an automation never decides a card.",
+      "notes": "The owner: \"we should be able to set and run automations and hooks per project, even across them.\" kernel/automations.py, kernel/automations_run.py, kernel/automations_actions.py, kernel/automations_text.py, kernel/automations_cli.py, cockpit/automation_routes.py, cockpit/static/automations.js, docs/guides/automations.md. The cockpit ticks every minute while it runs; `rihmasto automations tick` runs from cron or Windows Task Scheduler. Rihmasto's own scheduler, not Gnomon loops: an automation is signed, checked against the access file before every run, reacts to ledger events and webhooks and records every run in the ledger (the guide says why).",
+      "acceptance": [
+        {
+          "id": "FR-AUT1-AC-1",
+          "given": "a named person and a persona the action allows",
+          "when": "they set, change, pause, resume or remove an automation",
+          "then": "it is kept with its trigger, guard, action, scope and limits, owned and signed by them, with a plain-language summary written from its parts; automation_set, automation_paused, automation_resumed and automation_removed are in the factory's ledger with who; a non-person, a persona the action does not allow, an unknown hook source or a bad schedule is refused and writes nothing; anyone may pause, its owner or IT resumes, changes or removes, and whoever changes it owns it from then on",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-2",
+          "given": "a schedule (every N minutes or hours, daily at HH:MM, weekly) and a fake clock",
+          "when": "ticks run",
+          "then": "it fires on its slot, once per slot, and a slot missed while nothing ran fires once, never once per slot",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-3",
+          "given": "an event trigger on record kinds in its scoped projects",
+          "when": "those records are appended and ticks run",
+          "then": "each matching record fires it once (gate_failed, gate_passed and card_waiting name a gate's verdict and an opened card); a record outside its scope, an automation's own record and a record its own run wrote never fire it; a project made after it was set fires it from its first record",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-4",
+          "given": "an inbound source IT bound to a project",
+          "when": "a verified ring arrives",
+          "then": "the ring is recorded in the factory's ledger and in each bound project's, with the pushed branch; an automation on that project, and a factory-wide one on the source, react to it; IT alone binds or unbinds a source (`hooks add --bind`, `hooks bind`)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-5",
+          "given": "an automation on new commits on an attached repository's branch",
+          "when": "a commit lands and ticks poll the branch",
+          "then": "the first look only notes the head; the new head fires it, the gate judges the commits since the last gate it ran, in the owner's name, and a failed verdict notifies the subscription it names; the person's repository is never written",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-6",
+          "given": "a guard (a count within some hours, a branch, a field, open cards)",
+          "when": "a firing's guard does not hold",
+          "then": "the firing is dropped, nothing is recorded in any ledger and the automation says why it last skipped; once the guard holds (the gate failed twice within a day) it runs",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-7",
+          "given": "each allow-listed action",
+          "when": "it runs",
+          "then": "it goes through the kernel's own path with scripted models and stubs on 127.0.0.1: notices to Teams, Slack and mail and a signed CloudEvent through IT's relay subscriptions, defanged and logged in the delivery log; a model's answer with the project's context posted as a comment; a folder re-scanned and added as material only when it changed; the chosen outputs rebuilt; the project's own tests in a temporary clone; an advance that stops where a person is needed with every card left open; a module that is off refuses it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-8",
+          "given": "a scope of a list of projects, a tag, a profile, a source or the factory",
+          "when": "it fires",
+          "then": "it acts once on each project in scope (once for a factory-wide notify or signal); tags are set signed and recorded; when project A releases, a change proposal opens on project B, as a card for people",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-9",
+          "given": "limits: runs per hour, a circuit breaker, quiet hours and a dry run",
+          "when": "firings come",
+          "then": "a firing over the runs per hour waits for the next tick; quiet hours hold the queue until they end; failed runs in a row pause it with why, shown on Home and in the project's What's next with Resume, and Resume clears the count; a dry run records what it would do and does nothing; the dry-run command records nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-10",
+          "given": "records that fire an automation",
+          "when": "a run dies part way, a second tick meets a running one, or ticks repeat",
+          "then": "a firing is taken off the queue and saved before its action runs, so no record fires twice; a tick that finds another running answers busy and changes nothing; with no automation a tick writes nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-11",
+          "given": "an automation's owner and access enforced",
+          "when": "it runs",
+          "then": "it acts as the owner's verified identity, checked against IT's access file as it is now, so a removed grant stops the next run (refused); its records name that identity; no action decides a card, and a decide-like action is refused whatever it is called",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-12",
+          "given": "a relay subscription IT makes for one project",
+          "when": "the relay runs",
+          "then": "only that project's events go to it, and the subscription's record names the project",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-13",
+          "given": "the command line",
+          "when": "a person runs `rihmasto automations list|show|add|edit|pause|resume|remove|run-now|dry-run|tick|history|install-help|templates|tag`",
+          "then": "each works as the cockpit does, signed where it writes, a refusal is exit 2 with the kernel's reason, and install-help prints the exact cron and Windows Task Scheduler lines for this machine",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-14",
+          "given": "the cockpit",
+          "when": "a person opens Automations or a project's Automations tab, or asks Rihma",
+          "then": "the page lists every automation with scope filters, templates and a builder whose summary the kernel writes before saving; Run now is recorded and the cockpit's scheduler carries it out; a preview and a dry run record nothing; every write route is signed and in the access tables; Ask Rihma explains automations and takes the person to the page and its controls",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-15",
+          "given": "headless Chrome over the DevTools protocol, dark at 1440 px and light at 390 px",
+          "when": "a person sets an automation from a template, dry-runs it, sees it run, runs it now, pauses and resumes it, filters the list, tags a project on its tab and sees a paused automation on Home",
+          "then": "every step works with no console error, failed request or CSP violation, every control has a name and nothing is wider than the screen",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-16",
+          "given": "an automation whose action would say Go or Skip on the look at the spec, or approve or decline a cell runner",
+          "when": "a person saves it, or an advance automation runs on a project waiting on such a card",
+          "then": "the automation is refused (deciding stays with people, or a person's delegation), and the advance leaves the go-ahead card and the runner card open; no automation module decides a card",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AUT1-AC-17",
+          "given": "the life-cycle transitions (D-0023): a concept validated, the spec or plan approved, the first build through the gate, a release on a test road, a promotion to production, a rollback and a check that fails",
+          "when": "each happens, and an automation started from a life-cycle template waits on it",
+          "then": "each is a clear record an event trigger names (concept_validated, plan_approved, first_build_passed, release_reached_test, promoted, rolled_back, check_failed), and each template fires on its event: a release on test runs its probe check and notifies, a promotion enables the probe check on production and notifies, a validated concept notifies the product owner's channel, and a gate that fails twice opens a change proposal",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AGC1",
+      "group": "B. Brownfield adoption",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "Rihmasto recognises how a project's AI coding tools are set up (project instructions such as CLAUDE.md, AGENTS.md and Cursor rules, skills, subagents, slash commands, hooks and permissions, MCP servers), reads the conventions right after the README, tells intake's and the assessment's panels, runs the test command they state for the baseline, gives builder cells the rules that apply to their files, shows them on the project page, and gives a developer's IDE ready-to-paste MCP configuration and a section for their own AGENTS.md; it never runs anything it finds, never reads personal settings or secret values, and never writes into the person's folder.",
+      "notes": "The owner (2026-11-24): \"where do we draw the line between developing in IDE and terminal versus inside Rihmasto ... this example project I have worked in Cursor and Claude Code, so obviously Rihmasto should be able to scan any existing skills, MDs etc configurations.\" The IDE and the terminal are the inner loop; Rihmasto is the outer loop; they meet in the repository, the MCP server and the conventions file. Kernel: kernel/agent_context.py, kernel/agent_context_use.py, kernel/ide.py, kernel/material.py, kernel/adopt.py, kernel/attach.py, kernel/assess.py, kernel/assess_panel.py, kernel/intake.py, kernel/dispatch.py; cockpit/agent_routes.py, cockpit/static/aitools.js, cockpit/static/scan.js. Docs: docs/guides/ide-and-rihmasto.md, docs/guides/inputs.md. Not built: offering a found skill or MCP server to Rihmasto's own cells (listed as candidates only).",
+      "acceptance": [
+        {
+          "id": "FR-AGC1-AC-1",
+          "given": "a folder with CLAUDE.md at the top and in a sub-folder, AGENTS.md, GEMINI.md, .cursorrules, Cursor rules with description, globs and alwaysApply, Copilot instructions with applyTo, .windsurfrules, .clinerules, a Claude skill with bundled files, a subagent, slash commands, .claude/settings.json with hooks and permission rules, three MCP configurations with arguments, environment values and headers, and personal settings",
+          "when": "it is scanned, or read from a commit's objects",
+          "then": "each file has the kind agent context and its sub-kind (instructions, skill, a skill's bundled file, subagent, slash command, hooks and permissions, MCP servers, personal settings) with its tool, frontmatter and where it applies; hooks, rules and MCP servers are kept by name only, a rule that may hold a secret is not shown, personal settings and a file whose text holds a credential are never read, no argument, environment value, header or hook command appears anywhere, and nothing found is run",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AGC1-AC-2",
+          "given": "the same folder with far more documents than the budget holds",
+          "when": "its request is built",
+          "then": "the README comes first, then AGENTS.md and CLAUDE.md and the other instructions, then skills, subagents, commands, hooks and MCP servers, then briefs and the rest; the instructions and the skill are read in full and the budget is spent on the rest",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AGC1-AC-3",
+          "given": "the folder",
+          "when": "`rihmasto scan` maps it, and the cockpit's Scan the folder step shows it",
+          "then": "both show How AI tools here are set up as a group of its own, first, with each file's sub-kind and what happens to it, the commands the instructions state, and the note that skills and MCP servers are candidates only; personal settings have no box to tick",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AGC1-AC-4",
+          "given": "a project whose request is that folder, and an adopted revision holding it",
+          "when": "intake's panel reads the request (a scripted model) and the assessment's panel is prompted",
+          "then": "every perspective's prompt names the project's own conventions and the test command they state and says not to ask what they settle, with the instructions' text in the request ahead of the skills; the assessment's prompt says the same and not to propose a convention as a finding unless the code breaks it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AGC1-AC-5",
+          "given": "a repository whose CLAUDE.md states a test command that detection by rule would not find, and another whose stated command uses shell syntax",
+          "when": "each is adopted",
+          "then": "the first baseline runs the stated command and passes, with the inventory and the brief naming the file and line it came from; the second falls back to the command found by rule, and the inventory says the stated one was not run and why",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AGC1-AC-6",
+          "given": "an adopted project with project-wide instructions, a folder's CLAUDE.md, Cursor rules with globs, one always applied and one applied when relevant",
+          "when": "a builder cell's envelope is written for a task that may write the Python service, and for one that may write the web pages",
+          "then": "each envelope carries the project-wide instructions and only the rules whose globs or folder match the files it may write, names the rule applied when relevant by its description, says the envelope wins where they differ, and a project Rihmasto builds itself gets no such section",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AGC1-AC-7",
+          "given": "an attached repository set up for Claude Code and Cursor",
+          "when": "a developer opens its Overview, in dark and light, at 1440 and 390 px",
+          "then": "AI tools in this project lists the instructions, skills, subagents, commands, hooks and MCP servers with where each is, Work on it from your IDE gives MCP configuration for Claude Code, Cursor and Codex with the person's name, how a change comes back and the section with Copy and Download; the read records nothing, nothing scrolls sideways, every control has a name and there is no console error or CSP violation",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AGC1-AC-8",
+          "given": "an attached and an adopted repository",
+          "when": "`rihmasto ide <pid>` runs, with --json and with --section",
+          "then": "it prints the AI tools found, ready-to-paste MCP configuration for Claude Code (.mcp.json and claude mcp add), Cursor and Codex pointing at Rihmasto's own MCP server, how a change comes back (repo gate for an attached one, a workspace's submission or sync for an adopted one) and the marked section for AGENTS.md or CLAUDE.md; neither the repository nor the factory home changes",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AGC1-AC-9",
+          "given": "a repository whose skills and MCP servers are found",
+          "when": "it is attached and its agent context read",
+          "then": "they are listed as candidates for Rihmasto's own catalogue that a person must approve, the catalogue names none of them, and the only programs started are git reading objects",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-HRN1",
+      "group": "PT. Portability",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "A factory or a project can run its builder and verifier cells with another harness than Gnomon (Claude Code, Codex, OpenCode or a command a team names), chosen by IT on a card with the runner's version pinned; Gnomon stays the default and the reference. Every rule Gnomon enforces during a run is checked after another harness's run (the write scope, the protected paths, fail-first, the independent verifier on another model family, the holdouts), a change that breaks one never merges, the holdouts are never visible to any runner, and the ledger, the evidence pack and the cockpit say which assurance applied: in-run policy enforced by Gnomon, or checked after the run.",
+      "notes": "The owner (2026-11-24): \"What Gnomon enables as engine is harness agnosticism, to be a governance glue inside Rihmasto, among many other features like compliance, security etc.\" D-0019 (other harnesses run the factory's cells, opt-in, the evidence saying so), amending D-0003 and D-0015. kernel/runners/ (the runner interface, detection, the governance glue, the docker sandbox, choices on IT cards, the CLI), kernel/dispatch.py, kernel/evidence_pack.py, cockpit/runner_routes.py, cockpit/static/runners.js, docs/guides/harnesses.md. Every harness in the tests is a fake executable written by the test.",
+      "acceptance": [
+        {
+          "id": "FR-HRN1-AC-1",
+          "given": "a machine with some harnesses installed and some not",
+          "when": "a person checks the runners (`rihmasto runners check`, or Check in Settings > Runners)",
+          "then": "each runner is found with its version, and one that is not found says so, where it was looked for and what to do; each harness is started headless with a mode that never prompts and its tools held to the working copy (claude -p with stream-json and dontAsk, codex exec --json with its workspace-write sandbox, opencode run --format json, a named command with {prompt_file} and {workdir} filled in)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-2",
+          "given": "a project whose builder runner IT approved (Claude Code, Codex, OpenCode or a named command)",
+          "when": "a task is built",
+          "then": "the harness gets the task's envelope with its write scope, its protected paths, the criteria whose tests must fail first and the project's own conventions (AGENTS.md, CLAUDE.md, rules files); its diff is judged at one revision by the gate's signals with the write-scope and custody checks beside them; a warranted change merges; and the round's record names the runner, its version, its tool calls, what it changed and the assurance \"checked after the run\"",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-3",
+          "given": "a harness that touches a protected path, writes outside the task's write scope, or writes a test that cannot fail",
+          "when": "its round is judged",
+          "then": "the verdict is a violation (or failed) with the reason as an objection, nothing reaches main, the verifier does not run over a changed protected path, and after its repair rounds the task escalates",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-4",
+          "given": "holdout scenarios in their custody and the factory's home and lanes named in the environment",
+          "when": "a harness runs a builder round",
+          "then": "neither the working copy, nor the task it is given, nor the environment it runs in holds or names the custody; a working copy that held a custody file, or overlapped the custody, is a violation",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-5",
+          "given": "a person who chooses a runner other than Gnomon",
+          "when": "they save the choice, and IT decides it",
+          "then": "a runner card opens that only IT may decide, with the version found on this machine pinned, and the runner applies only from IT's approval; a version other than the pinned one, a runner not found, or the docker sandbox where Docker does not answer refuses the task before any round runs, with the reason in the ledger; going back to Gnomon applies at once; a non-person or a persona that may not choose writes nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-6",
+          "given": "a factory default, a project's own choice and a choice per role",
+          "when": "a task is built",
+          "then": "the builder and the verifier may run on different runners, a project's choice wins over the factory's, a choice that gives the verifier the builder's model family is refused, and a harness verifier reviews a throwaway copy of the lane, read-only, its answer being the verifier signal",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-7",
+          "given": "rounds run by Gnomon and by other harnesses",
+          "when": "an evidence pack is exported",
+          "then": "cell-runners.json lists each round's runner, version and assurance, the README says how many rounds had in-run policy enforced by Gnomon and how many were checked after the run and by which harness, and a round another harness ran is never shown as Gnomon-level assurance, whatever its own record says",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-8",
+          "given": "a choice with the docker sandbox",
+          "when": "its harness runs",
+          "then": "the container mounts only the working copy, drops every capability, takes no new privileges, gets keys by variable name only, and has no network or an internal network whose one way out is a proxy that tunnels only to the model endpoint and refuses any other host",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-9",
+          "given": "the command line, and a factory with no runner chosen",
+          "when": "a person runs `rihmasto runners list|check|set`, and a task is built",
+          "then": "list, check and set work, set is signed and refused for a non-person or a family clash; with no choice Gnomon builds exactly as before and the round says in-run policy enforced by Gnomon; a write scope is read as the task names it (** crosses folders, * does not)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-10",
+          "given": "the cockpit, dark and light, at 1440 and 390 px",
+          "when": "a developer opens Settings > Runners, checks this machine, chooses a runner, IT approves it on the page, and Project settings is opened",
+          "then": "each step works with no console error, failed request or CSP violation, every control has a name and nothing is wider than the screen; the role shows the runner, its pinned version and \"Checked after the run\", never Gnomon's in-run words; Project settings shows the project's builder and verifier with their assurance and links to the page",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-11",
+          "given": "a project whose working copy holds AGENTS.md and a Cursor rule whose globs match only web files, and a harness other than Gnomon chosen for its builder",
+          "when": "a task whose write scope is the Python files is built by that harness, and an adopted project's task is built by it too",
+          "then": "the harness is given the instructions that apply to the files the task may write, recognised and matched as a Gnomon builder's envelope matches them (kernel/agent_context_use.py): AGENTS.md and not the web rule; an adopted project's envelope, which already holds that section, is not given it twice",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-12",
+          "given": "a confidential project whose builder IT approved to run with Claude Code (its own hosted endpoint), or with a harness outside the docker sandbox",
+          "when": "the project is built",
+          "then": "the build is refused as a hosted role is: `confidential_refused` names the role, the runner and the host, no cell runs and nothing is sent; the same harness in the docker sandbox reaching only a local endpoint is not refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HRN1-AC-13",
+          "given": "a runner chosen for a project and waiting on IT's card, and a project waiting on its look at the spec",
+          "when": "What's next and the Inbox are read",
+          "then": "What's next names the runner card with who decides it (IT) and opens Settings > Runners for that project, and the go-ahead's Go and Skip; the factory's Inbox and the Inbox across projects hold the runner card for IT, grouped with the cards a deploy waits on",
           "check": {
             "kind": "test"
           }
@@ -5721,7 +7528,8 @@
         "FR-V1-AC-1",
         "FR-V1-AC-2",
         "FR-V1-AC-3",
-        "FR-V1-AC-4"
+        "FR-V1-AC-4",
+        "FR-V1-AC-7"
       ],
       "scope": {
         "write": [
@@ -6011,6 +7819,7 @@
         "FR-H8-AC-2",
         "FR-H9-AC-1",
         "FR-X1-AC-3",
+        "FR-X1-AC-4",
         "FR-V2-AC-2"
       ],
       "scope": {
@@ -7359,7 +9168,8 @@
         "FR-MAT1-AC-6",
         "FR-MAT1-AC-7",
         "FR-MAT1-AC-8",
-        "FR-MAT1-AC-9"
+        "FR-MAT1-AC-9",
+        "FR-MAT1-AC-10"
       ],
       "scope": {
         "write": [
@@ -7416,7 +9226,11 @@
         "FR-CHG1-AC-6",
         "FR-CHG1-AC-7",
         "FR-CHG1-AC-8",
-        "FR-CHG1-AC-9"
+        "FR-CHG1-AC-9",
+        "FR-CHG1-AC-10",
+        "FR-CHG1-AC-11",
+        "FR-CHG1-AC-12",
+        "FR-CHG1-AC-13"
       ],
       "scope": {
         "write": [
@@ -7437,6 +9251,7 @@
           "cockpit/static/app.css",
           "tests/test_project_change.py",
           "tests/test_project_change_ui.py",
+          "tests/test_journeys.py",
           "tests/test_brief_ln.py",
           "tests/test_access.py",
           "docs/guides/change-anything.md",
@@ -7501,7 +9316,8 @@
         "FR-MDL1-AC-6",
         "FR-MDL1-AC-7",
         "FR-MDL1-AC-8",
-        "FR-MDL1-AC-9"
+        "FR-MDL1-AC-9",
+        "FR-MDL1-AC-10"
       ],
       "scope": {
         "write": [
@@ -7525,6 +9341,720 @@
           "docs/README.md",
           "docs/cockpit.md",
           "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "POS-01",
+      "title": "Postures and priority weights: presets that set how a project runs, previewed, recorded and changeable during the run, with their effects on the intake, spec, plan, build, delivery and gates",
+      "criteria": [
+        "FR-POS1-AC-1",
+        "FR-POS1-AC-2",
+        "FR-POS1-AC-3",
+        "FR-POS2-AC-1",
+        "FR-POS2-AC-2",
+        "FR-POS2-AC-3",
+        "FR-POS3-AC-1",
+        "FR-POS3-AC-2",
+        "FR-POS4-AC-1",
+        "FR-POS4-AC-2",
+        "FR-POS5-AC-1",
+        "FR-POS5-AC-2",
+        "FR-POS6-AC-1",
+        "FR-POS6-AC-2",
+        "FR-POS6-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "kernel/posture.py",
+          "kernel/posture_rules.py",
+          "kernel/posture_change.py",
+          "kernel/posture_cli.py",
+          "kernel/intake.py",
+          "kernel/spec.py",
+          "kernel/plan.py",
+          "kernel/security.py",
+          "kernel/autonomy.py",
+          "kernel/store.py",
+          "kernel/cli.py",
+          "kernel/assistant_rules.py",
+          "cockpit/server.py",
+          "cockpit/static/posture.js",
+          "cockpit/static/screens.js",
+          "cockpit/static/project.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "mcp/server.py",
+          "tests/test_posture.py",
+          "tests/test_posture_cockpit.py",
+          "tests/test_posture_ui.py",
+          "tests/test_access.py",
+          "tests/test_brief_ln.py",
+          "docs/guides/postures.md",
+          "docs/README.md",
+          "docs/cockpit.md",
+          "docs/mcp.md"
+        ]
+      }
+    },
+    {
+      "id": "POS-02",
+      "title": "Postures repaired: no second go-ahead for a built revision, the customer's side decides under a confirming posture, evidence before staging at pilot, no risk acceptance of what a posture requires, plan cards follow a posture change",
+      "criteria": [
+        "FR-POS7-AC-1",
+        "FR-POS7-AC-2",
+        "FR-POS7-AC-3",
+        "FR-POS7-AC-4",
+        "FR-POS7-AC-5",
+        "FR-POS4-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/posture.py",
+          "kernel/posture_rules.py",
+          "kernel/posture_change.py",
+          "kernel/plan.py",
+          "kernel/autonomy.py",
+          "kernel/security.py",
+          "kernel/canon.py",
+          "kernel/deliver.py",
+          "kernel/status.py",
+          "cockpit/ui_map.json",
+          "tests/test_posture.py",
+          "tests/test_posture_holds.py",
+          "docs/guides/postures.md",
+          "cockpit/server.py",
+          "cockpit/static/core.js",
+          "cockpit/static/project.js",
+          "cockpit/static/widgets.js",
+          "tests/test_posture_ui.py"
+        ]
+      }
+    },
+    {
+      "id": "POS-03",
+      "title": "Every read of what a persona may decide follows a card's narrowed deciders, as the kernel's refusal does",
+      "criteria": [
+        "FR-POS7-AC-6"
+      ],
+      "scope": {
+        "write": [
+          "kernel/canon.py",
+          "cockpit/server.py",
+          "mcp/server.py",
+          "kernel/assistant_rules.py",
+          "kernel/assistant_snapshot.py",
+          "tests/test_posture_cockpit.py",
+          "docs/guides/postures.md"
+        ]
+      }
+    },
+    {
+      "id": "BA-01",
+      "title": "Brownfield assessment: rihmasto assess and the cockpit's Assessment view judge an adopted system from CI/CD governance, maintenance, security, compliance and architecture and operations, with the panel's model-proposed findings kept apart, a versioned record in the ledger, and findings filed as changes",
+      "criteria": [
+        "FR-BA1-AC-1",
+        "FR-BA1-AC-2",
+        "FR-BA1-AC-3",
+        "FR-BA1-AC-4",
+        "FR-BA1-AC-5",
+        "FR-BA1-AC-6",
+        "FR-BA1-AC-7",
+        "FR-BA1-AC-8",
+        "FR-BA1-AC-9",
+        "FR-BA1-AC-10",
+        "FR-BA1-AC-11",
+        "FR-BA1-AC-12",
+        "FR-BA1-AC-13",
+        "FR-BA1-AC-14",
+        "FR-BA1-AC-15",
+        "FR-BA1-AC-16",
+        "FR-BA1-AC-17"
+      ],
+      "depends_on": [
+        "V-40"
+      ],
+      "scope": {
+        "write": [
+          "kernel/assess.py",
+          "kernel/assess_repo.py",
+          "kernel/assess_delivery.py",
+          "kernel/assess_trust.py",
+          "kernel/assess_ops.py",
+          "kernel/assess_panel.py",
+          "kernel/assess_cards.py",
+          "kernel/assess_cli.py",
+          "kernel/cli.py",
+          "kernel/evidence_pack.py",
+          "kernel/assistant_rules.py",
+          "cockpit/server.py",
+          "cockpit/static/assessment.js",
+          "cockpit/static/project.js",
+          "cockpit/static/core.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "mcp/server.py",
+          "tests/test_assess.py",
+          "tests/test_assess_honesty.py",
+          "tests/test_ui_assess.py",
+          "tests/test_mcp.py",
+          "tests/fixtures/assess/**",
+          "docs/brownfield.md",
+          "docs/cockpit.md",
+          "docs/mcp.md"
+        ]
+      }
+    },
+    {
+      "id": "SC-01",
+      "title": "Small capabilities end to end: the automation profile and capability template, the runtime declaration, one image with MCP, OpenAI-compatible, embed and HTTP faces behind the pack guard, the verified trigger path and results out, rihmasto capability check and serve, Compose faces, the gateway's agent route, the Releases tab's runtime section and the guide",
+      "criteria": [
+        "FR-SC1-AC-1",
+        "FR-SC1-AC-2",
+        "FR-SC1-AC-3",
+        "FR-SC2-AC-1",
+        "FR-SC2-AC-2",
+        "FR-SC2-AC-3",
+        "FR-SC3-AC-1",
+        "FR-SC3-AC-2",
+        "FR-SC3-AC-3",
+        "FR-SC3-AC-4",
+        "FR-SC3-AC-5",
+        "FR-SC3-AC-6",
+        "FR-SC4-AC-1",
+        "FR-SC4-AC-2",
+        "FR-SC4-AC-3",
+        "FR-SC5-AC-1",
+        "FR-SC5-AC-2",
+        "FR-SC5-AC-3",
+        "FR-SC5-AC-4",
+        "FR-SC6-AC-1"
+      ],
+      "depends_on": [
+        "PT-07",
+        "INT-02"
+      ],
+      "scope": {
+        "write": [
+          "kernel/runtime_decl.py",
+          "kernel/faces.py",
+          "kernel/faces_image.py",
+          "kernel/faces_http_image.py",
+          "kernel/capability_template.py",
+          "kernel/scaffold.py",
+          "kernel/scaffold_guard.py",
+          "kernel/profiles.py",
+          "kernel/compile.py",
+          "kernel/packs.py",
+          "kernel/bundle.py",
+          "kernel/roads.py",
+          "kernel/cli.py",
+          "kernel/assistant_rules.py",
+          "gateway/packs.py",
+          "cockpit/static/project.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "tests/test_small_capabilities.py",
+          "docs/guides/small-capabilities.md",
+          "docs/guides/profiles.md",
+          "docs/guides/gateway.md",
+          "docs/guides/packs-and-evidence.md",
+          "docs/capability-layer.md",
+          "docs/portability.md",
+          "docs/README.md",
+          "README.md",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "ACC2-01",
+      "title": "Access control, repair round 2: the cockpit verifies the identity provider's signed token (no shared secret), untrusted code runs only through an isolation runner while access is enforced, a replaced request is on record and every command is listed as signed or unsigned (D-0016, D-0017)",
+      "criteria": [
+        "FR-M8-AC-2",
+        "FR-M8-AC-5",
+        "FR-M8-AC-6",
+        "FR-ID1-AC-1",
+        "FR-ID1-AC-2",
+        "FR-ID1-AC-3",
+        "FR-ID1-AC-4",
+        "FR-ID1-AC-5",
+        "FR-ID2-AC-1",
+        "FR-ID2-AC-2",
+        "FR-ID2-AC-3",
+        "FR-ID3-AC-1",
+        "FR-ID3-AC-2",
+        "FR-ID3-AC-3"
+      ],
+      "depends_on": [
+        "V-94"
+      ],
+      "scope": {
+        "write": [
+          "kernel/access.py",
+          "kernel/access_tokens.py",
+          "kernel/access_isolation.py",
+          "kernel/access_cli.py",
+          "kernel/accessfile.py",
+          "kernel/jwt_verify.py",
+          "kernel/people.py",
+          "kernel/cli.py",
+          "kernel/gate.py",
+          "kernel/roads.py",
+          "kernel/model.py",
+          "kernel/intake.py",
+          "cockpit/server.py",
+          "cockpit/static/core.js",
+          "cockpit/static/app.js",
+          "cockpit/static/index.html",
+          "cockpit/ui_map.json",
+          "kernel/assistant_rules.py",
+          "embed/server.py",
+          "tests/access_fakes.py",
+          "tests/test_access.py",
+          "tests/test_access_hardening.py",
+          "tests/test_access_tokens.py",
+          "tests/test_access_isolation.py",
+          "tests/test_access_records.py",
+          "docs/guides/access.md",
+          "docs/cockpit.md",
+          "docs/integrations.md",
+          "docs/README.md",
+          "SECURITY.md"
+        ]
+      }
+    },
+    {
+      "id": "ACC3-01",
+      "title": "Access control, repair round 3: adoption's baseline isolated, the lane's .git scrubbed before the kernel's git, token names never pass for listed people, the separate account can read its task file, and the key file takes public keys only (D-0016, D-0017)",
+      "criteria": [
+        "FR-ID4-AC-1",
+        "FR-ID4-AC-2",
+        "FR-ID4-AC-3",
+        "FR-ID4-AC-4",
+        "FR-ID4-AC-5"
+      ],
+      "depends_on": [
+        "ACC2-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/access.py",
+          "kernel/access_isolation.py",
+          "kernel/git_guard.py",
+          "kernel/jwt_verify.py",
+          "kernel/lanes.py",
+          "kernel/gate.py",
+          "kernel/model.py",
+          "kernel/adopt.py",
+          "cockpit/ui_map.json",
+          "tests/test_access_escapes.py",
+          "docs/guides/access.md",
+          "SECURITY.md"
+        ]
+      }
+    },
+    {
+      "id": "ACC4-01",
+      "title": "Access control, repair round 4: no repository inside a lane, no link under tests/ followed, no replace ref, graft or forged refspec in what the kernel's git sees, and no lookalike token name (D-0016, D-0017)",
+      "criteria": [
+        "FR-ID5-AC-1",
+        "FR-ID5-AC-2",
+        "FR-ID5-AC-3",
+        "FR-ID5-AC-4",
+        "FR-ID5-AC-5"
+      ],
+      "depends_on": [
+        "ACC3-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/git_guard.py",
+          "kernel/lanes.py",
+          "kernel/gate.py",
+          "kernel/access_isolation.py",
+          "kernel/access.py",
+          "kernel/name_skeleton.py",
+          "cockpit/ui_map.json",
+          "tests/test_access_lane_git.py",
+          "docs/guides/access.md",
+          "SECURITY.md"
+        ]
+      }
+    },
+    {
+      "id": "DS-01",
+      "title": "Data integrations declared: the declaration, the spec and the plan, the command line, the cockpit's plan and the assistant's map",
+      "criteria": [
+        "FR-DS1-AC-1",
+        "FR-DS1-AC-2",
+        "FR-DS1-AC-3",
+        "FR-DS1-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/integration_decl.py",
+          "kernel/spec.py",
+          "kernel/plan.py",
+          "kernel/cli.py",
+          "kernel/assistant_rules.py",
+          "cockpit/server.py",
+          "cockpit/static/project.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "tests/test_data_integrations.py",
+          "tests/test_access.py",
+          "docs/guides/data-integrations.md",
+          "docs/README.md"
+        ]
+      }
+    },
+    {
+      "id": "DS-02",
+      "title": "Data integrations bound: road bindings, the road card IT decides, the deploy package and the Compose file",
+      "criteria": [
+        "FR-DS2-AC-1",
+        "FR-DS2-AC-2",
+        "FR-DS2-AC-3"
+      ],
+      "depends_on": [
+        "DS-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/integration_bind.py",
+          "kernel/deliver.py",
+          "kernel/roads.py",
+          "tests/test_data_integrations.py",
+          "docs/guides/data-integrations.md",
+          "docs/paved-roads.md"
+        ]
+      }
+    },
+    {
+      "id": "DS-03",
+      "title": "Data integrations at the gate: stand-ins and the integrations signal",
+      "criteria": [
+        "FR-DS3-AC-1",
+        "FR-DS3-AC-2",
+        "FR-DS3-AC-3"
+      ],
+      "depends_on": [
+        "DS-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/integration_standins.py",
+          "kernel/gate.py",
+          "tests/test_integration_standins.py",
+          "docs/guides/data-integrations.md"
+        ]
+      }
+    },
+    {
+      "id": "DS-04",
+      "title": "Reference connectors for PostgreSQL, Snowflake, S3-compatible storage and OpenAPI business APIs, with the PostgreSQL live check",
+      "criteria": [
+        "FR-DS4-AC-1",
+        "FR-DS4-AC-2",
+        "FR-DS4-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "connectors/postgres/**",
+          "connectors/snowflake/**",
+          "connectors/s3/**",
+          "connectors/openapi/**",
+          "tests/test_connectors_contract.py",
+          "tests/test_connectors_live.py",
+          "docs/integrations.md",
+          "docs/guides/data-integrations.md"
+        ]
+      }
+    },
+    {
+      "id": "DS-05",
+      "title": "Data integrations on the docker road: each env: credential passed by name, its value only in the docker CLI's environment",
+      "criteria": [
+        "FR-DS5-AC-1"
+      ],
+      "depends_on": [
+        "DS-02"
+      ],
+      "scope": {
+        "write": [
+          "kernel/integration_bind.py",
+          "kernel/roads.py",
+          "tests/test_data_integrations.py",
+          "docs/guides/data-integrations.md",
+          "docs/paved-roads.md"
+        ]
+      }
+    },
+    {
+      "id": "DS-06",
+      "title": "Data integrations: no credential named like a variable the deploy tools read reaches their environment",
+      "criteria": [
+        "FR-DS5-AC-2"
+      ],
+      "depends_on": [
+        "DS-05"
+      ],
+      "scope": {
+        "write": [
+          "kernel/integration_decl.py",
+          "kernel/integration_bind.py",
+          "kernel/roads.py",
+          "tests/test_data_integrations.py",
+          "docs/guides/data-integrations.md"
+        ]
+      }
+    },
+    {
+      "id": "AM-01",
+      "title": "The acceptance matrix: docs/acceptance.md and its offline cells in tests/acceptance",
+      "criteria": [
+        "FR-AM1-AC-1",
+        "FR-AM2-AC-1",
+        "FR-AM2-AC-2",
+        "FR-AM2-AC-3",
+        "FR-AM2-AC-4",
+        "FR-AM3-AC-1",
+        "FR-AM3-AC-2",
+        "FR-AM3-AC-3",
+        "FR-AM4-AC-1",
+        "FR-AM4-AC-2",
+        "FR-AM5-AC-1",
+        "FR-AM6-AC-1",
+        "FR-AM6-AC-2",
+        "FR-AM6-AC-3",
+        "FR-AM6-AC-4",
+        "FR-AM6-AC-5",
+        "FR-AM7-AC-1",
+        "FR-AM7-AC-2",
+        "FR-AM8-AC-1",
+        "FR-AM1-AC-2",
+        "FR-AM1-AC-3",
+        "FR-AM5-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "docs/README.md",
+          "docs/acceptance.md",
+          "tests/acceptance/**"
+        ]
+      }
+    },
+    {
+      "id": "AM-02",
+      "title": "Deliver an adopted service developed further on a paved road",
+      "criteria": [
+        "FR-AM5-AC-2"
+      ],
+      "depends_on": [
+        "AM-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/adopt.py",
+          "kernel/deliver.py",
+          "kernel/roads.py",
+          "tests/acceptance/test_brownfield.py",
+          "docs/acceptance.md",
+          "docs/brownfield.md"
+        ]
+      }
+    },
+    {
+      "id": "AM-03",
+      "title": "The run carries out an accepted change card, so the cockpit's Advance does",
+      "criteria": [
+        "FR-AM5-AC-3"
+      ],
+      "depends_on": [
+        "AM-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/pipeline.py",
+          "kernel/change.py",
+          "tests/acceptance/test_brownfield.py",
+          "docs/acceptance.md",
+          "docs/how-it-works.md"
+        ]
+      }
+    },
+    {
+      "id": "AM-04",
+      "title": "Intake records who asked and who chose the mode in the ledger",
+      "criteria": [
+        "FR-AM8-AC-2"
+      ],
+      "depends_on": [
+        "AM-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/intake.py",
+          "kernel/store.py",
+          "tests/acceptance/test_trace.py",
+          "docs/acceptance.md"
+        ]
+      }
+    },
+    {
+      "id": "HRN-01",
+      "title": "Other harnesses as opt-in cell runners, with the governance glue checked after every run (D-0019)",
+      "criteria": [
+        "FR-HRN1-AC-1",
+        "FR-HRN1-AC-2",
+        "FR-HRN1-AC-3",
+        "FR-HRN1-AC-4",
+        "FR-HRN1-AC-5",
+        "FR-HRN1-AC-6",
+        "FR-HRN1-AC-7",
+        "FR-HRN1-AC-8",
+        "FR-HRN1-AC-9",
+        "FR-HRN1-AC-10",
+        "FR-HRN1-AC-11",
+        "FR-HRN1-AC-12",
+        "FR-HRN1-AC-13"
+      ],
+      "depends_on": [],
+      "scope": {
+        "write": [
+          "kernel/runners/**",
+          "kernel/dispatch.py",
+          "kernel/evidence_pack.py",
+          "kernel/canon.py",
+          "kernel/delegation.py",
+          "kernel/cli.py",
+          "kernel/assistant_rules.py",
+          "cockpit/runner_routes.py",
+          "cockpit/server.py",
+          "cockpit/static/**",
+          "cockpit/ui_map.json",
+          "tests/test_runners.py",
+          "tests/test_ui_runners.py",
+          "tests/runner_fakes.py",
+          "docs/guides/harnesses.md"
+        ]
+      }
+    },
+    {
+      "id": "AGC-01",
+      "title": "Agent context: a project's AI tool configuration recognised, followed, shown, and the IDE connected back",
+      "criteria": [
+        "FR-AGC1-AC-1",
+        "FR-AGC1-AC-2",
+        "FR-AGC1-AC-3",
+        "FR-AGC1-AC-4",
+        "FR-AGC1-AC-5",
+        "FR-AGC1-AC-6",
+        "FR-AGC1-AC-7",
+        "FR-AGC1-AC-8",
+        "FR-AGC1-AC-9"
+      ],
+      "depends_on": [],
+      "scope": {
+        "write": [
+          "kernel/agent_context.py",
+          "kernel/agent_context_use.py",
+          "kernel/ide.py",
+          "kernel/material.py",
+          "kernel/material_kinds.py",
+          "kernel/material_cli.py",
+          "kernel/material_adopt.py",
+          "kernel/adopt.py",
+          "kernel/attach.py",
+          "kernel/assess.py",
+          "kernel/assess_panel.py",
+          "kernel/intake.py",
+          "kernel/dispatch.py",
+          "kernel/cli.py",
+          "kernel/assistant_rules.py",
+          "cockpit/agent_routes.py",
+          "cockpit/server.py",
+          "cockpit/static/aitools.js",
+          "cockpit/static/scan.js",
+          "cockpit/static/project.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "tests/agent_context_fixture.py",
+          "tests/test_agent_context.py",
+          "tests/test_ui_agent_context.py",
+          "docs/guides/ide-and-rihmasto.md",
+          "docs/guides/inputs.md",
+          "docs/brownfield.md",
+          "docs/cockpit.md",
+          "docs/README.md",
+          "README.md",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "AUT-01",
+      "title": "Automations per project and across them: triggers, guards, allow-listed actions, scope and limits",
+      "depends_on": [],
+      "criteria": [
+        "FR-AUT1-AC-1",
+        "FR-AUT1-AC-2",
+        "FR-AUT1-AC-3",
+        "FR-AUT1-AC-4",
+        "FR-AUT1-AC-5",
+        "FR-AUT1-AC-6",
+        "FR-AUT1-AC-7",
+        "FR-AUT1-AC-8",
+        "FR-AUT1-AC-9",
+        "FR-AUT1-AC-10",
+        "FR-AUT1-AC-11",
+        "FR-AUT1-AC-12",
+        "FR-AUT1-AC-13",
+        "FR-AUT1-AC-14",
+        "FR-AUT1-AC-15",
+        "FR-AUT1-AC-16",
+        "FR-AUT1-AC-17"
+      ],
+      "scope": {
+        "write": [
+          "kernel/automations.py",
+          "kernel/automations_run.py",
+          "kernel/automations_actions.py",
+          "kernel/automations_text.py",
+          "kernel/automations_cli.py",
+          "kernel/cli.py",
+          "kernel/hooks.py",
+          "kernel/relay.py",
+          "kernel/integrations.py",
+          "kernel/next_step.py",
+          "kernel/assistant_rules.py",
+          "cockpit/automation_routes.py",
+          "cockpit/server.py",
+          "cockpit/static/automations.js",
+          "cockpit/static/core.js",
+          "cockpit/static/app.js",
+          "cockpit/static/project.js",
+          "cockpit/static/dashboard.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "tests/test_automations.py",
+          "tests/test_automations_actions.py",
+          "tests/test_automations_cockpit.py",
+          "tests/test_ui_automations.py",
+          "tests/test_brief_ln.py",
+          "tests/test_access.py",
+          "tests/test_ui_modules.py",
+          "docs/guides/automations.md",
+          "docs/guides/integrations.md",
+          "docs/cockpit.md",
+          "docs/README.md",
+          "README.md",
+          "CHANGELOG.md",
+          "kernel/automations_events.py",
+          "kernel/deliver.py",
+          "kernel/dispatch.py",
+          "tests/test_automation_lifecycle.py"
         ]
       }
     }

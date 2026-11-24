@@ -407,6 +407,7 @@
     "question_assumed": {"id": "question", "assumption": "assumption", "chosen_by": "person"},
     "assumption_added": {"id": "assumption"},
     "assumption_settled": {"id": "assumption", "status": null},
+    "question_withdrawn": {"id": "question", "was": null},
     "card_opened": {"id": "card"},
     "decision": {"id": "decision", "card": "card", "kind": null, "verdict": null, "person": "person",
                  "persona": null, "refs": null},

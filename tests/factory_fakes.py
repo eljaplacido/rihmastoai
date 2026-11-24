@@ -37,6 +37,9 @@ def isolated_routing(case: unittest.TestCase, tmp: Path) -> Path:
     case.addCleanup(env.stop)
     for name in KEY_VARS:
         os.environ.pop(name, None)
+    held = mock.patch("kernel.models_setup.gnomon_keys", return_value=frozenset())   # nor the keys Gnomon holds here
+    held.start()
+    case.addCleanup(held.stop)
     return folder
 
 PANEL = {

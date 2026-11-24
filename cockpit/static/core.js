@@ -10,12 +10,13 @@ export const FACTORY_PID = "_factory";
 export const PAGE_ROUTES = {
   "home": "#/home", "square": "#/square", "catalogue": "#/catalogue", "projects": "#/projects",
   "inbox_all": "#/inbox", "floor": "#/floor", "jobs": "#/jobs", "settings": "#/settings",
-  "shape": "#/shape", "models": "#/models",
+  "shape": "#/shape", "models": "#/models", "runners": "#/runners", "automations_all": "#/automations",
   "overview": "#/p/{pid}/overview", "inbox": "#/p/{pid}/inbox", "questions": "#/p/{pid}/questions",
   "assumptions": "#/p/{pid}/assumptions", "plan": "#/p/{pid}/plan", "spec": "#/p/{pid}/spec",
   "tasks": "#/p/{pid}/tasks", "cell": "#/p/{pid}/cell", "releases": "#/p/{pid}/releases",
   "try": "#/p/{pid}/try", "changes": "#/p/{pid}/changes", "ledger": "#/p/{pid}/ledger",
-  "evidence": "#/p/{pid}/evidence", "track": "#/p/{pid}/track", "outputs": "#/p/{pid}/outputs"
+  "evidence": "#/p/{pid}/evidence", "track": "#/p/{pid}/track", "outputs": "#/p/{pid}/outputs",
+  "assessment": "#/p/{pid}/assessment", "automations": "#/p/{pid}/automations"
 };
 export const TOP_PAGES = Object.keys(PAGE_ROUTES).filter((k) => !PAGE_ROUTES[k].includes("{pid}"));
 export const PROJECT_VIEWS = Object.keys(PAGE_ROUTES).filter((k) => PAGE_ROUTES[k].includes("{pid}"));
@@ -31,6 +32,8 @@ export const PAGES = {
   settings: { label: "Settings", icon: "settings" },
   shape: { label: "Shape it in chat", icon: "message-square" },
   models: { label: "Models", icon: "cpu" },
+  runners: { label: "Runners", icon: "layers" },
+  automations_all: { label: "Automations", icon: "clock" },
 };
 export const VIEWS = {
   overview: { label: "Overview", icon: "home" },
@@ -48,6 +51,8 @@ export const VIEWS = {
   evidence: { label: "Evidence", icon: "shield" },
   track: { label: "Track", icon: "flag" },
   outputs: { label: "Outputs", icon: "send" },
+  assessment: { label: "Assessment", icon: "gauge" },
+  automations: { label: "Automations", icon: "clock" },
 };
 export const FACTORY_VIEWS = ["overview", "inbox", "ledger"];
 export const STAGE_ICON = { 1: "briefcase", 2: "lightbulb", 3: "code", 4: "file-check", 5: "hammer", 6: "users", 7: "server" };
@@ -55,12 +60,13 @@ export const STAGE_VIEW = { 1: "questions", 2: "questions", 3: "spec", 4: "spec"
 export const KIND_LABEL = {
   question: "Question", approval: "Approval", validation: "Validation", deploy_gate: "Deploy gate",
   incident: "Incident", change: "Change", escalation: "Escalation", road: "Paved road", trust: "Trust",
-  holdout_ruling: "Holdout ruling", concept: "Concept", update: "Update",
+  holdout_ruling: "Holdout ruling", concept: "Concept", update: "Update", go_ahead: "Go-ahead",
+  runner: "Cell runner",
 };
 export const KIND_ICON = {
   question: "comment", approval: "check-circle", validation: "users", deploy_gate: "server", incident: "alert",
   change: "refresh", escalation: "flag", road: "arrow-right", trust: "key", holdout_ruling: "shield",
-  concept: "lightbulb", update: "bell",
+  concept: "lightbulb", update: "bell", go_ahead: "eye", runner: "layers",
 };
 export const VERDICT_LABEL = {
   answer: "Answer", assume: "Let Rihma assume", approve: "Approve", reject: "Reject", accept: "Accept",
@@ -68,7 +74,7 @@ export const VERDICT_LABEL = {
   rollback: "Roll back", open_defect: "Open a defect", defer: "Defer", retry: "Retry",
   accept_as_is: "Accept as is", stop: "Stop", configured: "Configured", declined: "Declined", granted: "Granted",
   validate: "Validate", park: "Park", trial: "Start a trial", decline: "Decline", product_defect: "Product defect",
-  scenario_defect: "Scenario defect",
+  scenario_defect: "Scenario defect", go: "Go: build it", skip: "Skip: build without my look",
 };
 export const CLASS_LABEL = {
   defect: "defect", change_request: "change request", new_requirement: "new requirement",
@@ -295,9 +301,10 @@ export function ago(at) {
 // -- people -------------------------------------------------------------------------------------
 
 export function personaLabel(id) { const p = S.personas.find((x) => x.id === id); return p ? p.label : (id || ""); }
-export function decides(kind) {
+// ``who``: a card's own deciders, when it names fewer than its kind's (a posture may narrow them).
+export function decides(kind, who) {
   const p = S.personas.find((x) => x.id === S.persona);
-  return !!p && p.decides.includes(kind);
+  return !!p && p.decides.includes(kind) && (!who || !who.length || who.includes(S.persona));
 }
 export function orList(ids) {
   const words = ids.map(personaLabel);
@@ -344,8 +351,26 @@ export function setSignedOutHandler(fn) { onSignedOut = fn; }
 // cookie and needs it on every request. The cockpit itself sets and reads no cookie.
 export const CREDENTIALS = "same-origin";
 
-export async function api(method, path, body) {
-  const opts = { method, headers: { Authorization: "Bearer " + S.token }, cache: "no-store", credentials: CREDENTIALS };
+// The session: a single operator's as a Bearer token; with access enforced, in X-Rihmasto-Session, since
+// IT's proxy may put the organisation's signed token in Authorization (kernel/access_tokens.py).
+function sessionHeaders() { return { Authorization: "Bearer " + S.token, "X-Rihmasto-Session": S.token || "" }; }
+
+// With access enforced a session ends with the sign-in token it was opened with. The proxy forwards a
+// fresh token on every request, so the page signs in again once, quietly, before it shows the sign-in card.
+async function signInAgain() {
+  try {
+    const res = await fetch("/auth", { method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store",
+      credentials: CREDENTIALS, body: "{}" });
+    const data = await res.json();
+    if (!res.ok || !data.token) return false;
+    S.token = data.token;
+    store.set("gf.token", S.token);
+    return true;
+  } catch (e) { return false; }
+}
+
+export async function api(method, path, body, again = true) {
+  const opts = { method, headers: sessionHeaders(), cache: "no-store", credentials: CREDENTIALS };
   if (method !== "GET") {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body || {});
@@ -359,6 +384,7 @@ export async function api(method, path, body) {
   let data = null;
   try { data = await res.json(); } catch (e) { data = null; }
   if (res.status === 401) {
+    if (again && data && data.access === "enforced" && S.token && await signInAgain()) return api(method, path, body, false);
     S.token = null;
     store.del("gf.token");
     if (data && data.access === "enforced") S.enforcedSignIn = true;   // sign in again through the proxy
@@ -375,7 +401,7 @@ export async function api(method, path, body) {
 
 // A binary download behind the bearer token: fetched, then handed to the browser as a file.
 export async function download(path, fallbackName) {
-  const res = await fetch(path, { headers: { Authorization: "Bearer " + S.token }, cache: "no-store", credentials: CREDENTIALS });
+  const res = await fetch(path, { headers: sessionHeaders(), cache: "no-store", credentials: CREDENTIALS });
   if (!res.ok) {
     let msg = res.status + " " + res.statusText;
     try { msg = (await res.json()).error || msg; } catch (e) { /* not JSON */ }

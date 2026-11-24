@@ -199,7 +199,8 @@ class ProposalTest(Built):
         canon.answer(answered, "Laptops and drills", person="Aino", persona="business_owner")
         sources = [self.p.pid, self.esc["id"], self.change["id"], "R-1", "R-1-AC-1", answered, "T-001",
                    f"card: {self.esc['id']}", f"project: {self.p.pid}", "factory.gates.first_round_rate",
-                   f"question: {answered} (implied by {self.change['id']})", "release 1", "C-9999", "made-up"]
+                   f"question: {answered} (implied by {self.change['id']})", "release 1", "C-9999", "made-up",
+                   "project_settings", "models"]          # a control and a view of the cockpit's map are sources too
         out = self.ask_model("Where does it stand?", {"answer": "x", "navigate": None, "propose": [],
                                                       "sources": sources})
         self.assertEqual(out["unbacked_sources"], ["C-9999", "made-up"])
@@ -220,6 +221,13 @@ class NavigationAndLaneTest(Built):
         out = self.ask_model("Where?", {"answer": "x", "propose": [], "sources": [],
                                         "navigate": {"route": "#/p/no-such-project/inbox", "control": None}})
         self.assertIsNone(out["navigate"])
+        # "open" with a control of the map as its route is Take me there, never "not a cockpit route"
+        out = self.ask_model("I chose the wrong template, what do I do?", {
+            "answer": "Change it in Project settings.", "navigate": None, "sources": ["project_settings"],
+            "propose": [{"action": "open", "args": {"route": "project_settings"}, "why": "w"}]})
+        self.assertEqual((out["dropped"], out["unbacked_sources"]), ([], []))
+        self.assertEqual(out["navigate"], {"route": f"#/p/{pid}/overview", "control": "project_settings"})
+        self.assertNotIn("could not offer", out["answer"])
 
     def test_FR_V1_AC_3_a_busy_lane_falls_back_to_the_map_with_a_note(self):
         class Busy(FakeModel):

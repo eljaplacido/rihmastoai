@@ -161,11 +161,12 @@ def doctor(home, *, gnomon=None, routing: dict | None = None, lanes_root=None, e
         except ValueError as exc:
             warnings.append(f"the routing could not be read: {exc}")
             routing = {}
-    from kernel.models_setup import stored_keys  # a key stored in Models setup counts as set (FR-MDL1)
+    from kernel.models_setup import gnomon_keys, stored_keys  # stored in Models setup, or held by Gnomon: set
 
     stored = stored_keys() if environ is None else {}
+    held = (gnomon_keys() or frozenset()) if environ is None else frozenset()
     endpoints = [{"name": name, "api_key_env": ep["api_key_env"],
-                  "set": bool(env.get(ep["api_key_env"]) or stored.get(ep["api_key_env"]))}
+                  "set": bool(env.get(ep["api_key_env"]) or stored.get(ep["api_key_env"]) or ep["api_key_env"] in held)}
                  for name, ep in sorted((routing.get("endpoints") or {}).items())
                  if isinstance(ep, dict) and ep.get("api_key_env")]
     for e in endpoints:

@@ -122,7 +122,11 @@ def accept_risk(project: Any, finding: str, *, person: str, persona: str, reason
     if until <= _today(project):
         raise DecisionRefused(f"the expiry {until.isoformat()} is not after today: "
                               "an acceptance must end in the future")
-    current = findings(project)
+    from kernel.posture_rules import not_a_risk
+
+    current, required = findings(project), not_a_risk(finding)
+    if required:   # what a posture requires (POSTURE-*) is not a finding
+        raise DecisionRefused(required)
     f = next((x for x in current if finding in (x["id"], x["fingerprint"])), None)
     if f is None:
         raise KeyError(f"no current finding {finding!r}")
@@ -196,9 +200,15 @@ def _measured(project: Any, block_on: tuple, newest: dict) -> dict:
             "scans": [_scan_ref(k, s) for k, s in sorted(newest.items())]}
 
 
-def security_gate(project: Any, *, block_on: Any = ("error",), record: bool = True) -> dict:
-    """passed, failed (open findings at a blocking level), or not measured (no scan)."""
-    block_on = tuple(block_on)
+def security_gate(project: Any, *, block_on: Any = None, record: bool = True, posture: bool = True) -> dict:
+    """passed, failed (open findings at a blocking level), or not measured (no scan). ``block_on`` left
+    out is the project's posture's levels, else errors; what the posture requires and is missing (a scan,
+    a red-team layer, an evidence pack before production) blocks too (kernel/posture_rules.py), unless
+    ``posture`` is False (a pack's summary of the findings)."""
+    from kernel.posture_rules import block_on as posture_levels
+    from kernel.posture_rules import gate_requirements
+
+    block_on = tuple(block_on or posture_levels(project) or ("error",))
     unknown = [lvl for lvl in block_on if lvl not in LEVELS]
     if unknown:
         raise ValueError(f"block_on takes {', '.join(LEVELS)}, got {unknown}")
@@ -209,6 +219,8 @@ def security_gate(project: Any, *, block_on: Any = ("error",), record: bool = Tr
                   "blocking": [], "accepted": [], "reopened": [], "scans": []}
     else:
         result = _measured(project, block_on, newest)
+    if posture:
+        result = gate_requirements(project, result)
     if record:
         _record_expiries(project)
         project.log("security_gate", {"verdict": result["verdict"], "block_on": list(block_on),
@@ -234,7 +246,7 @@ def summary(project: Any) -> dict:
     newest = latest(project)
     if not newest:
         return {"verdict": "not measured", "note": NO_SCAN, "scans": [], "accepted_risks": [], "open": {}}
-    gate = security_gate(project, record=False)
+    gate = security_gate(project, record=False, posture=False)
     rows = findings(project)
     return {"verdict": gate["verdict"], "note": gate["reason"], "block_on": gate["block_on"],
             "scans": [_scan_line(k, s) for k, s in sorted(newest.items())],

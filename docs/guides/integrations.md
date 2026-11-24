@@ -217,7 +217,12 @@ Each accepted ring becomes **one signal** in the delivery square (channel `feed`
   open.
 - **Nothing an outside system sends decides a card.** A person triages the signal, and a person
   decides the change.
-- **Every accepted ring** is recorded in the factory's ledger as `hook_received`.
+- **Every accepted ring** is recorded in the factory's ledger as `hook_received`, with the pushed
+  branch when the body names one (`ref: refs/heads/main`).
+- **A source bound to projects** (`hooks add ... --bind <pid>`, or later `hooks bind <source> --project
+  <pid>`) also records each ring in those projects' ledgers, so their automations react to it
+  ([automations](automations.md)). A relay subscription made with `--project <pid>` is that project's
+  own receiver: no other project's events go to it.
 
 ## 5. Connectors
 

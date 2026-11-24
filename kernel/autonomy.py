@@ -100,8 +100,15 @@ def require(project, needed: int, what: str) -> None:
 
 
 def cleared_to_build(project: Project) -> Project:
-    """``project`` itself when the cap lets the factory build it (level 3); AutonomyCapped otherwise."""
+    """``project`` itself when the cap lets the factory build it (level 3); AutonomyCapped otherwise.
+    A project's posture may hold it further: a go-ahead card above the posture's autonomy, assumptions to
+    confirm (kernel/posture_rules.py; nothing without a posture). A revision already built is not built
+    again (the pipeline asks before a ruling that may rebuild): the posture holds the next build instead."""
+    from kernel.posture_rules import clear
+
     require(project, BUILD_LEVEL, "building")
+    if not project.meta.get("built"):
+        clear(project, "build")
     return project
 
 
@@ -110,12 +117,14 @@ def cleared_to_deliver(project: Project) -> Project:
     nothing, FR-J3), and the cap lets it land where its maturity lands it (a preview or a demo at
     level 3, staging or production at 4). PermissionError otherwise, AutonomyCapped for the cap."""
     from kernel.deliver import LANDING
+    from kernel.posture_rules import clear
     from kernel.safestop import paused
 
     if paused(project):
         raise PermissionError(f"{project.pid} is paused: a person resumes it before anything is delivered")
     landing = LANDING[project.meta["maturity"]]
     require(project, LANDING_LEVEL.get(landing, 4), f"delivering to {landing}")
+    clear(project, "deliver", landing)    # a posture's go-ahead and landing gate (nothing without a posture)
     return project
 
 

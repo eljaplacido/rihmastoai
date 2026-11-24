@@ -189,7 +189,7 @@ class ProposalTest(McpCase):
         self.assertEqual({t["name"] for t in tools},
                          {"rihma_projects", "rihma_project", "rihma_waiting", "rihma_floor", "rihma_timeline",
                           "rihma_evidence", "rihma_square", "rihma_ask", "rihma_report_change", "rihma_comment",
-                          "rihma_signal", "rihma_track", "rihma_autopilot"})
+                          "rihma_signal", "rihma_track", "rihma_autopilot", "rihma_assessment"})
         for t in tools:
             for word in DECIDING:
                 self.assertNotIn(word, t["name"].lower(), t["name"])

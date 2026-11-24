@@ -33,7 +33,7 @@ from kernel.events import CARD_EVENTS
 KIND_LABEL = {"question": "Question", "approval": "Approval", "validation": "Validation",
               "deploy_gate": "Deploy gate", "incident": "Incident", "change": "Change", "escalation": "Escalation",
               "road": "Paved road", "trust": "Trust", "holdout_ruling": "Holdout ruling", "concept": "Concept",
-              "update": "Update", "connector": "Connector"}
+              "update": "Update", "connector": "Connector", "go_ahead": "Go-ahead"}
 PERSONA_LABEL = {"business_owner": "business owner", "product_owner": "product owner",
                  "concept_evaluator": "concept evaluator", "end_user": "end user", "it": "IT"}
 OPEN_LABEL = "Open in the Inbox"

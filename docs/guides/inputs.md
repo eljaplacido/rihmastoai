@@ -19,6 +19,7 @@ does not state, and the project's mode settles those gaps. The intake summary sh
 | Facts as nodes of the knowledge graph | Planned (an ontology change is the owner's) |
 | Any folder, scanned: Word, PowerPoint, Excel, OpenDocument, HTML, CSV, JSON, YAML, TOML, PDF, logs and code | Built (FR-MAT1) |
 | The preview before anything is sent: `rihmasto scan`, `new --yes`, the cockpit's "Scan the folder" step | Built |
+| A folder's AI tool configuration (CLAUDE.md, AGENTS.md, Cursor rules, skills, MCP servers) recognised and read first | Built (FR-AGC1) |
 | Confidential material kept on local models | Built |
 | Text from scanned PDFs (OCR), legacy `.doc`/`.xls`/`.ppt`, PDF fonts with their own encodings | Not built: listed, with why |
 
@@ -56,7 +57,8 @@ an inventory: its languages by extension with file counts, entry points, test fo
 manifests with the packages they name, CI workflows and Dockerfiles.
 
 **The budget** is the intake's limit, 40,000 characters. The most telling files are read first: the
-README, then briefs and specs, then plans, reviews, handovers and the code inventory, then notes,
+README, then the project's instructions for its AI tools and their skills, subagents and commands
+(below), then briefs and specs, then plans, reviews, handovers and the code inventory, then notes,
 slides and other documents, then data and logs. A long file is summarised to its first part; when no
 room is left, a file is listed. **Nothing is cut silently**: the map's `cut` names every file that was
 summarised or listed for the budget, and why.
@@ -65,6 +67,30 @@ The request the panel reads is built from the map, each part headed with its fil
 (`## docs/requirements.md (brief or spec)`), and each part is then read as its own document by the
 rules below. A single file given as the source is read by its format the same way, and refused when it
 may hold secrets.
+
+## How AI tools here are set up
+
+A project folder a team works on with AI coding tools holds their conventions: `CLAUDE.md` and
+`AGENTS.md` at any level, `GEMINI.md`, `.cursorrules` and Cursor rules (`.cursor/rules/*.mdc`, with
+their description, globs and alwaysApply), Copilot, Windsurf and Cline instructions, Claude skills
+(`.claude/skills/*/SKILL.md` and the files bundled with them), subagents, slash commands, hooks and
+permissions (`.claude/settings.json`) and MCP servers (`.mcp.json`, `.cursor/mcp.json`,
+`.vscode/mcp.json`). The scan recognises them first, by their paths
+([kernel/agent_context.py](../../kernel/agent_context.py)), as the kind **agent context**:
+
+- the instructions are read right after the README, `CLAUDE.md` and `AGENTS.md` first: they are the
+  project's conventions, its build and test commands, architecture and rules. Skills, subagents and
+  commands come next, before briefs and plans, so a big folder keeps them within the budget;
+- hooks, permissions and MCP servers are **summarised by name**: hook events and matchers, rule
+  names, server names with their command's name or host. Never a hook's command, an argument, an
+  environment value or a header;
+- a skill's bundled files are listed with it, not read; personal settings (`.claude/settings.local.json`,
+  `CLAUDE.local.md`) are skipped, never read. **Nothing found is run.**
+
+The map shows them as their own group, **How AI tools here are set up**, and `rihmasto scan` prints
+the same with the commands the instructions state. Intake's panel is told these conventions, so it
+does not ask what they settle. What else Rihmasto does with them, and how a developer's IDE connects
+back: [Your IDE and Rihmasto](ide-and-rihmasto.md).
 
 ## See what leaves before it leaves
 
@@ -105,12 +131,19 @@ local models** box in New project ([kernel/confidential.py](../../kernel/confide
 is recorded (`confidential_set`, with who set it and the routes it holds to). While it is set, intake,
 the spec, the holdouts, a build and its verifier, a refinement and a run may only call a model whose
 endpoint is on this machine (loopback) or a private network address: the routes in
-`kernel/routing.json` with this machine's `kernel/routing.local.json` over them, fallbacks included. A
-role that would go to a hosted endpoint is **refused**, never sent: the message names the role and its
-endpoint and points at [local-models.md](local-models.md), and `confidential_refused` records where. A
-run stops in a `refused` state; the command line and the cockpit refuse before a project is created. A
-change on a confidential project is triaged by rule instead, and Ask Rihma answers from the cockpit
-map. An endpoint counts as local by its address (`localhost`, `127.0.0.1`, `10.x`, `192.168.x`,
+`kernel/routing.json` with this machine's `kernel/routing.local.json` over them. A role whose primary
+endpoint is hosted is **refused**, never sent: the message names the role and its endpoint and points at
+[local-models.md](local-models.md), and `confidential_refused` records where. A run stops in a `refused`
+state; the command line and the cockpit refuse before a project is created. A change on a confidential
+project whose analyst is hosted is triaged by rule instead, and Ask Rihma answers from the cockpit map
+when the assistant is hosted.
+
+A role whose primary endpoint is local but whose **fallback** is hosted is not refused: the hosted
+fallback is **skipped**, never called (the owner's decision of 2026-11-24). The lanes a confidential
+project's calls run in are compiled without it: the analyst lane under `<lanes>/confidential`, the
+assistant's own, the product's `.gnomon/` surface and an adopted project's. So Gnomon has no hosted
+endpoint to fall back to even when the local one fails; that call fails instead, and the run says so.
+The ledger records `confidential_fallback_skipped` once per run, naming the role and the host. An endpoint counts as local by its address (`localhost`, `127.0.0.1`, `10.x`, `192.168.x`,
 `172.16-31.x`, `::1`, a tailnet's `100.64-127.x`) or a name reserved for private networks (`.local`,
 `.lan`, `.internal`, `.home.arpa`). Any other host name is taken as hosted, since Rihmasto does not
 resolve names. A model server on your own network that you reach by name (a GPU box on a tailnet or a

@@ -12,8 +12,11 @@ and says for every file what happens to it:
   holds a credential). A secret is never read into the request and never shown.
 
 The budget is the intake's limit (kernel.intake.MAX_SOURCE_CHARS). The most telling files are read
-first: briefs and specs, then plans, reviews, handovers and the code inventory, then notes, slides and
-other documents, then data and logs. Nothing is cut silently: the map's ``cut`` says what was cut and why.
+first: the README, then the project's instructions for its AI tools (CLAUDE.md, AGENTS.md, Cursor rules:
+kernel/agent_context.py), then their skills, subagents, commands, hooks and MCP servers, then briefs and
+specs, plans, reviews, handovers and the code inventory, then notes, slides and other documents, then
+data and logs. Nothing is cut silently: the map's ``cut`` says what was cut and why. The map's
+``agent_context`` says how the AI tools are set up.
 
 `preview` is the same scan with nothing kept but the map: the person sees what would leave before
 anything is sent (`rihmasto scan`, and the cockpit's "Scan the folder" step). `record` keeps the map in
@@ -29,6 +32,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from kernel import agent_context as ac
 from kernel import material_kinds as mk
 from kernel import material_read as mr
 
@@ -123,6 +127,7 @@ class _Scan:
         self.code: list[str] = []
         self.manifests: dict[str, str] = {}
         self.ci: list[str] = []
+        self.agent: list[dict[str, Any]] = []      # how the project's AI tools are set up (kernel/agent_context.py)
         files, self.dirs, self.more = _walk(root, self.patterns)
         for rel in files:
             self.rows.append(self._look(rel))
@@ -149,14 +154,45 @@ class _Scan:
         try:
             size = path.stat().st_size
             decided = _by_rule(rel, size, self.patterns)
+            sub = ac.sub_kind(rel)
+            if sub and (decided is None or decided["action"] == "listed"):   # a tool's file is never housekeeping
+                return self._agent(rel, size, sub, None if decided and decided["why"].startswith("a housekeeping")
+                                   else decided)
             if decided is not None:
-                return decided
+                return decided | ({"kind": ac.KIND, "sub": sub} if sub else {})
             name = PurePosixPath(rel).name
             if mk.MANIFESTS.fullmatch(name) or mk.CI.search(rel) or mk.language(rel):
                 return self._code(rel, size, bool(mk.MANIFESTS.fullmatch(name)))
             return self._document(rel, size, path.read_bytes())
         except Exception as exc:  # one odd file never stops the scan: it is listed as not read, with the reason
             return _row(rel, 0, "listed", f"could not be read ({type(exc).__name__})")
+
+    def _agent(self, rel: str, size: int, sub: str, decided: dict[str, Any] | None) -> dict[str, Any]:
+        """A file the project's AI tools read: its instructions, skills, subagents and commands are read as
+        they are; hooks, permissions and MCP servers as a summary by name; personal settings never."""
+        mark = {"kind": ac.KIND, "sub": sub}
+        if sub in ("personal", "skill_file"):
+            self.agent.append(ac.read_entry(rel, sub, None))
+            return (_row(rel, size, "skipped", ac.PERSONAL_WHY, **mark) if sub == "personal" else
+                    _row(rel, size, "listed", "a skill's bundled file: listed with its skill, not read", **mark))
+        if decided is not None:                            # too large, or a format the kernel does not read
+            self.agent.append({"path": rel, "sub": sub, "not_read": decided["why"]})
+            return decided | mark
+        entry = ac.read_entry(rel, sub, (self.root / rel).read_bytes(), keep_text=True)
+        self.agent.append(entry)
+        if entry.get("not_read"):
+            secret = entry["not_read"].startswith(SECRET_WHY)
+            return _row(rel, size, "skipped" if secret else "listed",
+                        entry["not_read"] if secret else f"not read: {entry['not_read']}", **mark)
+        text = entry.get("request") or entry.get("text") or ""
+        if not text.strip():
+            return _row(rel, size, "listed", "not read: no text", **mark)
+        summary = sub in ("settings", "mcp")
+        note = {"note": "by name only: never a command, an argument, an environment value or a header"} \
+            if summary else {}
+        row = _row(rel, size, "pending", "", **mark, state="summarised" if summary else "read", **note)
+        self.docs.append((row, text))
+        return row
 
     def _document(self, rel: str, size: int, data: bytes) -> dict[str, Any]:
         ext = PurePosixPath(rel.lower()).suffix
@@ -176,12 +212,24 @@ class _Scan:
         return row
 
 
-def heading(rel: str, kind: str) -> str:
+def heading(rel: str, kind: str, sub: str | None = None) -> str:
     """The line a part of the request starts with: its file and its kind."""
     if rel == INVENTORY:
         return f"## {INVENTORY}"
     shown = "".join(ch if ch.isprintable() else "?" for ch in rel)
-    return f"## {shown} ({mk.KIND_LABEL.get(kind, kind)})"
+    label = mk.KIND_LABEL.get(kind, kind) + (f": {ac.SUB_LABEL[sub]}" if sub in ac.SUB_LABEL else "")
+    return f"## {shown} ({label})"
+
+
+def _rank(row: dict[str, Any]) -> tuple[int, int]:
+    """The README first; then the project's instructions for its AI tools (its conventions: build and test
+    commands, architecture, rules); then its skills, subagents, commands, hooks and MCP servers; then the
+    rest by kind."""
+    if _readme(row["path"]):
+        return 0, 0
+    if row["kind"] == ac.KIND:
+        return 1, ac.weight(row["path"]) if row.get("sub") == "instructions" else 2
+    return 2, mk.PRIORITY.get(row["kind"], 2)
 
 
 def _cut_at(text: str, n: int) -> str:
@@ -199,13 +247,12 @@ def _readme(rel: str) -> bool:
 def _allocate(docs: list[tuple[dict[str, Any], str]], budget: int) -> tuple[list[tuple[str, str, str]], list[str]]:
     """Read the most telling first, within the budget: each document in full, summarised, or listed.
     Returns the parts (path, heading, text) in order and the notes of what was cut and why."""
-    order = sorted(docs, key=lambda d: (mk.PRIORITY.get(d[0]["kind"], 2), not _readme(d[0]["path"]),
-                                        d[0]["path"].count("/"), d[0]["path"].lower()))
+    order = sorted(docs, key=lambda d: (*_rank(d[0]), d[0]["path"].count("/"), d[0]["path"].lower()))
     parts: list[tuple[str, str, str]] = []
     cut: list[str] = []
     room = budget
     for i, (row, text) in enumerate(order):
-        head = heading(row["path"], row["kind"])
+        head = heading(row["path"], row["kind"], row.get("sub"))
         cost = len(head) + 4
         waiting = len(order) - i - 1
         cap = room - min(MIN_PART * waiting, room // 2)
@@ -267,6 +314,7 @@ def gather(folder: str | Path, exclude: Iterable[str] = (), budget: int | None =
     mp = _shown({"schema": SCHEMA, "folder": str(root), "budget": budget, "exclude": list(scan.patterns),
                  "files": rows, "order": [{"path": p, "heading": h} for p, h, _ in parts], "inventory": inv,
                  "skipped_dirs": scan.dirs[:200], "not_looked_at": scan.more, "cut": cut,
+                 "agent_context": ac.assemble(scan.agent),
                  "totals": _totals(rows, len(text), budget), "request_sha256": _digest(text)})
     return mp, text, [(_shown(p), body) for p, _, body in parts]
 
@@ -325,8 +373,11 @@ def recorded(project: Any, text: str) -> list[tuple[str, str]] | None:
 
 def record(project: Any, mp: dict[str, Any], *, person: str | None, persona: str | None = None,
            confirmed: str = "") -> None:
-    """Keep the map in the project and record its counts in the ledger: never a file's contents."""
-    project.write("material.json", mp)
+    """Keep the map in the project and record its counts in the ledger: never a file's contents. Material a
+    person added later (kernel/project_material.py) is kept beside the map, under its own keys."""
+    old = project.read("material.json", None)
+    kept = {k: old[k] for k in ("original", "added") if k in old} if isinstance(old, dict) else {}
+    project.write("material.json", {**mp, **kept})
     t = mp["totals"]
     project.log("material_scanned", {
         "folder": mp["folder"], **{k: t[k] for k in ("files", *ACTIONS, "secrets", "excluded", "code", "chars",

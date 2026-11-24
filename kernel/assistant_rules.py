@@ -17,7 +17,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from kernel.canon import CARD_DECIDERS, CARD_VERDICTS, Canon
+from kernel.canon import CARD_VERDICTS, Canon, deciders_of
 from kernel.store import REPO_ROOT
 
 UI_MAP_FILE = REPO_ROOT / "cockpit" / "ui_map.json"
@@ -62,12 +62,22 @@ CONTROL_PAGES: dict[str, tuple[str | None, str | None]] = {
     "build_outputs": ("outputs", None), "download_output": ("outputs", None), "modules": (None, "settings"),
     "revoke_embed": (None, "settings"),
     "project_settings": ("overview", None), "rewind_project": ("overview", None), "add_material": ("overview", None),
-    "next_step": ("overview", None),
+    "next_step": ("overview", None), "go_ahead": ("overview", None), "build_without_waiting": ("overview", "projects"),
     "shape_open": (None, "home"), "shape_start": (None, "shape"),
     "shape_say": (None, "shape"), "shape_attach": (None, "shape"), "shape_draft": (None, "shape"),
     "shape_create": (None, "shape"), "models_open": (None, "settings"), "models_set": (None, "models"),
     "models_test": (None, "models"), "models_remove": (None, "models"), "models_preset": (None, "models"),
-    "models_private": (None, "models")}
+    "models_private": (None, "models"), "posture": ("overview", None), "run_assessment": ("assessment", None),
+    "assessment_changes": ("assessment", None), "capability_faces": ("releases", None), "access": (None, None),
+    "ai_tools": ("overview", None), "ide_setup": ("overview", None), "ide_section": ("overview", None),
+    "integrations": ("plan", None), "runners_open": (None, "settings"), "runners_check": (None, "runners"),
+    "runners_set": (None, "runners"), "runners_decide": (None, "runners"), "project_runner": ("overview", None),
+    "automations_open": (None, "home"),
+    "automations_new": ("automations", "automations_all"), "automations_template": ("automations", "automations_all"),
+    "automations_save": ("automations", "automations_all"), "automations_run": ("automations", "automations_all"),
+    "automations_dry_run": ("automations", "automations_all"), "automations_pause": ("automations", "automations_all"),
+    "automations_resume": ("automations", "automations_all"), "automations_edit": ("automations", "automations_all"),
+    "automations_remove": ("automations", "automations_all"), "automations_tags": ("automations", None)}
 # As the cockpit names them (cockpit/server.py PERSONA_INFO), for the reasons a proposal is not offered.
 PERSONA_LABEL = {"business_owner": "Business owner", "product_owner": "Product owner", "it": "IT / partner",
                  "concept_evaluator": "Concept evaluator", "end_user": "End-user tester", "developer": "Developer",
@@ -110,20 +120,25 @@ def check_layout_ops(ops: Any, widgets: list) -> str | None:
     """None if every operation stays inside the layout schema and the widget library."""
     if not isinstance(ops, list) or not ops or len(ops) > 12:
         return "ops is a list of 1 to 12 operations"
-    for o in ops:
-        if not isinstance(o, dict) or o.get("op") not in LAYOUT_OPS:
-            return f"each op is one of {LAYOUT_OPS}"
-        if o.get("widget") not in widgets:
-            return f"unknown widget {o.get('widget')!r}"
-        if o["op"] == "resize" and o.get("size") not in SIZES:
-            return f"size is one of {SIZES}"
-        if o["op"] == "set_view" and o.get("view") not in VIEWS:
-            return f"view is one of {VIEWS}"
-        if o["op"] == "move" and not isinstance(o.get("to"), int):
-            return "move needs an integer position 'to'"
-        if o["op"] == "set_filter" and not _plain(o.get("filter")):   # as cockpit/server.py _check_layout
-            return "set_filter needs a small 'filter' object of plain values"
-    return None
+    return next((why for why in (_op_problem(o, widgets) for o in ops) if why), None)
+
+
+# What each operation needs beyond its widget, and what is said when it is missing.
+_OP_NEEDS: dict[str, tuple[Callable[[dict], bool], str]] = {
+    "resize": (lambda o: o.get("size") in SIZES, f"size is one of {SIZES}"),
+    "set_view": (lambda o: o.get("view") in VIEWS, f"view is one of {VIEWS}"),
+    "move": (lambda o: isinstance(o.get("to"), int), "move needs an integer position 'to'"),
+    "set_filter": (lambda o: _plain(o.get("filter")),           # as cockpit/server.py _check_layout
+                   "set_filter needs a small 'filter' object of plain values")}
+
+
+def _op_problem(o: Any, widgets: list) -> str | None:
+    if not isinstance(o, dict) or o.get("op") not in LAYOUT_OPS:
+        return f"each op is one of {LAYOUT_OPS}"
+    if o.get("widget") not in widgets:
+        return f"unknown widget {o.get('widget')!r}"
+    ok, said = _OP_NEEDS.get(o["op"], (lambda _: True, ""))
+    return None if ok(o) else said
 
 
 def check_theme(settings: Any) -> str | None:
@@ -272,8 +287,8 @@ def _check_decide(project: Any, persona: str, args: dict) -> str | None:
         return f"{card['id']} is {card['state']}"
     if args["verdict"] not in CARD_VERDICTS[kind]:
         return f"{_a(kind)} card takes {', '.join(CARD_VERDICTS[kind])}"
-    if persona not in CARD_DECIDERS[kind]:
-        who = ", ".join(map(_who, CARD_DECIDERS[kind]))
+    if persona not in deciders_of(card):   # a card may narrow them (a posture may)
+        who = ", ".join(map(_who, deciders_of(card)))
         return f"as {_who(persona)} you may not decide {_a(kind)} card (who may: {who})"
     return None
 
@@ -402,3 +417,12 @@ def honest(answer: str, proposals: list, dropped: list) -> tuple[str, str | None
         kept.append(tail)
     return (" ".join(kept).strip(), "A sentence that said the assistant had acted, or would act, was taken out: "
             "it only proposes, and you confirm." if removed else None)
+
+
+def take_me_there(nav: Any, dropped: list[dict], ids: dict) -> tuple[Any, list[dict]]:
+    """An "open" that names a view or a control of the map by its id is Take me there, not a refused route:
+    the navigation (unless the answer has one) and the dropped proposals without it."""
+    named = [d for d in dropped if d["action"] == "open" and str((d.get("args") or {}).get("route")) in ids]
+    if named and not (isinstance(nav, dict) and (nav.get("route") or nav.get("control"))):
+        nav = {"route": None, "control": str(named[0]["args"]["route"])}
+    return nav, [d for d in dropped if d not in named]

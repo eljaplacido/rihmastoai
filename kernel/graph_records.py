@@ -302,8 +302,11 @@ def _questions_unrecorded(b: Builder) -> list[str]:
         qid, answer, status = str(q.get("id")), object_of(q.get("answer")), str(q.get("status"))
         if b.seq("question_added", "id", qid) is None:
             out.append(f"canon/questions.json holds {qid}, which no question_added event in the ledger records")
+        withdrawn = status == "withdrawn" and b.by_id.get(("question_withdrawn", qid)) is not None
         for settled, (event, keys) in SETTLED.items():
             logged = b.by_id.get((event, qid))
+            if withdrawn and settled == object_of(q.get("withdrawn")).get("was"):
+                continue        # settled once, then withdrawn (an assumption made for an old kind of work)
             if settled != status:
                 if logged is not None:
                     out.append(f"canon/questions.json says {qid} is {status}, but a {event} event in the ledger "

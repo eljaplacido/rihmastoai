@@ -58,7 +58,7 @@ from __future__ import annotations
 import re
 import traceback
 
-from kernel import holdouts, operate
+from kernel import holdouts, integration_bind, operate
 from kernel.canon import Canon
 from kernel.custody import custody_safe
 from kernel.filelock import locked
@@ -308,6 +308,9 @@ class _Delivery:
         steps = [s for s in self.rel["steps"] if s["step"] != step]
         self.rel["steps"] = steps + [entry]
         self.log("release_step", step=step, outcome=entry["outcome"])
+        name, _, env = step.partition(":")
+        if name == "smoke" and env != "production" and entry["outcome"] == "passed":   # deployed and answering
+            self.log("release_reached_test", environment=env, revision=self.rel["revision"])
 
     def card_entry(self, step: str) -> dict | None:
         found = [c for c in self.rel["cards"] if c["step"] == step]
@@ -330,6 +333,8 @@ class _Delivery:
         rel["state"], rel["waiting_on"] = "running", None
         rel.pop("blocked", None)
         roads = self.check_roads()
+        if roads == "ready":  # each declared integration bound on its road and approved by IT (FR-DS2)
+            roads = integration_bind.check(self)
         if roads != "ready":
             return summary(rel)
         for step in rel["plan"]:
@@ -494,6 +499,7 @@ class _Delivery:
         rel, road = self.rel, self.road(env)
         pkg = road.package(self.project, env=env, slot=slot, release=rel["release"], revision=rel["revision"],
                            artifact=rel["artifacts"][road.name], contract_revision=rel["contract_revision"])
+        integration_bind.wire(pkg, rel, env)  # its approved integrations: settings and secret references
         name = f"releases/{rel['release']}/package-{env}-{slot}.json"
         write_json(self.project.dir / name, pkg)
         rel["packages"][f"{env}:{slot}"] = name
@@ -584,9 +590,11 @@ class _Delivery:
             return seen, None
         named = ", ".join(f"{b['id']} ({b['rule']}, {b['tool']}" + (f", {b['where']})" if b.get("where") else ")")
                           for b in gate["blocking"])
-        why = (f"the security gate holds release {self.rel['release']} before {env}: {gate['reason']}: {named}. "
-               "It goes on when a scan no longer reports them, or a person with the it or compliance persona "
-               "accepts the risk until a date.")
+        required = (gate.get("posture") or {}).get("then")   # what a posture requires is no risk to accept
+        found = [b for b in gate["blocking"] if not str(b["id"]).startswith("POSTURE-")]
+        why = (f"the security gate holds release {self.rel['release']} before {env}: {gate['reason']}: {named}."
+               + (" It goes on when a scan no longer reports them, or a person with the it or compliance persona "
+                  "accepts the risk until a date." if found else "") + (f" {required}" if required else ""))
         blocked = {"by": "security", "environment": env, "findings": seen["blocking"], "scans": gate["scans"]}
         return seen, {"outcome": "waiting", "waiting_on": why, "blocked": blocked, "native": {"security": seen,
                                                                                                 "why": why}}

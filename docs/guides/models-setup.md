@@ -19,6 +19,15 @@ For each role the page shows its model and family, the endpoint's host, whether 
 and whether a key is set (never the key), its fallback, and whether it answers: a local server is
 checked on its port; a hosted endpoint with a key reads "Key set" until you test it.
 
+**A key Gnomon holds counts.** Gnomon can keep keys of its own (`gnomon key set <endpoint>`, in its
+credential store outside every repository: `%APPDATA%\gnomon\credentials.json` on Windows,
+`~/.local/share/gnomon/credentials.json` elsewhere, or under `$XDG_DATA_HOME`), and uses one when the
+variable is not set. Models setup asks `gnomon key list`, which prints names only, and shows such a key as
+**key set by Gnomon**, not "no key". When Gnomon cannot say (it is not found, or the command fails) but its
+store exists, the role reads **Gnomon may have its own key for this host**. Rihmasto never opens the store
+and never reads a key's value, so **Test** cannot send a key Gnomon holds and says so; a run goes through
+Gnomon and uses it. `rihmasto doctor` counts a key Gnomon holds as set too.
+
 ## Open it
 
 - **Settings > Models > Open Models setup**;
@@ -41,7 +50,9 @@ checked on its port; a hosted endpoint with a key reads "Key set" until you test
   `RIHMASTO_SECRETS_FILE` names), outside the repository, and handed to Gnomon in the variable
   `RIHMASTO_KEY_<ROLE>` when it runs. It is never shown again, never logged and never put in the
   ledger.
-- **Keep the fallback**: a role that has one keeps it unless you untick it.
+- **Keep the fallback**: a role that has one keeps it unless you untick it (`--no-fallback`). A local role
+  that keeps a hosted fallback says so when you save it: a confidential project skips that fallback (it is
+  never called, and the skip is in the project's ledger); untick it to drop it for every project.
 
 **Save** writes the role to `kernel/routing.local.json`, this machine's overlay (gitignored, merged
 over the shipped `kernel/routing.json`, which is never written). The merged routing is checked as the

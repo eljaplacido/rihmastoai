@@ -73,7 +73,7 @@ class SettingsTest(ChangeCase):
         self.assertEqual(len(p.ledger().records()), records)
         self.assertEqual(seen["changes"], {"kind": {"from": "web_service", "to": "integration"}})
         self.assertEqual(seen["rewind"], "questions")
-        self.assertIn("1 open question(s) no longer fit", seen["impact"][0]["says"])
+        self.assertIn("It withdraws 1 open question, which no longer fit", seen["impact"][0]["says"])
         out = ks.change(p, reason="it connects two systems, not a web app", kind="integration", redo=True, **PO)
         self.assertEqual(p.meta["profile"], "integration")
         rec = payloads(p, "project_changed")[-1]
@@ -85,16 +85,18 @@ class SettingsTest(ChangeCase):
         card = Canon(p).get_card(q1["card"])
         self.assertEqual(card["state"], "withdrawn")
         self.assertIn("it connects two systems", card["closed"]["why"])
-        self.assertEqual(Canon(p).question("Q-002")["status"], "assumed")       # settled answers are kept
+        q2 = Canon(p).question("Q-002")       # the factory assumed it for the old kind (FR-CHG1-AC-11): withdrawn
+        self.assertEqual((q2["status"], q2["withdrawn"]["was"]), ("withdrawn", "assumed"))
+        self.assertIn("made for the old kind", q2["withdrawn"]["why"])
         self.assertTrue(p.meta["redo_intake"])
         m = model()
         self.assertEqual(_shape(p, m, []), AGAIN)                               # the next tick asks again
         self.assertFalse(p.meta["redo_intake"])
         panel = [prompt for _, prompt in m.calls if "perspective on a panel" in prompt]
-        self.assertTrue(panel and all("Already asked and settled" in x for x in panel))
+        self.assertTrue(panel and not any("Already asked and settled" in x for x in panel))   # no person settled one
         asked = texts(p)
         self.assertIn("Which systems does this connect, and which of them can we call in tests?", asked)  # the kind's own
-        self.assertEqual(asked.count("How is benefit measured?"), 1)            # a settled one is not asked again
+        self.assertEqual(asked.count("How is benefit measured?"), 1)            # asked anew for the new kind
         self.assertEqual(asked.count("Who approves a loan?"), 1)                # the withdrawn one is asked anew
         self.assertTrue(payloads(p, "intake_rerun"))
         self.assertTrue(p.ledger().verify().intact)

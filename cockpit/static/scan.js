@@ -4,8 +4,12 @@
    the step shows is what would be sent. Only then does the dialog create the project or adopt it. */
 
 import { S, h, fill, icon, chip, api, say, AuthError } from "./core.js";
+import { SUB_LABEL } from "./aitools.js";
 
+// The files the folder's AI tools read (CLAUDE.md, AGENTS.md, Cursor rules, skills, MCP servers: FR-AGC1) have
+// a group of their own, first: they are the project's conventions, and the request reads them right after the README.
 const GROUPS = [
+  ["agent", "How AI tools here are set up", "bot", "info", true],
   ["read", "Read in full", "check-circle", "good", true],
   ["summarised", "Summarised", "layers", "info", true],
   ["unticked", "Unticked by you", "x", "neutral", true],
@@ -13,7 +17,9 @@ const GROUPS = [
   ["skipped", "Skipped", "shield", "warning", true],
 ];
 const KIND = { brief: "brief or spec", plan: "plan", review: "review or comments", handover: "handover", notes: "notes",
-  log: "deploy or run log", data: "data", slides: "slides", code: "code", other: "other" };
+  log: "deploy or run log", data: "data", slides: "slides", code: "code", other: "other", agent: "agent context" };
+const ACTION = { read: "read in full", summarised: "summarised", listed: "listed only", skipped: "skipped" };
+const kindOf = (r) => (r.kind === "agent" ? (SUB_LABEL[r.sub] || KIND.agent) + ", " + (ACTION[r.action] || r.action) : KIND[r.kind] || r.kind);
 
 // A source that is a folder on this machine, not text or a git address: one line, a drive, a share, / or ~.
 export function looksLikeFolder(text) {
@@ -23,7 +29,7 @@ export function looksLikeFolder(text) {
 
 function groupOf(row, unticked) {
   if (unticked.has(row.path)) return "unticked";
-  return row.action;
+  return row.kind === "agent" ? "agent" : row.action;
 }
 
 const n = (x) => Number(x || 0).toLocaleString("en");
@@ -41,11 +47,11 @@ export function scanStep(opts) {
     head, summary, body);
 
   function row(r, group) {
-    const kind = h("span", { class: "scan-kind" }, KIND[r.kind] || r.kind);
+    const kind = h("span", { class: "scan-kind" }, kindOf(r));
     const why = r.why ? h("small", { class: "scan-why" }, r.why) : null;
     const size = r.chars ? h("small", { class: "scan-size" }, n(r.chars) + " chars") : null;
     const name = h("span", { class: "scan-path" }, r.path);
-    if (group === "skipped") {
+    if (group === "skipped" || (group === "agent" && r.action === "skipped")) {
       return h("li", { class: "scan-row" }, h("span", { class: "scan-label" }, h("span", { class: "scan-mark" }, icon("x-circle")),
         h("span", { class: "scan-text" }, name, kind, why)));
     }

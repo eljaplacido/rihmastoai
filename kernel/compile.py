@@ -23,9 +23,11 @@ from pathlib import Path
 from typing import Any
 
 from kernel import scaffold
+from kernel.confidential import routing_for
 from kernel.intake import _ask_json
 from kernel.lanes import GIT_ID, _git, load_routing, write_product_surface
 from kernel.outputs import wants_sign_in
+from kernel.profiles import profile_of
 from kernel.spec import render_interface
 from kernel.store import REPO_ROOT, Project, read_json, write_json, write_text
 
@@ -196,11 +198,13 @@ def init_repo(project, contract: dict, routing: dict | None = None) -> Path:
         _git(work, "init", "-q", "-b", "main")
         look = (project.read("spec.json") or {}).get("look", "neutral")
         sign_in = wants_sign_in(project)  # a person chose a web app people sign in to (kernel/outputs.py)
-        for rel, text in scaffold.files(meta["title"], project.pid, meta["maturity"], look=look,
-                                        sign_in=sign_in).items():
+        template = profile_of(project).get("template", "web-service")   # a small capability's, or the web service's
+        made = scaffold.files(meta["title"], project.pid, meta["maturity"], look=look, template=template,
+                              sign_in=sign_in)
+        for rel, text in made.items():
             write_text(work / rel, text)
         write_json(work / "contract.json", contract)
-        write_product_surface(work, routing, WRITE_SCOPE)
+        write_product_surface(work, routing_for(project, routing), WRITE_SCOPE)   # confidential: no hosted fallback
         _git(work, "add", "-A")
         _git(work, *GIT_ID, "commit", "-q", "-m", f"Scaffold from the paved road; contract {contract['revision'][:19]}")
         bare.parent.mkdir(parents=True, exist_ok=True)
@@ -230,7 +234,7 @@ def update_repo_surface(project, routing: dict | None = None, *, reason: str = "
     with tempfile.TemporaryDirectory(prefix="gf-surface-") as tmp:
         _git(Path(tmp), "clone", "-q", str(project.path("repo.git")), "w")
         work = Path(tmp) / "w"
-        write_product_surface(work, routing, WRITE_SCOPE)
+        write_product_surface(work, routing_for(project, routing), WRITE_SCOPE)
         _git(work, "add", "-A", ".gnomon")
         if not _git(work, "diff", "--cached", "--name-only"):  # what is staged decides, not line-ending noise
             return None
@@ -326,10 +330,10 @@ def author_holdouts(project, *, model, only=None, reason: str | None = None, per
     scenario defective. The person is recorded; the reason, which may describe the scenario, is
     kept in the holdout custody and the ledger holds a pointer to it. The builder never writes
     or sees them."""
-    from kernel.confidential import require_local
+    from kernel.confidential import guard
     from kernel.people import is_person
 
-    require_local(project, ("holdout_author",), where="holdouts")
+    model = guard(project, model, ("holdout_author",), where="holdouts")
     spec, plan = project.read("spec.json"), project.read("checkplan.json")
     rows = [r for r in plan["checks"] if r["kind"] in ("holdout", "probe")]
     if only == "missing":  # criteria with no scenario yet: nothing exists to overturn, no ruling needed

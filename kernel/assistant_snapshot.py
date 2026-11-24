@@ -21,7 +21,7 @@ from collections import Counter
 from typing import Any
 
 from kernel.assistant_rules import FACTORY_PID, words
-from kernel.canon import CARD_DECIDERS, CUSTODY_KINDS, Canon
+from kernel.canon import CARD_DECIDERS, CUSTODY_KINDS, Canon, deciders_of
 from kernel.people import PERSONAS
 
 ID = re.compile(r"\b(?:[A-Z]{1,2}-\d+(?:-AC-\d+)?)\b", re.I)
@@ -109,7 +109,7 @@ def _waiting_cards(factory: Any, products: list, persona: str | None) -> list:
                 age = round((now_t - _when(c["created"])).total_seconds() / 3600, 1) if c.get("created") else None
             except (TypeError, ValueError):
                 age = None
-            who = list(CARD_DECIDERS.get(c["kind"], ()))
+            who = list(deciders_of(c)) if c["kind"] in CARD_DECIDERS else []   # a card may narrow them
             out.append({"project": p.pid, "card": c["id"], "kind": c["kind"], "title": c["title"][:100],
                         "deciders": "any persona" if set(who) >= set(PERSONAS) else who,
                         "yours": persona in who, "blocking": bool(c.get("blocking")), "age_hours": age})

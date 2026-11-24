@@ -217,8 +217,9 @@ class OutsideCodeTest(StandaloneTestCase):
 
         enforced = types.SimpleNamespace(enforced=True)
         with mock.patch("kernel.gate.run_suite", side_effect=suite), \
+                mock.patch.dict(sys.modules, {attach.ISOLATION: None}), \
                 mock.patch.object(attach.kaccess, "load", return_value=enforced):
-            runner = FakeIsolation()                                 # no runner here at all: refused, nothing ran
+            runner = FakeIsolation()                # a Rihmasto with no isolation runner at all: refused, nothing ran
             with self.assertRaisesRegex(attach.IsolationNeeded, "no isolation runner"):
                 gate_external.gate(p, person="Aino", persona="developer", head="fix", task="T-001",
                                    verifier_runner=no_findings)

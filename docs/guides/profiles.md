@@ -11,7 +11,7 @@ only what sits around that core:
 
 The profiles live in [kernel/profiles.py](../../kernel/profiles.py).
 
-## The seven profiles
+## The eight profiles
 
 | Profile | For | Deliverable | Asks once | Status |
 |---|---|---|---|---|
@@ -22,9 +22,10 @@ The profiles live in [kernel/profiles.py](../../kernel/profiles.py).
 | `agentic_workflow` | an agent, assistant or multi-step workflow that uses tools | capability pack | which actions need a person's approval | preview |
 | `harness_engineering` | building or tuning an agent harness, policy or evaluation suite | capability pack | the baseline, and how much regression is acceptable | preview |
 | `ops_agent` | an agent that does a job and proves it: a compliance check, a security scan, a log analysis | report | the framework and who signs off; what the agent may read | preview |
+| `automation` | a scheduled or triggered job with no screens, a single workflow or one agentic capability, reached over MCP, an OpenAI-compatible endpoint, a website chat or HTTP ([small capabilities](small-capabilities.md)) | capability pack | what starts a run; where it must be reachable | ready |
 
-**Status** is honest about the template. Every profile builds on the paved-road web-service
-template today. `preview` means the intake, spec and checks are shaped for the work, and its own
+**Status** is honest about the template. The `automation` profile has its own, the capability
+template; every other profile builds on the paved-road web-service template today. `preview` means the intake, spec and checks are shaped for the work, and its own
 template is still to come. A mobile prototype ships as a phone-first web app, for example.
 
 ## What a profile changes in practice
@@ -40,6 +41,9 @@ template is still to come. A mobile prototype ships as a phone-first web app, fo
   with seeded defects the checks must catch.
 - **Ops agent:** each finding cites the evidence it rests on, and what was not checked is
   reported as not measured, never as passed.
+- **Automation:** the product declares what it needs where it runs (`app/runtime.json`), each
+  criterion is checked against a run, every system it calls is simulated in tests, and the road's
+  checks fail a capability whose declaration, job or faces break.
 
 ## Choosing a profile
 

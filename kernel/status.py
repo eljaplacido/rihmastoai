@@ -24,7 +24,7 @@ from kernel.insight import _main_test_names, alignment
 from kernel.store import Project
 
 DECISION_KINDS = ("question", "approval", "validation", "deploy_gate", "escalation", "holdout_ruling", "road",
-                  "trust", "incident", "change")
+                  "trust", "incident", "change", "go_ahead")
 
 
 def _releases(project) -> list:
@@ -123,9 +123,14 @@ def _held_release(rels: list) -> str | None:
     if not isinstance(blocked, dict):
         return None
     findings = ", ".join(str(f) for f in blocked.get("findings") or []) or "open findings"
+    required = [str(f) for f in blocked.get("findings") or [] if str(f).startswith("POSTURE-")]
+    then = ("it goes on when a scan no longer reports them or a person with the it or compliance persona accepts the "
+            "risk") if len(required) < len(blocked.get("findings") or [None]) else ""
+    if required:   # what the project's posture requires (kernel/posture_rules.py) is no risk to accept
+        then += ("; " if then else "") + (f"{', '.join(required)} the posture requires: no risk to accept, it goes "
+                                          "on once each is there or the posture is changed")
     return (f"release {rel['number']} is held by the {blocked.get('by', 'security')} gate before "
-            f"{blocked.get('environment', 'its next environment')}: {findings}; it goes on when a scan no longer "
-            "reports them or a person with the it or compliance persona accepts the risk")
+            f"{blocked.get('environment', 'its next environment')}: {findings}; {then}")
 
 
 def now(project) -> dict:

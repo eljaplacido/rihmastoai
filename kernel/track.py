@@ -48,7 +48,8 @@ STATES = ("on_track", "at_risk", "off_track", "not_measured")
 THRESHOLDS = {"blocking_risk_hours": 72, "blocking_off_hours": 168, "scope_changes_risk": 3, "trend_drop": 0.25,
               "trend_min_tasks": 4, "budget_risk_share": 0.8}
 # Cards that hold the run whether or not they are marked blocking.
-HOLDING_KINDS = ("approval", "validation", "deploy_gate", "escalation", "holdout_ruling", "road", "trust", "incident")
+HOLDING_KINDS = ("approval", "go_ahead", "validation", "deploy_gate", "escalation", "holdout_ruling", "road", "trust",
+                 "incident")
 # Open cards that say the work fell short of its plan: at risk whatever their age.
 FAILING_KINDS = ("escalation", "holdout_ruling", "incident")
 SETTERS = CARD_DECIDERS["approval"]                     # who sets checkpoints and the budget: the plan's owners

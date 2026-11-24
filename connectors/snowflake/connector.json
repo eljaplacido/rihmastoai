@@ -1,0 +1,36 @@
+{
+  "schema": "rihma.connector/1",
+  "system": "snowflake",
+  "title": "Snowflake (read-only)",
+  "namespace": "snowflake",
+  "server": {
+    "transport": "stdio",
+    "command": ["snowflake-labs-mcp", "--service-config-file", "tools_config.yaml"],
+    "pin": {
+      "name": "the Snowflake Labs MCP server (snowflake-labs-mcp), installed on the host that runs the lane; sha256 pins its read-only tools_config.yaml",
+      "version": "1.3.3",
+      "sha256": "1a5330614bfca8c7c29d11d40048414aed63edc16d4a65980db39eeb2df2e975"
+    }
+  },
+  "tools_sha256": "0dcc3db9c40c4d8648171d09f7b6e27dfc033e2fd7115f2acd72eeafde4d500a",
+  "read_tools": [
+    {"name": "list_objects", "maps_to": "note",
+     "example_args": {"object_type": "table", "database_name": "ANALYTICS", "schema_name": "PUBLIC"}},
+    {"name": "describe_object", "maps_to": "note",
+     "example_args": {"object_type": "table", "object_name": "ANALYTICS.PUBLIC.SALES"}},
+    {"name": "run_snowflake_query", "maps_to": "observation",
+     "example_args": {"statement": "SELECT REGION, SUM(AMOUNT) AS TOTAL FROM SALES GROUP BY REGION ORDER BY REGION"}}
+  ],
+  "write_tools": [],
+  "forbidden_tools": ["create_object", "drop_object", "create_or_alter_object"],
+  "data_classes": ["internal", "confidential"],
+  "credentials": [
+    {"name": "SNOWFLAKE_ACCOUNT", "ref": "env:RIHMA_SNOWFLAKE_ACCOUNT"},
+    {"name": "SNOWFLAKE_USER", "ref": "env:RIHMA_SNOWFLAKE_USER"},
+    {"name": "SNOWFLAKE_PAT", "ref": "os:RIHMA_SNOWFLAKE_PAT"},
+    {"name": "SNOWFLAKE_ROLE", "ref": "env:RIHMA_SNOWFLAKE_READ_ROLE"},
+    {"name": "SNOWFLAKE_WAREHOUSE", "ref": "env:RIHMA_SNOWFLAKE_WAREHOUSE"}
+  ],
+  "setup": "README.md",
+  "notes": "UNVERIFIED offline: the server's package name, version 1.3.3, its --service-config-file flag, the keys of tools_config.yaml, the SNOWFLAKE_* variables it reads and its tools/list (fixtures/tools.json) come from its documentation as recalled, not from a running server. Snowflake's managed (remote) MCP server waits for Gnomon's HTTP client. Use a role that can only read."
+}

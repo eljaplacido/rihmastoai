@@ -22,7 +22,8 @@ code is refused as material for a new project. The checkout's documents are scan
   holds no LFS object: LFS content is never downloaded), never one the upstream chose. A private
   repository is cloned by its owner first and adopted from that local path.
 - **Inventory, by rule, no model.** Languages by file extension, the test command found by rule
-  (detected or not, never guessed), the README's first paragraph, the HTTP routes the source
+  (detected or not, never guessed; a test command the team's own CLAUDE.md or AGENTS.md states comes
+  first when the kernel runs it, kernel/agent_context_use.py), the README's first paragraph, the HTTP routes the source
   declares (only when a `base_url` is given), and whether there is a Dockerfile. Only regular
   files inside the checkout are read: a symlink is never followed.
 - **Characterisation baseline.** A detected Python suite runs once in a temporary checkout,
@@ -380,12 +381,14 @@ def _unstage(work: Path, paths: list[bytes]) -> None:
                            f"{proc.stderr.decode('utf-8', errors='replace').strip()}")
 
 
-def _own_surface(bare: Path, scratch: Path, baseline: str, *, timeout: int) -> dict[str, Any]:
+def _own_surface(bare: Path, scratch: Path, baseline: str, *, timeout: int, confidential: bool = False) -> dict[str, Any]:
     """Put the kernel's compiled `.gnomon/` surface on main, over the baseline, as one kernel
     commit. What the upstream holds under a name the kernel holds (KERNEL_HELD), in any case or
     short name, is removed in the same commit. Plumbing only: nothing is checked out, and no filter
-    that the upstream's attributes name runs on the surface."""
+    that the upstream's attributes name runs on the surface. A confidential adoption's surface names
+    no hosted fallback (kernel/confidential.py)."""
     from kernel.compile import WRITE_SCOPE
+    from kernel.confidential import without_hosted_fallbacks
     from kernel.lanes import GIT_ID, load_routing, write_product_surface
 
     work = scratch / "surface"
@@ -394,7 +397,8 @@ def _own_surface(bare: Path, scratch: Path, baseline: str, *, timeout: int) -> d
     upstream = _held_by_upstream(work)
     if upstream:
         _unstage(work, upstream)
-    write_product_surface(work, load_routing(), WRITE_SCOPE)
+    routing = load_routing()
+    write_product_surface(work, without_hosted_fallbacks(routing) if confidential else routing, WRITE_SCOPE)
     for path in sorted(p for p in (work / ".gnomon").rglob("*") if p.is_file()):
         blob = _git(work, "hash-object", "-w", "--no-filters", "--", str(path))
         _git(work, "update-index", "--add", "--cacheinfo", f"100644,{blob},{path.relative_to(work).as_posix()}")
@@ -608,8 +612,8 @@ def inventory(root: Path, files, *, base_url: str | None) -> dict:
     files = sorted(f for f in files if not f.startswith(VENDORED) and "/node_modules/" not in f)
     tests = detect_tests(root, files)
     docker = dockerfiles(files)
+    found = endpoints(root, files)      # also a word on its kind of work: HTTP routes (kernel/adopt_kind.py)
     if base_url:
-        found = endpoints(root, files)
         routes = {"scanned": True, "found": found,
                   "note": None if found else "no route declaration found with the kernel's simple patterns"}
     else:
@@ -617,7 +621,7 @@ def inventory(root: Path, files, *, base_url: str | None) -> dict:
     return {"by": "rule (kernel/adopt.py), no model", "files": len(files), "languages": languages(files),
             "tests": tests, "test_command": ({"detected": True, **tests[0]} if tests else
                                              {"detected": False, "reason": "no test command found by rule"}),
-            "readme": readme(root, files), "endpoints": routes,
+            "readme": readme(root, files), "endpoints": routes, "http_routes": len(found),
             "dockerfile": {"present": bool(docker), "files": docker}}
 
 
@@ -760,12 +764,20 @@ def run_baseline(root: Path, test: dict, *, timeout: int,
     argv = _command(test, which)
     if isinstance(argv, str):
         return base | {"verdict": "not measured", "reason": argv}
+    from kernel import access_isolation as isolation
+
     env = _offline_env()
     data_dir = tempfile.mkdtemp(prefix="adopt-data-")
     env["DATA_DIR"] = data_dir
+    try:  # access enforced: through IT's isolation runner, or not run at all (D-0016, FR-ID4-AC-1)
+        job = isolation.adopted_suite(argv, checkout=root, env=env, tool=test["tool"])
+    except isolation.IsolationRequired as exc:
+        shutil.rmtree(data_dir, ignore_errors=True)
+        return base | {"verdict": "not measured", "reason": f"not measured: {exc}"}
     started = time.monotonic()
     try:
-        code, stdout, stderr = _run(argv, cwd=root, env=env, timeout=timeout)
+        with job:
+            code, stdout, stderr = _run(job.argv, cwd=root, env=job.env, timeout=timeout)
     except subprocess.TimeoutExpired:  # stopped at its limit, with every process it started (FR-DF5)
         return base | {"verdict": "not measured", "limit_s": timeout,
                        "reason": f"not measured: timed out: the suite did not finish in {timeout}s"}
@@ -845,17 +857,10 @@ def as_is_spec(title: str, *, inv: dict, baseline_rev: str, base_url: str | None
 
 
 def _profile_line(profile: dict[str, Any]) -> str:
-    """The brief's line on the work profile, saying when the rule was not sure."""
-    from kernel.profiles import PROFILES
+    """The brief's line on the work profile: which and why, or that a person is asked (kernel/adopt_kind.py)."""
+    from kernel.adopt_kind import line
 
-    label = PROFILES[profile["profile"]]["label"]
-    if profile["by"] != "rule":
-        return f"- Work profile: {label}, chosen by a person."
-    if profile["confidence"] == "clear":
-        return f"- Work profile: {label}, proposed by rule ({', '.join(profile['keywords'])})."
-    names = ", ".join(PROFILES[c]["label"] for c in profile["candidates"])
-    return (f"- Work profile: {label}, proposed by rule but **uncertain** ({profile['why']}); a person chooses "
-            f"among: {names}.")
+    return line(profile)
 
 
 def _brief(title: str, *, intent: str, source_label: str, branch: str, baseline_rev: str, inv: dict,
@@ -919,11 +924,13 @@ def _check_request(person: str, persona: str, intent: str, profile: str | None, 
 
 
 def _take(bare: Path, location: str, *, base_url: str | None, timeout: int,
-          which: Callable[[str], str | None], suite_timeout: int = 0, exclude: tuple[str, ...] = ()) -> dict[str, Any]:
+          which: Callable[[str], str | None], suite_timeout: int = 0, exclude: tuple[str, ...] = (),
+          confidential: bool = False) -> dict[str, Any]:
     """Everything adoption reads from the upstream, before the project exists: the mirror, a
     checkout of the baseline with its inventory, characterisation and documents (scanned as context,
     kernel/material.py), and the kernel's surface on main. The checkout goes through the
     credential-free path too, so an LFS filter never reaches the owner's credential helper or a prompt."""
+    from kernel.agent_context_use import apply_stated
     from kernel.material_adopt import context
 
     branch, baseline = _mirror(bare, location, timeout=timeout)
@@ -934,21 +941,25 @@ def _take(bare: Path, location: str, *, base_url: str | None, timeout: int,
         files = [f for f in _git_read(work, "ls-files", "-z").split("\0") if f]
         inv = inventory(work, files, base_url=base_url) | {"revision": baseline}
         documents = context(work, exclude)
+        apply_stated(inv, documents[0].get("agent_context"))   # the team's own test command first (FR-AGC1)
         character = characterise(work, inv["tests"], timeout=suite_timeout or SUITE_TIMEOUT, which=which)
-        surface = _own_surface(bare, scratch, baseline, timeout=timeout)
+        surface = _own_surface(bare, scratch, baseline, timeout=timeout, confidential=confidential)
     return {"branch": branch, "baseline": baseline, "inventory": inv, "character": character, "surface": surface,
             "material": documents}
 
 
 def _propose(project: Any, title: str, inv: dict[str, Any]) -> dict[str, Any]:
     """The work profile: a person's choice at creation stands; otherwise it is proposed by rule from
-    the title and the README, and an uncertain proposal is kept as uncertain, with its candidates."""
+    the title and the README, and from its files: HTTP routes in the code count as an API. An uncertain
+    proposal is kept as uncertain, with its candidates, and a person is asked (kernel/adopt_kind.py)."""
     from kernel.profiles import propose_profile
 
     if project.meta.get("profile"):
         return {"profile": project.meta["profile"], "by": "person at creation"}
-    proposal = propose_profile(f"{title}\n{inv['readme'].get('first_paragraph') or ''}")
-    out = {"profile": proposal["profile"], "by": "rule", "from": "the README and the title",
+    routes = int(inv.get("http_routes") or 0)
+    proposal = propose_profile(f"{title}\n{inv['readme'].get('first_paragraph') or ''}" + ("\napi" if routes else ""))
+    out = {"profile": proposal["profile"], "by": "rule",
+           "from": "the README and the title" + (f", and {routes} HTTP route(s) in its code" if routes else ""),
            "keywords": proposal["basis"], "confidence": proposal["confidence"]}
     if proposal["confidence"] != "clear":
         out |= {"candidates": proposal["candidates"], "why": proposal["uncertain_because"]}
@@ -1051,6 +1062,7 @@ def _stage(project: Any, spec: dict[str, Any], req: _Request) -> None:
 def _hold(project: Any, taken: dict[str, Any], req: _Request) -> None:
     """Record an adoption whose upstream was read: the source, the inventory and the baseline, the
     profile, the brief, the as-is spec and contract, the as-is tasks and the stage."""
+    from kernel import adopt_kind
     from kernel.canon import Canon
     from kernel.material_adopt import hold
     from kernel.profiles import choose
@@ -1059,7 +1071,9 @@ def _hold(project: Any, taken: dict[str, Any], req: _Request) -> None:
     _record_source(project, taken, req, profile)
     _record_baseline(project, taken)
     hold(project, taken, person=req.person, persona=req.persona, confidential=req.confidential)
-    if profile["by"] == "rule":
+    if adopt_kind.unclear(profile):     # not clear from its files and words: a person is asked which kind
+        adopt_kind.ask(project, profile)
+    elif profile["by"] == "rule":
         choose(project, profile["profile"], basis={k: v for k, v in profile.items() if k != "profile"})
     Canon(project).write_brief(_brief(req.title, intent=req.intent, source_label=req.label, branch=taken["branch"],
                                       baseline_rev=taken["baseline"], inv=taken["inventory"],
@@ -1082,14 +1096,16 @@ def _roll_back(project: Any) -> None:
 def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, persona: str,
           base_url: str | None = None, profile: str | None = None, maturity: str = "production",
           mode: str = "mixed", timeout: int = 600, which: Callable[[str], str | None] = shutil.which,
-          suite_timeout: int = SUITE_TIMEOUT, exclude: tuple[str, ...] = (), confidential: bool = False) -> Any:
+          suite_timeout: int = SUITE_TIMEOUT, exclude: tuple[str, ...] = (), confidential: bool = False,
+          posture: dict[str, Any] | None = None) -> Any:
     """Adopt an existing solution as a project. Returns the project.
 
     Everything that reads the upstream runs before the project exists, so an unreachable or
     unreadable source leaves nothing; a failure after the project exists removes it again.
     ``timeout`` bounds each git call; ``suite_timeout`` bounds each detected test suite's run.
     A folder that is not a git repository is snapshotted first (kernel/material_adopt.py); ``exclude``
-    drops files from the snapshot and the scanned documents; ``confidential`` keeps it on local models."""
+    drops files from the snapshot and the scanned documents; ``confidential`` keeps it on local models;
+    ``posture`` (kernel/posture.py) is recorded with who chose it, at the maturity and mode given."""
     from kernel.material_adopt import NoCode, snapshot
 
     _check_request(person, persona, intent, profile, maturity, mode)
@@ -1106,8 +1122,9 @@ def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, pe
             except NoCode as exc:
                 raise AdoptionRefused(str(exc)) from None
         taken = _take(staging / "repo.git", location, base_url=req.base_url, timeout=timeout, which=which,
-                      suite_timeout=suite_timeout, exclude=exclude) | {"snapshot": snap}
-        project = factory.new_project(title, maturity=maturity, mode=mode, source_kind="adopted", profile=profile)
+                      suite_timeout=suite_timeout, exclude=exclude, confidential=confidential) | {"snapshot": snap}
+        project = factory.new_project(title, maturity=maturity, mode=mode, source_kind="adopted", profile=profile,
+                                      posture=posture)
         try:
             os.replace(staging / "repo.git", project.path("repo.git"))
             _hold(project, taken, req)

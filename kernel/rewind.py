@@ -133,22 +133,51 @@ def preview(project: Project, to: str) -> dict[str, Any]:
             "steps": [{"id": s, "undoes": UNDOES[s], "possible": refusal(project, s) is None} for s in STEPS]}
 
 
-def withdraw_questions(project: Project, qids: list[str], why: str) -> list[str]:
-    """Withdraw open questions that no longer apply: each question's status becomes withdrawn with the reason,
-    and its card is closed as withdrawn. Nothing is deleted. Returns the ids withdrawn."""
+def factory_assumed(project: Project) -> list[dict[str, Any]]:
+    """The questions the factory settled on its own: assumed by its mode or a default, no person choosing it."""
+    return [q for q in Canon(project).questions("assumed") if not (q.get("answer") or {}).get("chosen_by")]
+
+
+def person_settled(project: Project) -> list[dict[str, Any]]:
+    """The questions a person settled: answered, or assumed because a person chose to let the factory assume."""
+    canon = Canon(project)
+    chosen = [q for q in canon.questions("assumed") if (q.get("answer") or {}).get("chosen_by")]
+    return canon.questions("answered") + chosen
+
+
+def withdraw_questions(project: Project, qids: list[str], why: str, *, assumed: bool = False,
+                       by: str | None = None) -> list[str]:
+    """Withdraw questions that no longer apply: each open one (and with ``assumed`` each assumed one) becomes
+    withdrawn with the reason, its open card is closed as withdrawn, and an assumed one's assumption is
+    withdrawn too, in ``by``'s name. Nothing is deleted. Returns the ids withdrawn."""
     canon = Canon(project)
     stamp = project.factory.clock.stamp()
     done = []
     with updating_json(canon.dir / "questions.json", [], lock=canon.lock) as qs:
         for q in qs:
-            if q["id"] in qids and q["status"] == "open":
-                q["status"], q["withdrawn"] = "withdrawn", {"why": why, "at": stamp}
+            if q["id"] in qids and (q["status"] == "open" or (assumed and q["status"] == "assumed")):
+                q["withdrawn"] = {"why": why, "at": stamp, "was": q["status"]}
+                q["status"] = "withdrawn"
                 done.append(q)
     for q in done:
         if q.get("card") and canon.get_card(q["card"])["state"] == "open":
             canon.close(q["card"], why)
-        project.log("question_withdrawn", {"id": q["id"], "card": q.get("card"), "why": why})
+        project.log("question_withdrawn", {"id": q["id"], "card": q.get("card"), "why": why,
+                                           "was": q["withdrawn"]["was"]})
+    _withdraw_assumptions(project, [(q.get("answer") or {}).get("assumption") for q in done], why, by, stamp)
     return [q["id"] for q in done]
+
+
+def _withdraw_assumptions(project: Project, aids: list[Any], why: str, by: str | None, stamp: str) -> None:
+    canon = Canon(project)
+    gone = []
+    with updating_json(canon.dir / "assumptions.json", [], lock=canon.lock) as items:
+        for a in items:
+            if a["id"] in aids and a["status"] == "open":
+                a["status"], a["settled"] = "withdrawn", {"by": by, "why": why, "at": stamp}
+                gone.append(a["id"])
+    for aid in gone:
+        project.log("assumption_settled", {"id": aid, "status": "withdrawn", "by": by, "persona": None, "why": why})
 
 
 def _set_aside(project: Project, to: str, folder: Path) -> list[str]:

@@ -31,6 +31,27 @@ Rihmasto is free to adopt, under the [Apache License 2.0](LICENSE).
 | IT and operations | Delivery only on paved roads you configured, your deploy gate before production, then probes, canary and rollback. |
 | Compliance | A hash-chained ledger, evidence packs for reviewers, security findings with accepted risks that expire, and the autonomy cap. |
 
+## What Rihmasto is, and is not
+
+Rihmasto is **the middle layer** between where solutions are developed (your IDE, terminal and
+coding agents, or Rihma's own builders) and everywhere they go (backends and clouds, test
+environments, data systems, and the channels and platforms where they are published or used).
+
+Rihmasto is the platform for an agentic capability's whole life:
+
+1. an idea becomes a concept and a first mock-up;
+2. the concept is productionised;
+3. its integrations are worked out;
+4. it reaches a first test deployment, then production;
+5. it is maintained.
+
+People decide at every step, and automations can hook onto each step and its transitions.
+
+It is **not** another IDE: write code in the editor and agent you prefer, and Rihmasto captures that
+work's specs, tests and conventions, aligns them with its contract, and hands context back. It does
+not replace your CI, monitoring or ticketing either. It reads them, runs its own gate and checks, and
+keeps the decisions and the evidence. See [D-0023](decisions/D-0023-what-rihmasto-is-and-is-not.md).
+
 ## Quick start
 
 You need Python 3.11 or later and git. The demo needs no Gnomon, no model keys and no network.
@@ -147,8 +168,10 @@ governance core ([docs/guides/profiles.md](docs/guides/profiles.md)).
 | `agentic_workflow` | an agent, assistant or tool-using workflow | preview |
 | `harness_engineering` | building or tuning an agent harness | preview |
 | `ops_agent` | a job done and proven, such as an access review | preview |
+| `automation` | a scheduled or triggered job with no screens, one workflow or one agentic capability | ready |
 
-Every profile builds on the one paved-road template today, a standard-library Python HTTP service.
+Every profile but `automation` builds on the one paved-road template today, a standard-library Python HTTP
+service; `automation` has its own, one image with several faces ([small capabilities](docs/guides/small-capabilities.md)).
 *Preview* means the intake, spec and checks are shaped for the work, and its own template is still
 to come.
 
@@ -181,6 +204,12 @@ and validated.
 The plan to run a release on any OCI runtime and expose its agents over open protocols is in
 [docs/portability.md](docs/portability.md); it is a design, not built yet.
 
+The factory's own cells are harness agnostic: Gnomon runs them by default and enforces the rules
+during a run, and a team can run them with Claude Code, Codex, OpenCode or a command it names
+instead, approved by IT with the version pinned. Every rule is then checked after the run, and the
+evidence says which assurance applied (`rihmasto runners`,
+[docs/guides/harnesses.md](docs/guides/harnesses.md)).
+
 ## Status
 
 Version **1.0.0.dev0**, a development release. Commands, file formats and the cockpit's API may
@@ -190,12 +219,17 @@ still change before 1.0.0.
 - the chain from intake to delivery on the local preview road: the panel, the spec rules, the
   compiled contract, the gate, holdouts in custody, the change loop and the ledger;
 - the command line, the demo, the cockpit and the MCP server;
-- the `web_service` and `integration` profiles;
+- the `web_service`, `integration` and `automation` profiles; a small capability is reached over MCP,
+  an OpenAI-compatible endpoint, a website chat or HTTP, behind its pack guard (`rihmasto capability serve`);
 - the security gate for SARIF findings, capability packs, evidence packs, the autonomy ladder,
   signals, concepts and embeds;
 - delegated decisions, an autopilot bound to a sandbox, and Track, which says whether a project stays
   on track against its approved plan, with human checkpoints
   ([docs/guides/autopilot-and-tracking.md](docs/guides/autopilot-and-tracking.md));
+- automations per project or across them: a schedule, a ledger event, an inbound webhook or new commits
+  trigger an allow-listed action with its owner's rights, with guards, limits and a circuit breaker
+  (`rihmasto automations`, the cockpit's Automations page,
+  [docs/guides/automations.md](docs/guides/automations.md));
 - outputs per audience, chosen by a person and built from the records: a web app with sign-in, a
   container, an OpenAPI description, a delivery report, an evidence pack and the source
   (`rihmasto output`, the cockpit's Outputs view; the MCP server output is planned,
@@ -205,7 +239,7 @@ still change before 1.0.0.
   that project ([docs/guides/access.md](docs/guides/access.md)).
 
 **Preview:**
-- five of the seven profiles, which run on the web-service template;
+- five of the eight profiles, which run on the web-service template;
 - the docker road, which the tests run against a fake docker CLI, not a daemon;
 - the Azure Container Apps road, rendered and validated but never deployed;
 - recipes, sandbox trials, measured fit and offline bundles, which have no command or screen yet
@@ -246,6 +280,9 @@ still change before 1.0.0.
 - [docs/how-it-works.md](docs/how-it-works.md): the chain step by step, and who decides what.
 - [docs/cockpit.md](docs/cockpit.md): the cockpit, its lenses and its API.
 - [docs/brownfield.md](docs/brownfield.md): existing solutions, your own terminal, security findings.
+- [docs/guides/ide-and-rihmasto.md](docs/guides/ide-and-rihmasto.md): your IDE and Rihmasto, where
+  the line is; your CLAUDE.md, AGENTS.md, Cursor rules and skills read and followed; MCP for Cursor
+  and Claude Code.
 - [decisions/](decisions/): every decision, who made it and why.
 
 ## Contributing, security and licence

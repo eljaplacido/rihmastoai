@@ -7,7 +7,8 @@
     rihmasto relay cockpit https://rihmasto.example.org --person Ilkka --persona it
     rihmasto relay list | relay run | relay log [--subscription SUB-001] | relay unsubscribe SUB-001 ...
     rihmasto hooks add <source> --scheme standard|github --secret-env NAME [--becomes change --project PID] ...
-    rihmasto hooks list | hooks remove <source> ...
+    rihmasto hooks add ... --bind PID [--bind PID]       a source that belongs to projects: their automations react
+    rihmasto hooks bind <source> --project PID ... | hooks list | hooks remove <source> ...
     rihmasto connector validate <system> | connector status | connector check [--root DIR]
     rihmasto connector enable <system> | connector disable <system> --person Ilkka --persona it
 
@@ -61,6 +62,7 @@ def _subscribe_parser(rel: Any) -> None:
     s.add_argument("--mail-to", action="append")
     s.add_argument("--smtp-user-env")
     s.add_argument("--smtp-password-env")
+    s.add_argument("--project", dest="projects", action="append", help="a project's own receiver: only its events")
 
 
 def add_parsers(sub: Any, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -83,6 +85,9 @@ def add_parsers(sub: Any, parser: argparse.ArgumentParser) -> argparse.ArgumentP
     s.add_argument("--becomes", choices=hooks.BECOMES, default="signal")
     s.add_argument("--project", help="the project a source that becomes a change files on")
     s.add_argument("--tolerance", type=int, default=hooks.TOLERANCE)
+    s.add_argument("--bind", action="append", help="a project the source belongs to; its automations react")
+    b = _signer(_leaf(hk, "bind", "IT binds an inbound source to projects (none: the factory only)", "source"))
+    b.add_argument("--project", dest="projects", action="append", default=[])
     _signer(_leaf(hk, "remove", "IT stops an inbound source", "source"))
     _leaf(hk, "list", "the inbound sources")
     con = sub.add_parser("connector", help="the connector model (kernel/connectors.py)").add_subparsers(
@@ -108,7 +113,7 @@ def _subscribe(f: Factory, a: Args) -> Any:
             "starttls": a.starttls, "user_env": a.smtp_user_env, "password_env": a.smtp_password_env}
     return relay.subscribe(f, sink=a.sink, person=a.person, persona=a.persona, url=a.url, url_env=a.url_env,
                            secret_env=a.secret_env, types=a.types, personas=a.notify, kinds=a.kinds,
-                           mail=mail if a.sink == "email" else None)
+                           mail=mail if a.sink == "email" else None, projects=a.projects)
 
 
 def _validate(f: Factory, a: Args) -> Any:
@@ -127,7 +132,8 @@ COMMANDS: dict[str, Command] = {
                                "log_intact": relay.log_intact(f)},
     "hooks add": lambda f, a: hooks.add_source(f, a.source, scheme=a.scheme, secret_env=a.secret_env,
                                                becomes=a.becomes, project=a.project, tolerance=a.tolerance,
-                                               person=a.person, persona=a.persona),
+                                               bind=a.bind, person=a.person, persona=a.persona),
+    "hooks bind": lambda f, a: hooks.bind_source(f, a.source, a.projects, person=a.person, persona=a.persona),
     "hooks remove": lambda f, a: hooks.remove_source(f, a.source, person=a.person, persona=a.persona),
     "hooks list": lambda f, a: {"sources": hooks.sources(f)},
     "connector validate": _validate,

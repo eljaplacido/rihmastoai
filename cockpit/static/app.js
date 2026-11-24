@@ -19,6 +19,8 @@ import { wireAssistant, openAssistant, closeAssistant, assistantOpen, onRouteCha
 import { loadModules, pageOn, firstRun, offPage, moduleShows } from "./modules.js";
 import { renderShape } from "./shape.js";
 import { renderModels } from "./models.js";
+import { renderRunners } from "./runners.js";
+import { renderAutomations } from "./automations.js";
 
 applyTheme(Object.assign({}, THEME_DEFAULT, localJSON("gf.theme", {})));
 
@@ -95,7 +97,7 @@ function drawAccess() {
   const a = (S.meta && S.meta.access) || {};
   $("#access-note-text").textContent = a.note || "";
   $("#access-note").dataset.tip = a.note || "";
-  $("#access-pop").textContent = a.note || "";
+  $("#access-pop").textContent = a.detail || a.note || "";   // enforced: the sign-in, its end, where untrusted code runs
   for (const id of ["#access-note", "#access-pop"]) $(id).hidden = !a.note;
   $("#access-note").classList.toggle("enforced", enforced());
   if (!enforced()) return;
@@ -196,6 +198,8 @@ function closePerson(refocus) {
   if (refocus) $("#person-chip").focus();
 }
 nav.openPerson = openPerson;
+// A name and a persona set elsewhere (the first-run choice) show in the person menu at once.
+nav.personChanged = () => { $("#person").value = S.person; S.lens = lensFor(S.persona); drawPersonChip(); drawLens(); };
 
 function wirePerson() {
   S.person = store.get("gf.person") || "";
@@ -269,9 +273,9 @@ function wireLens() {
 
 // -- the sidebar, the top bar and the bottom bar ----------------------------------------------------
 
-const NAV_ORDER = ["home", "square", "catalogue", "projects", "inbox_all", "floor", "jobs"];
+const NAV_ORDER = ["home", "square", "catalogue", "projects", "inbox_all", "floor", "jobs", "automations_all"];
 const PAGE_ROUTE = { home: "#/home", square: "#/square", catalogue: "#/catalogue", projects: "#/projects",
-  inbox_all: "#/inbox", floor: "#/floor", jobs: "#/jobs", settings: "#/settings" };
+  inbox_all: "#/inbox", floor: "#/floor", jobs: "#/jobs", settings: "#/settings", automations_all: "#/automations" };
 
 /* A page in the sidebar. Its label is hidden in the icon rail, where the tooltip carries it and what its
    badge counts. A note the badge alone shows (the cells running now) is a tooltip at every width, on
@@ -496,15 +500,17 @@ function parseRoute() {
     const view = parts[2] && PROJECT_VIEWS.includes(parts[2]) ? parts[2] : null;
     return { name: "project", pid: parts[1], view, focus: parts[3] || null };
   }
-  const name = parts[0] === "inbox" ? "inbox_all" : parts[0];
+  const name = parts[0] === "inbox" ? "inbox_all" : parts[0] === "automations" ? "automations_all" : parts[0];
   if (name === "shape") return { name, id: parts[1] || null };   // a conversation: #/shape/SH-001
+  if (name === "runners") return { name, id: parts[1] || null }; // a project's runners: #/runners/<pid>
   if (TOP_PAGES.includes(name)) return { name };
   return { name: "home" };
 }
 
 const RENDER = {
   home: renderHome, square: renderSquare, catalogue: renderCatalogue, projects: renderProjectsPage, inbox_all: renderInboxAll,
-  floor: renderFloor, jobs: renderJobs, settings: renderSettings, shape: renderShape, models: renderModels,
+  floor: renderFloor, jobs: renderJobs, settings: renderSettings, shape: renderShape, models: renderModels, runners: renderRunners,
+  automations_all: renderAutomations,
 };
 void PAGE_ROUTES;
 

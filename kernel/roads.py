@@ -46,6 +46,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from kernel import access_isolation as isolation
 from kernel.lanes import _git
 from kernel.store import read_json, write_json, write_text
 
@@ -728,11 +729,13 @@ class LocalProcessRoad(Road):
         # The road limits exposure (FR-DF1): a local process listens on loopback, by the HOST it is given.
         envvars.update(HOST=t.get("host") or "127.0.0.1", PORT=str(port), DATA_DIR=str(data), TRAFFIC_LOG=str(traffic),
                        APP_VERSION=package["settings"]["APP_VERSION"], PYTHONUNBUFFERED="1",
-                       PYTHONDONTWRITEBYTECODE="1")
+                       PYTHONDONTWRITEBYTECODE="1", **integration_env(package, resolve=True))
+        # Access enforced: the product runs as IT's separate account, or is refused (kernel.access_isolation).
+        command = isolation.product(package["artifact"]["command"], envvars, writable=(data,), files=(traffic,))
         log.parent.mkdir(parents=True, exist_ok=True)
         with open(log, "ab") as fh:
             try:
-                proc = subprocess.Popen(package["artifact"]["command"], cwd=project.dir / package["artifact"]["checkout"],
+                proc = subprocess.Popen(command, cwd=project.dir / package["artifact"]["checkout"],
                                         env=envvars, stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
                                         **_detach())
             except OSError as exc:
@@ -787,8 +790,10 @@ class LocalProcessRoad(Road):
 
 # -- docker -------------------------------------------------------------------------------------
 
-def _run_subprocess(argv, timeout):
-    proc = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+def _run_subprocess(argv, timeout, env=None):
+    # ``env``: values a command takes by name (`docker run --env NAME`), so none is in its arguments (FR-DS5)
+    proc = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
+                          env={**os.environ, **env} if env else None)
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -802,10 +807,11 @@ class DockerCLI:
     def available(self) -> bool:
         return self.runner is not _run_subprocess or shutil.which(self.binary) is not None
 
-    def __call__(self, *args, check: bool = True, timeout: float | None = None) -> str:
+    def __call__(self, *args, check: bool = True, timeout: float | None = None, env: dict | None = None) -> str:
         argv = [self.binary, *(str(a) for a in args)]
         try:
-            code, out, err = self.runner(argv, timeout or self.timeout)
+            code, out, err = self.runner(argv, timeout or self.timeout, env=env) if env else \
+                self.runner(argv, timeout or self.timeout)
         except FileNotFoundError:
             raise RoadError(f"{self.binary} is not installed on this host", {"argv": argv})
         except subprocess.TimeoutExpired:
@@ -826,10 +832,18 @@ class DockerCLI:
         return self("image", "inspect", "--format", "{{.Id}}", tag)
 
     def run(self, name: str, image: str, *, publish: str, volume: str, env: dict | None = None,
-            labels: dict | None = None, restart: str = "unless-stopped", command=None) -> str:
+            labels: dict | None = None, restart: str = "unless-stopped", command=None,
+            secrets: dict | None = None) -> str:
+        from kernel.integration_decl import steers_tooling
+
+        steering = sorted(k for k in secrets or {} if steers_tooling(k))   # would steer the CLI itself (FR-DS5)
+        if steering:
+            raise RoadError("a secret named like a variable the docker CLI reads is never put in its environment: "
+                            + ", ".join(steering), {"names": steering})
+        named = [x for k in (secrets or {}) for x in ("--env", k)]  # by name: docker reads each value from env
         return self("run", "--detach", "--name", name, "--restart", restart, "--publish", publish,
-                    "--volume", volume, *self._flags("--env", env), *self._flags("--label", labels), image,
-                    *(command or []))
+                    "--volume", volume, *self._flags("--env", env), *named, *self._flags("--label", labels), image,
+                    *(command or []), env=secrets)
 
     def host_port(self, name: str, container_port: int = APP_PORT) -> int:
         out = self("port", name, f"{container_port}/tcp")
@@ -915,8 +929,10 @@ class DockerRoad(Road):
         self.docker.run(t["container"], package["artifact"]["ref"],
                         publish=f"{t['bind']}:{t['host_port'] or ''}:{APP_PORT}",
                         volume=f"{t['volume']}:{CONTAINER_DATA}",
-                        env={"APP_VERSION": package["settings"]["APP_VERSION"], "TRAFFIC_LOG": CONTAINER_TRAFFIC},
-                        labels=t["labels"], restart=t["restart"], command=t.get("command"))
+                        env={"APP_VERSION": package["settings"]["APP_VERSION"], "TRAFFIC_LOG": CONTAINER_TRAFFIC,
+                             **integration_env(package)},
+                        labels=t["labels"], restart=t["restart"], command=t.get("command"),
+                        secrets=integration_secrets(package))
         host = "127.0.0.1" if t["bind"] in ("0.0.0.0", "", "::") else t["bind"]
         port = self.docker.host_port(t["container"], APP_PORT)
         state = self._state(project, package, container=t["container"], volume=t["volume"], port=port,
@@ -1124,6 +1140,26 @@ class AzureContainerAppsRoad(Road):
 
 # -- validation ---------------------------------------------------------------------------------
 
+def integration_env(pkg: dict, *, resolve: bool = False) -> dict:
+    """The settings of a package's approved integrations, as the product's environment (FR-DS2)."""
+    from kernel.integration_bind import env_of
+
+    return env_of(pkg, resolve=resolve)
+
+
+def integration_secrets(pkg: dict) -> dict:
+    """The `env:` credentials of a package's integrations this host holds, by name (FR-DS5)."""
+    from kernel.integration_bind import secret_values
+
+    return secret_values(pkg)
+
+
+def integration_problems(pkg: dict) -> list:
+    from kernel.integration_bind import package_problems
+
+    return package_problems(pkg)
+
+
 def secret_leaks(obj, path: str = "$") -> list:
     """Every place in a package where a secret's value (rather than its name) appears."""
     out = []
@@ -1173,7 +1209,7 @@ def validate_package(pkg: dict) -> list:
     if not isinstance(pkg["rules"], dict):
         problems.append("rules must be an object")
     problems += pkg.get("road_problems") or []
-    problems += secret_leaks({k: v for k, v in pkg.items() if k != "road_problems"})
+    problems += secret_leaks({k: v for k, v in pkg.items() if k != "road_problems"}) + integration_problems(pkg)
     if pkg["road"].get("kind") == "azure-containerapps":
         problems += validate_containerapp(pkg)
     return problems
@@ -1418,35 +1454,71 @@ def validate_site_package(pkg: dict) -> list:
     return problems
 
 
-def _compose_service(pkg: dict) -> dict:
+def _faces_header(runtime: dict, faces: list[str]) -> str:
+    """The compose.yaml header lines that say how each face of a small capability is reached."""
+    reach = {"mcp": "POST /mcp (Streamable HTTP); stdio: docker compose run --rm -T app python3 factory/faces.py "
+                    "--face mcp --stdio", "openai": "GET /v1/models, POST /v1/chat/completions (the model is "
+                    f"{runtime.get('name')})", "http": "POST /capability/run, GET /capability/runs",
+             "embed": "GET /embed/widget.js, POST /embed/messages (its declared origins only)"}
+    lines = [f"# The {f} face: {reach[f]}.\n" for f in faces if f in reach]
+    if (runtime.get("trigger") or {}).get("kind") in ("webhook", "event"):
+        lines.append("# Its trigger: POST /capability/trigger, verified with Standard Webhooks.\n")
+    return "# A small capability, checked by pack_guard before any face answers.\n" + "".join(lines)
+
+
+def _compose_faces(runtime: dict | None) -> tuple[dict, dict, str]:
+    """A small capability's faces in its one service (FR-SC5): which faces answer, its schedule, its declared
+    secrets and the faces' token by name (from the deployer's environment), the gateway its model roles call,
+    and where its results go out; the labels; and the header lines that say how to reach each face."""
+    if not isinstance(runtime, dict) or runtime.get("declared") is not True:
+        return {}, {}, ""
+    faces = [str(f) for f in runtime.get("faces") or []]
+    env = {"RIHMA_FACES": ",".join(faces), "RIHMA_RESULT_URL": "${RIHMA_RESULT_URL}",
+           "RIHMA_RESULT_SECRET": "${RIHMA_RESULT_SECRET}"}
+    if (runtime.get("trigger") or {}).get("kind") == "schedule":
+        env["RIHMA_SCHEDULE"] = "on"
+    names = [str(n) for n in runtime.get("secrets") or []]
+    names += ["RIHMA_FACES_TOKEN"] if set(faces) & {"mcp", "openai", "http"} else []
+    env |= {name: secret_from_env(name) for name in names}
+    if runtime.get("model_roles"):
+        env |= {"RIHMA_GATEWAY_URL": secret_from_env("RIHMA_GATEWAY_URL"),
+                "RIHMA_GATEWAY_TOKEN": "${RIHMA_GATEWAY_TOKEN}"}
+    labels = {"gnomonfactory.capability": str(runtime.get("name")), "gnomonfactory.faces": ",".join(faces)}
+    return env, labels, _faces_header(runtime, faces)
+
+
+def _compose_service(pkg: dict, runtime: dict | None = None) -> dict:
     art, pack, target = pkg["artifact"], pkg["pack"], pkg.get("target") or {}
     env = {"APP_VERSION": pkg["settings"]["APP_VERSION"], "PORT": str(APP_PORT), "DATA_DIR": CONTAINER_DATA,
            "TRAFFIC_LOG": CONTAINER_TRAFFIC, "RIHMA_PACK": f"{PACK_MOUNT}/{pack['file']}",
            "RIHMA_PACK_SHA256": pack["content_sha256"], "RIHMA_PACK_STATUS": f"{PACK_MOUNT}/{pack['status_file']}",
            "RIHMA_IMAGE_DIGEST": art["digest"]}
-    env |= {str(s["name"]): secret_from_env(str(s["name"])) for s in pkg.get("secrets") or []}
+    env |= integration_env(pkg) | {str(s["name"]): secret_from_env(str(s["name"])) for s in pkg.get("secrets") or []}
+    face_env, face_labels, _ = _compose_faces(runtime)
     mounts = [{"type": "volume", "source": "data", "target": CONTAINER_DATA},
               {"type": "bind", "source": ".", "target": PACK_MOUNT, "read_only": True}]
     return {"image": art["ref"], "restart": "unless-stopped",
             "ports": [f"{target.get('bind') or '127.0.0.1'}:{target.get('host_port') or APP_PORT}:{APP_PORT}"],
-            "environment": env, "volumes": mounts,
+            "environment": env | face_env, "volumes": mounts,
             "labels": {"gnomonfactory.project": pkg["project"], "gnomonfactory.release": str(pkg["release"]),
-                       "gnomonfactory.pack": f"{pack['version']} sha256:{pack['content_sha256']}"}}
+                       "gnomonfactory.pack": f"{pack['version']} sha256:{pack['content_sha256']}", **face_labels}}
 
 
-def render_compose(pkg: dict) -> dict:
+def render_compose(pkg: dict, runtime: dict | None = None) -> dict:
     """compose.yaml for a deploy package/2, as ``{"model", "yaml", "problems"}``: the image by digest, a
     named volume for /data, the folder beside compose.yaml (the pack and its status) mounted read-only
     at /pack, and each secret as the environment variable of its name, its value taken from the
-    deployer's environment. Nothing is rendered while there is a problem: no digest, no pack, a secret
+    deployer's environment. A small capability's pack `runtime` adds its faces to the one service
+    (`_compose_faces`). Nothing is rendered while there is a problem: no digest, no pack, a secret
     that carries a value."""
     problems = validate_site_package(pkg)
     if problems:
         return {"model": None, "yaml": None, "problems": problems}
     model: dict = {"name": re.sub(r"[^a-z0-9_-]+", "-", f"gf-{pkg['project']}-{pkg['environment']}".lower()),
-                   "services": {"app": _compose_service(pkg)}, "volumes": {"data": {}}}
+                   "services": {"app": _compose_service(pkg, runtime)}, "volumes": {"data": {}}}
     problems = secret_leaks(model) + validate_compose(model)
-    return {"model": model, "yaml": None if problems else COMPOSE_HEADER + to_yaml(model), "problems": problems}
+    header = COMPOSE_HEADER + _compose_faces(runtime)[2]
+    return {"model": model, "yaml": None if problems else header + to_yaml(model), "problems": problems}
 
 
 def _compose_mounts(app: dict, volumes: dict) -> list:

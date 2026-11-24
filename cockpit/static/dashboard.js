@@ -11,6 +11,7 @@ import {
 import { WIDGET_DEFS, SOURCES, PROV_NOTE } from "./widgets.js";
 import { widgetOn, offNote } from "./modules.js";
 import { modelSetupCard } from "./models.js";
+import { pausedCard } from "./automations.js";
 
 const SIZES = ["S", "M", "L", "XL"];
 const SIZE_LABEL = { S: "Small", M: "Medium", L: "Wide", XL: "Wide and tall" };
@@ -219,6 +220,7 @@ export async function renderHome(seq) {
         button("Refresh", { icon: "refresh", kind: "quiet", key: "home:refresh", onclick: () => nav.route && nav.route(true) })],
     }),
     h("div", { class: "home-setup", id: "home-setup" }),
+    h("div", { class: "home-setup", id: "home-auto" }),
     h("div", { class: "dash-notes", id: "dash-notes" }),
     h("div", { class: "cz-bar", id: "cz-bar", hidden: true }),
     h("div", { class: "preview-bar", id: "preview-bar", hidden: true }),
@@ -227,6 +229,7 @@ export async function renderHome(seq) {
   drawFresh();
   drawNotes();
   modelSetupCard($("#home-setup"));    // "Set up a model" while no model Rihma talks with answers
+  pausedCard($("#home-auto"));         // an automation the circuit breaker paused, and why (automations.js)
   renderGrid();
   if (S.customizing) startCustomize(resumed);
   if (C.preview) showPreviewBar();

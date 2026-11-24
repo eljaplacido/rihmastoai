@@ -2,7 +2,7 @@
 name (D-0013). Without installing it, run `python -m kernel.cli`.
 
 The chain, from a need to a running product
-    rihmasto new "Title" --source "idea text or a path" --mode mixed --maturity demo --requested-by Aino
+    rihmasto new "Title" --source "idea text or a path" [--posture balanced] [--mode M --maturity M] --requested-by Aino
     rihmasto scan <folder> [--exclude GLOB]   what a folder source would send, and why (kernel/material_cli.py);
                                         `new`/`intake` with a folder show it and need --yes; --confidential
     rihmasto intake <pid> --source-file request.md --requested-by Aino
@@ -24,6 +24,7 @@ The chain, from a need to a running product
                                         or too old
     rihmasto demo [--home DIR]          a demo factory home with no model keys, no network and no Gnomon (var/demo)
     rihmasto shape | shape start|say|attach|edit|show|create    work out a need with Rihma in a chat
+    rihmasto runners list|check|set     which harness runs the cells: Gnomon, or another on an IT card (D-0019)
 
 An existing solution, or your own terminal (docs/brownfield.md)
     rihmasto adopt "Title" --source <folder|url> --intent monitor|maintain|improve --person Aino --persona developer
@@ -31,6 +32,7 @@ An existing solution, or your own terminal (docs/brownfield.md)
     rihmasto workspace open <pid> --person Aino --persona developer --agent gnomon|claude|opencode|shell
     rihmasto workspace submit <pid> <path> --person Aino --persona developer [--task T-001]
     rihmasto workspace list <pid>
+    rihmasto ide <pid> [--name N] [--section]   its AI tools, MCP config for your IDE, how a change comes back
 
 The capability layer (a write is signed with --person and --persona)
     rihmasto security ingest <pid> <file.sarif> | security status <pid>
@@ -45,6 +47,7 @@ The capability layer (a write is signed with --person and --persona)
     rihmasto concept edit <C-id> [--title ...] [--profile ...] [--maturity ...] [--mode ...] | concept apply
     rihmasto observe <trigger> --facts '{"project": "<pid>"}' --source "..." | updates apply <pid>
     rihmasto square | catalogue                   the delivery square; the capability catalogue
+    rihmasto automations list|add|edit|pause|resume|remove|run-now|dry-run|tick|history|install-help
 
 The factory home is --home, else $RIHMASTO_HOME, $RIHMA_HOME or $GNOMONFACTORY_HOME, else var/.
 A refused capability or signed command prints why on stderr and exits 2 (access: docs/guides/access.md).
@@ -62,13 +65,14 @@ from collections.abc import Callable
 from typing import Any
 
 from adapters import sarif
-from kernel import access, autonomy, embeds, evidence_pack, graph_ask, integrations, observations, packs
-from kernel import (autopilot_cli, change_cli, input_summary, material_cli, modules, outputs, security, shape_cli,
-                    signals, standalone)
+from kernel import access, assess_cli, autonomy, embeds, evidence_pack, faces, graph_ask, integrations, observations
+from kernel import (access_cli, automations_cli, autopilot_cli, change_cli, ide, input_summary, integration_decl,
+                    material_cli, modules, outputs, packs, posture_cli, security, shape_cli, signals, standalone)
 from kernel.canon import Canon, DecisionRefused
 from kernel.dashboard import catalogue
 from kernel.people import PERSONAS, is_person
 from kernel.profiles import PROFILES
+from kernel.runners import cli as runners_cli
 from kernel.store import HOME_ENVS, MATURITIES, MODES, STAGES, Factory
 
 PROG = "rihmasto"  # the command's name (D-0013); `rihma` is installed as an alias of the same main
@@ -255,7 +259,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="cmd", required=True)
     for add in (_chain_parsers, _brownfield_parsers, _evidence_parsers, _embed_autonomy_parsers, _square_parsers,
                 graph_ask.add_parsers, input_summary.add_parsers, autopilot_cli.add_parsers, outputs.add_parsers,
-                standalone.add_parsers, material_cli.add_parsers, change_cli.add_parsers, shape_cli.add_parsers):
+                standalone.add_parsers, material_cli.add_parsers, change_cli.add_parsers, shape_cli.add_parsers,
+                posture_cli.add_parsers, assess_cli.add_parsers, faces.add_parsers, access_cli.add_parsers,
+                integration_decl.add_parsers, ide.add_parsers, runners_cli.add_parsers,  # FR-DS1; FR-AGC1; D-0019
+                automations_cli.add_parsers):  # FR-AUT1
         add(sub)
     return integrations.add_parsers(sub, ap)  # relay, hooks and connector (D-0015)
 
@@ -430,17 +437,19 @@ CAPABILITY: dict[str, Handler] = {
     "embed list": lambda f, a: _print({"embeds": [embeds.public(e) for e in embeds.embeds(f)]}),
     "embed revoke": lambda f, a: _print(embeds.public(embeds.revoke(f, a.id, person=a.person, persona=a.persona))),
     "autonomy show": _autonomy_show, "autonomy set": _autonomy_set, **outputs.handlers(_print),
+    **posture_cli.handlers(_print), **assess_cli.handlers(_print, _model),
     "signal log": lambda f, a: _print(signals.receive(f, a.text, channel=a.channel, source=a.source,
                                                       person=a.person, persona=a.persona, ref=a.ref)),
-    "signal list": lambda f, a: _print({"signals": signals.signals(f, a.state)}),
+    "signal list": lambda f, a: _print({"signals": signals.signals(f, a.state)}), **access_cli.handlers(_print),
     "signal triage": lambda f, a: _print(signals.triage(f, a.id, model=_model() if a.with_model else None)),
-    "concept edit": _concept_edit, "observe": _observe, **graph_ask.handlers(_print, _model),
+    "concept edit": _concept_edit, "observe": _observe, **graph_ask.handlers(_print, _model), **faces.handlers(_print),
     "concept apply": lambda f, a: _print({"applied": signals.apply_concepts(f)}), **integrations.handlers(_print),
     "updates apply": lambda f, a: _print({"project": a.pid, "applied": observations.apply_updates(f.project(a.pid))}),
     "square": lambda f, a: _print(signals.square(f)), "catalogue": lambda f, a: _print(catalogue(f)),
     **input_summary.handlers(_print, lambda: _model(), print), **autopilot_cli.handlers(_print, _model),
-    **standalone.handlers(_print, _model), **change_cli.handlers(_print, _model),
-    **shape_cli.handlers(_print, lambda: _model(), print)}
+    **standalone.handlers(_print, _model), **change_cli.handlers(_print, _model), **runners_cli.handlers(_print),
+    **shape_cli.handlers(_print, lambda: _model(), print), **integration_decl.handlers(_print), **ide.handlers(_print),
+    **automations_cli.handlers(_print, lambda: _model())}
 
 
 def command_of(args: Args) -> str:

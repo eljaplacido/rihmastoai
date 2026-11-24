@@ -51,13 +51,17 @@ capability pinned by hash does not change behaviour unless someone changes it th
 
 ## Not built yet (honest list)
 
-- **Runtime declaration.** Product templates do not yet declare the runtime models an agentic product
-  uses. A pack says so ("runtime: not declared").
+- **Runtime declaration.** Built for small capabilities: the automation profile's capability template
+  declares what it needs where it runs (`app/runtime.json`), and its pack carries it
+  ([small capabilities](guides/small-capabilities.md)). The web-service template declares no runtime,
+  and its pack says so ("runtime: not declared").
 - **Signing and SBOM.** Packs are not signed and no SBOM is generated. A pack says so.
 - **Trials.** A trial approved on an update card is recorded. The re-measure with the new model is an
   operator step in v1.
 - **Templates.** Dedicated templates for mobile, ML, agent, harness and ops-agent profiles. Today they
-  run on the web-service template, and each profile says so (`status: preview`).
+  run on the web-service template, and each profile says so (`status: preview`). The automation
+  profile has its own: one capability image with several faces (MCP, an OpenAI-compatible chat, a
+  website embed, HTTP), each behind the pack guard.
 - **Fit measurement.** Measured fit across hardware, runtime, model and task (throughput, latency,
   memory and quality per workload class) is a natural extension of the per-model reliability Rihma
   already computes from its ledgers.

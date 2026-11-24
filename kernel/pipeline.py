@@ -161,51 +161,88 @@ def _apply_updates(project, history: list) -> None:
         history.append({"updates": [{"card": u["card"], "verdict": u["verdict"]} for u in done]})
 
 
+def _intake_again(project, model, history: list) -> dict | str | None:
+    """An intake sent back to its questions, or over material added later (FR-CHG1), runs first. Over a spec
+    written before the material, a person looks before anything is built on the old spec."""
+    meta = project.meta
+    from kernel.project_material import pending_intake
+
+    added_to_spec = bool(meta.get("reintake_pending")) and not meta.get("redo_intake") \
+        and project.path("spec.json").exists()
+    redone = pending_intake(project, model=model)
+    if not redone:
+        return None
+    history.append(redone)
+    if not added_to_spec:
+        return AGAIN
+    open_qs = [q for q in blocking_open(project) if q.get("card")]
+    why = ("the panel read the added material; the spec was written before it: answer what it asks, then go "
+           "back to the spec to write it again with it, or go on with the spec as it is")
+    return _waiting(2 if open_qs else 4, [q["card"] for q in open_qs], why) | {"material_read": True,
+                                                                           "history": history}
+
+
+def _first_intake(project, model, history: list) -> dict | str:
+    """A project with no intake yet: a concept a person validated starts from the need as it arrived."""
+    need = project.read("need.json")
+    if not need:
+        return {"state": "failed", "stage": 1, "why": "no intake yet: run `factory intake` with a source",
+                "history": history}
+    from kernel.intake import intake
+
+    # The need is text from outside (a signal): never a path to read (literal=True).
+    intake(project, need["text"], model=model, requested_by=need.get("requested_by"), literal=True)
+    history.append("intake from the validated need")
+    return AGAIN
+
+
 def _shape(project, model, history: list) -> dict | str | None:
     """Intake, spec and contract: whatever the project still lacks of them."""
     meta = project.meta
-    from kernel.project_material import pending_intake  # sent back to its questions, or material added (FR-CHG1)
-
-    redone = pending_intake(project, model=model)
-    if redone:
-        history.append(redone)
-        return AGAIN
+    again = _intake_again(project, model, history)
+    if again is not None:
+        return again
     if not project.path("source.json").exists() and meta.get("source_kind") != "adopted":
-        need = project.read("need.json")
-        if need:  # a concept a person validated: intake starts from the need as it arrived
-            from kernel.intake import intake
-
-            # The need is text from outside (a signal): never a path to read (literal=True).
-            intake(project, need["text"], model=model, requested_by=need.get("requested_by"), literal=True)
-            history.append("intake from the validated need")
-            return AGAIN
-        return {"state": "failed", "stage": 1, "why": "no intake yet: run `factory intake` with a source",
-                "history": history}
+        return _first_intake(project, model, history)
     if not project.path("spec.json").exists():
-        open_blocking = blocking_open(project)
-        if open_blocking:
-            return _waiting(2, [q["card"] for q in open_blocking if q.get("card")],
-                            "blocking questions are open") | {"history": history}
-        try:
-            make_spec(project, model=model)
-        except SendBack as exc:
-            return _waiting(2, [q["card"] for q in exc.questions], "send-back") | {"history": history}
-        history.append("spec")
-        return AGAIN
+        return _spec(project, model, history)
+    late = [q["card"] for q in blocking_open(project) if q.get("card")] if not meta.get("built") else []
+    if late:    # asked after the spec (material added later): nothing is built past a blocking question
+        return _waiting(2, late, "blocking questions are open: answer them, then go back to the spec to write it "
+                                 "again with the answers, or go on with the spec as it is") | {"history": history}
     if not project.path("contract.json").exists() or meta.get("contract_revision") is None:
-        from kernel.plan import gate as plan_gate
-
-        waiting = plan_gate(project, model=model)
-        if waiting:
-            return _waiting(4, waiting["waiting_on"], waiting["why"]) | {"history": history}
-        compile_project(project)
-        try:
-            author_holdouts(project, model=model)
-        except Exception as exc:  # holdouts are a separate custody; their absence is recorded, not hidden
-            project.log("holdouts_not_authored", {"error": str(exc)})
-        history.append("compile")
-        return AGAIN
+        return _contract(project, model, history)
     return None
+
+
+def _spec(project, model, history: list) -> dict | str:
+    """The spec, once no blocking question is open (a send-back waits for the questions it names)."""
+    open_blocking = blocking_open(project)
+    if open_blocking:
+        return _waiting(2, [q["card"] for q in open_blocking if q.get("card")],
+                        "blocking questions are open") | {"history": history}
+    try:
+        make_spec(project, model=model)
+    except SendBack as exc:
+        return _waiting(2, [q["card"] for q in exc.questions], "send-back") | {"history": history}
+    history.append("spec")
+    return AGAIN
+
+
+def _contract(project, model, history: list) -> dict | str:
+    """The plan's approval, where it needs one, then the contract and its holdouts."""
+    from kernel.plan import gate as plan_gate
+
+    waiting = plan_gate(project, model=model)
+    if waiting:
+        return _waiting(4, waiting["waiting_on"], waiting["why"]) | {"history": history}
+    compile_project(project)
+    try:
+        author_holdouts(project, model=model)
+    except Exception as exc:  # holdouts are a separate custody; their absence is recorded, not hidden
+        project.log("holdouts_not_authored", {"error": str(exc)})
+    history.append("compile")
+    return AGAIN
 
 
 def _gatekeep(project, canon: Canon, history: list) -> dict | None:

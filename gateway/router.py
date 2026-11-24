@@ -89,12 +89,17 @@ def plan(config: GatewayConfig, workload: Workload, data_class: str) -> tuple[li
     return keep, skipped
 
 
-def _tokens(usage: Any) -> dict | None:
+NOT_MEASURED = "not measured"
+
+
+def _tokens(usage: Any) -> dict | str:
+    """The token counts an upstream returned; "not measured" when it counted none (usage absent or null, as a
+    capability's openai face answers), so the audit never shows a count nobody made."""
     if not isinstance(usage, dict):
-        return None
+        return NOT_MEASURED
     out = {k.removesuffix("_tokens"): v for k, v in usage.items()
            if k in ("prompt_tokens", "completion_tokens", "total_tokens") and type(v) is int}
-    return out or None
+    return out or NOT_MEASURED
 
 
 def _gateway_headers(rid: str, workload: str, target: Target) -> dict[str, str]:

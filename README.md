@@ -31,6 +31,23 @@ Rihmasto is free to adopt, under the [Apache License 2.0](LICENSE).
 | IT and operations | Delivery only on paved roads you configured, your deploy gate before production, then probes, canary and rollback. |
 | Compliance | A hash-chained ledger, evidence packs for reviewers, security findings with accepted risks that expire, and the autonomy cap. |
 
+## What Rihmasto is, and is not
+
+Rihmasto is the platform for an agentic capability's whole life:
+
+1. an idea becomes a concept and a first mock-up;
+2. the concept is productionised;
+3. its integrations are worked out;
+4. it reaches a first test deployment, then production;
+5. it is maintained.
+
+People decide at every step, and automations can hook onto each step and its transitions.
+
+It is **not** another IDE: write code in the editor and agent you prefer, and Rihmasto captures that
+work's specs, tests and conventions, aligns them with its contract, and hands context back. It does
+not replace your CI, monitoring or ticketing either. It reads them, runs its own gate and checks, and
+keeps the decisions and the evidence. See [D-0023](decisions/D-0023-what-rihmasto-is-and-is-not.md).
+
 ## Quick start
 
 You need Python 3.11 or later and git. The demo needs no Gnomon, no model keys and no network.
@@ -147,8 +164,10 @@ governance core ([docs/guides/profiles.md](docs/guides/profiles.md)).
 | `agentic_workflow` | an agent, assistant or tool-using workflow | preview |
 | `harness_engineering` | building or tuning an agent harness | preview |
 | `ops_agent` | a job done and proven, such as an access review | preview |
+| `automation` | a scheduled or triggered job with no screens, one workflow or one agentic capability | ready |
 
-Every profile builds on the one paved-road template today, a standard-library Python HTTP service.
+Every profile but `automation` builds on the one paved-road template today, a standard-library Python HTTP
+service; `automation` has its own, one image with several faces ([small capabilities](docs/guides/small-capabilities.md)).
 *Preview* means the intake, spec and checks are shaped for the work, and its own template is still
 to come.
 
@@ -190,7 +209,8 @@ still change before 1.0.0.
 - the chain from intake to delivery on the local preview road: the panel, the spec rules, the
   compiled contract, the gate, holdouts in custody, the change loop and the ledger;
 - the command line, the demo, the cockpit and the MCP server;
-- the `web_service` and `integration` profiles;
+- the `web_service`, `integration` and `automation` profiles; a small capability is reached over MCP,
+  an OpenAI-compatible endpoint, a website chat or HTTP, behind its pack guard (`rihmasto capability serve`);
 - the security gate for SARIF findings, capability packs, evidence packs, the autonomy ladder,
   signals, concepts and embeds;
 - delegated decisions, an autopilot bound to a sandbox, and Track, which says whether a project stays
@@ -205,7 +225,7 @@ still change before 1.0.0.
   that project ([docs/guides/access.md](docs/guides/access.md)).
 
 **Preview:**
-- five of the seven profiles, which run on the web-service template;
+- five of the eight profiles, which run on the web-service template;
 - the docker road, which the tests run against a fake docker CLI, not a daemon;
 - the Azure Container Apps road, rendered and validated but never deployed;
 - recipes, sandbox trials, measured fit and offline bundles, which have no command or screen yet

@@ -17,7 +17,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from kernel.canon import CARD_DECIDERS, CARD_VERDICTS, Canon
+from kernel.canon import CARD_VERDICTS, Canon, deciders_of
 from kernel.store import REPO_ROOT
 
 UI_MAP_FILE = REPO_ROOT / "cockpit" / "ui_map.json"
@@ -67,7 +67,9 @@ CONTROL_PAGES: dict[str, tuple[str | None, str | None]] = {
     "shape_say": (None, "shape"), "shape_attach": (None, "shape"), "shape_draft": (None, "shape"),
     "shape_create": (None, "shape"), "models_open": (None, "settings"), "models_set": (None, "models"),
     "models_test": (None, "models"), "models_remove": (None, "models"), "models_preset": (None, "models"),
-    "models_private": (None, "models")}
+    "models_private": (None, "models"), "posture": ("overview", None), "run_assessment": ("assessment", None),
+    "assessment_changes": ("assessment", None), "capability_faces": ("releases", None), "access": (None, None),
+    "integrations": ("plan", None)}
 # As the cockpit names them (cockpit/server.py PERSONA_INFO), for the reasons a proposal is not offered.
 PERSONA_LABEL = {"business_owner": "Business owner", "product_owner": "Product owner", "it": "IT / partner",
                  "concept_evaluator": "Concept evaluator", "end_user": "End-user tester", "developer": "Developer",
@@ -272,8 +274,8 @@ def _check_decide(project: Any, persona: str, args: dict) -> str | None:
         return f"{card['id']} is {card['state']}"
     if args["verdict"] not in CARD_VERDICTS[kind]:
         return f"{_a(kind)} card takes {', '.join(CARD_VERDICTS[kind])}"
-    if persona not in CARD_DECIDERS[kind]:
-        who = ", ".join(map(_who, CARD_DECIDERS[kind]))
+    if persona not in deciders_of(card):   # a card may narrow them (a posture may)
+        who = ", ".join(map(_who, deciders_of(card)))
         return f"as {_who(persona)} you may not decide {_a(kind)} card (who may: {who})"
     return None
 

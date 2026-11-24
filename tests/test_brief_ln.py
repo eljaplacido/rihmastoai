@@ -263,11 +263,11 @@ class PackHeadTest(FactoryTestCase):
 
 # Write routes that record no state: a second sign-in link (kept in memory), the assistant (it proposes,
 # kernel/assistant.py), the profile proposal (a rule over text), a folder's material map (kernel/material.py,
-# read and shown, never kept) a settings change's preview (FR-CHG1)
+# read and shown, never kept) a settings change's preview (FR-CHG1), a posture's preview (kernel/posture.py)
 # and a model's Test (kernel/models_setup.py). Adopting records its request,
 # signed, before its job runs, so it is a signed write here.
 RECORD_NOTHING = {"post_link", "post_assistant", "post_profile_propose", "post_source_preview",
-                  "post_settings_preview", "post_model_test"}
+                  "post_settings_preview", "post_model_test", "post_posture_preview"}
 NOTES = {"name": "notes.md", "text": "The tool store is open on weekdays."}
 MODEL = {"base_url": "http://127.0.0.1:9/v1", "model": "qwen3:32b"}   # set, never called
 # The one write route that takes no person: it starts the pipeline as a job. Recorded as not built in
@@ -372,6 +372,9 @@ class FactoryApiTest(CockpitTestCase):
                                "persona": "business_owner"}),
             ("put_project_autonomy", "PUT", f"/api/projects/{b}/autonomy",
              lambda who, got: {"level": 2, "reason": "answers and proposals", "person": who, "persona": "compliance"}),
+            ("put_posture", "PUT", f"/api/projects/{b}/posture",
+             lambda who, got: {"posture": "balanced", "reason": "a person says go", "person": who,
+                               "persona": "business_owner"}),
             ("post_evidence_export", "POST", f"/api/projects/{b}/evidence",
              lambda who, got: {"person": who, "persona": "compliance"}),
             ("post_pack_build", "POST", f"/api/projects/{b}/pack/build",
@@ -381,6 +384,10 @@ class FactoryApiTest(CockpitTestCase):
                                "persona": "business_owner"}),
             ("post_outputs_build", "POST", f"/api/projects/{b}/outputs/build",
              lambda who, got: {"targets": ["report"], "person": who, "persona": "compliance"}),
+            ("post_assessment", "POST", f"/api/projects/{b}/assessment",
+             lambda who, got: {"person": who, "persona": "developer"}),
+            ("post_assessment_changes", "POST", f"/api/projects/{b}/assessment/changes",
+             lambda who, got: {"findings": ["F-1"], "person": who, "persona": "developer"}),
             ("post_embed", "POST", "/api/embeds",
              lambda who, got: {"kind": "feedback", "origins": ["https://shop.example"], "project": b,
                                "label": "Shop feedback", "person": who, "persona": "it"}),

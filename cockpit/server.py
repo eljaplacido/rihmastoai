@@ -46,14 +46,16 @@ Access (``kernel.access``, D-0016). Without an access file the cockpit is a sing
 as above: the person and persona come from the request, and the page's header says "single
 operator: personas are self-declared". With ``projects/_factory/access/access.json`` in mode
 ``enforced`` it stays on 127.0.0.1 behind IT's identity-aware proxy, which runs beside it:
-- the identity comes only from the proxy's configured headers, each sent once, and only on a request
-  that also carries the proxy's shared secret (compared in constant time with the value of the
-  environment variable the file names, which the cockpit then takes out of its own environment, so no
-  job inherits it); any other request is refused, and so is every request while the file cannot be
-  read or checked;
+- the identity comes only from the identity provider's signed token the proxy forwards, sent once and
+  verified with the provider's public keys (``kernel.access_tokens``): the cockpit holds no shared
+  secret. Any other request is refused, and so is every request while the file cannot be read or checked;
 - the page (``index.html``) says the mode, so an enforced page signs in through the proxy at once and
   a single operator's asks for nothing until a sign-in link is opened;
-- ``/auth`` opens a session for that identity, and a session answers only that identity;
+- ``/auth`` opens a session for that identity, which ends when the token it was opened with expires; the
+  session travels in ``X-Rihmasto-Session`` (the token may use ``Authorization``) and answers only that
+  identity;
+- a run or a new project's intake starts only when the access file names an isolation runner for the
+  untrusted code it runs (``kernel.access_isolation``); otherwise it is refused, and the refusal says why;
 - every write route that takes a person or persona signs as the verified person (a different
   ``person`` is refused) and needs the persona granted on its project (the factory's own writes:
   on ``_factory``); the records name the identity beside the person;
@@ -85,6 +87,9 @@ from cockpit.shape_routes import ROUTES as CHAT_ROUTES
 from cockpit.shape_routes import UNLOCKED as CHAT_UNLOCKED
 from cockpit.shape_routes import ChatRoutes
 from kernel import access as kaccess
+from kernel import access_isolation as kisolation
+from kernel import assess as kassess
+from kernel import assess_cards as kassess_cards
 from kernel import assistant as kassistant
 from kernel import autonomy as kautonomy
 from kernel import autopilot as kautopilot
@@ -100,6 +105,7 @@ from kernel import modules as kmodules
 from kernel import next_step as knext
 from kernel import packs as kpacks
 from kernel import plan as kplan
+from kernel import posture as kposture
 from kernel import profiles as kprofiles
 from kernel import project_material as kadded
 from kernel import project_settings as ksettings
@@ -107,7 +113,7 @@ from kernel import rewind as krewind
 from kernel import signals as ksignals
 from kernel import source_guard as ksource
 from kernel import track as ktrack
-from kernel.canon import CARD_DECIDERS, CARD_VERDICTS, PERSPECTIVES, Canon, DecisionRefused
+from kernel.canon import CARD_DECIDERS, CARD_VERDICTS, PERSPECTIVES, Canon, DecisionRefused, deciders_of
 from kernel.change import CLASSES, NEEDS_DECISION, WAY_BACK, submit, triage
 from kernel.insight import alignment, change_impact, impact
 from kernel.intake import MATURITY_MEANING, render_brief
@@ -300,6 +306,8 @@ ROUTES = [
     ("GET", r"/api/ui-map", "get_ui_map"),
     ("GET", r"/api/layout", "get_layout"),
     ("GET", r"/api/autonomy", "get_autonomy"),
+    ("GET", r"/api/postures", "get_postures"),
+    ("GET", rf"/api/projects/{PID}/posture", "get_posture"),
     ("GET", r"/api/embeds", "get_embeds"),
     ("GET", r"/api/exports/(?P<token>[A-Za-z0-9_-]{16,64})", "get_export"),
     ("GET", rf"/api/projects/{PID}/timeline", "get_timeline"),
@@ -310,10 +318,12 @@ ROUTES = [
     ("GET", rf"/api/projects/{PID}/outputs", "get_outputs"),
     ("PUT", rf"/api/projects/{PID}/outputs", "put_outputs"),
     ("POST", rf"/api/projects/{PID}/outputs/build", "post_outputs_build"),
+    ("GET", rf"/api/projects/{PID}/assessment", "get_assessment"),
     ("POST", r"/api/signals", "post_signal"),
     ("POST", rf"/api/signals/{SIGNAL_ID}/triage", "post_signal_triage"),
     ("POST", rf"/api/concepts/{CARD_ID}/edit", "post_concept_edit"),
     ("POST", r"/api/profiles/propose", "post_profile_propose"),
+    ("POST", r"/api/postures/preview", "post_posture_preview"),
     ("POST", r"/api/assistant", "post_assistant"),
     ("POST", r"/api/embeds", "post_embed"),
     ("POST", r"/api/embeds/(?P<eid>E-\d{1,9})/revoke", "post_embed_revoke"),
@@ -321,12 +331,15 @@ ROUTES = [
     ("POST", rf"/api/projects/{PID}/comments/(?P<cmid>CM-\d{{1,9}})/promote", "post_comment_promote"),
     ("POST", rf"/api/projects/{PID}/evidence", "post_evidence_export"),
     ("POST", rf"/api/projects/{PID}/pack/build", "post_pack_build"),
+    ("POST", rf"/api/projects/{PID}/assessment", "post_assessment"),
+    ("POST", rf"/api/projects/{PID}/assessment/changes", "post_assessment_changes"),
     ("PUT", r"/api/layout", "put_layout"),
     ("PUT", r"/api/autonomy", "put_autonomy"),
     ("PUT", rf"/api/projects/{PID}/autonomy", "put_project_autonomy"),
     ("GET", r"/api/modules", "get_modules"),      # the parts of Rihmasto in use (kernel/modules.py)
     ("PUT", r"/api/modules", "put_modules"),
     ("PUT", rf"/api/projects/{PID}/modules", "put_project_modules"),
+    ("PUT", rf"/api/projects/{PID}/posture", "put_posture"),
     ("POST", r"/api/projects", "post_project"),
     ("POST", r"/api/adopt", "post_adopt"),
     ("POST", r"/api/source/preview", "post_source_preview"),   # a folder's material map; records nothing
@@ -354,8 +367,11 @@ ROUTES = [
 ]
 ROUTES = [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ROUTES + CHAT_ROUTES]   # Shape it in chat, Models
 # Writes that record nothing (the assistant only proposes; a profile proposal is a rule over text).
-# They run outside the write lock, so a slow model call never holds up a decision.
-UNLOCKED = {"post_assistant", "post_profile_propose", "post_source_preview", *CHAT_UNLOCKED}
+# They run outside the write lock, so a slow model call never holds up a decision. An assessment
+# reads a whole repository and keeps its records under their own file locks (kernel/assess.py): it
+# runs outside the write lock too, and touches no card.
+UNLOCKED = {"post_assistant", "post_profile_propose", "post_source_preview", "post_posture_preview", "post_assessment",
+            *CHAT_UNLOCKED}
 
 
 class FileResponse:
@@ -440,9 +456,10 @@ class CockpitServer(ThreadingHTTPServer):
         self._jobs_lock = threading.Lock()
         self._links: dict = {}       # bootstrap -> expiry (monotonic seconds) or None
         self._sessions: dict = {}    # token -> expiry (monotonic seconds)
-        self._session_ids: dict = {}  # token -> the verified identity it was opened for (enforced access)
+        self._session_ids: dict = {}  # token -> (the verified identity it was opened for, its token's expiry)
         self._downloads: dict = {}   # one-time token -> (file name in exports, expiry)
         self.jobs: list = []
+        self.assessing: dict = {}    # pid -> the assessment running in the background, or how it ended
         # The cockpit's own files, never in a project's ledger: layouts per person, and exports.
         self.cockpit_dir = factory.home / "_cockpit"
         self.layouts_dir = self.cockpit_dir / "layouts"
@@ -490,13 +507,15 @@ class CockpitServer(ThreadingHTTPServer):
             self._sessions[token] = now + SESSION_TTL
             return token
 
-    def open_session(self, identity: str) -> str:
-        """A session for a verified identity (enforced access): the proxy's sign-in replaces the bootstrap,
-        and the session answers that identity only."""
+    def open_session(self, identity: str, until: float | None = None) -> str:
+        """A session for a verified identity (enforced access): the proxy's sign-in replaces the bootstrap.
+        The session answers that identity only, and ends at ``until`` (wall-clock seconds), when the
+        signed token it was opened with expires."""
         token = secrets.token_urlsafe(32)
+        now = time.monotonic()
         with self._auth_lock:
-            self._sessions[token] = time.monotonic() + SESSION_TTL
-            self._session_ids[token] = identity
+            self._sessions[token] = now + SESSION_TTL
+            self._session_ids[token] = (identity, None if until is None else now + (until - time.time()))
         return token
 
     # one-time downloads (an exported evidence pack), served only from the exports folder
@@ -528,11 +547,12 @@ class CockpitServer(ThreadingHTTPServer):
         now = time.monotonic()
         with self._auth_lock:
             for known in list(self._sessions):
-                if self._sessions[known] < now:
+                ends = (self._session_ids.get(known) or (None, None))[1]
+                if self._sessions[known] < now or (ends is not None and ends <= now):
                     del self._sessions[known]
                     self._session_ids.pop(known, None)
             match = next((k for k in self._sessions if hmac.compare_digest(k, token)), None)
-            if match is None or self._session_ids.get(match) != identity:
+            if match is None or (self._session_ids.get(match) or (None,))[0] != identity:
                 return False
             self._sessions[match] = now + SESSION_TTL
             return True
@@ -595,6 +615,11 @@ class CockpitServer(ThreadingHTTPServer):
             out["outcome"] = _run_outcome(Path(job["log"]))
             if (out["outcome"] or {}).get("state") == "capped":
                 out["state"] = "capped"
+        if job["kind"] == "adopt" and out["state"] == "done":
+            # The project an adoption made, so the Jobs page opens it: the job itself runs for the factory.
+            made = (_last_result(Path(job["log"])) or {}).get("project")
+            if isinstance(made, str) and Project(self.factory, made).path("project.json").exists():
+                out["made"] = made
         return out
 
     def running_job(self, pid: str) -> dict | None:
@@ -604,6 +629,18 @@ class CockpitServer(ThreadingHTTPServer):
             if job["project"] == pid and self.job_view(job)["state"] == "running":
                 return job
         return None
+
+    def run_assessment(self, project: Project, run: dict, model, identity: Identity | None) -> None:
+        """One assessment (kernel/assess.py) in the background, signed by whoever asked; its end, or why it
+        failed, is written on ``run`` for the Assessment view."""
+        try:
+            with kaccess.signing(identity):
+                end = {"state": "done", "id": kassess.assess(project, person=run["person"], persona=run["persona"],
+                                                             model=model)["id"]}
+        except Exception as exc:  # a background run's failure is shown on its view, never lost in the thread
+            end = {"state": "failed", "error": f"{type(exc).__name__}: {exc}"[:500]}
+        with self._jobs_lock:
+            run.update(end, ended=self.factory.clock.stamp())
 
 
 def _origin_of(url: str) -> str:
@@ -647,9 +684,8 @@ def _tail(path: Path, lines: int) -> list:
     return data.decode("utf-8", errors="replace").splitlines()[-lines:]
 
 
-def _run_outcome(path: Path) -> dict | None:
-    """What a finished ``kernel.cli run`` reached: the state and the reason of the result it printed last
-    (an indented JSON object that ends the log). None when the log ends with no such result."""
+def _last_result(path: Path) -> dict | None:
+    """The indented JSON object that ends a finished job's log, or None."""
     lines = _tail(path, 400)
     for i in range(len(lines) - 1, -1, -1):
         if lines[i] != "{":
@@ -658,10 +694,18 @@ def _run_outcome(path: Path) -> dict | None:
             out = json.loads("\n".join(lines[i:]))
         except ValueError:
             return None
-        if not isinstance(out, dict) or not isinstance(out.get("state"), str):
-            return None
-        return {"state": out["state"], "stage": out.get("stage"), "why": str(out.get("why") or "")[:500] or None}
+        return out if isinstance(out, dict) else None
     return None
+
+
+def _run_outcome(path: Path) -> dict | None:
+    """What a finished ``kernel.cli run`` reached: the state and the reason of the result it printed last
+    (an indented JSON object that ends the log). None when the log ends with no such result."""
+    out = _last_result(path)
+    if out is None or not isinstance(out.get("state"), str):
+        return None
+    return {"state": out["state"], "stage": out.get("stage"), "why": str(out.get("why") or "")[:500] or None,
+            **({"material_read": True} if out.get("material_read") is True else {})}
 
 
 # -- request handling -----------------------------------------------------------------------------
@@ -721,10 +765,14 @@ class CockpitHandler(BaseHTTPRequestHandler):
         return any(hmac.compare_digest(given, origin) for origin in origins)
 
     def _token_ok(self, identity: Identity | None = None) -> bool:
+        """A live session for this request: with access enforced, in X-Rihmasto-Session (the proxy's token
+        may use Authorization) and opened for the verified identity; else ``Authorization: Bearer``."""
+        if identity is not None:
+            return self.server.session_ok(self.headers.get(kaccess.SESSION_HEADER, "").strip(), identity.id)
         auth = self.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             return False
-        return self.server.session_ok(auth[len("Bearer "):].strip(), identity.id if identity else None)
+        return self.server.session_ok(auth[len("Bearer "):].strip(), None)
 
     def _identity(self, access: kaccess.Access) -> Identity | None:
         """The verified identity of a request when access is enforced, else None (a single operator). A
@@ -837,13 +885,16 @@ class CockpitHandler(BaseHTTPRequestHandler):
 
     def _auth(self, body: dict, identity: Identity | None) -> None:
         """A session: for the proxy's verified identity when access is enforced, else for a one-use bootstrap."""
+        lasts = SESSION_TTL
         if identity is not None:
-            token = self.server.open_session(identity.id)
+            token = self.server.open_session(identity.id, identity.expires)
+            if identity.expires is not None:      # the session ends with the token it was opened with
+                lasts = max(0, min(lasts, int(identity.expires - time.time())))
         else:
             token = self.server.redeem(body.get("bootstrap"))
             if token is None:
                 return self._error(401, "this sign-in link was already used or is not valid")
-        self._json(200, {"token": token, "expires_in": SESSION_TTL})
+        self._json(200, {"token": token, "expires_in": lasts})
 
     def _refuse_method(self):
         self._read_body()
@@ -879,8 +930,8 @@ class CockpitHandler(BaseHTTPRequestHandler):
         match, name = found
         query = {k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()}
         api = Api(self.server, access, identity)
-        try:
-            with kaccess.signing(identity):     # enforced access: the records name the identity
+        try:   # enforced access: the records name the identity; untrusted work goes through IT's runner
+            with kaccess.signing(identity), kisolation.serving(self.server.factory):
                 if method != "GET":             # a write of a module not enabled there is refused (FR-MOD2)
                     kmodules.require_route(self.server.factory, name, match.groupdict().get("pid"))
                 status, out = getattr(api, name)(body=body, query=query, **match.groupdict())
@@ -936,6 +987,18 @@ def _text(body: dict, key: str, *, required: bool = False, limit: int = 20000) -
     if len(value) > limit:
         raise ApiError(400, f"{key} is longer than {limit} characters")
     return value
+
+
+def _weights_in(body: dict) -> dict | None:
+    """A posture's priority weights as sent: an object of at most five names, each a whole number. The
+    kernel checks the names and the range (kernel/posture.py)."""
+    raw = body.get("weights")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or len(raw) > len(kposture.WEIGHTS) or not all(
+            isinstance(k, str) and isinstance(v, int) and not isinstance(v, bool) for k, v in raw.items()):
+        raise ApiError(400, f"weights is an object of whole numbers from 0 to 3 for {', '.join(kposture.WEIGHTS)}")
+    return dict(raw)
 
 
 def _require_person(person: str, persona: str) -> None:
@@ -1065,7 +1128,7 @@ class Api(ChatRoutes):
         out = dict(card)
         out["title"] = self._card_title(card)
         out["verdicts"] = list(CARD_VERDICTS[card["kind"]])
-        out["deciders"] = list(CARD_DECIDERS[card["kind"]])
+        out["deciders"] = list(deciders_of(card))   # a card may narrow them (a posture may)
         if card["kind"] == "question" and (card.get("refs") or {}).get("question"):
             try:
                 out["question"] = self._question_view(canon.question(card["refs"]["question"]), canon)
@@ -1192,6 +1255,7 @@ class Api(ChatRoutes):
             "evidence_exporters": list(kevidence.EXPORTERS),
             "autonomy": {"levels": {str(n): {"name": kautonomy.LEVELS[n], "meaning": kautonomy.MEANING[n]}
                                     for n in kautonomy.LEVELS}, "setters": list(kautonomy.SETTERS)},
+            "postures": kposture.public(),       # the postures and their weights (kernel/posture.py)
             "update_triggers": {k: v["label"] for k, v in TRIGGERS.items()},
             # autopilot, delegation and tracking (kernel/autopilot.py, kernel/delegation.py, kernel/track.py)
             "autopilot": {"may_run": list(kautopilot.MAY_RUN), "rules": kdelegation.RULES,
@@ -1434,7 +1498,7 @@ class Api(ChatRoutes):
                                         for c in r.get("acceptance") or [] if isinstance(c, dict)]})
         return {"title": spec.get("title"), "summary": spec.get("summary"), "version": version,
                 "requirements": reqs, "interface": spec.get("interface") or [],
-                "out_of_scope": spec.get("out_of_scope") or []}
+                "out_of_scope": spec.get("out_of_scope") or [], "integrations": spec.get("integrations") or []}
 
     def _plan_view(self, project) -> dict:
         canon = Canon(project)
@@ -1452,9 +1516,12 @@ class Api(ChatRoutes):
                             "verdict": d.get("verdict"), "person": d.get("person"), "persona": d.get("persona"),
                             "reason": d.get("reason"), "at": d.get("at"), "redone": bool(c["refs"].get("redone")),
                             "closed": c.get("closed")})
+        from kernel.posture_rules import confirmers   # a confirming posture: the customer's side edits the plan
+
+        editors = confirmers(kposture.of(project)) or CARD_DECIDERS["approval"]
         return {"required": kplan.required(project), "card": self._card_view(card, canon) if card else None,
                 "approved": project.meta.get("plan_approved"), "compiled": project.path("contract.json").exists(),
-                "editors": list(CARD_DECIDERS["approval"]), "spec": self._plan_spec(spec, version),
+                "editors": list(editors), "spec": self._plan_spec(spec, version),
                 "history": history, "problems": problems}
 
     def get_plan(self, pid: str, **_):
@@ -1606,26 +1673,37 @@ class Api(ChatRoutes):
         canon = Canon(project)
         return 201, {"card": self._card_view(canon.get_card(card["id"]), canon), "triage": result}
 
+    @staticmethod
+    def _how_it_runs(body: dict) -> tuple[str | None, str | None, str | None]:
+        """The posture, mode and maturity a new project is asked with: with a posture, its own mode and
+        maturity unless named (the kernel checks them against it); without one, mixed and demo unless named."""
+        posture = _text(body, "posture", limit=32) or None
+        mode = _text(body, "mode", limit=32) or (None if posture else "mixed")
+        maturity = _text(body, "maturity", limit=32) or (None if posture else "demo")
+        if mode is not None and mode not in MODES:
+            raise ApiError(400, f"mode must be one of {', '.join(MODES)}")
+        if maturity is not None and maturity not in MATURITIES:
+            raise ApiError(400, f"maturity must be one of {', '.join(MATURITIES)}")
+        return posture, mode, maturity
+
     def post_project(self, body: dict, **_):
         title = _text(body, "title", required=True, limit=200)
         source = _text(body, "source", required=True, limit=200_000)
-        mode = _text(body, "mode", limit=32) or "mixed"
-        maturity = _text(body, "maturity", limit=32) or "demo"
+        posture, mode, maturity = self._how_it_runs(body)
         requested_by = _text(body, "requested_by", limit=200)
         persona = _text(body, "persona", limit=64) or "business_owner"
         profile = _text(body, "profile", limit=64) or None
-        if mode not in MODES:
-            raise ApiError(400, f"mode must be one of {', '.join(MODES)}")
-        if maturity not in MATURITIES:
-            raise ApiError(400, f"maturity must be one of {', '.join(MATURITIES)}")
         if profile is not None and profile not in kprofiles.PROFILES:
             raise ApiError(400, f"profile must be one of {', '.join(kprofiles.PROFILES)}")
         requested_by, persona = self._sign(requested_by, persona, FACTORY_PID)
         _require_person(requested_by, persona)
+        kisolation.require(self.factory)     # the intake job asks Gnomon cells: never unisolated while enforced
         outputs = self._intake_outputs(body, persona)
         source, scanned, secret = self._folder_request(body, source, persona)
+        chosen = {"name": posture, "weights": _weights_in(body), "by": requested_by, "persona": persona} \
+            if posture else None
         try:
-            project = self.factory.new_project(title, maturity=maturity, mode=mode, profile=profile)
+            project = self.factory.new_project(title, maturity=maturity, mode=mode, profile=profile, posture=chosen)
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
         if secret:
@@ -1638,6 +1716,8 @@ class Api(ChatRoutes):
         # With access enforced the record carries the request's digest: the intake job, which runs as the
         # cockpit's own account, carries out this signed request and no other (kernel.access.cli_signing).
         signed = {"request_sha256": kaccess.request_digest(source)} if self.access.enforced else {}
+        if posture:
+            signed["posture"] = posture
         self._audit(project, "new_project", project.pid, requested_by, persona, **signed)
         source_file = self.server.jobs_dir / f"{project.pid}.source.md"
         write_text(source_file, source if source.endswith("\n") else source + "\n")
@@ -1687,6 +1767,20 @@ class Api(ChatRoutes):
                      "local_only": {"new": kconfidential.refusal(["analyst"]) or None,
                                     "all": kconfidential.refusal(kconfidential.ROLES) or None}}
 
+    def _adopt_how(self, body: dict) -> tuple[str | None, str, list[str]]:
+        """How an adopted project runs: a posture with its weights, maturity and mode (refused here, before
+        anything is read, by the posture's rules), or none, at production and mixed as before. Returns the
+        posture, the maturity and the command line's words for them."""
+        posture, mode, maturity = self._how_it_runs(body)
+        maturity = maturity if posture or _text(body, "maturity", limit=32) else "production"
+        weights = _weights_in(body)
+        if posture:
+            eff = kposture.effects(posture, weights, maturity=maturity, mode=mode)
+            maturity, mode = eff["maturity"], eff["mode"]
+        given = ["--weights", ",".join(f"{k}={v}" for k, v in weights.items())] if posture and weights else []
+        return posture, str(maturity), ["--maturity", str(maturity), "--mode", str(mode),
+                                        *(["--posture", posture] if posture else []), *given]
+
     def post_adopt(self, body: dict, **_):
         """Adopt an existing project from a local folder (a git repository, or any folder with code, which is
         snapshotted) or an address git clones without credentials. It runs as a job: adopting reads the
@@ -1697,12 +1791,10 @@ class Api(ChatRoutes):
         title = _text(body, "title", required=True, limit=200)
         source = _text(body, "source", required=True, limit=2000).strip()
         intent = _text(body, "intent", limit=16) or "improve"
-        maturity = _text(body, "maturity", limit=32) or "production"
+        posture, maturity, how = self._adopt_how(body)
         base_url = _text(body, "base_url", limit=500).strip() or None
         if intent not in INTENTS:
             raise ApiError(400, f"intent must be one of {', '.join(INTENTS)}")
-        if maturity not in MATURITIES:
-            raise ApiError(400, f"maturity must be one of {', '.join(MATURITIES)}")
         person, persona = self._sign(_text(body, "person", limit=200), _text(body, "persona", limit=64), FACTORY_PID)
         _require_person(person, persona)
         exclude = self._excludes(body)
@@ -1714,11 +1806,13 @@ class Api(ChatRoutes):
                 check_code(location, exclude)
         except (AdoptionRefused, NoCode, OSError) as exc:
             raise ApiError(400, str(exc)) from None
+        kisolation.require(self.factory, kisolation.SUITE)   # its baseline runs the repository's own tests
         # The request is on record, signed, before the job runs (D-0017: no path skips the record).
         self._audit(self._factory_canon(), "adopt_requested", title, person, persona, source_kind=kind, intent=intent,
-                    maturity=maturity)
+                    maturity=maturity, **({"posture": posture} if posture else {}))
         args = ["-m", "kernel.cli", "adopt", title, "--source", source, "--intent", intent, "--person", person,
-                "--persona", persona, "--maturity", maturity, *(["--base-url", base_url] if base_url else []),
+                "--persona", persona, *how,
+                *(["--base-url", base_url] if base_url else []),
                 *(f"--exclude={x}" for x in exclude), *(["--confidential"] if body.get("confidential") is True else [])]
         job = self.server.start_job("adopt", FACTORY_PID, args, {"person": person, "persona": persona})
         return 201, {"job": self.server.job_view(job)}
@@ -1726,6 +1820,7 @@ class Api(ChatRoutes):
     def post_advance(self, pid: str, body: dict, **_):
         project = self._project(pid)
         person, persona = self._who(body, pid)
+        kisolation.require(self.factory)     # a run starts Gnomon cells and the gate's tests: isolated, or refused
         running = self.server.running_job(pid)
         if running is not None:
             raise ApiError(409, f"job {running['id']} is still running for {pid}")
@@ -1826,8 +1921,9 @@ class Api(ChatRoutes):
         pid = project.pid
         runs = [self.server.job_view(j) for j in list(self.server.jobs) if j["project"] == pid and j["kind"] == "run"]
         running = any(j["state"] == "running" for j in runs) or self.server.running_job(pid) is not None
-        last = next((j.get("outcome") for j in reversed(runs) if j.get("outcome")), None)
-        return knext.next_step(project, last=last, running=running)
+        job = next((j for j in reversed(runs) if j.get("outcome")), None)
+        return knext.next_step(project, last=job and job["outcome"], running=running,
+                               last_started=job and job["started"])
 
     def put_settings(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
         """Change the title, kind of work, mode or maturity, signed with a reason; ``redo`` carries it into the work."""
@@ -1862,6 +1958,8 @@ class Api(ChatRoutes):
             raise ApiError(403, "refused: with access enforced the cockpit reads no file on its own machine for a "
                                 "request; paste the material as text")
         reintake = body.get("reintake") is True
+        if reintake:                         # the run asks Gnomon cells: isolated while enforced, or refused
+            kisolation.require(self.factory)
         try:
             out = kadded.add_material(project, person=person, persona=persona, path=path, reintake=reintake,
                                          text=_text(body, "text", limit=kadded.MAX_MATERIAL) or None,
@@ -1922,6 +2020,7 @@ class Api(ChatRoutes):
         running = self.server.running_job(pid)
         if running is not None:
             raise ApiError(409, f"job {running['id']} is still running for {pid}")
+        kisolation.require(self.factory)     # its passes start Gnomon cells: isolated while enforced, or refused
         run = kautopilot.start(project, until=_text(body, "until", required=True, limit=64), kinds=kinds,
                                person=person, persona=persona, rules=rules, reason=_text(body, "reason", limit=2000))
         self._audit(project, "autopilot_start", run["id"], person, persona)
@@ -2034,7 +2133,7 @@ class Api(ChatRoutes):
                         age = None
                 items.append({"project": p.pid, "project_title": _factory_label(p.pid, p.meta.get("title", p.pid)),
                               "card": c["id"], "kind": kind, "title": self._card_title(c),
-                              "deciders": list(c.get("deciders") or CARD_DECIDERS[kind]),
+                              "deciders": list(deciders_of(c)),
                               "verdicts": list(CARD_VERDICTS[kind]), "age_hours": age,
                               "blocking": bool(c.get("blocking")), "payload": self._card_payload(c)})
         items.sort(key=lambda i: -(i["age_hours"] or 0))
@@ -2672,6 +2771,49 @@ class Api(ChatRoutes):
             raise ApiError(400, "choose the factory's modules with PUT /api/modules")
         return 200, self._set_modules(self._project(pid), body, pid)
 
+    # postures: how a project runs, previewed before anyone chooses (kernel/posture.py)
+
+    def get_postures(self, **_: object) -> tuple[int, dict]:
+        return 200, kposture.public()
+
+    def post_posture_preview(self, body: dict, **_: object) -> tuple[int, dict]:
+        """What a posture and its weights would do, by the kernel's rules; with ``project``, also what
+        changing that project to it would change now and later. It records nothing."""
+        from kernel.posture_change import proposed, what_changes
+
+        name = _text(body, "posture", required=True, limit=32)
+        weights, maturity = _weights_in(body), _text(body, "maturity", limit=32) or None
+        mode, pid = _text(body, "mode", limit=32) or None, _text(body, "project", limit=81) or None
+        if pid is None:
+            return 200, kposture.preview(name, weights, maturity=maturity, mode=mode,
+                                         profile=_text(body, "profile", limit=64) or None)
+        project = self._project(pid)
+        after = proposed(project, name, weights, maturity=maturity, mode=mode)
+        return 200, {**kposture.preview(name, weights, maturity=after["maturity"], mode=mode,
+                                        profile=project.meta.get("profile")), **what_changes(project, after)}
+
+    def get_posture(self, pid: str, **_: object) -> tuple[int, dict]:
+        """A project's posture: what it does, what holds the project now, and the autonomy cap. The
+        factory's own canon takes none, and says so."""
+        from kernel.posture_rules import view
+
+        if pid == FACTORY_PID:
+            return 200, {"project": pid, "posture": None, "note": "the factory's own canon takes no posture"}
+        return 200, {"project": pid, **view(self._project(pid))}
+
+    def put_posture(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """A person chooses or changes the project's posture during the run, with a reason. The kernel
+        decides whether it stands and says what it changes now and later."""
+        from kernel.posture_change import change
+
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        out = change(project, _text(body, "posture", required=True, limit=32), _weights_in(body), person=person,
+                     persona=persona, reason=_text(body, "reason", limit=2000),
+                     maturity=_text(body, "maturity", limit=32) or None, mode=_text(body, "mode", limit=32) or None)
+        self._audit(project, "set_posture", pid, person, persona, posture=out["posture"])
+        return 200, out
+
     # capability packs and evidence packs
 
     def get_pack(self, pid: str, **_: object) -> tuple[int, dict]:
@@ -2718,6 +2860,62 @@ class Api(ChatRoutes):
         """What an evidence export would attest, read-only: attestable, chain broken or insufficient
         evidence, never 'compliant', with the control table."""
         return 200, self._attestation_of(self._project(pid))
+
+    # the assessment of an adopted system, from every perspective (kernel/assess.py, kernel/assess_cards.py)
+
+    def get_assessment(self, pid: str, **_):
+        project = self._project(pid)
+        with self.server._jobs_lock:
+            run = dict(self.server.assessing.get(pid) or {}) or None
+        return 200, {**kassess_cards.view(project), "run": run,
+                     "panel_available": self.server.assistant_model is not None}
+
+    def post_assessment(self, pid: str, body: dict, **_):
+        """Assess the project's repository, signed by whoever asks. By rule it takes seconds and is recorded
+        before the answer (201). With ``panel: true`` the panel's perspectives speak through the cockpit's
+        own model, which takes minutes: it runs in the background (202) and GET shows its end."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        _require_person(person, persona)
+        model = self.server.assistant_model if body.get("panel") is True else None
+        if body.get("panel") is True and model is None:
+            raise ApiError(409, "the cockpit has no model (its assistant answers from the map), so the panel "
+                                f"cannot review: assess by the rules, or run `rihmasto assess {pid} --with-model`")
+        kassess.mirror(project)        # no repository: refused before anything starts
+        run = {"state": "running", "started": self.factory.clock.stamp(), "person": person, "persona": persona,
+               "panel": model is not None}
+        with self.server._jobs_lock:
+            if (self.server.assessing.get(pid) or {}).get("state") == "running":
+                raise ApiError(409, f"an assessment of {pid} is still running")
+            self.server.assessing[pid] = run
+        self._audit(project, "assess", pid, person, persona, panel=run["panel"])
+        if model is None:
+            self.server.run_assessment(project, run, None, self.identity)
+            if run["state"] != "done":
+                raise ApiError(500, f"the assessment failed: {run.get('error')}")
+            return 201, {"run": dict(run), "assessment": kassess.summary(kassess.load(project, run["id"]))}
+        threading.Thread(target=self.server.run_assessment, args=(project, run, model, self.identity),
+                         name=f"assess-{pid}", daemon=True).start()
+        return 202, {"run": dict(run)}
+
+    def post_assessment_changes(self, pid: str, body: dict, **_):
+        """File chosen findings of an assessment as change cards, signed by the person who files them."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        _require_person(person, persona)
+        ids, version = body.get("findings"), body.get("version")
+        if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+            raise ApiError(400, "findings is a list of finding ids, such as F-2 and P-1")
+        if version is not None and (isinstance(version, bool) or not isinstance(version, int | str)):
+            raise ApiError(400, "version is an assessment's number or id, such as AS-2")
+        try:
+            out = kassess_cards.to_changes(project, ids, person=person, persona=persona, version=version,
+                                           as_class=_text(body, "as", limit=32) or kassess.CLASS_DEFAULT)
+        except LookupError as exc:
+            raise ApiError(404, str(exc.args[0] if exc.args else exc)) from None
+        self._audit(project, "assessment_changes", out["assessment"], person, persona,
+                    cards=[c["card"] for c in out["opened"]])
+        return 201, out
 
     def post_evidence_export(self, pid: str, body: dict, **_):
         """Export the evidence pack into _cockpit/exports/ and hand back a one-time download path."""
@@ -2876,8 +3074,10 @@ def access_note(factory: Factory) -> str:
         return f"Access: {kaccess.SINGLE_NOTE}. Whoever holds the session picks the person and the persona."
     if access.error or access.proxy is None:
         return f"Access: enforced, but {access.error}: every request is refused until IT fixes it."
-    return (f"Access: enforced. People sign in at {access.proxy.origin} through IT's proxy; the printed link is "
-            f"not needed, and requests without the proxy's secret are refused.")
+    keys = f"; but {access.keys_error}, so nobody signs in yet" if access.keys_error else ""
+    return (f"Access: enforced. People sign in at {access.proxy.origin} through IT's proxy ({access.proxy.preset}), "
+            f"whose signed token the cockpit verifies{keys}; the printed link is not needed. Untrusted code: "
+            f"{kisolation.describe(access)}.")
 
 
 def configured_embed_base(flag: str | None, environ: Mapping[str, str]) -> str | None:

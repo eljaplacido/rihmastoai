@@ -1,0 +1,30 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Example business API: orders and customers",
+    "version": "1.0",
+    "description": "The OpenAPI document this connector reads by default. Replace it with your ERP's or business system's own document (SAP, Dynamics 365, NetSuite or another): only its GET operations become callable, and the connector card pins this file with the rest of the folder."
+  },
+  "servers": [{"url": "https://erp.example.invalid/api"}],
+  "paths": {
+    "/orders": {
+      "get": {
+        "operationId": "listOrders",
+        "summary": "List orders, optionally by status",
+        "parameters": [{"name": "status", "in": "query", "schema": {"type": "string", "enum": ["open", "closed"]}}]
+      },
+      "post": {"operationId": "createOrder", "summary": "Create an order"}
+    },
+    "/orders/{id}": {
+      "get": {
+        "operationId": "getOrder",
+        "summary": "One order by its id",
+        "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}]
+      },
+      "delete": {"operationId": "deleteOrder", "summary": "Delete an order"}
+    },
+    "/customers": {
+      "get": {"operationId": "listCustomers", "summary": "List customers"}
+    }
+  }
+}

@@ -18,7 +18,8 @@ One manifest per release, pinned by hash ([kernel/packs.py](../../kernel/packs.p
 - the autonomy cap the project had;
 - its **acceptance**: every criterion with its evidence state, and the holdouts' results as scores
   only, never the scenarios;
-- what it does not have: `runtime: not declared`, `sbom: not generated`, `signature: not signed`.
+- what it does not have: `sbom: not generated`, `signature: not signed`, and for a product with no
+  runtime declaration, `runtime: not declared` (a small capability's pack carries its declaration).
 
 **Pack version equals behaviour version.** If any pinned hash changes, the version changes
 (1.0.0, then 1.1.0, and so on). The same content keeps its version.
@@ -224,8 +225,10 @@ road, never deployed) is never held.
 
 - Packs are not signed on their own, and no SBOM is generated. Each pack says so; a bundle's
   SHA256SUMS is signed when cosign can sign it.
-- Product templates do not declare the runtime models an agentic product uses
-  (`runtime: not declared`), and agents do not serve MCP or an OpenAI-compatible model yet.
+- The web-service template declares no runtime (`runtime: not declared`). A small capability's
+  template does: its pack's `runtime` carries its trigger, tools, model roles, integrations, secrets
+  by name and faces, and the image serves MCP and an OpenAI-compatible model behind the pack guard
+  ([small capabilities](small-capabilities.md)).
 - No command or cockpit screen exports a bundle; Rihmasto does not push to a registry (IT does,
   until Gnomon's integration lane can); pack_guard reads the status from a file only; the base image
   is a tag, not a digest. See [portability](../portability.md) for the rest of the plan.

@@ -73,6 +73,11 @@ default, or `$GNOMONFACTORY_HOME/paved_roads.json`). IT edits it, then decides t
   records the reads replayed to it in its own traffic log, which is why `twin` is the default.
 - **`volatile`** (optional) lists the JSON keys shadow ignores; the default is `id`, `created`,
   `updated`, `at`, `version`.
+- **`integrations`** (optional) binds the data systems a product declares (a database, a warehouse,
+  cloud storage, an ERP) to an endpoint and secret references, for every environment or per
+  environment. IT approves each binding on a `road` card before delivery, and the deploy package and
+  the Compose file carry its settings and secret references: see
+  [guides/data-integrations.md](guides/data-integrations.md).
 - **`sandbox: true`** (optional) is IT's word that a road for `preview` or `demo` is a test sandbox:
   an autopilot run may deliver there on its own. The built-in `local-preview` road is one; staging
   and production never are, whatever a road says
@@ -83,7 +88,7 @@ default, or `$GNOMONFACTORY_HOME/paved_roads.json`). IT edits it, then decides t
 | Kind | What it does | Ready when |
 |---|---|---|
 | `local-process` | Runs the product from a checkout of the product repository at the release's revision, on a free loopback port. Data and the traffic log live under `envs/<env>/` in the project folder (a twin's under `envs/<env>/twin/`, removed when the twin stops). | configured |
-| `docker` | `docker build` per revision (`gf-<pid>:<rev12>`), `docker run -d` per environment and slot (`gf-<pid>-<env>-<slot>`), a port published on `bind`, a named volume for `/data` (`gf-<pid>-<env>-data`; a twin or candidate gets its own, removed when it stops), `APP_VERSION` and `TRAFFIC_LOG=/data/traffic.jsonl` set. Uses the docker CLI on the kernel's host. | configured, and `docker` is on PATH |
+| `docker` | `docker build` per revision (`gf-<pid>:<rev12>`), `docker run -d` per environment and slot (`gf-<pid>-<env>-<slot>`), a port published on `bind`, a named volume for `/data` (`gf-<pid>-<env>-data`; a twin or candidate gets its own, removed when it stops), `APP_VERSION` and `TRAFFIC_LOG=/data/traffic.jsonl` set, with each approved integration's settings, and its `env:` credentials by name only (`--env NAME`, the value in the docker CLI's environment). Uses the docker CLI on the kernel's host. | configured, and `docker` is on PATH |
 | `azure-containerapps` | Renders an Azure Container Apps YAML (one replica, TLS-only ingress, the image tagged with the revision, Key Vault secret references, a user-assigned identity, an Azure Files volume) and the `az` command plan, and validates both. It hosts no twin for the holdouts. | configured, an `identity`, subscription, resource group, environment, registry and `rules.region`, and `az` on PATH |
 
 A **slot** is one running copy in an environment: `current` is what people use, `candidate` is a
@@ -239,8 +244,9 @@ way to sign. A step may now carry `sign` (`kernel/holdouts.py`):
   (never the values, never where they live) of the secrets the project's roads give.
 - Custody is unchanged: scenarios stay in `<home>/holdouts/<project>/`, and the builder's envelope
   names no scenario, header or secret.
-- Still to come: the docker road does not pass a secret's value to the product's container yet
-  (packages carry references only), so a docker product reads its test secret from its own
+- Still to come: the docker road does not pass a road secret's value to the product's container yet
+  (packages carry references only; a declared integration's `env:` credential is passed by name since
+  FR-DS5, see the [data integrations guide](guides/data-integrations.md)), so a docker product reads its test secret from its own
   configuration; a local-process product inherits the kernel's environment. Probes (`operate.tick`)
   do not sign.
 
@@ -292,6 +298,6 @@ scenario of kind `probe`. Results go to `ops/probes.jsonl`. A failing probe open
   configure the road with an identity, and the `az` CLI on the deploying host; neither exists
   today. Its YAML is checked by reading it
   back with the factory's own reader, not by Azure.
-- **Not in v1**: injecting secret values into local or docker products (packages carry the
-  references only), traffic splitting by weight, and reading an Azure product's traffic log
+- **Not in v1**: injecting a road secret's value into local or docker products (packages carry the
+  references only; a declared integration's `env:` credential is the exception, FR-DS2 and FR-DS5), traffic splitting by weight, and reading an Azure product's traffic log
   (shadow reports `not measured` there, and the canary uses probes alone).

@@ -15,7 +15,8 @@ export const PAGE_ROUTES = {
   "assumptions": "#/p/{pid}/assumptions", "plan": "#/p/{pid}/plan", "spec": "#/p/{pid}/spec",
   "tasks": "#/p/{pid}/tasks", "cell": "#/p/{pid}/cell", "releases": "#/p/{pid}/releases",
   "try": "#/p/{pid}/try", "changes": "#/p/{pid}/changes", "ledger": "#/p/{pid}/ledger",
-  "evidence": "#/p/{pid}/evidence", "track": "#/p/{pid}/track", "outputs": "#/p/{pid}/outputs"
+  "evidence": "#/p/{pid}/evidence", "track": "#/p/{pid}/track", "outputs": "#/p/{pid}/outputs",
+  "assessment": "#/p/{pid}/assessment"
 };
 export const TOP_PAGES = Object.keys(PAGE_ROUTES).filter((k) => !PAGE_ROUTES[k].includes("{pid}"));
 export const PROJECT_VIEWS = Object.keys(PAGE_ROUTES).filter((k) => PAGE_ROUTES[k].includes("{pid}"));
@@ -48,6 +49,7 @@ export const VIEWS = {
   evidence: { label: "Evidence", icon: "shield" },
   track: { label: "Track", icon: "flag" },
   outputs: { label: "Outputs", icon: "send" },
+  assessment: { label: "Assessment", icon: "gauge" },
 };
 export const FACTORY_VIEWS = ["overview", "inbox", "ledger"];
 export const STAGE_ICON = { 1: "briefcase", 2: "lightbulb", 3: "code", 4: "file-check", 5: "hammer", 6: "users", 7: "server" };
@@ -295,9 +297,10 @@ export function ago(at) {
 // -- people -------------------------------------------------------------------------------------
 
 export function personaLabel(id) { const p = S.personas.find((x) => x.id === id); return p ? p.label : (id || ""); }
-export function decides(kind) {
+// ``who``: a card's own deciders, when it names fewer than its kind's (a posture may narrow them).
+export function decides(kind, who) {
   const p = S.personas.find((x) => x.id === S.persona);
-  return !!p && p.decides.includes(kind);
+  return !!p && p.decides.includes(kind) && (!who || !who.length || who.includes(S.persona));
 }
 export function orList(ids) {
   const words = ids.map(personaLabel);
@@ -344,8 +347,26 @@ export function setSignedOutHandler(fn) { onSignedOut = fn; }
 // cookie and needs it on every request. The cockpit itself sets and reads no cookie.
 export const CREDENTIALS = "same-origin";
 
-export async function api(method, path, body) {
-  const opts = { method, headers: { Authorization: "Bearer " + S.token }, cache: "no-store", credentials: CREDENTIALS };
+// The session: a single operator's as a Bearer token; with access enforced, in X-Rihmasto-Session, since
+// IT's proxy may put the organisation's signed token in Authorization (kernel/access_tokens.py).
+function sessionHeaders() { return { Authorization: "Bearer " + S.token, "X-Rihmasto-Session": S.token || "" }; }
+
+// With access enforced a session ends with the sign-in token it was opened with. The proxy forwards a
+// fresh token on every request, so the page signs in again once, quietly, before it shows the sign-in card.
+async function signInAgain() {
+  try {
+    const res = await fetch("/auth", { method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store",
+      credentials: CREDENTIALS, body: "{}" });
+    const data = await res.json();
+    if (!res.ok || !data.token) return false;
+    S.token = data.token;
+    store.set("gf.token", S.token);
+    return true;
+  } catch (e) { return false; }
+}
+
+export async function api(method, path, body, again = true) {
+  const opts = { method, headers: sessionHeaders(), cache: "no-store", credentials: CREDENTIALS };
   if (method !== "GET") {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body || {});
@@ -359,6 +380,7 @@ export async function api(method, path, body) {
   let data = null;
   try { data = await res.json(); } catch (e) { data = null; }
   if (res.status === 401) {
+    if (again && data && data.access === "enforced" && S.token && await signInAgain()) return api(method, path, body, false);
     S.token = null;
     store.del("gf.token");
     if (data && data.access === "enforced") S.enforcedSignIn = true;   // sign in again through the proxy
@@ -375,7 +397,7 @@ export async function api(method, path, body) {
 
 // A binary download behind the bearer token: fetched, then handed to the browser as a file.
 export async function download(path, fallbackName) {
-  const res = await fetch(path, { headers: { Authorization: "Bearer " + S.token }, cache: "no-store", credentials: CREDENTIALS });
+  const res = await fetch(path, { headers: sessionHeaders(), cache: "no-store", credentials: CREDENTIALS });
   if (!res.ok) {
     let msg = res.status + " " + res.statusText;
     try { msg = (await res.json()).error || msg; } catch (e) { /* not JSON */ }

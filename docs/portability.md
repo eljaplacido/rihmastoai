@@ -46,8 +46,8 @@ roles export as harness-engineering artifacts, labelled: Gnomon's enforcement do
 ### What travels
 
 - **The image:** the stdlib product plus generated stdlib files (`pack_guard`, built today as
-  `factory/pack_guard.py`, the image's entrypoint; for agents, the MCP, A2A and model endpoints,
-  planned). The base is to be pinned by digest; today it is the tag `python:3.12-slim`. The image
+  `factory/pack_guard.py`, the image's entrypoint; for a small capability, its MCP and model
+  endpoints in `factory/faces.py`, built; A2A planned). The base is to be pinned by digest; today it is the tag `python:3.12-slim`. The image
   holds no Gnomon and no SDK.
 - **The pack, beside the image, never inside it.** The pack pins the image digest, so baking the
   pack or its hash into the image would be circular. It travels as a mounted file, an OCI 1.1
@@ -168,7 +168,7 @@ writes to the registry; it predates D-0015 and moves into the lane before it is 
 
 Steps 1 to 5 and 7 are **built** (2026-11-23), as the contract's FR-PT1 to FR-PT6, proven by
 [tests/test_portability.py](../tests/test_portability.py), and repaired the same day after an
-independent check (task PT-07). Step 6 is planned.
+independent check (task PT-07). Step 6 is partly built, for small capabilities (task SC-01).
 
 1. **Pin by digest.** `kernel/packs.py:213` pins the mutable tag `gf-<pid>:<rev12>`.
    - Given a docker release, when its pack is built, then `pinned.artifacts` holds digests and no
@@ -246,7 +246,18 @@ independent check (task PT-07). Step 6 is planned.
      `gateway --check-pack` passes.
    - Given a 2026-07-28 client, when it calls `server/discover` and `tools/list`, then the tools
      arrive in a fixed order, with the pack version in `_meta`.
-   - **Planned.** Nothing of this step is built.
+   - **Partly built** (FR-SC1 to FR-SC5, [small capabilities](guides/small-capabilities.md)). The
+     automation profile's capability template declares its runtime in `app/runtime.json`
+     (`rihma.runtime/1`: trigger, tools, model roles and the gateway workloads they call,
+     integrations, secrets by name, faces), judged deterministically by `kernel/runtime_decl.py`;
+     `build_pack` fills `runtime` from it (`declared: true`, with `runtime.agent` for the openai
+     face), and `gateway --check-pack` passes for a gateway that routes the declared workloads and
+     the agent (`gateway.packs.agent_workloads`). The image serves MCP over stdio and Streamable
+     HTTP (2025-11-25, with 2025-06-18 and 2025-03-26; `server/discover` answers "method not found",
+     so a 2026-07-28 client falls back to `initialize`), its tools in a fixed order with the pack
+     version in `_meta`, and an OpenAI-compatible model named after the capability, each behind the
+     pack guard. Planned: the stateless 2026-07-28 revision itself, the web-service template's own
+     declaration, build roles in `declared.workload_classes`, and the gateway's `restricted` mode.
 7. **Governance map.**
    - Given any export or gate card, when it is shown, then it marks each of the five guarantees held,
      partial or lost, and the evidence pack holds the same map.

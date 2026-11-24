@@ -443,6 +443,15 @@ def _fallback(question: str, project: Any, exc: Exception, hidden: Collection[st
     return out
 
 
+def _take_me_there(nav: Any, dropped: list[dict], ids: dict) -> tuple[Any, list[dict]]:
+    """An "open" that names a view or a control of the map by its id is Take me there, not a refused route:
+    the navigation (unless the answer has one) and the dropped proposals without it."""
+    named = [d for d in dropped if d["action"] == "open" and str((d.get("args") or {}).get("route")) in ids]
+    if named and not (isinstance(nav, dict) and (nav.get("route") or nav.get("control"))):
+        nav = {"route": None, "control": str(named[0]["args"]["route"])}
+    return nav, [d for d in dropped if d not in named]
+
+
 def ask(factory: Any, question: str, *, persona: str, project_id: str | None = None, view: str | None = None,
         ui: dict | None = None, model: Model | None = None) -> dict:
     """The assistant's answer: from the map without a model; with one, from the snapshot, with its
@@ -466,10 +475,12 @@ def ask(factory: Any, question: str, *, persona: str, project_id: str | None = N
     except (ModelError, OSError, RuntimeError, ValueError) as exc:   # LockHeld is a RuntimeError
         return _fallback(question, project, exc, hidden)
     proposals, dropped, unasked = _offered(factory, project, persona, question, raw.get("propose"), ui, hidden)
+    views, controls = _by_id()
+    nav, dropped = _take_me_there(raw.get("navigate"), dropped, {**views, **controls})
     answer, note = honest(str(raw.get("answer") or "").strip(), proposals, dropped)
     sources = [str(s) for s in raw.get("sources") or [] if isinstance(s, (str, int)) and str(s).strip()]
-    held = known(factory, project, snap)
-    out = {"answer": answer, "navigate": _checked_nav(raw.get("navigate"), factory, project, hidden),
+    held = known(factory, project, snap) | set(views) | set(controls)   # a view or control of the map is a source too
+    out = {"answer": answer, "navigate": _checked_nav(nav, factory, project, hidden),
            "propose": proposals,
            "dropped": dropped, "unasked": unasked, "sources": sources,
            "unbacked_sources": [s for s in sources if not backed(s, held, snap)], "by": "assistant"}

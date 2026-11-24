@@ -13,6 +13,7 @@ themselves are not. How to use what is built: [guides/integrations.md](guides/in
 | Notices with one deep link, for Teams workflow webhooks, Slack incoming webhooks and email (`kernel/notices.py`) | built; the link opens the card in a signed-in tab, and keeping it through sign-in is planned |
 | Verified inbound webhooks: Standard Webhooks and GitHub signatures, timestamp tolerance, replay protection, a size limit; a ring becomes a signal or change proposal (`kernel/hooks.py`, `python -m embed.webhooks`) | built; fetching the item through its connector is planned |
 | The connector model: the `connector.json` schema, the `connector` card IT decides, pins that stop a changed connector, the contract suite and an example (`kernel/connectors.py`, `connectors/`) | built |
+| Data systems ([guides/data-integrations.md](guides/data-integrations.md)): a product's declared integrations with databases, warehouses, cloud storage and ERPs, bound by IT on road cards, wired into deploy packages and Compose files, and checked at the gate against stand-ins (`kernel/integration_decl.py`, `integration_bind.py`, `integration_standins.py`); reference connectors `connectors/postgres`, `snowflake`, `s3` and `openapi`, read-only, against local fakes | built; the connectors wait for the integration lane like every connector, and the PostgreSQL live check waits for a database host |
 | Gnomon integration lanes that call a connector, the `trust` card on a changed tools/list, decided writes, the named connectors, identity at the edge, digests | planned; most wait on the Gnomon changes in [section 3](#3-architecture) |
 
 ## 1. The short answer
@@ -134,8 +135,9 @@ proposals. Outside approvals (CAB, JSM, PR reviews) are evidence, never the deci
 cockpit says personas are self-declared. With access enforced, the cockpit sits behind IT's OIDC proxy,
 people bind to iss+sub (or `local:<os user>` on the operator's machine), and an IT-owned map turns
 subjects and groups into personas per project. SCIM, which ends a leaver's rights and re-routes their
-cards, is the next phase. The stdlib cannot verify RS256, so verification stays at the proxy or uses
-token introspection.
+cards, is the next phase. The cockpit verifies the provider's signed token itself, RS256 or ES256, with
+the standard library (`kernel/jwt_verify.py`) and the provider's public keys in the access folder: no
+shared secret, and no token introspection call.
 
 **Credentials.** References only: `env:`, `os:` (the operating system's store) or `cmd:` (a token
 command IT declares, such as `az account get-access-token`). Lane secrets live in `gnomon key`, and

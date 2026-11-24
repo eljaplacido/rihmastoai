@@ -1,12 +1,13 @@
 """Access control, phase A (FR-M8, D-0016): who may decide as which persona, on which project.
 
 Without an access file the factory is a single operator's, exactly as before, and says so. With one in
-mode ``enforced`` a decision is signed by a verified identity: the cockpit takes it only from IT's
-proxy headers on a request carrying the proxy's shared secret, the command line and the MCP server
-take it from the operating system's user, and every write that records a person's decision or answer
-needs the persona granted on its project. Impersonation fails: spoofed headers without the secret, a
-wrong secret, a persona not granted, a project outside the scope, a person field that differs from the
-identity, a tampered or invalid access file, an MCP client trying to decide, a CLI user not in the file.
+mode ``enforced`` a decision is signed by a verified identity: the cockpit takes it only from the
+identity provider's signed token that IT's proxy forwards (verified with the provider's public keys; no
+shared secret), the command line and the MCP server take it from the operating system's user, and every
+write that records a person's decision or answer needs the persona granted on its project.
+Impersonation fails: no token, a token another key signed, a persona not granted, a project outside the
+scope, a person field that differs from the identity, a tampered or invalid access file, an MCP client
+trying to decide, a CLI user not in the file.
 """
 
 import contextlib
@@ -14,7 +15,6 @@ import hashlib
 import io
 import json
 import os
-import secrets
 import sys
 import unittest
 import urllib.error
@@ -26,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import test_brief_ln as ln  # noqa: E402  (its FactoryApiTest builds the world every write route acts on)
 import test_cockpit  # noqa: E402
+from access_fakes import Provider, segment  # noqa: E402
 from factory_fakes import FactoryTestCase  # noqa: E402
 from test_cli_capability import leaves  # noqa: E402
 from test_cockpit import CockpitTestCase  # noqa: E402
@@ -42,7 +43,9 @@ from mcp.server import RihmaMCP, tool_list  # noqa: E402
 
 ISSUER = "https://login.example.org"
 PUBLIC = "https://rihmasto.example.org"
-SECRET_ENV = "RIHMASTO_TEST_PROXY_SECRET"
+AUDIENCE = "rihmasto-cockpit"          # the client id the organisation's provider issues ID tokens for
+IDP = Provider(ISSUER, AUDIENCE)       # the provider's RS256 key: its JWKS goes in the access folder
+OTHER_IDP = Provider(ISSUER, AUDIENCE, seed=2)   # someone else's key, with the same key id
 AINO, IDA, MALLORY, DEV, ADMIN = (f"{ISSUER}#{s}" for s in ("aino-sub", "ida-sub", "mallory-sub", "dev-sub",
                                                               "admin-sub"))
 NAMES = {AINO: "Aino Example", IDA: "Ida Example", MALLORY: "Mallory Example", DEV: "Dev Example",
@@ -70,13 +73,24 @@ def access_doc(project_scope=None, **changes) -> dict:
     if project_scope:
         bindings.append({"subject": DEV, "persona": "developer", "scope": [project_scope]})
     doc = {"schema": kaccess.SCHEMA, "mode": "enforced", "changed_by": "local:it-admin",
-           "proxy": {"issuer": ISSUER, "origin": PUBLIC, "user_header": "X-Forwarded-User",
-                     "email_header": "X-Forwarded-Email", "groups_header": "X-Forwarded-Groups",
-                     "secret_header": "X-Rihmasto-Proxy-Secret", "secret_env": SECRET_ENV},
+           "proxy": {"preset": "oauth2-proxy", "issuer": ISSUER, "origin": PUBLIC, "audience": AUDIENCE,
+                     "groups_claim": "groups"},
            "people": [{"identity": k, "name": v} for k, v in NAMES.items()],
-           "bindings": bindings}
+           "bindings": bindings,
+           # where untrusted code runs: a container (the cockpit's jobs start only with a runner named)
+           "isolation": {"runner": "container", "image": "python:3.12-slim",
+                         "cells": ["docker", "run", "--rm", "-v", "{cwd}:{cwd}", "-w", "{cwd}", "gnomon", "gnomon"]}}
     doc.update(changes)
     return doc
+
+
+def write_access(factory, doc=None, jwks=None) -> Path:
+    """The access file and the provider's key file beside it, as IT writes them."""
+    path = kaccess.access_path(factory)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_json(path, doc or access_doc())
+    write_json(path.parent / "jwks.json", jwks or IDP.jwks())
+    return path
 
 
 def tree(root: Path) -> dict:
@@ -220,37 +234,37 @@ class AccessFileTest(FactoryTestCase):
 
 
 class EnforcedCockpitCase(CockpitTestCase):
-    """The real cockpit on loopback, behind a stand-in for IT's proxy: requests carry its headers."""
+    """The real cockpit on loopback, behind a stand-in for IT's proxy (oauth2-proxy passing the ID token):
+    each request carries the provider's signed token in Authorization, and the session in its own header."""
 
     def setUp(self):
         super().setUp()
-        self.secret = secrets.token_urlsafe(32)
-        patcher = mock.patch.dict(os.environ, {SECRET_ENV: self.secret})
-        patcher.start()
-        self.addCleanup(patcher.stop)
         self.sessions = {}
+        self.tokens = {}
 
-    def enforce(self, doc=None) -> None:
-        path = kaccess.access_path(self.factory)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        write_json(path, doc or access_doc())
+    def enforce(self, doc=None, jwks=None) -> None:
+        write_access(self.factory, doc, jwks)
         kaccess.load(self.factory, record=True)
 
-    def headers(self, who, *, secret=True, groups=None, email=None) -> dict:
-        out = {"X-Forwarded-User": who.rpartition("#")[2]} if who else {}
-        if secret:
-            out["X-Rihmasto-Proxy-Secret"] = self.secret if secret is True else secret
-        if groups:
-            out["X-Forwarded-Groups"] = groups
-        if email:
-            out["X-Forwarded-Email"] = email
-        return out
+    def id_token(self, who, *, groups=None, email=None, idp=IDP, **claims) -> str:
+        """The provider's ID token for ``who`` (signed once per test and kept, as a proxy keeps its session)."""
+        key = (who, json.dumps(groups), email, id(idp), json.dumps(claims, sort_keys=True))
+        if key not in self.tokens:
+            extra = {"groups": groups} if groups is not None else {}
+            self.tokens[key] = idp.token(who.rpartition("#")[2], **extra, **({"email": email} if email else {}),
+                                         **claims)
+        return self.tokens[key]
+
+    def headers(self, who, *, id_token=None, groups=None, email=None) -> dict:
+        if id_token is None and who:
+            id_token = self.id_token(who, groups=groups, email=email)
+        return {"Authorization": f"Bearer {id_token}"} if id_token else {}
 
     def pcall(self, method, path, body=None, *, who=AINO, token=None, origin=PUBLIC, **proxy):
         headers = self.headers(who, **proxy)
         token = token if token is not None else self.sessions.get(who)
         if token:
-            headers["Authorization"] = f"Bearer {token}"
+            headers[kaccess.SESSION_HEADER] = token
         if origin and method != "GET":
             headers["Origin"] = origin
         data = None
@@ -274,34 +288,39 @@ class EnforcedCockpitCase(CockpitTestCase):
 
 
 class CockpitIdentityTest(EnforcedCockpitCase):
-    """FR-M8-AC-2: the cockpit's identity comes only from IT's proxy, bound to its session."""
+    """FR-M8-AC-2: the cockpit's identity comes only from the provider's signed token, bound to its session."""
 
-    def test_FR_M8_AC_2_spoofed_headers_without_the_secret_or_with_a_wrong_one_are_refused(self):
+    def test_FR_M8_AC_2_a_request_without_the_providers_signed_token_is_refused(self):
         p = self.new()
         cid = Canon(p).card("validation", "Accept the demo?")["id"]
         self.enforce()
         before = self.snapshot(p)
-        for proxy in ({"secret": False}, {"secret": "a" * 43}, {"secret": self.secret[:-1]}):
-            status, out = self.pcall("POST", "/auth", {}, who=AINO, token="", **proxy)
-            self.assertEqual((status, out["access"]), (401, "enforced"), out)
-            self.assertIn("did not come through the organisation's sign-in proxy", out["error"])
+        forged = {"no token": "", "another key": OTHER_IDP.token("aino-sub"),
+                  "not signed": f"{segment({'alg': 'none', 'typ': 'JWT'})}.{segment(IDP.claims('aino-sub'))}.",
+                  "another audience": IDP.token("aino-sub", aud="another-app"),
+                  "expired": IDP.token("aino-sub", ttl=-3600)}
+        for what, id_token in forged.items():
+            status, out = self.pcall("POST", "/auth", {}, who=AINO, token="", id_token=id_token)
+            self.assertEqual((status, out["access"]), (401, "enforced"), (what, out))
+            self.assertIn("did not come through the organisation's sign-in proxy with a valid token", out["error"])
         token = self.sign_in(AINO)
         decide = {"verdict": "accept", "person": "Aino Example", "persona": "business_owner", "reason": "ok"}
         url = f"/api/projects/{p.pid}/cards/{cid}/decide"
-        self.assertEqual(self.pcall("POST", url, decide, token=token, secret=False)[0], 401)
-        self.assertEqual(self.pcall("POST", url, decide, token=token, secret="wrong" * 9)[0], 401)
-        self.assertEqual(self.pcall("GET", "/api/projects", token=token, secret=False)[0], 401)
+        self.assertEqual(self.pcall("POST", url, decide, token=token, id_token=forged["another key"])[0], 401)
+        self.assertEqual(self.pcall("POST", url, decide, token=token, id_token="")[0], 401)
+        self.assertEqual(self.pcall("GET", "/api/projects", token=token, id_token=forged["expired"])[0], 401)
         # straight to 127.0.0.1 with a session from the printed link and no proxy at all: refused
         self.assertEqual(self.call("GET", "/api/projects")[0], 401)
         self.assertEqual(self.call("POST", url, decide)[0], 401)
         self.assertEqual(self.call("POST", "/auth", {"bootstrap": self.server.issue_link()}, token=None)[0], 401)
         self.assertEqual(self.snapshot(p), before)
-        # with no secret configured on the cockpit's machine, every request is refused
-        with mock.patch.dict(os.environ, {SECRET_ENV: ""}):
-            status, out = self.pcall("GET", "/api/projects", token=token)
-            self.assertEqual(status, 403)
-            self.assertIn(f"${SECRET_ENV} holds no proxy secret", out["error"])
-        os.environ[SECRET_ENV] = self.secret             # set again (the cockpit started again with it): it works
+        # without the provider's key file nobody signs in (403), and the refusal says what IT puts there
+        keys = kaccess.access_path(self.factory).with_name("jwks.json")
+        keys.unlink()
+        status, out = self.pcall("GET", "/api/projects", token=token)
+        self.assertEqual(status, 403)
+        self.assertIn("the key file jwks.json is not in the access folder", out["error"])
+        write_json(keys, IDP.jwks())                      # IT puts it back: the same session works again
         self.assertEqual(self.pcall("GET", "/api/projects", token=token)[0], 200)
 
     def test_FR_M8_AC_2_a_session_answers_only_the_identity_it_was_opened_for(self):
@@ -351,9 +370,9 @@ class CockpitIdentityTest(EnforcedCockpitCase):
         p = self.new()
         self.enforce()
         ops = f"{ISSUER}#ops-sub"
-        token = self.sign_in(ops, groups="staff, rihmasto-ops", email="olli@example.org")
-        status, meta = self.pcall("GET", "/api/meta", who=ops, token=token, groups="staff, rihmasto-ops",
-                                  email="olli@example.org")
+        groups = ["staff", "rihmasto-ops"]                 # the token's groups claim, a list
+        token = self.sign_in(ops, groups=groups, email="olli@example.org")
+        status, meta = self.pcall("GET", "/api/meta", who=ops, token=token, groups=groups, email="olli@example.org")
         self.assertEqual(status, 200, meta)
         self.assertEqual((meta["access"]["mode"], meta["access"]["name"], meta["access"]["identity"]),
                          ("enforced", "olli@example.org", ops))
@@ -361,10 +380,10 @@ class CockpitIdentityTest(EnforcedCockpitCase):
         self.assertEqual(meta["access"]["note"], "enforced: signed in as olli@example.org")
         body = {"reason": "audit week", "persona": "operations"}
         status, out = self.pcall("POST", f"/api/projects/{p.pid}/pause", body, who=ops, token=token,
-                                 groups="staff, rihmasto-ops", email="olli@example.org")
+                                 groups=groups, email="olli@example.org")
         self.assertEqual(status, 200, out)
         self.assertEqual(p.meta["pause"]["requested_by"], "olli@example.org")
-        # without the group header the same person holds nothing
+        # a token without the groups claim: the same person holds nothing
         self.assertEqual(self.pcall("GET", "/api/meta", who=ops, token=token, email="olli@example.org")[0], 401)
         # the page: the header names the mode, the name field is read-only, the persona list is filtered
         js = self.page_js()
@@ -374,7 +393,7 @@ class CockpitIdentityTest(EnforcedCockpitCase):
         self.assertIn('id="access-note"', index)
         # Host and Origin: the proxy's public origin is accepted beside the server's own, nothing else
         status, _ = self.pcall("POST", f"/api/projects/{p.pid}/resume", {"persona": "operations"}, who=ops,
-                               token=token, groups="rihmasto-ops", origin="https://evil.example")
+                               token=token, groups=["rihmasto-ops"], origin="https://evil.example")
         self.assertEqual(status, 403)
 
     def test_FR_M8_AC_2_a_tampered_or_invalid_file_closes_the_cockpit(self):
@@ -435,7 +454,7 @@ class EveryWriteRouteTest(EnforcedCockpitCase):
         home = self.factory.home
         routes = self.writes(w)
         every_write = {name for method, _, name in cockpit.ROUTES if method in ("POST", "PUT")}
-        takes_no_person = {"post_link", "post_profile_propose"}              # record nothing, sign nothing
+        takes_no_person = {"post_link", "post_profile_propose", "post_posture_preview"}   # record nothing, sign nothing
         self.assertEqual({r[0] for r in routes} | takes_no_person, every_write)
         got = {}
         for name, method, path, body in routes:
@@ -472,6 +491,8 @@ def cli_writes(pid: str, tmp: Path) -> dict:
         "assume": ["assume", pid, "Q-001", *who, "--persona", "business_owner"],
         "decide": ["decide", pid, "C-0001", "accept", *who, "--persona", "product_owner"],
         "change": ["change", pid, "it crashes", *who, "--persona", "end_user"],
+        "assess": ["assess", pid, *who, "--persona", "developer"],
+        "assessment change": ["assessment", "change", pid, "F-1", *who, "--persona", "developer"],
         "adopt": ["adopt", "Old app", "--source", str(tmp), "--intent", "monitor", *who, "--persona", "developer"],
         "workspace open": ["workspace", "open", pid, *who, "--persona", "developer", "--agent", "shell"],
         "workspace submit": ["workspace", "submit", pid, "ws", *who, "--persona", "developer"],
@@ -483,6 +504,8 @@ def cli_writes(pid: str, tmp: Path) -> dict:
                          "--persona", "it"],
         "embed revoke": ["embed", "revoke", "E-1", *who, "--persona", "it"],
         "autonomy set": ["autonomy", "set", "2", "--reason", "audit", *who, "--persona", "compliance"],
+        "posture set": ["posture", "set", pid, "balanced", "--reason", "audit", *who, "--persona", "business_owner"],
+        "posture confirm": ["posture", "confirm", pid, "A-001", *who, "--persona", "business_owner"],
         "signal log": ["signal", "log", "--text", "pallets", "--channel", "chat", "--source", "ops", *who,
                        "--persona", "stakeholder"],
         "concept edit": ["concept", "edit", "C-0001", "--title", "x", *who, "--persona", "business_owner"],
@@ -496,6 +519,10 @@ def cli_writes(pid: str, tmp: Path) -> dict:
         "relay unsubscribe": ["relay", "unsubscribe", "SUB-1", *who, "--persona", "it"],
         "connector enable": ["connector", "enable", "example", *who, "--persona", "it"],
         "connector disable": ["connector", "disable", "example", *who, "--persona", "it"],
+        "integration declare": ["integration", "declare", pid, "--name", "orders_db", "--kind", "sqlite", "--access",
+                                "read", "--data-class", "internal", *who, "--persona", "product_owner"],
+        "integration withdraw": ["integration", "withdraw", pid, "orders_db", "--reason", "r", *who,
+                                 "--persona", "product_owner"],
         "inputs refine": ["inputs", "refine", pid, *who, "--persona", "product_owner"],   # who asks a model to read
         "autopilot start": ["autopilot", "start", pid, "--until", "8h", "--delegate", "question", *who,
                             "--persona", "developer", "--arm-only"],

@@ -268,6 +268,7 @@ export function firstRun() {
     store.set("gf.person", S.person);
     S.persona = persona.value;
     store.set("gf.persona", S.persona);
+    if (nav.personChanged) nav.personChanged();
     use.disabled = true;
     try {
       const out = await save(null, { preset: chosen, reason: "the first-run choice" });

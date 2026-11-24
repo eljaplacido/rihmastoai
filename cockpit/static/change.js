@@ -6,6 +6,7 @@ import {
   S, $, h, fill, icon, chip, api, act, say, signed, needPerson, nav, enc, link, orList, cap, plural,
   openModal, closeModal, profileOf,
 } from "./core.js";
+import { postureChip, openPosture } from "./posture.js";
 
 const STEP_LABEL = { material: "the material", questions: "the questions", spec: "the spec", plan: "the plan" };
 const FIELD_LABEL = { title: "Title", kind: "Kind of work", mode: "Mode", maturity: "Maturity" };
@@ -81,9 +82,12 @@ export function openSettings(p) {
       field("ps-maturity", "Maturity", maturity, "Which stages and gates run, and how big the spec is.")),
     field("ps-mode", "Mode", mode, "Who answers the panel's questions: people, the factory, or both."),
     // The posture (prototype, balanced, production, regulated) has its own change flow (kernel/posture_change.py):
-    // its chip sits here once that flow lands.
+    // its chip opens the Posture dialog in place of this one, with the kernel's preview of what changes now and later.
     h("div", { class: "field chg-posture", "data-slot": "posture" }, h("span", { class: "label-h" }, "Posture"),
-      h("p", { class: "muted small" }, "Set in its own flow: the posture's chip appears here.")),
+      h("div", { class: "chg-posture-row" }, postureChip(p, () => swap(() => openPosture(p))),
+        h("span", { class: "muted small" }, (p.meta.posture ? "Change it" : "Choose one")
+          + " in its own dialog: it previews what changes now and later before anyone saves, and a change that loosens it needs a "
+          + orList(((S.meta && S.meta.postures) || {}).looseners || []) + "."))),
     field("ps-reason", "Reason (required, recorded with your name)", reason),
     impact, redoRow,
     h("div", { class: "btns" }, preview, save),

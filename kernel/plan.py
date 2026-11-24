@@ -24,15 +24,24 @@ NEEDS_APPROVAL = {"explore": False, "demo": False, "pilot": True, "production": 
 
 def required(project) -> bool:
     """Whether a person approves the plan before building: the owner's setting, else the maturity's
-    rule; and at any maturity when a requirement contradicts the paved road (FR-DF1-AC-3)."""
+    rule; and at any maturity when a requirement contradicts the paved road (FR-DF1-AC-3), when the
+    project's posture asks for it or its spec misses a topic the posture requires (kernel/posture_rules.py),
+    or when the product writes to a system it reaches or touches confidential or restricted data there
+    (FR-DS1-AC-3)."""
+    from kernel.posture_rules import plan_required
+
     meta = project.meta
+    if plan_required(project):
+        return True
     if "approve_plan" in meta:
         return bool(meta["approve_plan"])
     if NEEDS_APPROVAL.get(meta.get("maturity"), True):
         return True
+    from kernel.integration_decl import needs_plan_approval
     from kernel.roads import road_conflicts
 
-    return bool(road_conflicts(project.read("spec.json") or {}))
+    spec = project.read("spec.json") or {}
+    return bool(road_conflicts(spec)) or needs_plan_approval(spec)
 
 
 def _version(project) -> int:
@@ -51,6 +60,9 @@ def summary(spec: dict) -> str:
             lines.append(f"    - {c['id']} [{c['kind']}]: then {c['then']}")
     if spec.get("interface"):
         lines += ["", "Interface:"] + [f"- {e['method']} {e['path']}" for e in spec["interface"]]
+    from kernel.integration_decl import lines as integration_lines
+
+    lines += ["", "Data integrations:", *integration_lines(spec)] if spec.get("integrations") else []
     from kernel.roads import conflict_lines
 
     conflicts = conflict_lines(spec)  # for the person who approves: built as written, delivery would fail
@@ -65,6 +77,7 @@ def open_card(project) -> dict:
         if c["refs"].get("spec_version") == version:
             return c
     n_crit = sum(len(r["acceptance"]) for r in spec["requirements"])
+    from kernel.posture_rules import plan_note
     from kernel.roads import road_conflicts
 
     conflicts = road_conflicts(spec)
@@ -72,8 +85,12 @@ def open_card(project) -> dict:
         "approval", f"Approve the plan: {len(spec['requirements'])} requirements, {n_crit} criteria"
         + (f"; {len(conflicts)} {'conflict' if len(conflicts) == 1 else 'conflicts'} with the paved road"
            if conflicts else ""),
-        body=summary(spec), blocking=True, payload={"road_conflicts": conflicts} if conflicts else None,
+        body=summary(spec) + plan_note(project, spec), blocking=True,
+        payload={"road_conflicts": conflicts} if conflicts else None,
         refs={"scope": "plan", "spec_version": version, "requirements": [r["id"] for r in spec["requirements"]]})
+    from kernel.posture_rules import narrow, plan_deciders
+
+    card = narrow(project, card, plan_deciders(project, spec), "the posture: who approves this plan")
     project.log("plan_card_opened", {"card": card["id"], "spec_version": version})
     return card
 
@@ -89,6 +106,9 @@ def gate(project, *, model) -> dict | None:
         d = c["decision"]
         if d["verdict"] == "approve":
             if not project.meta.get("plan_approved"):
+                from kernel.posture_rules import on_plan_approved
+
+                on_plan_approved(project, c)  # a posture: the requirements confirmed, the topics left uncovered
                 project.update_meta(plan_approved={"card": c["id"], "by": d["person"], "spec_version": version})
                 project.log("plan_approved", {"card": c["id"], "by": d["person"], "spec_version": version})
             return None
@@ -125,8 +145,12 @@ def edit_requirement(project, rid: str, *, person: str, persona: str, statement:
         raise DecisionRefused("the plan is approved and compiled: change it through the change loop")
     if not is_person(person):
         raise DecisionRefused(f"{person!r} is not a person")
-    if persona not in CARD_DECIDERS["approval"]:
-        raise DecisionRefused(f"a {persona} may not edit the plan (editors: {CARD_DECIDERS['approval']})")
+    from kernel.posture import of
+    from kernel.posture_rules import confirmers
+
+    editors = confirmers(of(project)) or CARD_DECIDERS["approval"]  # a confirming posture: the customer's side
+    if persona not in editors:
+        raise DecisionRefused(f"a {persona} may not edit the plan (editors: {editors})")
     spec = project.read("spec.json")
     req = next((r for r in spec["requirements"] if r["id"] == rid), None)
     if req is None:

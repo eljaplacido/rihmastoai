@@ -88,9 +88,13 @@ def refusal(roles: Iterable[str], routing: dict[str, Any] | None = None) -> str:
         return ""
     named = "; ".join(f"the {r['role']} role{' (its fallback)' if r['which'] == 'fallback' else ''} would go to "
                       f"the hosted endpoint {r['endpoint']!r} ({_host(r['url'])})" for r in hosted)
+    fallbacks = sorted({r["role"] for r in hosted if r["which"] == "fallback"})
+    drop = (" A hosted fallback goes when you set the role again without it: in Models setup (Settings, Models), "
+            "Change, untick Keep the fallback; or `rihmasto models set " + fallbacks[0] + " ... --private "
+            "--no-fallback`.") if fallbacks else ""
     return (f"refused: this project is confidential (keep on local models), and {named}. Nothing was sent. "
             "Route those roles, fallbacks included, to a model on this machine or your private network in "
-            f"kernel/routing.local.json ({GUIDE}), then run it again.")
+            f"Models setup or kernel/routing.local.json ({GUIDE}), then run it again.{drop}")
 
 
 def confidential(project: Any) -> bool:

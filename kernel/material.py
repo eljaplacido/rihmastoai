@@ -325,8 +325,11 @@ def recorded(project: Any, text: str) -> list[tuple[str, str]] | None:
 
 def record(project: Any, mp: dict[str, Any], *, person: str | None, persona: str | None = None,
            confirmed: str = "") -> None:
-    """Keep the map in the project and record its counts in the ledger: never a file's contents."""
-    project.write("material.json", mp)
+    """Keep the map in the project and record its counts in the ledger: never a file's contents. Material a
+    person added later (kernel/project_material.py) is kept beside the map, under its own keys."""
+    old = project.read("material.json", None)
+    kept = {k: old[k] for k in ("original", "added") if k in old} if isinstance(old, dict) else {}
+    project.write("material.json", {**mp, **kept})
     t = mp["totals"]
     project.log("material_scanned", {
         "folder": mp["folder"], **{k: t[k] for k in ("files", *ACTIONS, "secrets", "excluded", "code", "chars",

@@ -123,7 +123,7 @@ def checkout(project: Project, revision: str) -> Iterator[Path]:
 
 # -- the repository's own code -----------------------------------------------------------------------------
 
-ISOLATION = "kernel.access_isolation"   # the access stream's isolation runner (D-0016), once it is merged here
+ISOLATION = "kernel.access_isolation"   # IT's isolation runner (D-0016)
 
 
 class IsolationNeeded(AccessRefused):

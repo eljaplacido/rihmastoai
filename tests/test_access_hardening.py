@@ -1,8 +1,8 @@
 """Access control phase A, hardened (FR-M8-AC-5 to AC-9, D-0016): what independent attackers found.
 
-- The proxy's shared secret never reaches a process the cockpit or the command line starts (a job, the
-  gate's run of a project's own tests, a road's product, a Gnomon call): it leaves the environment once read.
-- A request that repeats the user, email, secret or groups header is refused.
+- The cockpit holds no shared secret: nothing a process it starts can read (its environment, the gate's
+  run of a project's own tests, the factory home) mints a token the cockpit takes.
+- A request that repeats the token header is refused; a group's name keeps its commas.
 - `rihmasto intake`, which rewrites a project's request, is signed; only the cockpit's own job, carrying
   out the request a verified identity filed, runs unsigned.
 - The access file has a folder of its own that the kernel never writes; removing the file, its folder or
@@ -13,6 +13,8 @@
 """
 
 import contextlib
+import hashlib
+import hmac
 import http.client
 import io
 import json
@@ -29,8 +31,9 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from access_fakes import segment  # noqa: E402
 from factory_fakes import FactoryTestCase, model  # noqa: E402
-from test_access import AINO, IDA, ISSUER, MALLORY, PUBLIC, SECRET_ENV, EnforcedCockpitCase, access_doc, tree  # noqa: E402
+from test_access import AINO, IDA, IDP, ISSUER, MALLORY, PUBLIC, EnforcedCockpitCase, access_doc, tree, write_access  # noqa: E402
 from test_cockpit import FakeRunner  # noqa: E402
 from test_ui_drive import Browser, find_chrome  # noqa: E402
 
@@ -43,10 +46,8 @@ from kernel.learn import FACTORY_PID, factory_project  # noqa: E402
 from kernel.people import Identity  # noqa: E402
 from kernel.safestop import request_pause, resume  # noqa: E402
 from kernel.store import Factory, write_json  # noqa: E402
-from mcp.server import RihmaMCP  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
-PROXY_SECRET_HEADER = "X-Rihmasto-Proxy-Secret"
 
 
 def prose(path: Path) -> str:
@@ -86,29 +87,31 @@ def repeated(origin: str, method: str, path: str, headers: list, body=None) -> t
         conn.close()
 
 
-class ProxySecretTest(EnforcedCockpitCase):
-    """FR-M8-AC-5: the proxy's shared secret leaves the environment once read, so nothing started inherits it."""
+class NoSharedSecretTest(EnforcedCockpitCase):
+    """FR-M8-AC-5: there is no shared secret: nothing a process the cockpit starts can read signs anyone in."""
 
-    def test_FR_M8_AC_5_no_process_the_cockpit_starts_inherits_the_proxy_secret(self):
+    def minted(self, secret: str) -> str:
+        """A token for Ida, the owner of everything, signed with ``secret`` as an HMAC key (HS256)."""
+        head, body = segment({"alg": "HS256", "kid": "test-key-1", "typ": "JWT"}), segment(IDP.claims("ida-sub"))
+        mac = hmac.new(secret.encode("utf-8", "replace"), f"{head}.{body}".encode("ascii"), hashlib.sha256).digest()
+        return f"{head}.{body}.{segment(mac)}"
+
+    def test_FR_M8_AC_5_nothing_a_process_the_cockpit_starts_can_read_signs_anyone_in(self):
         self.enforce()
-        token = self.sign_in(AINO)                      # requests are still checked against the secret kept
-        self.assertNotIn(SECRET_ENV, os.environ)
-        probe = f"import os; print('secret:' + os.environ.get({SECRET_ENV!r}, 'none'))"
-        # a job the cockpit starts (a builder's run, an intake, a delivery)
+        token = self.sign_in(AINO)
+        # a job the cockpit starts (a builder's run, an intake, a delivery) dumps everything it inherited
         runner = cockpit.SubprocessRunner(self.factory.home)
         log = self.tmp / "job.log"
-        job = runner.start(["-c", probe], log)
+        job = runner.start(["-c", "import json, os; print(json.dumps(dict(os.environ)))"], log)
         end = time.monotonic() + 60
         while runner.status(job)["state"] == "running" and time.monotonic() < end:
             time.sleep(0.05)
-        self.assertEqual(runner.status(job)["state"], "done")
-        said = log.read_text(encoding="utf-8")
-        self.assertIn("secret:none", said)
-        self.assertNotIn(self.secret, said)
-        # the gate runs a project's own tests, code a model or a developer wrote, with this environment
-        repo, seen = self.tmp / "product", self.tmp / "seen.txt"
+        inherited = json.loads(log.read_text(encoding="utf-8").strip().splitlines()[-1])
+        # the gate's run of a project's own tests, code a model or a developer wrote, dumps its environment too
+        repo, seen = self.tmp / "product", self.tmp / "seen.json"
         (repo / "tests").mkdir(parents=True)
         (repo / "tests" / "test_leak.py").write_text(textwrap.dedent(f"""\
+            import json
             import os
             import unittest
             from pathlib import Path
@@ -116,70 +119,57 @@ class ProxySecretTest(EnforcedCockpitCase):
 
             class Leak(unittest.TestCase):
                 def test_reads_the_environment(self):
-                    Path({str(seen)!r}).write_text(os.environ.get({SECRET_ENV!r}, "none"), encoding="utf-8")
+                    Path({str(seen)!r}).write_text(json.dumps(dict(os.environ)), encoding="utf-8")
             """), encoding="utf-8")
-        ran = gate.run_suite(repo, timeout=120)
+        ran = gate.run_suite(repo, timeout=120)                    # (a single operator's run: no factory served)
         self.assertEqual((ran["exit"], ran["tests"]), (0, {"test_reads_the_environment": "ok"}))
-        self.assertEqual(seen.read_text(encoding="utf-8"), "none")
-        # a road's product and a Gnomon call copy this process's environment: the secret is not in it
-        self.assertNotIn(self.secret, json.dumps(dict(os.environ)))
-        self.assertEqual(self.pcall("GET", "/api/projects", token=token)[0], 200)
-
-    def test_FR_M8_AC_5_the_command_line_and_the_mcp_server_take_it_out_before_they_start_anything(self):
-        self.enforce()
-        for start in ("the command line", "the MCP server"):
-            os.environ[SECRET_ENV] = self.secret         # an operator's shell that holds it
-            if start == "the command line":
-                code, _, err = cli(self.factory, "aino", "status")
-                self.assertEqual(code, 0, err)
-            else:
-                with mock.patch("kernel.access.os_user", return_value="aino"):
-                    RihmaMCP(self.factory, person="Aino Example", persona="developer")
-            self.assertNotIn(SECRET_ENV, os.environ, start)
-        # the guide's name for it is taken out too, even before an access file names it
-        with mock.patch.dict(os.environ, {kaccess.DEFAULT_SECRET_ENV: "s" * 40}):
-            kaccess.seal_secret(Factory(self.tmp / "no-access-file-yet"))
-            self.assertNotIn(kaccess.DEFAULT_SECRET_ENV, os.environ)
-        self.assertEqual(self.pcall("POST", "/auth", {}, who=AINO, token="")[0], 200)
+        candidates = {*inherited.values(), *json.loads(seen.read_text(encoding="utf-8")).values()}
+        # and every file the factory home holds, the access folder's key file included
+        for path in self.factory.home.rglob("*"):
+            if path.is_file():
+                candidates.add(path.read_bytes()[:4096].decode("utf-8", "replace"))
+        self.assertIn(json.dumps(IDP.jwks()["keys"][0]["n"]).strip('"'), " ".join(candidates))   # public: it is there
+        for secret in sorted(candidates):
+            status, out = self.pcall("POST", "/auth", {}, who=IDA, token="", id_token=self.minted(secret))
+            self.assertEqual(status, 401, secret[:40])
+            self.assertIn("signed with a shared secret (HS256)", out["error"])
+        unsigned = f"{segment({'alg': 'none', 'typ': 'JWT'})}.{segment(IDP.claims('ida-sub'))}."
+        self.assertEqual(self.pcall("POST", "/auth", {}, who=IDA, token="", id_token=unsigned)[0], 401)
+        self.assertEqual(self.pcall("GET", "/api/projects", token=token)[0], 200)     # the real sign-in works
 
 
 class RepeatedHeadersTest(EnforcedCockpitCase):
-    """FR-M8-AC-6: the proxy sets each identity header once; a request that repeats one is refused."""
+    """FR-M8-AC-6: the proxy sets the token header once; a group's name is the token's, commas and all."""
 
-    def test_FR_M8_AC_6_a_request_that_repeats_the_user_email_secret_or_groups_header_is_refused(self):
+    def test_FR_M8_AC_6_a_repeated_token_header_is_refused_and_a_groups_name_keeps_its_commas(self):
         p = self.new()
-        self.enforce()
-        secret = (PROXY_SECRET_HEADER, self.secret)
-        tries = {
-            "X-Forwarded-User": [secret, ("X-Forwarded-User", "aino-sub"), ("X-Forwarded-User", "mallory-sub")],
-            PROXY_SECRET_HEADER: [secret, secret, ("X-Forwarded-User", "aino-sub")],
-            "X-Forwarded-Email": [secret, ("X-Forwarded-User", "ops-sub"), ("X-Forwarded-Email", "olli@example.org"),
-                                  ("X-Forwarded-Email", "aino@example.org")],
-            "X-Forwarded-Groups": [secret, ("X-Forwarded-User", "mallory-sub"), ("X-Forwarded-Groups", "staff"),
-                                   ("X-Forwarded-Groups", "rihmasto-ops")],
-        }
-        for header, headers in tries.items():
-            status, out = repeated(self.origin, "POST", "/auth", [("Origin", PUBLIC), *headers], {})
-            self.assertEqual(status, 401, (header, out))
-            self.assertIn(f"carries the {header} header more than once", out["error"])
-        # Mallory, signed in, cannot add the operators' group with a second groups header
+        doc = access_doc()
+        doc["bindings"].append({"group": "Operations, Finland", "persona": "operations", "scope": "*"})
+        self.enforce(doc)
+        aino, mallory = (f"Bearer {self.id_token(who)}" for who in (AINO, MALLORY))
+        for twice in ([("Authorization", aino), ("Authorization", mallory)], [("Authorization", aino)] * 2):
+            status, out = repeated(self.origin, "POST", "/auth", [("Origin", PUBLIC), *twice], {})
+            self.assertEqual(status, 401, out)
+            self.assertIn("carries the Authorization header more than once", out["error"])
+        # Mallory, signed in, cannot add the operators' group with a second token header
         token = self.sign_in(MALLORY)
+        ops = f"Bearer {self.id_token(MALLORY, groups=['rihmasto-ops'])}"
         status, out = repeated(self.origin, "POST", f"/api/projects/{p.pid}/pause",
-                               [("Origin", PUBLIC), ("Authorization", f"Bearer {token}"), secret,
-                                ("X-Forwarded-User", "mallory-sub"), ("X-Forwarded-Groups", "staff"),
-                                ("X-Forwarded-Groups", "rihmasto-ops")], {"reason": "audit", "persona": "operations"})
+                               [("Origin", PUBLIC), (kaccess.SESSION_HEADER, token), ("Authorization", mallory),
+                                ("Authorization", ops)], {"reason": "audit", "persona": "operations"})
         self.assertEqual(status, 401, out)
         self.assertIsNone(p.meta.get("pause"))
-        # one groups header, its values joined by commas, as oauth2-proxy sends them
-        ops = f"{ISSUER}#ops-sub"
-        token = self.sign_in(ops, groups="staff,rihmasto-ops")
-        status, meta = self.pcall("GET", "/api/meta", who=ops, token=token, groups="staff,rihmasto-ops")
+        # a group named with commas is one group: it is not "x" and "rihmasto-ops"
+        olli = f"{ISSUER}#olli-sub"
+        self.assertEqual(self.pcall("POST", "/auth", {}, who=olli, token="", groups=["x,rihmasto-ops"])[0], 401)
+        token = self.sign_in(olli, groups=["staff", "Operations, Finland"])
+        status, meta = self.pcall("GET", "/api/meta", who=olli, token=token, groups=["staff", "Operations, Finland"])
         self.assertEqual((status, meta["access"]["grants"]), (200, [{"persona": "operations", "scope": "*"}]))
 
-    def test_FR_M8_AC_6_the_guide_says_to_bind_groups_by_an_id_no_user_can_choose(self):
+    def test_FR_M8_AC_6_the_guide_says_groups_come_from_the_signed_claim_whole(self):
         guide = prose(REPO / "docs" / "guides" / "access.md")
-        for said in ("more than once", "Bind groups by an id that no user can choose",
-                     "`x,rihmasto-ops`", "joins a claim's values with commas"):
+        for said in ("more than once", "a comma is part of a group's name", "`groups` or `roles`",
+                     "Bind groups by an id that no user can choose", "`cognito:groups`"):
             self.assertIn(said, guide)
 
 
@@ -333,12 +323,12 @@ class AccessCustodyTest(FactoryTestCase):
         for text in (guide, security):
             self.assertIn("only as strong as the factory home's file permissions", text)
         for said in ("projects/_factory/access/access.json", "give write permission on that folder to IT alone",
-                     "must stay writable", "`claimed_by`", "`file_owner`",
-                     "The raw secret goes in both environments", "scope: openid email profile groups",
-                     "Included Client Audience", "`rihmasto intake`"):
+                     "must stay writable", "`claimed_by`", "`file_owner`", "`keys_sha256`",
+                     "scope: openid email profile groups", "Included Client Audience", "`rihmasto intake`"):
             self.assertIn(said, guide)
-        self.assertNotIn("put the base64 of the secret", guide)
-        self.assertNotIn("so it is not signed again", guide)
+        for gone in ("put the base64 of the secret", "so it is not signed again", "The raw secret goes in both",
+                     "X-Rihmasto-Proxy-Secret", "fromEnv: RIHMASTO_PROXY_SECRET"):
+            self.assertNotIn(gone, guide)
 
 
 class NoticedByTest(EnforcedCockpitCase):
@@ -415,20 +405,14 @@ class AccessPageTest(FactoryTestCase):
         b.cmd("Page.navigate", {"url": "about:blank"})          # the link differs only by its fragment: load it anew
         b.cmd("Page.navigate", {"url": f"{self.server.origin}/#k={self.bootstrap}"})
         self.fits(kaccess.SINGLE_NOTE)
-        # enforced: Chrome adds the proxy's headers to every request, as IT's proxy in front of it would
+        # enforced: Chrome puts the provider's ID token in Authorization on every request, as oauth2-proxy
+        # in front of it would (over the page's own value); the page keeps its session in X-Rihmasto-Session
         b.step = "enforced"
         b.eval("sessionStorage.clear(); true")
         b.cmd("Page.navigate", {"url": "about:blank"})          # the single operator's page stops asking first
-        secret = "p" * 40
-        patcher = mock.patch.dict(os.environ, {SECRET_ENV: secret})
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        path = kaccess.access_path(self.factory)
-        path.parent.mkdir(parents=True)
-        write_json(path, access_doc())
+        write_access(self.factory)
         b.cmd("Network.enable")
-        b.cmd("Network.setExtraHTTPHeaders", {"headers": {"X-Forwarded-User": "aino-sub",
-                                                          PROXY_SECRET_HEADER: secret}})
+        b.cmd("Network.setExtraHTTPHeaders", {"headers": {"Authorization": f"Bearer {IDP.token('aino-sub')}"}})
         b.cmd("Page.navigate", {"url": f"{self.server.origin}/"})
         self.fits("enforced: signed in as Aino Example")
 

@@ -250,10 +250,16 @@ class Factory:
     def paved_roads_path(self) -> Path:
         return self.home / "paved_roads.json"
 
-    def new_project(self, title: str, *, maturity: str = "demo", mode: str = "mixed",
-                    source_kind: str = "idea", profile: str | None = None) -> Project:
+    def new_project(self, title: str, *, maturity: str | None = None, mode: str | None = None,
+                    source_kind: str = "idea", profile: str | None = None,
+                    posture: Mapping[str, Any] | None = None) -> Project:
+        """A new project, at demo maturity in mixed mode unless named. With ``posture`` (name, weights, by,
+        persona: kernel/posture.py) its mode and maturity are the posture's unless named, and the choice is
+        recorded with who made it."""
+        from kernel.posture import for_new_project, record_choice
         from kernel.profiles import PROFILES
 
+        maturity, mode, chosen = for_new_project(posture, maturity, mode)
         if profile is not None and profile not in PROFILES:
             raise ValueError(f"profile must be one of {', '.join(PROFILES)}, got {profile!r}")
         if maturity not in MATURITIES:
@@ -267,13 +273,15 @@ class Factory:
         project.write("project.json", {
             "id": pid, "title": title, "maturity": maturity, "mode": mode,
             "source_kind": source_kind, "stage": 1, "created": now, "updated": now,
-            **({"profile": profile} if profile else {}),
+            **({"profile": profile} if profile else {}), **({"posture": dict(chosen, at=now)} if chosen else {}),
         })
         _open_canon()(project).init(goal=title)
         project.log("project_created", {"id": pid, "title": title, "maturity": maturity, "mode": mode,
                                         **({"profile": profile} if profile else {})})
         if profile:
             project.log("profile_chosen", {"profile": profile, "basis": {"by": "person at creation"}})
+        if chosen:
+            record_choice(project, chosen)
         return project
 
     def project(self, pid: str) -> Project:

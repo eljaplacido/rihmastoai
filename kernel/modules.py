@@ -113,8 +113,8 @@ MODULES: dict[str, dict[str, Any]] = {
         "Capability catalogue and packs", "every capability by its state, and a capability pack per release that "
         "pins it by hash", depends=("delivery",), outputs=("a capability pack per release",),
         planned=("faces: MCP, OpenAI-compatible and embed",),
-        pages=("catalogue",), widgets=("catalogue", "eval_trend"), controls=("build_pack",),
-        commands=("catalogue", "pack"), routes=("post_pack_build",)),
+        pages=("catalogue",), widgets=("catalogue", "eval_trend"), controls=("build_pack", "capability_faces"),
+        commands=("catalogue", "pack", "capability check", "capability serve"), routes=("post_pack_build",)),
     "security": _module(
         "Security and red team", "Rihmasto's own static scan of any repository, SARIF from any scanner, the "
         "security gate, and risks a person accepts until a date",
@@ -128,8 +128,11 @@ MODULES: dict[str, dict[str, Any]] = {
         routes=("post_evidence_export",)),
     "assessment": _module(
         "Assessment", "adopt an existing system: its tests characterised, an inventory by rule, its as-is "
-        "contract, its upstream watched for drift", outputs=("an adopted project with its baseline",),
-        planned=("the brownfield assessment report",), views=("spec",), commands=("adopt", "sync", "assess")),
+        "contract, its upstream watched for drift, and the system judged from every perspective",
+        outputs=("an adopted project with its baseline", "the brownfield assessment, versioned"),
+        views=("spec", "assessment"), controls=("run_assessment", "assessment_changes"),
+        commands=("adopt", "sync", "assess", "assessment list", "assessment show", "assessment compare",
+                  "assessment change"), routes=("post_assessment", "post_assessment_changes")),
     "integrations": _module(
         "Integrations", "website chats (embeds), events and notices out, verified inbound webhooks, connectors "
         "through Gnomon", outputs=("embeds, webhooks and notices",), widgets=("feed_health",),

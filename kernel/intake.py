@@ -21,6 +21,7 @@ disagree, the opinions are kept side by side on the question.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -179,6 +180,11 @@ def _keep_source(project: Any, kind: str, text: str, requested_by: str | None) -
     """Keep the request as the panel reads it. A request longer than the panel may read is cut,
     and the cut is recorded in the ledger and on the source, never silent (FR-Z1-AC-3)."""
     source: dict[str, Any] = {"kind": kind, "text": text[:MAX_SOURCE_CHARS], "requested_by": requested_by}
+    before = project.read("source.json")
+    if isinstance(before, dict):  # a request replaced is on record: by whom, and what it replaced (D-0016)
+        old, new = (hashlib.sha256(str(t or "").encode()).hexdigest() for t in (before.get("text"), source["text"]))
+        project.log("request_replaced", {"requested_by": requested_by, "previous_sha256": old, "sha256": new,
+                                         "previous_requested_by": before.get("requested_by")})
     if len(text) > MAX_SOURCE_CHARS:
         source["cut_from"] = len(text)
         project.log("request_cut", {"kind": kind, "kept": MAX_SOURCE_CHARS, "of": len(text)})
@@ -240,6 +246,7 @@ def intake(project, source: str, *, model, requested_by: str | None = None,
     if not text:
         raise ValueError("the request is empty")
     from kernel.confidential import require_local
+    from kernel.posture_rules import panel_note, question_budget  # a posture's budget and emphasis, if any
     from kernel.profiles import add_profile_question, choose, profile_of, propose_profile
 
     require_local(project, ("analyst",), where="intake")     # confidential: nothing leaves for a hosted endpoint
@@ -264,13 +271,15 @@ def intake(project, source: str, *, model, requested_by: str | None = None,
     for perspective in perspectives:
         try:
             answer = _ask_json(model, _perspective_prompt(perspective, text, kind, maturity, profile,
-                                                          inputs.panel_note(reading), given))
+                                                          inputs.panel_note(reading), given)
+                               + panel_note(project, perspective))
         except ModelError as exc:
             canon.note("intake", f"perspective {perspective} gave no usable answer: {exc}")
             readings[perspective] = "(no usable answer; not measured)"
             continue
         readings[perspective] = str(answer.get("reading", "")).strip()
-        for item in (answer.get("questions") or [])[:QUESTIONS_PER_PERSPECTIVE[maturity]]:
+        for item in (answer.get("questions") or [])[:question_budget(project, perspective,
+                                                                     QUESTIONS_PER_PERSPECTIVE[maturity])]:
             if not isinstance(item, dict) or not str(item.get("text", "")).strip() or asked_again(
                     project, str(item["text"]).strip(), perspective):
                 continue

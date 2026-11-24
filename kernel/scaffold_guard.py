@@ -195,6 +195,22 @@ class Guard:
         return self
 
 
+GUARDS = {}  # the one guard of this process, by the product's root: /health and a capability's faces ask it
+_GUARDS_LOCK = threading.Lock()
+
+
+def shared(handle, root):
+    """The process's guard for ``root``, checked once before it is handed out and then every round, so
+    /health and every face judge alike from their first request."""
+    key = os.path.normcase(os.path.abspath(root))
+    with _GUARDS_LOCK:
+        if key not in GUARDS:
+            guard = Guard(handle, root)
+            guard.check()
+            GUARDS[key] = guard.start()
+        return GUARDS[key]
+
+
 class Failed:
     """A pack is mounted but the guard cannot run: never ready."""
 
@@ -251,7 +267,7 @@ def serve(root=None):
         from app import server
         import app.routes  # noqa: F401  (registers the product's routes)
 
-        guard, base, handle = Guard(server.handle, root).start(), server.Handler, server.handle
+        guard, base, handle = shared(server.handle, root), server.Handler, server.handle
     except Exception as exc:  # a pack is mounted but no guard runs: never ready
         guard = Failed(f"pack_guard cannot start: {type(exc).__name__}: {exc}")
         base, handle = BaseHTTPRequestHandler, None
@@ -259,6 +275,9 @@ def serve(root=None):
     ThreadingHTTPServer((host, port), guarded(base, guard, handle)).serve_forever()
 
 
-if __name__ == "__main__":
-    serve()
+if __name__ == "__main__":  # run as a file: serve from the importable copy, whose guard the faces share
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from factory.pack_guard import serve as _serve
+
+    _serve()
 '''

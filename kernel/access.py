@@ -1,8 +1,9 @@
-"""Who may decide as which persona, on which project (D-0016, FR-M8).
+"""Who may decide as which persona, on which project (D-0016, FR-M8, FR-ID1).
 
 Rihmasto never stores passwords. People sign in through the organisation's identity provider (OIDC) at an
-identity-aware proxy IT runs beside the cockpit; on the operator's own machine the command line and the MCP
-server sign as the operating system's user (``local:<os user>``). What an identity may act as is an IT-owned
+identity-aware proxy IT runs beside the cockpit, which forwards the provider's signed token; the cockpit
+verifies it with the provider's public keys (``kernel.access_tokens``). On the operator's own machine the
+command line and the MCP server sign as the operating system's user (``local:<os user>``). What an identity may act as is an IT-owned
 access map, ``projects/_factory/access/access.json`` (``rihmasto.access/1``, ``kernel.accessfile``), in a
 folder of its own that IT alone writes: the kernel only reads it, and keeps its locks beside the factory
 ledger. Two modes:
@@ -25,10 +26,11 @@ decision signed by a verified identity shows. Each change of the file is recorde
 the first time a write loads it: its sha256, what the file claims about who changed it, the file's owner
 and modification time as the file system has them, and which surface and identity noticed it.
 
-The proxy's shared secret is read once from the environment variable the file names and then taken out
-of this process's environment, so no process started from here (a job, the gate's test run, a road's
-product, a Gnomon call) inherits it. Card-kind rules (``kernel.canon.CARD_DECIDERS``) still apply on top.
-Machine identity for roads and lanes stays with Gnomon (D-0015).
+There is no shared secret: the key file holds public keys, so nothing this process can read lets anyone
+sign in as someone else. While access is enforced, code a model or a developer wrote runs only through
+the isolation runner the file names (``kernel.access_isolation``). Card-kind rules
+(``kernel.canon.CARD_DECIDERS``) still apply on top. Machine identity for roads and lanes stays with
+Gnomon (D-0015).
 """
 
 from __future__ import annotations
@@ -37,41 +39,38 @@ import argparse
 import contextlib
 import datetime as dt
 import hashlib
-import hmac
-import os
 import re
-import threading
 from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
-from kernel.accessfile import (  # noqa: F401  (MODES and SCHEMA are re-exported)
+from kernel.access_tokens import Headers, signed_in, with_keys
+from kernel.accessfile import (  # noqa: F401  (MODES, SCHEMA and SESSION_HEADER are re-exported)
     ALL,
     ENFORCED,
     FACTORY_SCOPE,
     LOCAL,
     MODES,
     SCHEMA,
+    SESSION_HEADER,
     SINGLE,
-    SUBJECT,
     Access,
     AccessFileError,
     Binding,
-    Proxy,
     parse,
 )
 from kernel.canon import DecisionRefused
+from kernel.jwt_verify import TokenRefused
 from kernel.ledgerstore import LedgerStore
+from kernel.name_skeleton import disguised, skeleton, visible
 from kernel.osuser import file_owner, os_user
 from kernel.people import PERSONAS, SIGNER, Identity
 from kernel.store import Factory, Project, lock_path, records_lock
 
 SINGLE_NOTE = "single operator: personas are self-declared"
 CHANGED = "access_changed"          # the factory ledger's record of a changed access file
-MIN_SECRET = 32                     # characters in the proxy's shared secret
 ACCESS_DIR = "access"               # the access file's own folder, in projects/_factory
-DEFAULT_SECRET_ENV = "RIHMASTO_PROXY_SECRET"   # the guide's name for it: never passed on either
 # A record a verified identity signed: its identity is local:<os user> or <issuer>#<subject>.
 _SIGNED = re.compile(rb'"identity":"(?:local:|https://)')
 
@@ -82,8 +81,8 @@ class AccessRefused(DecisionRefused):
 
 
 class AccessBroken(AccessRefused):
-    """Access is enforced but cannot be applied (the file cannot be read or checked, or the proxy's
-    secret is not set): every decision is refused until IT fixes it."""
+    """Access is enforced but cannot be applied (the file cannot be read or checked; for the cockpit's
+    sign-in, the provider's key file): what it guards is refused until IT fixes it."""
 
 
 # -- the file ------------------------------------------------------------------------------------------
@@ -125,8 +124,7 @@ def load(factory: Factory, *, record: bool = False, by: str = "the kernel") -> A
     except OSError as exc:
         access = _closed(f"the access file cannot be read ({type(exc).__name__})")
     else:
-        access = _parsed(raw)
-    _seal(DEFAULT_SECRET_ENV, access.proxy.secret_env if access.proxy else None)
+        access = with_keys(path.parent, _parsed(raw))
     if record:
         note_change(factory, access, by)
     return access
@@ -203,7 +201,8 @@ def note_change(factory: Factory, access: Access, by: str, ident: Identity | Non
         last = last_change(factory)
         if last is None:
             return access.sha256 is None and not access.enforced
-        return last.get("sha256") == access.sha256 and last.get("mode") == access.mode
+        return last.get("sha256") == access.sha256 and last.get("mode") == access.mode and \
+            last.get("keys_sha256") == access.keys_sha256
 
     if unchanged():
         return
@@ -217,6 +216,7 @@ def note_change(factory: Factory, access: Access, by: str, ident: Identity | Non
         project.log(CHANGED, {"sha256": access.sha256, "previous": previous, "mode": access.mode,
                               "valid": access.error is None, "error": access.error, "claimed_by": access.changed_by,
                               **_on_disk(access_path(factory) if access.sha256 else None),
+                              "keys_sha256": access.keys_sha256, "keys_error": access.keys_error,
                               "detected_by": by, "detected_as": ident.id if ident else _local_user()})
 
 
@@ -236,44 +236,7 @@ def _local_user() -> str | None:
         return None
 
 
-# -- the proxy's shared secret ---------------------------------------------------------------------------
-
-_SEALED: dict[str, str] = {}                         # variable name -> the secret, kept in memory only
-_SEAL_LOCK = threading.Lock()
-
-
-def _seal(*names: str | None) -> None:
-    """Move these variables out of this process's environment into memory, so nothing it starts
-    inherits them. A value set again in the environment replaces the one kept."""
-    for name in names:
-        if name and name in os.environ:
-            with _SEAL_LOCK:
-                value = os.environ.pop(name, None)
-                if value is not None:
-                    _SEALED[name] = value
-
-
-def seal_secret(factory: Factory) -> None:
-    """Take the proxy's shared secret out of this process's environment before it starts anything:
-    the cockpit, the command line, the MCP and embed servers call it first."""
-    _seal(DEFAULT_SECRET_ENV)
-    with contextlib.suppress(OSError):
-        access = _parsed(access_path(factory).read_bytes())
-        _seal(access.proxy.secret_env if access.proxy else None)
-
-
-def proxy_secret(proxy: Proxy) -> str:
-    _seal(proxy.secret_env)
-    return _SEALED.get(proxy.secret_env, "")
-
-
 # -- identities and grants -------------------------------------------------------------------------------
-
-class Headers(Protocol):
-    """A request's headers (``http.client.HTTPMessage``): every value a header name has."""
-
-    def get_all(self, name: str, failobj: Any = ..., /) -> Any: ...
-
 
 def _usable(access: Access) -> Access:
     if access.error is not None:
@@ -281,41 +244,39 @@ def _usable(access: Access) -> Access:
     return access
 
 
-def identity(access: Access, ident_id: str, *, groups: tuple[str, ...] = (), email: str = "") -> Identity:
-    """The identity with its display name: the access file's, else the proxy's verified email."""
-    name = access.people.get(ident_id) or email or ident_id.rpartition("#")[2] or ident_id
-    return Identity(ident_id, name, tuple(groups))
+def identity(access: Access, ident_id: str, *, groups: tuple[str, ...] = (), email: str = "",
+             expires: float | None = None) -> Identity:
+    """The identity with its display name: the access file's, else the name the verified token carries.
+    A token's name that looks like the name of someone the file lists under another identity (its
+    ``skeleton``: case, spacing, compatibility forms, invisible characters and lookalike letters do not
+    count), or that hides an invisible character or mixes lookalike scripts, is not taken as it is: the
+    subject follows it, "Aino Example (stranger-sub)" (FR-ID4-AC-3, FR-ID5-AC-4)."""
+    listed = access.people.get(ident_id)
+    if listed:
+        return Identity(ident_id, listed, tuple(groups), expires)
+    subject = ident_id.rpartition("#")[2] or ident_id
+    name = (email or subject).strip() or subject
+    if disguised(name) or skeleton(name) in {skeleton(n) for i, n in access.people.items() if i != ident_id}:
+        name = f"{visible(name) or subject} ({subject})"
+    return Identity(ident_id, name, tuple(groups), expires)
 
 
-def _once(headers: Headers, name: str | None) -> str:
-    """The one value of a header the proxy sets. More than one is refused: a proxy that appends its value
-    to a client's copy instead of replacing it would let the client choose."""
-    values = (headers.get_all(name) or []) if name else []
-    if len(values) > 1:
-        raise AccessRefused(f"the request carries the {name} header more than once; the sign-in proxy sets it once")
-    return str(values[0]) if values else ""
-
-
-def from_proxy(access: Access, headers: Headers) -> Identity:
-    """The verified identity of a request IT's proxy forwarded: taken from the configured headers, each
-    sent once, only on a request that also carries the proxy's shared secret (compared in constant time)."""
+def from_proxy(access: Access, headers: Headers, *, now: float | None = None) -> Identity:
+    """The verified identity of a request IT's proxy forwarded: ``<issuer>#<subject>`` of the identity
+    provider's signed token, with its name, groups and expiry (``kernel.access_tokens``). No token, one
+    sent twice or one that does not verify is refused; so is an identity the file grants nothing."""
     proxy = _usable(access).proxy
     if proxy is None:
         raise AccessBroken("access is enforced, but the access file names no proxy")
-    secret = proxy_secret(proxy)
-    if len(secret) < MIN_SECRET:
-        raise AccessBroken(f"access is enforced, but ${proxy.secret_env} holds no proxy secret of at least "
-                           f"{MIN_SECRET} characters on the cockpit's machine: every request is refused")
-    given, user, email, groups = (_once(headers, h) for h in (proxy.secret_header, proxy.user_header,
-                                                              proxy.email_header, proxy.groups_header))
-    if not hmac.compare_digest(given.encode("utf-8"), secret.encode("utf-8")):
-        raise AccessRefused("this request did not come through the organisation's sign-in proxy: "
-                            "its shared secret is missing or wrong")
-    if not SUBJECT.match(user.strip()):
-        raise AccessRefused("the sign-in proxy sent no user")
-    # One value, split at commas: oauth2-proxy joins a claim's values so (docs/guides/access.md).
-    ident = identity(access, f"{proxy.issuer}#{user.strip()}", email=email.strip(),
-                     groups=tuple(g.strip() for g in groups.split(",") if g.strip()))
+    if access.keys_error is not None:
+        raise AccessBroken(f"access is enforced, but {access.keys_error}: nobody can sign in until IT fixes it")
+    try:
+        who = signed_in(access, headers, now=now)
+    except TokenRefused as exc:
+        raise AccessRefused(f"this request did not come through the organisation's sign-in proxy with a valid "
+                            f"token: {exc}") from None
+    ident = identity(access, f"{proxy.issuer}#{who.subject}", groups=who.groups, email=who.name or "",
+                     expires=who.expires + proxy.clock_skew)       # when the cockpit stops taking the token
     if not grants(access, ident):
         raise AccessRefused(f"{ident.id} is granted no persona in the access file; IT can bind one")
     return ident
@@ -382,26 +343,43 @@ def signing(ident: Identity | None) -> Iterator[None]:
 # -- what the surfaces show and the command line's signing ----------------------------------------------
 
 def view(access: Access, ident: Identity | None) -> dict:
-    """The access mode for the cockpit's header: the note, and in enforced mode who is signed in and
-    the personas granted where."""
+    """The access mode for the cockpit's header: the note, and in enforced mode who is signed in, the
+    personas granted where, when the session ends (with the sign-in token) and where untrusted code runs."""
     if not access.enforced:
         return {"mode": SINGLE, "note": SINGLE_NOTE}
     out: dict[str, Any] = {"mode": ENFORCED, "error": access.error}
     if ident is not None:
+        from kernel.access_isolation import describe as isolation
+
+        ends, where = _utc(ident.expires), isolation(access)
+        through = f" through {access.proxy.preset}" if access.proxy else ""
+        at = f"; the session ends with the sign-in token, at {ends[11:16]} UTC on {ends[:10]}" if ends else ""
         out.update(identity=ident.id, name=ident.name, note=f"enforced: signed in as {ident.name}",
                    grants=[{"persona": b.persona, "scope": ALL if ALL in b.scope else list(b.scope)}
-                           for b in grants(access, ident)])
+                           for b in grants(access, ident)], session_ends=ends,
+                   detail=f"Signed in as {ident.name} ({ident.id}){through}{at}. {where[:1].upper()}{where[1:]}.")
     return out
 
 
+def _utc(stamp: float | None) -> str | None:
+    if stamp is None:
+        return None
+    return dt.datetime.fromtimestamp(stamp, dt.UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def describe(access: Access) -> str:
-    """One line for ``rihmasto status``."""
+    """One line for ``rihmasto status``: the mode, the cockpit's sign-in and where untrusted code runs."""
     if not access.enforced:
         return SINGLE_NOTE
     if access.error:
         return f"enforced, but {access.error}: every decision is refused"
+    from kernel.access_isolation import describe as isolation
+
+    proxy = access.proxy
+    sign_in = f"{proxy.preset} tokens ({proxy.algorithm}), " if proxy else ""
+    sign_in += f"but {access.keys_error}" if access.keys_error else f"{len(access.keys)} provider keys"
     return f"enforced: decisions are signed by verified identities ({len(access.people)} people, " \
-           f"{len(access.bindings)} bindings)"
+           f"{len(access.bindings)} bindings); the cockpit's sign-in: {sign_in}; {isolation(access)}"
 
 
 def request_digest(text: str) -> str:
@@ -449,8 +427,16 @@ def cli_signing(factory: Factory, args: argparse.Namespace, command: str) -> Ite
     access is enforced: --person (``new`` and ``intake``: --requested-by) must be that user's name in the
     access file (it is taken when left out) and --persona (for a request: business_owner unless named)
     must be granted where the command acts. Single-operator mode changes nothing. Every command passes
-    here first, so the proxy's shared secret leaves the environment before the command starts anything."""
-    seal_secret(factory)
+    here and runs serving its factory: while access is enforced, the tests, products and Gnomon cells it
+    starts go through IT's isolation runner, or are refused (``kernel.access_isolation``)."""
+    from kernel.access_isolation import serving
+
+    with serving(factory), _cli_signed(factory, args, command):
+        yield
+
+
+@contextlib.contextmanager
+def _cli_signed(factory: Factory, args: argparse.Namespace, command: str) -> Iterator[None]:
     key = "requested_by" if command in REQUESTS else "person"
     if not hasattr(args, key):
         yield

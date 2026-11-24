@@ -416,6 +416,9 @@ class CockpitServer(ThreadingHTTPServer):
         self.port = real_port
         self.origin = f"http://{LOOPBACK}:{real_port}"
         self.host_header = f"{LOOPBACK}:{real_port}"
+        # One trusted HTTPS front (tailscale serve, a company reverse proxy) may reach the loopback cockpit:
+        # its Host and Origin are accepted beside the loopback ones (--public-origin; FR-T1-AC-2).
+        self.public_origin: str | None = None
         if self.embed_base is not None and _origin_of(self.embed_base) == self.origin:
             self.server_close()
             raise ValueError("the embed base names this cockpit; it must name the embed server "
@@ -660,6 +663,8 @@ class CockpitHandler(BaseHTTPRequestHandler):
         hosts = {self.server.host_header}
         if access.enforced and access.proxy is not None:
             hosts.add(urlsplit(access.proxy.origin).netloc)
+        if self.server.public_origin:
+            hosts.add(urlsplit(self.server.public_origin).netloc)
         if self.headers.get("Host", "") not in hosts:
             why = f"access is enforced, but {access.error}" if access.error else \
                 f"open the cockpit at {self.server.origin}/"
@@ -672,6 +677,8 @@ class CockpitHandler(BaseHTTPRequestHandler):
         origins = [self.server.origin]
         if access.enforced and access.proxy is not None:
             origins.append(access.proxy.origin)
+        if self.server.public_origin:
+            origins.append(self.server.public_origin)
         return any(hmac.compare_digest(given, origin) for origin in origins)
 
     def _token_ok(self, identity: Identity | None = None) -> bool:
@@ -2555,6 +2562,17 @@ def assistant_model_for(choice: str | None):
     return GnomonModel(lane, timeout=180), f"The assistant asks Gnomon in the analyst lane ({lane})."
 
 
+def public_origin_of(url: str) -> str:
+    """The origin of a trusted HTTPS front, checked: https only (the sign-in link and the session token
+    must never cross a network in clear), a host, and nothing after it."""
+    parts = urlsplit(str(url).strip())
+    if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
+        raise ValueError(f"--public-origin must be an https:// address with a host, not {url!r}")
+    if parts.path not in ("", "/") or parts.query or parts.fragment:
+        raise ValueError(f"--public-origin is an origin only (no path, query or fragment), not {url!r}")
+    return f"https://{parts.netloc.lower()}"
+
+
 def main(argv: list | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m cockpit.server",
                                      description="The Rihma cockpit, on 127.0.0.1 only.")
@@ -2567,7 +2585,15 @@ def main(argv: list | None = None) -> int:
     parser.add_argument("--embed-base", metavar="URL", default=None,
                         help="the embed server's public address that embed snippets point at "
                              f"(default ${kembeds.EMBED_BASE_ENV}; unset: the local embed server, for testing)")
+    parser.add_argument("--public-origin", metavar="URL", default=None,
+                        help="the https:// address of one trusted front (tailscale serve, a reverse proxy) that "
+                             "forwards to this loopback cockpit; its Host and Origin are accepted")
     args = parser.parse_args(argv)
+    try:
+        public = public_origin_of(args.public_origin) if args.public_origin else None
+    except ValueError as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
     if args.host != LOOPBACK:
         print(f"refused: the cockpit binds to {LOOPBACK} only. From another machine use a tunnel: "
               f"ssh -L {args.port}:127.0.0.1:{args.port} <host>", file=sys.stderr)
@@ -2588,11 +2614,12 @@ def main(argv: list | None = None) -> int:
         print(f"could not listen on {LOOPBACK}:{args.port}: {exc}", file=sys.stderr)
         return 1
     server.quiet = args.quiet
+    server.public_origin = public
     print(f"Rihma cockpit for {factory.home}", flush=True)
     print(note, flush=True)
     print(embed_base_note(embed_base), flush=True)
     print(access_note(factory), flush=True)
-    print(f"Open this link once to sign in: {server.origin}/#k={bootstrap}", flush=True)
+    print(f"Open this link once to sign in: {public or server.origin}/#k={bootstrap}", flush=True)
     print(f"From another machine: ssh -L {server.port}:127.0.0.1:{server.port} <this host>, then open the link.",
           flush=True)
     try:

@@ -69,7 +69,7 @@ CARD_EVENTS = ("card.opened", "card.decided")
 _CARD_ID_KEY = {"card_opened": "id", "card_closed": "id", "decision": "card"}
 # Payload keys whose id-like values an event keeps (a person's name is never one of them).
 ID_KEYS = ("id", "card", "kind", "verdict", "state", "release", "task", "signal", "concept", "environment",
-           "stage", "finding", "embed", "trigger", "system", "source")
+           "stage", "finding", "embed", "trigger", "system", "source", "delegation")
 # Holdout scenario fields that describe the scenario, not what it sends or expects.
 _SCENARIO_META = ("criterion", "kind", "author_role")
 

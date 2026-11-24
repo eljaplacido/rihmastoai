@@ -100,8 +100,11 @@ def run_gnomon_task(cwd: str | Path, prompt: str, *, role: str, timeout: int = 1
     cmd = gnomon_cmd() + ["task", "--task-file", task_file, "--role", role, "--json", "--yes", *extra]
     if deadline:
         cmd += ["--deadline", str(deadline)]
+    from kernel.models_setup import gnomon_env  # a key stored in Models setup reaches Gnomon in its variable
+
     try:
-        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, encoding="utf-8")
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, encoding="utf-8",
+                              env=gnomon_env())
     except subprocess.TimeoutExpired as exc:
         raise ModelError(f"gnomon task --role {role} did not finish in {timeout}s") from exc
     except OSError as exc:  # not installed, or not startable: the apparatus, not the work (FR-C6)

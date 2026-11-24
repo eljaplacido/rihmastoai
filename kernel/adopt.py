@@ -1,7 +1,10 @@
 """Brownfield adoption: an existing solution enters the factory to be monitored, maintained or improved.
 
 `adopt` takes a git repository (a local path, or a URL that `git clone` reads without
-credentials) and makes it a project:
+credentials) and makes it a project. A local folder that is not a git repository is snapshotted
+first into a repository under the factory home (kernel/material_adopt.py), and a folder holding no
+code is refused as material for a new project. The checkout's documents are scanned as context
+(kernel/material.py), and a confidential adoption is held to local models (kernel/confidential.py):
 
 - **Mirror.** The code is fetched into the project's `repo.git`. The upstream's default branch
   at adoption is the **baseline**; `main` is the baseline plus one kernel commit that puts the
@@ -278,7 +281,8 @@ def _git_read(cwd: Path, *args: str) -> str:
 
 
 def check_source(source) -> tuple[str, str]:
-    """('path', absolute path) or ('url', url). Refuses anything that would need a credential."""
+    """('path', absolute path) for a git repository, ('folder', absolute path) for a folder that is not one
+    (kernel/material_adopt.py snapshots it), or ('url', url). Refuses anything that would need a credential."""
     text = str(source or "").strip()
     if not text:
         raise AdoptionRefused("no source given")
@@ -301,9 +305,7 @@ def check_source(source) -> tuple[str, str]:
     if not path.is_dir():
         raise AdoptionRefused(f"{path} is not a directory")
     proc = subprocess.run(["git", "rev-parse", "--git-dir"], cwd=path, capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise AdoptionRefused(f"{path} is not a git repository")
-    return "path", str(path)
+    return ("path" if proc.returncode == 0 else "folder"), str(path)
 
 
 def _default_branch(bare: Path, location: str) -> str:
@@ -893,6 +895,7 @@ class _Request:
     person: str
     persona: str
     maturity: str
+    confidential: bool = False
 
 
 def _label(kind: str, location: str) -> str:
@@ -916,11 +919,13 @@ def _check_request(person: str, persona: str, intent: str, profile: str | None, 
 
 
 def _take(bare: Path, location: str, *, base_url: str | None, timeout: int,
-          which: Callable[[str], str | None], suite_timeout: int = 0) -> dict[str, Any]:
+          which: Callable[[str], str | None], suite_timeout: int = 0, exclude: tuple[str, ...] = ()) -> dict[str, Any]:
     """Everything adoption reads from the upstream, before the project exists: the mirror, a
-    checkout of the baseline with its inventory and characterisation, and the kernel's surface on
-    main. The checkout goes through the credential-free path too, so an LFS filter never reaches
-    the owner's credential helper or a prompt."""
+    checkout of the baseline with its inventory, characterisation and documents (scanned as context,
+    kernel/material.py), and the kernel's surface on main. The checkout goes through the
+    credential-free path too, so an LFS filter never reaches the owner's credential helper or a prompt."""
+    from kernel.material_adopt import context
+
     branch, baseline = _mirror(bare, location, timeout=timeout)
     with tempfile.TemporaryDirectory(prefix="gf-adopt-", ignore_cleanup_errors=True) as tmp:
         scratch = Path(tmp)
@@ -928,9 +933,11 @@ def _take(bare: Path, location: str, *, base_url: str | None, timeout: int,
         work = scratch / "w"
         files = [f for f in _git_read(work, "ls-files", "-z").split("\0") if f]
         inv = inventory(work, files, base_url=base_url) | {"revision": baseline}
+        documents = context(work, exclude)
         character = characterise(work, inv["tests"], timeout=suite_timeout or SUITE_TIMEOUT, which=which)
         surface = _own_surface(bare, scratch, baseline, timeout=timeout)
-    return {"branch": branch, "baseline": baseline, "inventory": inv, "character": character, "surface": surface}
+    return {"branch": branch, "baseline": baseline, "inventory": inv, "character": character, "surface": surface,
+            "material": documents}
 
 
 def _propose(project: Any, title: str, inv: dict[str, Any]) -> dict[str, Any]:
@@ -955,7 +962,8 @@ def _record_source(project: Any, taken: dict[str, Any], req: _Request, profile: 
         "baseline": baseline, "main": surface["revision"], "base_url": req.base_url,
         "adopted_by": {"person": req.person, "persona": req.persona}, "at": project.factory.clock.stamp(),
         "upstream_push": "disabled: remote.upstream.pushurl is not a transport", "profile": profile,
-        "last_upstream": baseline, "last_sync": None})
+        "last_upstream": baseline, "last_sync": None,
+        **({"snapshot": taken["snapshot"]} if taken.get("snapshot") else {})})
     project.update_meta(intent=req.intent, upstream=req.label, baseline=baseline)
     project.log("adopted", {"source": req.label, "source_kind": req.kind, "intent": req.intent, "branch": branch,
                             "baseline": baseline, "base_url": req.base_url, "person": req.person,
@@ -1044,11 +1052,13 @@ def _hold(project: Any, taken: dict[str, Any], req: _Request) -> None:
     """Record an adoption whose upstream was read: the source, the inventory and the baseline, the
     profile, the brief, the as-is spec and contract, the as-is tasks and the stage."""
     from kernel.canon import Canon
+    from kernel.material_adopt import hold
     from kernel.profiles import choose
 
     profile = _propose(project, req.title, taken["inventory"])
     _record_source(project, taken, req, profile)
     _record_baseline(project, taken)
+    hold(project, taken, person=req.person, persona=req.persona, confidential=req.confidential)
     if profile["by"] == "rule":
         choose(project, profile["profile"], basis={k: v for k, v in profile.items() if k != "profile"})
     Canon(project).write_brief(_brief(req.title, intent=req.intent, source_label=req.label, branch=taken["branch"],
@@ -1072,21 +1082,31 @@ def _roll_back(project: Any) -> None:
 def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, persona: str,
           base_url: str | None = None, profile: str | None = None, maturity: str = "production",
           mode: str = "mixed", timeout: int = 600, which: Callable[[str], str | None] = shutil.which,
-          suite_timeout: int = SUITE_TIMEOUT) -> Any:
+          suite_timeout: int = SUITE_TIMEOUT, exclude: tuple[str, ...] = (), confidential: bool = False) -> Any:
     """Adopt an existing solution as a project. Returns the project.
 
     Everything that reads the upstream runs before the project exists, so an unreachable or
     unreadable source leaves nothing; a failure after the project exists removes it again.
-    ``timeout`` bounds each git call; ``suite_timeout`` bounds each detected test suite's run."""
+    ``timeout`` bounds each git call; ``suite_timeout`` bounds each detected test suite's run.
+    A folder that is not a git repository is snapshotted first (kernel/material_adopt.py); ``exclude``
+    drops files from the snapshot and the scanned documents; ``confidential`` keeps it on local models."""
+    from kernel.material_adopt import NoCode, snapshot
+
     _check_request(person, persona, intent, profile, maturity, mode)
     kind, location = check_source(source)
     req = _Request(title=title, kind=kind, label=_label(kind, location), intent=intent, base_url=_base_url(base_url),
-                   person=person, persona=persona, maturity=maturity)
+                   person=person, persona=persona, maturity=maturity, confidential=confidential)
     factory.home.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".adopting-", dir=factory.home))
+    snap: dict[str, Any] | None = None
     try:
+        if kind == "folder":      # the person's folder is never changed: its snapshot is the upstream
+            try:
+                location, snap = snapshot(factory.home, location, exclude)
+            except NoCode as exc:
+                raise AdoptionRefused(str(exc)) from None
         taken = _take(staging / "repo.git", location, base_url=req.base_url, timeout=timeout, which=which,
-                      suite_timeout=suite_timeout)
+                      suite_timeout=suite_timeout, exclude=exclude) | {"snapshot": snap}
         project = factory.new_project(title, maturity=maturity, mode=mode, source_kind="adopted", profile=profile)
         try:
             os.replace(staging / "repo.git", project.path("repo.git"))
@@ -1094,6 +1114,10 @@ def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, pe
         except BaseException:
             _roll_back(project)
             raise
+    except BaseException:
+        if snap:
+            shutil.rmtree(snap["repository"], ignore_errors=True)
+        raise
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     if intent == "monitor" and req.base_url:

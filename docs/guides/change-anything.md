@@ -1,0 +1,97 @@
+# Change anything, go back a step, never get stuck
+
+Nothing you set when you made a project is final. If you picked the wrong kind of work (the template),
+the wrong maturity or mode, or a spec was written from the wrong material, you change it, and Rihmasto
+says what the change means for the work already done before anything is saved. Nothing is deleted: what
+a change sets aside is kept as a superseded version, and the ledger records who changed what, when and
+why (requirement FR-CHG1).
+
+## Project settings
+
+Open a project and press **Project settings** in its header. You can change:
+
+| Setting | What follows it |
+|---|---|
+| Title | the brief and every heading; the ledger keeps the old one |
+| Kind of work | the panel's questions, the checks and the template ([work profiles](profiles.md)) |
+| Mode | who answers the panel's questions: people (`socratic`), the factory (`assume`), or both (`mixed`) |
+| Maturity | which stages and gates run, how big the spec may be, and whether a person approves the plan |
+
+Change a value, give a reason, and press **Preview the impact**. The preview writes nothing. It lists
+what the change means, for example:
+
+- *The questions were asked for "Web app or service": 1 open question no longer fits and is withdrawn
+  when the questions run again for "Integration or connector"; 6 settled answers are kept.*
+- *The spec was written for demo maturity (up to 5 requirements; pilot allows 7): write it again.*
+- *At pilot maturity a person approves the plan before anything is built.*
+
+Where the work no longer fits, the preview offers to go back to the right step at once: the questions
+for a new kind of work, the spec for a new maturity. Under a new mode it offers to let the factory
+assume the open questions the new mode would assume, in your name. **Save the settings** is on only
+once the preview shows the values you are saving.
+
+A business owner, product owner or developer persona changes settings. The posture (prototype,
+balanced, production, regulated) is changed in its own flow; its chip has a marked place in the
+dialog.
+
+From the command line:
+
+```
+rihmasto settings <pid> --kind integration --reason "it connects two systems" --preview --person Aino --persona product_owner
+rihmasto settings <pid> --kind integration --reason "it connects two systems" --redo --person Aino --persona product_owner
+```
+
+## Go back a step
+
+**Go back a step** (in Project settings, or on What's next) sends a project back so a step runs again:
+
+| Back to | What it undoes |
+|---|---|
+| the material | the request itself: the material, the panel's readings, every open question, the spec and the plan are set aside; you add the material again and the intake runs from it |
+| the questions | open questions are withdrawn (their cards decided as withdrawn, with your reason) and the intake runs again over the same material at the next Advance; answers people gave are kept and never asked again |
+| the spec | the spec is kept as a superseded version and written again from the brief; the plan is set aside with it |
+| the plan | the contract is kept as a superseded version and compiled again from the spec; where a person approves the plan, they approve it again |
+
+What a step sets aside moves to `superseded/<n>-<step>/` in the project folder, listed in
+`superseded/index.json`, and the ledger records `rewound` with the person, persona and reason. Holdout
+scenarios of a contract set aside stay in their custody, out of the runs.
+
+A project with a release is never sent back: a released project changes through the change loop (the
+**Changes** view, or `rihmasto change <pid> "..."`), and going back says so.
+
+```
+rihmasto rewind <pid> --to questions --reason "the questions missed the desks" --person Aino --persona product_owner
+```
+
+## Add material
+
+**Add material** takes text, or the path of a file or folder on the cockpit's machine (with access
+enforced, the cockpit takes text only). The original request is kept; the material is added after it
+under its own heading and kept on its own in `material.json`, and the ledger records `material_added`
+with its sha256.
+
+With **Let the panel read it now** (re-intake), the panel reads only the new material, told what was
+asked before: it asks about what is new, never a question already on record, and every answer stands.
+From the cockpit the panel reads it in a run the cockpit starts; from the command line, at once. A
+project with no request yet (or one sent back to its material) takes the material as its request.
+
+```
+rihmasto material add <pid> --path notes/desks.md --note "the desk rules" --reintake --person Aino --persona product_owner
+```
+
+## What's next: never stuck
+
+The overview's **What's next** strip says what the project waits for, who can act, and gives the
+buttons that move it forward:
+
+- a decision card to decide, or a blocking question to answer or let the factory assume;
+- a run that stopped, with **Retry**, and the step to go back to;
+- a step whose input is missing, with **Add material** or **Change the project settings**;
+- a model endpoint that did not answer, with where to set it up (`rihmasto doctor`, `kernel/routing.json`,
+  [running fully local](local-models.md));
+- a paused project with **Resume**, a checkpoint to look at, an autonomy cap to raise, a module to turn on.
+
+Every state the pipeline can stop in maps to at least one action. `rihmasto next <pid>` prints the same
+answer.
+
+See also: [the cockpit](../cockpit.md), [inputs](inputs.md), [work profiles](profiles.md).

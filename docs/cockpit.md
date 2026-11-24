@@ -179,6 +179,7 @@ widget offers its data as a table too, so a value is never only in a chart or a 
 | Activity | What just happened, and who did it? | a feed with person and agent avatars, or people against agents per hour |
 | Builder models | Which models do the work well? | first-round warranted rate per builder model, with n |
 | Project health | Which projects are on track? | health, forecast and now line per project |
+| Staying on track | Is each project on track against its approved plan? | `kernel.track` per project, worst first: on track, at risk, off track or not measured, the first reasons, a checkpoint due and an autopilot holding ([autopilot and tracking](guides/autopilot-and-tracking.md)) |
 | Updates | What changed outside, and what should we try? | update cards, rendered for the lens: the business proposal, the expert sentence, or the developer JSON in Delivery and Insight; Start a trial, Decline or Defer |
 | Autonomy | How far may the factory act alone? | the ladder 1-4 with the cap; a business owner, IT or compliance sets it with a reason |
 | Evidence packs | Can we show it was checked? | each project's attestation and an Export button |
@@ -285,7 +286,29 @@ picks the profile by rule from the words of the need (`propose_profile`) and say
 keyword the rule found inside a longer word is shown with the person's own word ("train" in
 "trainees") and the proposal is marked uncertain. The button keeps the focus once Rihma has read the
 need. Then maturity, mode and who asks. Creating it starts the intake as a job, and the new project's
-heading takes the focus.
+heading takes the focus. The third way to start, **Shape it in chat**, opens a conversation instead of
+the form.
+
+## Shape it in chat
+
+**Shape it in chat** (`#/shape`, from Home's header or New project) is a conversation with Rihma, the
+analyst role, beside a draft brief you can edit: who it is for, the problem, outcomes, scope in and
+out, constraints, data and systems, open questions. Start with nothing, a sentence, a file or a folder.
+Rihma asks one or two questions at a time and its answer arrives a moment after yours (the page reads
+the conversation again until it is in). A field you edited stays yours. The panel under the draft says
+what is still needed; **Create the project from this** asks for the work profile, mode and maturity
+with Rihma's suggestion, creates the project as New project does and starts its intake. With no model
+set up, the chat says so and links to Models setup. Conversations are listed at `#/shape` and resume
+where they were ([guide](guides/shape-in-chat.md)).
+
+## Models setup
+
+**Models setup** (`#/models`, from Settings, or Home's **Set up a model** card while no model answers)
+shows each role (analyst, holdout author, builder, verifier, assistant) with its model, endpoint host,
+local or hosted, its key variable and whether it is set (never the key), and whether it answers.
+**Change** points a role at an OpenAI-compatible endpoint, with presets; **Test** sends a tiny prompt
+and says the latency or the error; **Back to shipped** removes the role from this machine's
+`kernel/routing.local.json` ([guide](guides/models-setup.md)).
 
 ## Projects and the Inbox
 
@@ -309,9 +332,16 @@ question opens its options, the plan opens the plan, a concept opens it on the s
 The header carries the work profile, the title, the maturity and mode, health, the **autonomy
 cap** ("Autonomy 3 · prepare"), the ledger's state, the now line (with the real state: a running
 cell, apparatus failure, ready), a compact stepper of the seven stages with their icons and counts,
-and **Pause** or **Resume** and **Advance**. The views are tabs with icons, in the order the stage
-and the lens bring forward; **Show all views** shows every view. The Overview has the alignment
-panel and the stage counts beside it.
+and **Project settings**, **Pause** or **Resume** and **Advance**. The views are tabs with icons, in the
+order the stage and the lens bring forward; **Show all views** shows every view. The Overview has the
+alignment panel and the stage counts beside it.
+
+- **Project settings** (`data-control="project_settings"`) changes the title, kind of work, mode and
+  maturity with a preview of what the change means for the work done, signed with a reason; from it,
+  **Go back a step** (`rewind_project`) sends the project back to its material, questions, spec or plan,
+  and **Add material** (`add_material`) adds more of the request. The Overview's **What's next**
+  (`next_step`) says what the project waits for, who can act, and has the buttons that move it on
+  ([change anything](guides/change-anything.md)).
 
 - **Tasks** is a board, a timeline (each round on one time axis, coloured by its gate's verdict)
   or a table. Ctrl+B cycles them; the choice is kept per view.
@@ -326,6 +356,17 @@ panel and the stage counts beside it.
 - **Evidence** shows the attestation (attestable, chain broken or insufficient evidence; never
   "compliant"), what the pack holds, the control table (evidenced, partial or not evidenced) and
   **Export evidence pack**.
+- **Track** (also the header's **Track** pill) shows whether the project stays on track against its
+  approved plan, with every figure's basis; the human checkpoints, with **I looked** and, for a plan
+  owner, **Set checkpoints and a budget**; the autopilot in a sandbox, with **Start the autopilot**
+  and **Stop the autopilot**; and the delegations, with **Revoke**
+  ([autopilot and tracking](guides/autopilot-and-tracking.md)).
+- **Outputs** shows what each audience receives: a web app with sign-in, a container, an API
+  description, an MCP server (planned), a delivery report, an evidence pack and the source, each with
+  what it holds and whether it is ready. **Save the choice** (`data-control="choose_outputs"`) records
+  which outputs the project delivers, signed and with a reason; **Build and download**
+  (`build_output`) and **Build every chosen output** (`build_outputs`) build them from the records
+  and the release, each file through a link that works once ([guides/outputs.md](guides/outputs.md)).
 - **Comments**: requirements, criteria, tasks, releases and cards have a **Comment** button that
   opens a small thread. A comment decides nothing; a product owner or business owner may
   **Promote to change**, which files and triages a change card.
@@ -382,6 +423,11 @@ The views as before:
   assumption with a due date. **One at a time** (a toggle in the Questions view, kept in the tab)
   shows only the first open question, with Answer, Let Rihma assume or **Skip for now**, then the
   next: the conversational intake pattern. A skipped question comes back after the others.
+- The **Intake summary** heads the Questions view: how the input was read (a need, a specification,
+  a plan or a folder), then **From your input** (each fact, decision and requirement with its
+  document and lines), **Asked** and **Assumed** side by side, the questions not asked because the
+  input already says it, and the facet checklist with each facet's state
+  ([guides/inputs.md](guides/inputs.md)).
 - **Inbox** and **Changes**: every change card shows **Impact if changed** before the decision
   buttons (FR-P5): the requirements, the criteria with the tests on the product's main that
   name them, the tasks that would reopen, the approvals that would go stale and who gave
@@ -521,9 +567,12 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `POST /api/projects/<pid>/assumptions/<aid>/settle` | `{confirmed, person, persona, correction}` |
 | `POST /api/projects/<pid>/changes` | `{persona, person, text, hint?}`; returns the triage. A report on one Try it check starts its text with `[<criterion id>] ` |
 | `POST /api/projects/<pid>/plan/requirements/<rid>` | `{statement, acceptance: [{given, when, then, kind}], person, persona}` → `kernel.plan.edit_requirement`: the person becomes the requirement's owner, and the plan card is reissued (`kernel.plan.open_card`) where the maturity needs one. A non-person, a persona that may not edit the plan, or a plan already compiled is a 403 and nothing is recorded |
+| `PUT /api/projects/<pid>/settings` · `POST /api/projects/<pid>/settings/preview` | `{title, kind, mode, maturity, reason, redo, person, persona}` → `kernel.project_settings.change`: a business owner, product owner or developer; recorded as `project_changed` with before, after and the impact; `redo` goes back to the step the change no longer fits. The preview takes the same body, is checked the same way and writes nothing ([change anything](guides/change-anything.md)) |
+| `POST /api/projects/<pid>/rewind` | `{to: material \| questions \| spec \| plan, reason, person, persona}` → `kernel.rewind.rewind`; what it sets aside is kept under `superseded/`; a project with a release, or one a job runs for, is a 409 |
+| `POST /api/projects/<pid>/material` | `{text \| path, note, reintake, person, persona}` → `kernel.project_material.add_material`; with `reintake` a run starts and the panel reads the new material first; with access enforced a path is refused (text only). `GET /api/projects/<pid>` carries `next` (`kernel.next_step`) and `change` (the settings, each step and what it would set aside, the material added) |
 | `POST /api/projects/<pid>/pause` | `{person, persona, reason}` → `kernel.safestop.request_pause`; a persona that may not pause is a 403, a project already paused a 409 |
 | `POST /api/projects/<pid>/resume` | `{person, persona}` → `kernel.safestop.resume`; a persona that may not resume is a 403, a project that is not paused a 409 |
-| `POST /api/projects` | `{title, source, profile, mode, maturity, requested_by}`; creates the project with its work profile and starts the intake job |
+| `POST /api/projects` | `{title, source, profile, mode, maturity, requested_by}`; creates the project with its work profile and starts the intake job. An optional `outputs` list is chosen at intake by the requester (`kernel/outputs.py`); a persona that may not choose outputs is refused before the project is made |
 | `POST /api/projects/<pid>/advance` | starts `kernel.cli run` |
 | `GET /api/jobs` | jobs with their state and the last lines of their logs; a finished run carries its `outcome` (the state and reason of the result it printed last), and one the autonomy cap stopped has the state `capped` |
 | `POST /api/links` | a new one-use sign-in link for another tab |
@@ -549,8 +598,19 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `GET /api/projects/<pid>/attestation` | what an export would attest, computed read-only |
 | `POST /api/projects/<pid>/evidence` | `{person, persona}` → `kernel.evidence_pack.export` into `<home>/_cockpit/exports/`; returns the file and a one-time `download` path |
 | `GET /api/exports/<token>` | that export, once, as an attachment, only from the exports folder |
+| `GET /api/projects/<pid>/outputs` · `PUT /api/projects/<pid>/outputs` | the output targets, what each holds, the choice and who made it, the last builds · `{targets, reason, person, persona}` → `kernel.outputs.choose`; a persona that may not choose is a 403 |
+| `POST /api/projects/<pid>/outputs/build` | `{targets, person, persona}` → `kernel.outputs.build` into `<home>/_cockpit/exports/`; each built file with a one-time `download` path; a target nobody chose is a 403 |
 | `GET /api/embeds` · `POST /api/embeds` · `POST /api/embeds/<eid>/revoke` | the embeds, never a key or its hash, with `embed_base` (null when unset) and `embed_base_local`; reading creates nothing · `{kind, origins, project, label, brief, person, persona}` → the embed, its `key` (in this answer only) and the `snippet`, which points at the embed server; a feedback embed on `_factory` is a 400 · revoke; an embed already revoked is a 409 and nothing is recorded |
 | `POST /api/assistant` | `{question, persona, project, view, person, lens}` → `kernel.assistant.ask` with the widget library and the person's layout; records nothing |
+| `GET /api/projects/<pid>/track` · `PUT /api/projects/<pid>/tracking` | the project against its approved plan (`kernel.track.track`), its autopilot and delegations, and its tracking settings; records nothing · `{checkpoints, hold, due, budget, currency, person, persona}`: a plan owner sets them |
+| `POST /api/projects/<pid>/checkpoints/<stage>/look` | `{note, person, persona}`: a person records a look at a checkpoint; a stage not reached is a 403 |
+| `POST /api/projects/<pid>/autopilot` · `POST /api/projects/<pid>/autopilot/stop` | `{kinds, until, rules?, reason, person, persona}` → `kernel.autopilot.start` and a job running `autopilot run`; a kind never delegated or one the persona may not decide is a 403 · `{reason, person, persona}` → `kernel.autopilot.stop` |
+| `POST /api/projects/<pid>/delegations/<DL-n>/revoke` | `{reason, person, persona}` → `kernel.delegation.revoke`; a persona that may not revoke it is a 403 |
+| `GET /api/shape` · `GET /api/shape/<id>` · `POST /api/shape` | the conversations · one with its draft, what is still needed, Rihma's suggestion and the brief · `{text?, attach?, title?, person, persona}` opens one ([Shape it in chat](guides/shape-in-chat.md)) |
+| `POST /api/shape/<id>/say` · `POST /api/shape/<id>/attach` · `PUT /api/shape/<id>/draft` | `{text, person, persona}` · `{attach: {path} or {name, text or data_base64}, person, persona}` · `{draft, person, persona}`; Rihma answers beside the request (`pending` until then); signed, in the factory's ledger |
+| `POST /api/shape/<id>/create` | `{profile?, mode?, maturity?, person, persona}`: the project from the draft, as `POST /api/projects` makes one, its intake a job; `shape_created` in the factory's ledger |
+| `GET /api/models` · `PUT /api/models/<role>` · `POST /api/models/<role>/test` · `POST /api/models/<role>/remove` | each role's model, endpoint, key state and readiness, the presets, `ready` · `{base_url, model, family?, key_env? or key?, keep_fallback?, person, persona}` into `kernel/routing.local.json` (a key never echoed) · a tiny prompt, records nothing · back to the shipped routing ([Models setup](guides/models-setup.md)) |
+| `GET /api/modules` · `PUT /api/modules` · `PUT /api/projects/<pid>/modules` | the catalogue, the presets, the factory's set, the projects' own sets and `new_home`; reading creates nothing · `{preset | modules | inherit, reason, person, persona}` for the factory, or a project's own set; a business owner, product owner, IT, a developer or compliance; recorded in that ledger ([use only what you need](guides/use-only-what-you-need.md)). Any write of a module that is off is a 403 |
 
 Every GET is a read: none of them records a decision, marks an approval stale, appends
 to a ledger or creates Rihma's own canon on a home without one. `<pid>` may also be `_factory`,

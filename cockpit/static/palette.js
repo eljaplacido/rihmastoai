@@ -3,6 +3,7 @@
    and goes back where it was when it closes. */
 
 import { S, $, h, fill, api, plural, link, closeModal, PAGES, VIEWS, FACTORY_VIEWS, KIND_LABEL, icon } from "./core.js";
+import { pageOn, viewOn } from "./modules.js";
 
 const PAL = { items: [], shown: [], active: 0, opener: null };
 
@@ -26,7 +27,7 @@ function projectViews(pv) {
 }
 
 function items() {
-  const out = Object.entries(PAGES).map(([k, v]) => ({ group: "Page", label: v.label, icon: v.icon, href: PAGE_HREF[k],
+  const out = Object.entries(PAGES).filter(([k]) => pageOn(k)).map(([k, v]) => ({ group: "Page", label: v.label, icon: v.icon, href: PAGE_HREF[k],
     sub: { home: "the dashboard for your lens", square: "the delivery square", catalogue: "every capability",
       projects: "every project and what it is doing", inbox_all: "what waits on you across projects",
       floor: "how the factory performs", jobs: "background runs started here", settings: "embeds, appearance, sign-in links" }[k] }));
@@ -35,7 +36,7 @@ function items() {
   const cur = S.route && S.route.name === "project" ? S.project : null;
   if (cur) {
     const pid = cur.meta.id;
-    const views = cur.meta.factory ? FACTORY_VIEWS : projectViews(S.projectViews);
+    const views = cur.meta.factory ? FACTORY_VIEWS : projectViews(S.projectViews).filter((v) => viewOn(v, pid));
     views.forEach((v) => out.push({ group: "View", icon: VIEWS[v].icon, label: VIEWS[v].label, sub: cur.meta.title, href: link(pid, v) }));
     (cur.open_cards || []).forEach((c) => out.push({ group: "Open card", icon: "inbox",
       label: c.id + " · " + (KIND_LABEL[c.kind] || c.kind) + ": " + c.title, sub: cur.meta.title, href: cardHref(pid, c) }));

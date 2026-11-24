@@ -3,13 +3,41 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from kernel import lanes
 from kernel.model import FakeModel
-from kernel.store import Factory, FixedClock
+from kernel.models_setup import SECRETS_ENV
+from kernel.store import REPO_ROOT, Factory, FixedClock
+
+# The key variables a test of Models setup must not find set on the machine that runs it.
+KEY_VARS = ("OPENCODE_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "RIHMASTO_KEY_ANALYST",
+            "RIHMASTO_KEY_ASSISTANT", "RIHMASTO_KEY_BUILDER")
+
+
+def isolated_routing(case: unittest.TestCase, tmp: Path) -> Path:
+    """The shipped routing copied to ``tmp``, the machine's overlay and the stored keys there too, and no key
+    variable set, until ``case`` ends: a test of Models setup never writes this checkout's routing or reads
+    this machine's keys. Returns the folder."""
+    folder = Path(tmp) / "routing"
+    folder.mkdir(parents=True, exist_ok=True)
+    if not (folder / "routing.json").exists():
+        shutil.copyfile(REPO_ROOT / "kernel" / "routing.json", folder / "routing.json")
+    for name, path in (("ROUTING_FILE", folder / "routing.json"), ("ROUTING_LOCAL_FILE", folder / "routing.local.json")):
+        patcher = mock.patch.object(lanes, name, path)
+        patcher.start()
+        case.addCleanup(patcher.stop)
+    env = mock.patch.dict(os.environ, {SECRETS_ENV: str(folder / "secrets.json")})
+    env.start()
+    case.addCleanup(env.stop)
+    for name in KEY_VARS:
+        os.environ.pop(name, None)
+    return folder
 
 PANEL = {
     "business": [

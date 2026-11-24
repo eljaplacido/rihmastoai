@@ -16,6 +16,7 @@ import {
   VERDICT_LABEL, KIND_LABEL, FACTORY_PID, link,
 } from "./core.js";
 import { previewProposal, previewing, keepPreview, undoPreview } from "./dashboard.js";
+import { suggestionOn } from "./modules.js";
 
 const A = {
   convs: {}, key: null, queue: [], current: null, busy: false, tick: null, embedCheck: new WeakMap(),
@@ -130,7 +131,7 @@ function suggestions() {
     };
     if (byLens[S.lens]) out.push(byLens[S.lens]);
     out.push("Where do I make a chat for a website?");
-    return unique(out).slice(0, 5);
+    return unique(out).filter(suggestionOn).slice(0, 5);   // nothing about a module that is off
   }
   if (inProject && !factory) out.push("Where do I approve the plan?", "How is the current run going?");
   else out.push("What is waiting on me?");
@@ -145,7 +146,7 @@ function suggestions() {
   (byLens[S.lens] || []).forEach((q) => out.push(q));
   if (!inProject) out.push("Use a compact teal theme");
   out.push("Make a feedback chat for our website");
-  return unique(out).slice(0, 5);
+  return unique(out).filter(suggestionOn).slice(0, 5);
 }
 
 // -- sources -------------------------------------------------------------------------------------------

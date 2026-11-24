@@ -12,14 +12,29 @@ built and what is not.
 - [The demo](demo.md): what the demo factory holds, and what each persona sees in it.
 - [How it works](how-it-works.md): the chain step by step, the delivery square, personas and
   lenses, and what Gnomon does beside the kernel.
+- [Use only what you need](guides/use-only-what-you-need.md): the modules and the presets (spec only,
+  gate my code, assess, security or evidence only, a capability, the full factory), and changing them.
 
 ## Business owners and product owners
 
 - [Signals, concepts and updates](guides/signals-and-concepts.md): how needs and outside events
   arrive, and how a person decides what becomes work.
+- [Shape it in chat](guides/shape-in-chat.md): work out a need with Rihma in conversation, from
+  nothing, a sentence or a file, with a draft brief you edit, then create the project from it.
+- [Inputs: any input, from any author](guides/inputs.md): how a need, a specification, a plan or a
+  folder is read, what is never asked again, how the gaps are asked, and the intake summary.
 - [The autonomy ladder](guides/autonomy.md): how far the factory may go on its own, and who sets
   the cap.
+- [Autopilot, delegation and staying on track](guides/autopilot-and-tracking.md): let Rihmasto run
+  on its own in a sandbox, or keep a tight hold with checkpoints, and see whether a project stays on
+  track against its approved plan.
 - [Work profiles](guides/profiles.md): the kinds of work, and what each one asks.
+- [Change anything, go back a step, never get stuck](guides/change-anything.md): change a project's
+  kind of work, mode, maturity or title with a preview of what it means, send it back to its material,
+  questions, spec or plan, add material later, and see what it waits for.
+- [Outputs](guides/outputs.md): what each audience receives (a web app with sign-in, a container,
+  an API description, a delivery report, an evidence pack, the source), chosen by a person and built
+  from the records.
 - [The capability layer](capability-layer.md): what Rihmasto delivers, besides software, and who
   sees what.
 - [The whole delivery](factory-overview.md) (*design*): the seven stages, the delivery square and
@@ -47,6 +62,8 @@ built and what is not.
 
 ## IT and operations
 
+- [Models setup](guides/models-setup.md): which model answers for each role (a local server or a
+  hosted OpenAI-compatible provider), its key, and a Test, from the cockpit or `rihmasto models`.
 - [Access](guides/access.md): who may decide as which persona. Single-operator and enforced modes,
   the access file, and setting up an identity-aware proxy (oauth2-proxy with Entra ID, Okta, Google
   or Keycloak; Google IAP; an AWS load balancer).

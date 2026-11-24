@@ -1,0 +1,3 @@
+Palaverimuistio 12.11.
+Käyttäjiä ovat kaikki toimiston työntekijät; vierailijat eivät varaa huoneita itse.
+Kirjautuminen tapahtuu organisaation kertakirjautumisella.

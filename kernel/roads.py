@@ -64,13 +64,24 @@ LAUNCH = ["-c", "from app.server import main; main()"]
 CONTAINER_DATA = "/data"
 CONTAINER_TRAFFIC = "/data/traffic.jsonl"
 
-# An explore preview never leaves the kernel's machine, so it needs no road from IT.
+# An explore preview never leaves the kernel's machine, so it needs no road from IT. It is a sandbox.
 BUILTIN_ROADS = {
-    "local-preview": {"kind": "local-process", "configured": True, "environments": ["preview"],
+    "local-preview": {"kind": "local-process", "configured": True, "environments": ["preview"], "sandbox": True,
                       "rules": {"network": "loopback only", "tls": "none: a local preview", "egress": "none"},
                       "note": "built in: an explore preview runs on the kernel's machine only"},
 }
 BUILTIN_MATURITY = {"explore": "local-preview"}
+# Where a sandbox autopilot run may deliver (kernel/autopilot.py): a road marked `"sandbox": true`, for
+# one of these environments. Staging and production are never a sandbox, whatever a road says.
+SANDBOX_ENVS = ("preview", "demo")
+
+
+def is_sandbox(cfg: dict | None, env: str) -> bool:
+    """Whether delivering to ``env`` on the road configured as ``cfg`` stays inside a sandbox: the road is
+    marked `"sandbox": true` (by IT in paved_roads.json, or the built-in local preview) and ``env`` is a
+    preview or a demo."""
+    return isinstance(cfg, dict) and cfg.get("sandbox") is True and env in SANDBOX_ENVS
+
 
 SECRET_NAME = re.compile(r"(?i)(secret|passw|token|api[_-]?key|private[_-]?key|connection[_-]?string|credential)")
 _STARTED: dict = {}  # pid -> Popen, for the processes this kernel started

@@ -16,6 +16,9 @@ import { renderProject, renderFloor, renderJobs, stopLive, startLive, LIVE, cycl
 import { renderSquare, renderCatalogue, renderProjectsPage, renderInboxAll, renderSettings, newProjectModal, openEmbedForm } from "./screens.js";
 import { openPalette, wirePalette } from "./palette.js";
 import { wireAssistant, openAssistant, closeAssistant, assistantOpen, onRouteChange } from "./assistant.js";
+import { loadModules, pageOn, firstRun, offPage, moduleShows } from "./modules.js";
+import { renderShape } from "./shape.js";
+import { renderModels } from "./models.js";
 
 applyTheme(Object.assign({}, THEME_DEFAULT, localJSON("gf.theme", {})));
 
@@ -304,7 +307,7 @@ function drawSidebar() {
   const running = (S.projects || []).filter((p) => p.running).length;   // a running cell, never a guess
   const waiting = S.inboxCount ? S.inboxCount + " waiting on you" : "";
   const live = running === 1 ? "1 cell running now" : running + " cells running now";
-  fill($("#sb-nav"), NAV_ORDER.map((id) => {
+  fill($("#sb-nav"), NAV_ORDER.filter(pageOn).map((id) => {   // only the pages of modules that are on
     if (id === "inbox_all" && S.inboxCount) {
       return navItem(id, h("span", { class: "count", "aria-label": waiting }, String(S.inboxCount)), waiting);
     }
@@ -328,7 +331,8 @@ function drawSidebar() {
     fill(sbp);
   }
   fill($("#sb-foot"), navItem("settings"));
-  fill($("#bottombar"), [["home", "Home"], ["square", "Square"], ["inbox_all", "Inbox"], ["projects", "Projects"]].map(([id, lbl]) => {
+  $("#sb-new").hidden = !moduleShows("controls", "new_project");   // a new project starts with the intake module
+  fill($("#bottombar"), [["home", "Home"], ["square", "Square"], ["inbox_all", "Inbox"], ["projects", "Projects"]].filter(([id]) => pageOn(id)).map(([id, lbl]) => {
     const on = S.route && S.route.name === id;
     return h("a", { href: PAGE_ROUTE[id], class: on ? "on" : null, "aria-current": on ? "page" : null }, icon(PAGES[id].icon),
       h("span", null, lbl), id === "inbox_all" && S.inboxCount ? h("span", { class: "count", "aria-label": waiting }, String(S.inboxCount)) : null);
@@ -493,13 +497,14 @@ function parseRoute() {
     return { name: "project", pid: parts[1], view, focus: parts[3] || null };
   }
   const name = parts[0] === "inbox" ? "inbox_all" : parts[0];
+  if (name === "shape") return { name, id: parts[1] || null };   // a conversation: #/shape/SH-001
   if (TOP_PAGES.includes(name)) return { name };
   return { name: "home" };
 }
 
 const RENDER = {
   home: renderHome, square: renderSquare, catalogue: renderCatalogue, projects: renderProjectsPage, inbox_all: renderInboxAll,
-  floor: renderFloor, jobs: renderJobs, settings: renderSettings,
+  floor: renderFloor, jobs: renderJobs, settings: renderSettings, shape: renderShape, models: renderModels,
 };
 void PAGE_ROUTES;
 
@@ -510,7 +515,8 @@ async function route(keep) {
   LIVE.el = null;
   closeMenu();
   const r = parseRoute();
-  const same = S.route && S.route.name === r.name && S.route.pid === r.pid && S.route.view === r.view && S.route.focus === r.focus;
+  const same = S.route && S.route.name === r.name && S.route.pid === r.pid && S.route.view === r.view && S.route.focus === r.focus
+    && S.route.id === r.id;
   S.route = r;
   keepGrantedPersona();
   const seq = ++S.seq;
@@ -525,6 +531,8 @@ async function route(keep) {
     if (r.name === "project") {
       const shown = await renderProject(r, keep || same, seq);
       if (shown && !keep && !same) showFocus(r.focus);
+    } else if (!pageOn(r.name)) {
+      offPage(r.name);                       // a page whose module is off says so, and where to turn it on
     } else {
       await RENDER[r.name](seq);
     }
@@ -615,6 +623,7 @@ async function start() {
     if (!(e instanceof AuthError)) say(e.message, "critical");
     return;
   }
+  await loadModules().catch(() => null);   // the parts of Rihmasto in use; everything shows until read
   started = true;
   document.documentElement.classList.remove("signed-out");
   const saved = store.get("gf.persona");
@@ -624,7 +633,8 @@ async function start() {
   drawAccess();
   drawPersonChip();
   drawLens();
-  route();
+  await route();
+  firstRun();                              // a new factory home: where to start (kernel/modules.py presets)
 }
 
 async function boot() {

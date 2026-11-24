@@ -110,6 +110,8 @@ Every tool answers with JSON as text (`content: [{type: "text", text}]`) and the
 | `rihma_timeline` | `pid` | Each task's rounds: start, end, model and gate verdict, and when it merged or escalated. |
 | `rihma_evidence` | `pid` | Each criterion with its evidence state (verified, claimed, held out, failing, not measured), what the state rests on, and the criterion's text. |
 | `rihma_square` | none | The delivery square: signals waiting, concepts to validate, projects per stage band, end-user feedback waiting for triage, what runs in production. |
+| `rihma_track` | `pid` (optional) | How a project is doing against its approved plan: on track, at risk, off track or not measured, with each reason and every figure's basis, and the checkpoints due; without `pid`, every project's line ([autopilot and tracking](guides/autopilot-and-tracking.md)). |
+| `rihma_autopilot` | `pid` | The project's autopilot run, the sandbox it is bound to, its delegations, the cards they decided and the ones they left to a person. Starting or stopping one is a person's act, in the cockpit or the command line. |
 | `rihma_ask` | `question`, `pid` (optional) | "Where is…" and "how is it going" answers from the cockpit's own map (`kernel.assistant.ask` with no model). It proposes nothing; the answer notes that decisions are made in the cockpit. |
 | `rihma_report_change` | `pid`, `text` | Opens a change card (`kernel.change.submit`), classified by rule as the cockpit does. A change that needs a business decision waits on a product or business owner. |
 | `rihma_comment` | `pid`, `target_kind`, `target_id`, `text` | A comment on a requirement, criterion, task, release, card or the project (`Canon.comment`). It decides nothing; an owner may promote it into a change. |

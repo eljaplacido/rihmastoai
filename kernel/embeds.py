@@ -218,7 +218,19 @@ def check(factory: Factory, embed_id: str, key: str, origin: str | None) -> dict
         raise EmbedRefused("wrong key")
     if (origin or "").rstrip("/").lower() not in e["origins"]:
         raise EmbedRefused("this website is not allowed to use the embed")
+    if turned_off(factory, e):
+        raise EmbedRefused("this chat is turned off")
     return e
+
+
+def turned_off(factory: Factory, e: dict) -> str | None:
+    """The module that is off where this embed files (FR-MOD5): Integrations, and what it files into, the
+    change loop on its project for feedback or the delivery square for a need. A chat that is off takes no
+    message; revoking it stays open to its owners (a core command and route, kernel/modules.py)."""
+    from kernel import modules
+
+    return modules.first_off(factory, ("integrations", "change" if e["kind"] == "feedback" else "square"),
+                             e.get("project"))
 
 
 def _reply_prompt(e: dict, title: str, history: list) -> str:

@@ -204,6 +204,11 @@ DELIVERABLES = {
     "capability_pack": "a capability pack: agent, harness, prompts, tools and pinned models, with its evals",
     "report": "a report with an evidence pack, produced by an ops agent",
 }
+# The outputs each kind of deliverable proposes to its audiences (kernel/outputs.py): a proposal until a
+# person chooses, never a choice.
+OUTPUTS = {"product": ["container", "api", "report", "source"],
+           "capability_pack": ["container", "api", "mcp_server", "report", "evidence_pack"],
+           "report": ["report", "evidence_pack"]}
 
 DEFAULT_PROFILE = "web_service"
 # The confidence rule. A best score under CLEAR_SCORE rests on too few words to be sure; a lead of

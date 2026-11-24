@@ -11,12 +11,14 @@ show says "not measured", never zero.
 | Task timeline | How did each task go? | `timeline(project)`: per task, its rounds with start, end and verdict |
 | Activity | What just happened, and who did it? | `activity(factory)`: recent events, person or agent |
 | Evidence coverage | How much is proven rather than claimed? | `coverage(factory)`: evidence states per project |
+| Staying on track | Is each project on track against its plan? | `tracking(factory)`: kernel/track.py per project |
 """
 
 from __future__ import annotations
 
 import datetime as dt
 from collections import Counter, defaultdict
+from typing import Any
 
 from kernel.canon import Canon
 from kernel.store import STAGES, Project
@@ -221,3 +223,14 @@ def catalogue(factory) -> dict:
                       "profile": c["payload"]["profile"], "card": c["id"], "pack": None})
     counts = {s: sum(1 for i in items if i["state"] == s) for s in CATALOGUE_STATES}
     return {"items": items, "counts": counts}
+
+
+def tracking(factory: Any) -> dict[str, Any]:
+    """Each project against its approved plan (kernel/track.py), worst first: its answer, first reasons,
+    checkpoints due and autopilot; and how many projects give each answer."""
+    from kernel.track import STATES, summary
+
+    worst = {"off_track": 0, "at_risk": 1, "on_track": 2, "not_measured": 3}
+    rows = sorted((summary(p) for p in _projects(factory)), key=lambda r: (worst[r["state"]], r["title"] or ""))
+    return {"projects": rows, "counts": {s: sum(1 for r in rows if r["state"] == s) for s in STATES},
+            "autopilots": sum(1 for r in rows if r["autopilot"].get("holding"))}

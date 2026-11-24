@@ -81,16 +81,32 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from cockpit.shape_routes import ROUTES as CHAT_ROUTES
+from cockpit.shape_routes import UNLOCKED as CHAT_UNLOCKED
+from cockpit.shape_routes import ChatRoutes
 from kernel import access as kaccess
 from kernel import assistant as kassistant
 from kernel import autonomy as kautonomy
+from kernel import autopilot as kautopilot
+from kernel import confidential as kconfidential
 from kernel import dashboard as kdash
+from kernel import delegation as kdelegation
 from kernel import embeds as kembeds
 from kernel import evidence_pack as kevidence
+from kernel import input_summary as kinputs
+from kernel import material as kmaterial
+from kernel import outputs as koutputs
+from kernel import modules as kmodules
+from kernel import next_step as knext
 from kernel import packs as kpacks
 from kernel import plan as kplan
 from kernel import profiles as kprofiles
+from kernel import project_material as kadded
+from kernel import project_settings as ksettings
+from kernel import rewind as krewind
 from kernel import signals as ksignals
+from kernel import source_guard as ksource
+from kernel import track as ktrack
 from kernel.canon import CARD_DECIDERS, CARD_VERDICTS, PERSPECTIVES, Canon, DecisionRefused
 from kernel.change import CLASSES, NEEDS_DECISION, WAY_BACK, submit, triage
 from kernel.insight import alignment, change_impact, impact
@@ -191,20 +207,22 @@ WIDGETS = {
     "feed_health": ("Feed health", "plug", "Are the integration feeds fresh?"),
     "eval_trend": ("Eval trend", "flask", "Do the evals still hold?"),
     "try_it": ("Try it", "play", "What can people try right now?"),
+    "track": ("Staying on track", "flag", "Is each project on track against its approved plan?"),
 }
 # Read-only presets per lens; a person's first edit duplicates one into a personal layout.
 LENS_DEFAULTS = {
-    "business": [("kpi_strip", "L"), ("decisions", "M"), ("catalogue", "M"), ("square", "L"), ("health", "M"),
-                 ("activity", "M")],
+    "business": [("kpi_strip", "L"), ("decisions", "M"), ("catalogue", "M"), ("square", "L"), ("track", "M"),
+                 ("health", "M"), ("activity", "M")],
     "concept": [("decisions", "M"), ("square", "M"), ("coverage", "M"), ("pipeline", "M")],
     "delivery": [("live", "M"), ("gate_trend", "M"), ("timeline", "L"), ("decisions", "M"), ("activity", "M")],
-    "operations": [("health", "M"), ("updates", "M"), ("decisions", "M"), ("activity", "M"), ("spend", "L")],
+    "operations": [("health", "M"), ("track", "M"), ("updates", "M"), ("decisions", "M"), ("activity", "M"),
+                   ("spend", "L")],
     "compliance": [("evidence_packs", "L"), ("autonomy", "M"), ("coverage", "M"), ("activity", "M"), ("updates", "M")],
     "insight": [("kpi_strip", "L"), ("gate_trend", "M"), ("models", "M"), ("coverage", "M"), ("spend", "M"),
                 ("pipeline", "L")],
 }
 # The view a preset shows first: a list where the widget is a list of things, else its chart.
-LIST_FIRST = {"decisions", "catalogue", "live", "activity", "health", "updates", "evidence_packs", "try_it"}
+LIST_FIRST = {"decisions", "catalogue", "live", "activity", "health", "updates", "evidence_packs", "try_it", "track"}
 MAX_WIDGETS = 24
 LAYOUT_VIEWS = ("chart", "table", "list")
 EXPORT_TTL = 600             # seconds a one-time download link stays valid
@@ -250,7 +268,7 @@ EVIDENCE_STATES = ("verified", "held_out", "claimed", "failing", "not_measured")
 # in a role, or the kernel's own rule. The model is shown where the ledger records one.
 AGENT_ROLE = {
     "intake_done": "analyst", "question_added": "analyst", "opinion_added": "analyst", "spec_written": "analyst",
-    "holdouts_authored": "holdout author", "cell_ran": "builder",
+    "holdouts_authored": "holdout author", "cell_ran": "builder", "input_refined": "analyst",
 }
 PERSON_KEYS = ("person", "by", "chosen_by", "stopped_by", "accepted_as_is_by")
 
@@ -289,6 +307,9 @@ ROUTES = [
     ("GET", rf"/api/projects/{PID}/comments", "get_comments"),
     ("GET", rf"/api/projects/{PID}/pack", "get_pack"),
     ("GET", rf"/api/projects/{PID}/attestation", "get_attestation"),
+    ("GET", rf"/api/projects/{PID}/outputs", "get_outputs"),
+    ("PUT", rf"/api/projects/{PID}/outputs", "put_outputs"),
+    ("POST", rf"/api/projects/{PID}/outputs/build", "post_outputs_build"),
     ("POST", r"/api/signals", "post_signal"),
     ("POST", rf"/api/signals/{SIGNAL_ID}/triage", "post_signal_triage"),
     ("POST", rf"/api/concepts/{CARD_ID}/edit", "post_concept_edit"),
@@ -303,7 +324,12 @@ ROUTES = [
     ("PUT", r"/api/layout", "put_layout"),
     ("PUT", r"/api/autonomy", "put_autonomy"),
     ("PUT", rf"/api/projects/{PID}/autonomy", "put_project_autonomy"),
+    ("GET", r"/api/modules", "get_modules"),      # the parts of Rihmasto in use (kernel/modules.py)
+    ("PUT", r"/api/modules", "put_modules"),
+    ("PUT", rf"/api/projects/{PID}/modules", "put_project_modules"),
     ("POST", r"/api/projects", "post_project"),
+    ("POST", r"/api/adopt", "post_adopt"),
+    ("POST", r"/api/source/preview", "post_source_preview"),   # a folder's material map; records nothing
     ("POST", rf"/api/projects/{PID}/cards/(?P<cid>C-\d{{1,9}})/decide", "post_decide"),
     ("POST", rf"/api/projects/{PID}/questions/(?P<qid>Q-\d{{1,9}})/answer", "post_answer"),
     ("POST", rf"/api/projects/{PID}/questions/(?P<qid>Q-\d{{1,9}})/assume", "post_assume"),
@@ -313,12 +339,23 @@ ROUTES = [
     ("POST", rf"/api/projects/{PID}/plan/requirements/{RID}", "post_plan_requirement"),
     ("POST", rf"/api/projects/{PID}/pause", "post_pause"),
     ("POST", rf"/api/projects/{PID}/resume", "post_resume"),
+    # change anything set at creation, go back a step, add material (FR-CHG1)
+    ("PUT", rf"/api/projects/{PID}/settings", "put_settings"),
+    ("POST", rf"/api/projects/{PID}/settings/preview", "post_settings_preview"),
+    ("POST", rf"/api/projects/{PID}/rewind", "post_rewind"),
+    ("POST", rf"/api/projects/{PID}/material", "post_material"),
+    ("GET", rf"/api/projects/{PID}/track", "get_track"),
+    ("PUT", rf"/api/projects/{PID}/tracking", "put_tracking"),
+    ("POST", rf"/api/projects/{PID}/checkpoints/(?P<stage>[2-7])/look", "post_checkpoint_look"),
+    ("POST", rf"/api/projects/{PID}/autopilot", "post_autopilot_start"),
+    ("POST", rf"/api/projects/{PID}/autopilot/stop", "post_autopilot_stop"),
+    ("POST", rf"/api/projects/{PID}/delegations/(?P<did>DL-\d{{1,9}})/revoke", "post_delegation_revoke"),
     ("POST", r"/api/links", "post_link"),
 ]
-ROUTES = [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ROUTES]
+ROUTES = [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ROUTES + CHAT_ROUTES]   # Shape it in chat, Models
 # Writes that record nothing (the assistant only proposes; a profile proposal is a rule over text).
 # They run outside the write lock, so a slow model call never holds up a decision.
-UNLOCKED = {"post_assistant", "post_profile_propose"}
+UNLOCKED = {"post_assistant", "post_profile_propose", "post_source_preview", *CHAT_UNLOCKED}
 
 
 class FileResponse:
@@ -392,6 +429,8 @@ class CockpitServer(ThreadingHTTPServer):
         self.runner = runner if runner is not None else SubprocessRunner(factory.home)
         # The assistant's model (kernel.model.Model), or None: then it answers from the cockpit map.
         self.assistant_model = assistant_model
+        # Shape it in chat's model (the analyst role), or None: then the chat says no model is set up.
+        self.shape_model = None
         # Where websites reach the embed server: an embed's snippet points there, never at the cockpit.
         self.embed_base = kembeds.embed_base(embed_base)
         self.quiet = True
@@ -842,6 +881,8 @@ class CockpitHandler(BaseHTTPRequestHandler):
         api = Api(self.server, access, identity)
         try:
             with kaccess.signing(identity):     # enforced access: the records name the identity
+                if method != "GET":             # a write of a module not enabled there is refused (FR-MOD2)
+                    kmodules.require_route(self.server.factory, name, match.groupdict().get("pid"))
                 status, out = getattr(api, name)(body=body, query=query, **match.groupdict())
         except ApiError as exc:
             return self._error(exc.status, exc.message)
@@ -933,7 +974,7 @@ def _written_pack(project: Project) -> tuple[dict | None, dict | None]:
     return (pack if isinstance(pack, dict) else None), latest
 
 
-class Api:
+class Api(ChatRoutes):
     def __init__(self, server: CockpitServer, access: kaccess.Access | None = None,
                  identity: Identity | None = None):
         self.server = server
@@ -1152,6 +1193,14 @@ class Api:
             "autonomy": {"levels": {str(n): {"name": kautonomy.LEVELS[n], "meaning": kautonomy.MEANING[n]}
                                     for n in kautonomy.LEVELS}, "setters": list(kautonomy.SETTERS)},
             "update_triggers": {k: v["label"] for k, v in TRIGGERS.items()},
+            # autopilot, delegation and tracking (kernel/autopilot.py, kernel/delegation.py, kernel/track.py)
+            "autopilot": {"may_run": list(kautopilot.MAY_RUN), "rules": kdelegation.RULES,
+                          "never": kdelegation.NEVER, "max_days": kdelegation.MAX_DAYS,
+                          "track_setters": list(ktrack.SETTERS), "checkpoint_lookers": list(ktrack.LOOKERS)},
+            # who changes a project's settings or sends it back a step, and who adds material (FR-CHG1)
+            "change": {"changers": list(krewind.CHANGERS), "material_adders": list(kadded.ADDERS),
+                       "steps": [{"id": s, "undoes": krewind.UNDOES[s]} for s in krewind.STEPS]},
+            "chat_model": self.server.shape_model is not None,
             "assistant": "map" if self.server.assistant_model is None
             else "gnomon" if type(self.server.assistant_model).__name__ == "GnomonModel" else "model",
         }
@@ -1222,6 +1271,8 @@ class Api:
             "goal": canon.goal,
             "brief": canon.brief,
             "readings": self._read(project, "readings.json", {}, problems),
+            # what the input stated, what was asked, what was assumed (docs/guides/inputs.md)
+            "intake_summary": kinputs.summary(project, self._read(project, "inputs.json", None, problems) or {}),
             "questions": [self._question_view(q, canon) for q in canon.questions()],
             "assumptions": assumptions,
             "decisions": decisions,
@@ -1238,10 +1289,31 @@ class Api:
             "profile": kprofiles.public(meta.get("profile") or kprofiles.DEFAULT_PROFILE)
             if (meta.get("profile") or kprofiles.DEFAULT_PROFILE) in kprofiles.PROFILES else None,
             "autonomy": None if pid == FACTORY_PID else self._autonomy_of(project),
+            "track": None if pid == FACTORY_PID else self._status(ktrack.summary, project, problems),
             "running": self._running(project),
             "last_cell": None if pid == FACTORY_PID else self._last_cell(project),
+            **self._next_and_change(project, problems),     # what it waits for, what may change (FR-CHG1)
             "problems": problems,
         }
+
+    def _next_and_change(self, project: Project, problems: list) -> dict:
+        """``next`` (kernel/next_step.py) and ``change`` (the settings, steps and material) of a project; None
+        for Rihma's own canon, which has neither."""
+        if project.pid == FACTORY_PID:
+            return {"next": None, "change": None}
+        return {"next": self._status(self._next_of, project, problems),
+                "change": self._status(self._change_view, project, problems)}
+
+    @staticmethod
+    def _change_view(project: Project) -> dict:
+        """The settings as they stand, each step a person may go back to and what it would set aside, and the
+        material added so far (its notes, not its text)."""
+        added = kadded.material(project)["added"]
+        return {"settings": ksettings.current(project),
+                "steps": [{k: v for k, v in krewind.preview(project, s).items() if k != "steps"}
+                          for s in krewind.STEPS],
+                "material": [{k: a.get(k) for k in ("n", "note", "chars", "by", "at", "path")} for a in added],
+                "superseded": krewind.superseded(project)}
 
     @staticmethod
     def _contract_summary(contract, spec=None) -> dict | None:
@@ -1550,10 +1622,19 @@ class Api:
             raise ApiError(400, f"profile must be one of {', '.join(kprofiles.PROFILES)}")
         requested_by, persona = self._sign(requested_by, persona, FACTORY_PID)
         _require_person(requested_by, persona)
+        outputs = self._intake_outputs(body, persona)
+        source, scanned, secret = self._folder_request(body, source, persona)
         try:
             project = self.factory.new_project(title, maturity=maturity, mode=mode, profile=profile)
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
+        if secret:
+            kconfidential.mark(project, person=requested_by, persona=persona)
+        if scanned is not None:     # the map the person saw in the scan step, kept with who confirmed it
+            kmaterial.record(project, scanned, person=requested_by, persona=persona,
+                             confirmed="in the cockpit's scan step")
+        if outputs:
+            koutputs.choose(project, outputs, person=requested_by, persona=persona, when="intake")
         # With access enforced the record carries the request's digest: the intake job, which runs as the
         # cockpit's own account, carries out this signed request and no other (kernel.access.cli_signing).
         signed = {"request_sha256": kaccess.request_digest(source)} if self.access.enforced else {}
@@ -1565,6 +1646,82 @@ class Api:
                                      "--requested-by", requested_by],
                                     {"person": requested_by, "persona": persona})
         return 201, {"project": project.meta, "job": self.server.job_view(job)}
+
+    @staticmethod
+    def _excludes(body: dict) -> list[str]:
+        """The files a person unticked in the scan step, or patterns: a list of short texts."""
+        raw = body.get("exclude") or []
+        if not isinstance(raw, list) or len(raw) > 5000 or not all(isinstance(x, str) and 0 < len(x) <= 1000
+                                                                   and "\n" not in x for x in raw):
+            raise ApiError(400, "exclude must be a list of at most 5000 paths or patterns")
+        return [x.strip() for x in raw if x.strip()]
+
+    def _folder_request(self, body: dict, source: str, persona: str) -> tuple[str, dict | None, bool]:
+        """A new project's request: its own text, or a folder the person scanned and confirmed (the request is
+        built from its material map, without the files they unticked). Confidential is refused here, before
+        anything is created, while the analyst's endpoint is hosted."""
+        secret = body.get("confidential") is True
+        if secret and (why := kconfidential.refusal(["analyst"])):
+            raise ApiError(403, why)
+        if body.get("folder") is not True:
+            return source, None, secret
+        path = ksource.check_folder(source, persona)
+        mp, text, _ = kmaterial.gather(path, self._excludes(body))
+        if not text.strip():
+            raise ApiError(400, "the scan of that folder found nothing to read: every file is listed or skipped")
+        return text, mp, secret
+
+    def post_source_preview(self, body: dict, **_: object) -> tuple[int, dict]:
+        """The material map of a local folder, before anything is sent or created: what would be read,
+        summarised, listed and skipped, and why (kernel/material.py). Only a persona that may create or adopt
+        a project, signed, and only a folder under the user's home or the configured roots (kernel/source_guard.py).
+        It reads files and records nothing."""
+        person, persona = self._sign(_text(body, "person", limit=200), _text(body, "persona", limit=64), FACTORY_PID)
+        _require_person(person, persona)
+        path = ksource.check_folder(_text(body, "source", required=True, limit=2000), persona)
+        mp = kmaterial.preview(path, self._excludes(body))
+        from kernel.material_adopt import is_git
+
+        return 200, {"map": mp, "git": is_git(path), "code": kmaterial.has_code(mp),
+                     "send_to": kconfidential.send_to("analyst"),
+                     "local_only": {"new": kconfidential.refusal(["analyst"]) or None,
+                                    "all": kconfidential.refusal(kconfidential.ROLES) or None}}
+
+    def post_adopt(self, body: dict, **_):
+        """Adopt an existing project from a local folder (a git repository, or any folder with code, which is
+        snapshotted) or an address git clones without credentials. It runs as a job: adopting reads the
+        repository and runs its own test suites for a baseline."""
+        from kernel.adopt import INTENTS, AdoptionRefused, check_source
+        from kernel.material_adopt import NoCode, check_code
+
+        title = _text(body, "title", required=True, limit=200)
+        source = _text(body, "source", required=True, limit=2000).strip()
+        intent = _text(body, "intent", limit=16) or "improve"
+        maturity = _text(body, "maturity", limit=32) or "production"
+        base_url = _text(body, "base_url", limit=500).strip() or None
+        if intent not in INTENTS:
+            raise ApiError(400, f"intent must be one of {', '.join(INTENTS)}")
+        if maturity not in MATURITIES:
+            raise ApiError(400, f"maturity must be one of {', '.join(MATURITIES)}")
+        person, persona = self._sign(_text(body, "person", limit=200), _text(body, "persona", limit=64), FACTORY_PID)
+        _require_person(person, persona)
+        exclude = self._excludes(body)
+        try:
+            kind, location = check_source(source)
+            if kind != "url":          # a local folder: read only where the cockpit may read for this person
+                ksource.check_folder(location, persona)
+            if kind == "folder":
+                check_code(location, exclude)
+        except (AdoptionRefused, NoCode, OSError) as exc:
+            raise ApiError(400, str(exc)) from None
+        # The request is on record, signed, before the job runs (D-0017: no path skips the record).
+        self._audit(self._factory_canon(), "adopt_requested", title, person, persona, source_kind=kind, intent=intent,
+                    maturity=maturity)
+        args = ["-m", "kernel.cli", "adopt", title, "--source", source, "--intent", intent, "--person", person,
+                "--persona", persona, "--maturity", maturity, *(["--base-url", base_url] if base_url else []),
+                *(f"--exclude={x}" for x in exclude), *(["--confidential"] if body.get("confidential") is True else [])]
+        job = self.server.start_job("adopt", FACTORY_PID, args, {"person": person, "persona": persona})
+        return 201, {"job": self.server.job_view(job)}
 
     def post_advance(self, pid: str, body: dict, **_):
         project = self._project(pid)
@@ -1646,6 +1803,156 @@ class Api:
         resume(project, person=person, persona=persona)
         self._audit(project, "resume", pid, person, persona)
         return 200, {"now": now(project)}
+
+    # -- change anything set for a project, go back a step, add material (FR-CHG1) -------------------------
+
+    def _changing(self, pid: str, body: dict, *, idle: bool = True) -> tuple[Project, str, str]:
+        """The project a change acts on and who signs it: never Rihma's own canon, nor while a job runs."""
+        project = self._project(pid)
+        if pid == FACTORY_PID:
+            raise ApiError(400, "Rihma itself has no settings, steps or material to change")
+        person, persona = self._who(body, pid)
+        running = self.server.running_job(pid) if idle else None
+        if running is not None:
+            raise ApiError(409, f"job {running['id']} is still running for {pid}: change it once the job ends")
+        return project, person, persona
+
+    @staticmethod
+    def _settings_in(body: dict) -> dict:
+        return {f: _text(body, f, limit=ksettings.MAX_TITLE) or None for f in ksettings.FIELDS}
+
+    def _next_of(self, project: Project) -> dict:
+        """What the project waits for (kernel/next_step.py), with its last run's result when a job ran."""
+        pid = project.pid
+        runs = [self.server.job_view(j) for j in list(self.server.jobs) if j["project"] == pid and j["kind"] == "run"]
+        running = any(j["state"] == "running" for j in runs) or self.server.running_job(pid) is not None
+        last = next((j.get("outcome") for j in reversed(runs) if j.get("outcome")), None)
+        return knext.next_step(project, last=last, running=running)
+
+    def put_settings(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """Change the title, kind of work, mode or maturity, signed with a reason; ``redo`` carries it into the work."""
+        project, person, persona = self._changing(pid, body)
+        out = ksettings.change(project, person=person, persona=persona, reason=_text(body, "reason", limit=2000),
+                               redo=body.get("redo") is True, **self._settings_in(body))
+        self._audit(project, "change_settings", pid, person, persona, fields=sorted(out["changed"]))
+        return 200, {**out, "next": self._next_of(project)}
+
+    def post_settings_preview(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """What a settings change would do: the impact on the work done. It writes nothing."""
+        project, _, _ = self._changing(pid, body, idle=False)
+        return 200, ksettings.preview(project, **self._settings_in(body))
+
+    def post_rewind(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """Go back a step so it runs again; what it sets aside is kept as superseded, never deleted."""
+        project, person, persona = self._changing(pid, body)
+        to = _text(body, "to", required=True, limit=16)
+        try:
+            out = krewind.rewind(project, to=to, person=person, persona=persona, reason=_text(body, "reason",
+                                                                                              limit=2000))
+        except krewind.RewindRefused as exc:
+            raise ApiError(409, f"refused: {exc}") from None
+        self._audit(project, "rewind", pid, person, persona, to=to)
+        return 200, {**out, "next": self._next_of(project)}
+
+    def post_material(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """Add material to the request; with ``reintake`` a run starts and the panel reads the new material."""
+        project, person, persona = self._changing(pid, body)
+        path = _text(body, "path", limit=2000) or None
+        if path and self.access.enforced:
+            raise ApiError(403, "refused: with access enforced the cockpit reads no file on its own machine for a "
+                                "request; paste the material as text")
+        reintake = body.get("reintake") is True
+        try:
+            out = kadded.add_material(project, person=person, persona=persona, path=path, reintake=reintake,
+                                         text=_text(body, "text", limit=kadded.MAX_MATERIAL) or None,
+                                         note=_text(body, "note", limit=300))
+        except (FileNotFoundError, IsADirectoryError) as exc:
+            raise ApiError(400, f"the material could not be read: {exc}") from None
+        self._audit(project, "add_material", pid, person, persona, n=out["n"])
+        job = None
+        if reintake:   # the run reads it first (kernel/project_material.py pending_intake)
+            job = self.server.job_view(self.server.start_job("run", project.pid, ["-m", "kernel.cli", "run", pid],
+                                                             {"person": person, "persona": persona}))
+        return 200, {**out, "job": job, "next": self._next_of(project)}
+
+    # -- autopilot, delegation and staying on track (kernel/autopilot.py, kernel/track.py, D-0017) -------
+
+    def get_track(self, pid: str, **_: object) -> tuple[int, dict]:
+        """A project against its approved plan, with its checkpoints, autopilot and delegations. A read
+        (Rihma's own canon has no plan: its track is not measured)."""
+        project = self._project(pid)
+        return 200, {"track": ktrack.track(project), "autopilot": kautopilot.status(project),
+                     "settings": ktrack.settings(project)}
+
+    def put_tracking(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """A plan owner sets the checkpoints, whether a due one holds the run, and the budget."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        stages, hold, amount = body.get("checkpoints"), body.get("hold"), body.get("budget")
+        if stages is not None and not (isinstance(stages, list) and all(type(s) is int for s in stages)):
+            raise ApiError(400, "checkpoints is a list of stage numbers")
+        if hold is not None and not isinstance(hold, bool):
+            raise ApiError(400, "hold is true or false")
+        if amount is not None and type(amount) not in (int, float):
+            raise ApiError(400, "budget is a number")
+        out = ktrack.set_tracking(project, person=person, persona=persona, stages=stages, hold=hold,
+                                  due=body["due"] if isinstance(body.get("due"), str) else None, amount=amount,
+                                  currency=_text(body, "currency", limit=8) or None)
+        self._audit(project, "tracking_set", pid, person, persona)
+        return 200, {"settings": out, "track": ktrack.summary(project)}
+
+    def post_checkpoint_look(self, pid: str, stage: str, body: dict, **_: object) -> tuple[int, dict]:
+        """A person records that they looked at a checkpoint; a run it held goes on at its next pass."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        cps = ktrack.look(project, int(stage), person=person, persona=persona, note=_text(body, "note", limit=2000))
+        self._audit(project, "checkpoint_look", stage, person, persona)
+        return 200, {"checkpoints": cps, "track": ktrack.summary(project)}
+
+    def post_autopilot_start(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """Arm an autopilot (its delegation in the signer's name, bound to the sandbox) and run its passes
+        as a job. The kernel refuses a kind that is never delegated, or one the persona may not decide."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        kinds, rules = body.get("kinds"), body.get("rules") or {}
+        if not isinstance(kinds, list) or not all(isinstance(k, str) for k in kinds):
+            raise ApiError(400, "kinds is a list of card kinds")
+        if not isinstance(rules, dict) or not all(isinstance(v, str) for v in rules.values()):
+            raise ApiError(400, "rules maps a card kind to its rule")
+        running = self.server.running_job(pid)
+        if running is not None:
+            raise ApiError(409, f"job {running['id']} is still running for {pid}")
+        run = kautopilot.start(project, until=_text(body, "until", required=True, limit=64), kinds=kinds,
+                               person=person, persona=persona, rules=rules, reason=_text(body, "reason", limit=2000))
+        self._audit(project, "autopilot_start", run["id"], person, persona)
+        job = self.server.start_job("autopilot", project.pid, ["-m", "kernel.cli", "autopilot", "run", project.pid],
+                                    {"person": person, "persona": persona})
+        return 201, {"run": run, "job": self.server.job_view(job)}
+
+    def post_autopilot_stop(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """A person stops the autopilot: its delegation is revoked and what it held back is released. Its
+        job, if one still runs a pass, delivers nothing more and ends at the pass's next safe point."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        run = kautopilot.stop(project, person=person, persona=persona, reason=_text(body, "reason", limit=2000))
+        self._audit(project, "autopilot_stop", run["id"], person, persona)
+        job = self.server.running_job(pid)
+        ending = None if job is None or job["kind"] != "autopilot" else self.server.job_view(job) | {
+            "ending": "the pass under way delivers nothing and ends at its next safe point; a cell already "
+                      "working finishes its step first"}
+        return 200, {"run": run, "track": ktrack.summary(project), "job": ending}
+
+    def post_delegation_revoke(self, pid: str, did: str, body: dict, **_: object) -> tuple[int, dict]:
+        """Stop a delegation at once: its next card waits for a person."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        try:
+            d = kdelegation.revoke(project, did, person=person, persona=persona,
+                                   reason=_text(body, "reason", limit=2000))
+        except KeyError:
+            raise ApiError(404, f"no delegation {did} on {pid}") from None
+        self._audit(project, "delegation_revoke", did, person, persona)
+        return 200, {"delegation": d}
 
     def post_link(self, **_):
         bootstrap = self.server.issue_link(LINK_TTL)
@@ -1880,6 +2187,7 @@ class Api:
             "spend": {**fl["spend"], "currency": load_prices().get("currency", "USD"),
                       "runs": fl["overall"].get("runs")},
             "try_it": tries,
+            "track": safe("track", lambda: kdash.tracking(f), {"projects": [], "counts": {}, "autopilots": 0}),
             "feed_health": {"measured": False, "why": "no feed probe has reported yet: an integration's freshness "
                                                       "probe writes it once the feed runs"},
             "eval_trend": {"measured": False, "why": "no eval run is recorded over time yet: a model or agent "
@@ -2091,6 +2399,7 @@ class Api:
             raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
         ctx = project_context(project, persona, lens)
         ctx["default_lens"] = lens_for(persona)
+        ctx["views"] = [v for v in ctx["views"] if kmodules.shown(project, "views", v)]   # only what is enabled
         return 200, ctx
 
     # layouts: per person, persona and lens, in the cockpit's own folder, never in a project ledger
@@ -2340,6 +2649,29 @@ class Api:
         self._audit(project, "set_autonomy_cap", pid, person, persona, level=out["cap"])
         return 200, {**out, "autonomy": self._autonomy_view()}
 
+    # modules: the parts of Rihmasto in use, chosen by a person (kernel/modules.py, FR-MOD1)
+
+    def get_modules(self, **_: object) -> tuple[int, dict]:
+        return 200, kmodules.view(self.factory)
+
+    def _set_modules(self, target: Factory | Project, body: dict, pid: str) -> dict:
+        person, persona = self._who(body, pid)
+        listed = body.get("modules")
+        if listed is not None and not (isinstance(listed, list) and all(isinstance(m, str) for m in listed)):
+            raise ApiError(400, "modules is a list of module ids")
+        preset = _text(body, "preset", limit=64) or None
+        out = kmodules.set_modules(target, person=person, persona=persona, preset=preset, modules=listed,
+                                   inherit=body.get("inherit") is True, reason=_text(body, "reason", limit=2000))
+        return out | {"view": kmodules.view(self.factory)}
+
+    def put_modules(self, body: dict, **_: object) -> tuple[int, dict]:
+        return 200, self._set_modules(self.factory, body, FACTORY_PID)
+
+    def put_project_modules(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        if pid == FACTORY_PID:
+            raise ApiError(400, "choose the factory's modules with PUT /api/modules")
+        return 200, self._set_modules(self._project(pid), body, pid)
+
     # capability packs and evidence packs
 
     def get_pack(self, pid: str, **_: object) -> tuple[int, dict]:
@@ -2402,6 +2734,36 @@ class Api:
         if path is None:
             raise ApiError(404, "this download link was already used, has expired, or names no export")
         return 200, FileResponse(path)
+
+    # outputs per audience (kernel/outputs.py): the kernel records each choice and build with its person
+
+    @staticmethod
+    def _intake_outputs(body: dict, persona: str) -> list[str]:
+        """The outputs a new project's request names, chosen at intake; refused before the project is made when
+        the requester's persona may not choose them."""
+        outputs = koutputs.known_targets(body.get("outputs") or [])
+        if outputs and persona not in koutputs.CHOOSERS:
+            raise DecisionRefused(f"a {persona} may not choose outputs; {', '.join(koutputs.CHOOSERS)} may")
+        return outputs
+
+    def get_outputs(self, pid: str, **_: object) -> tuple[int, dict]:
+        return 200, koutputs.view(self._project(pid))
+
+    def put_outputs(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        person, persona = self._who(body, pid)
+        return 200, koutputs.choose(self._project(pid), body.get("targets"), person=person, persona=persona,
+                                    reason=_text(body, "reason", limit=500))
+
+    def post_outputs_build(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
+        """Build the chosen targets into the exports folder; each built file is offered as a one-time download."""
+        project = self._project(pid)
+        person, persona = self._who(body, pid)
+        out = koutputs.build(project, body.get("targets"), self.server.exports_dir, person=person, persona=persona)
+        for row in out["outputs"]:
+            row["files"] = sorted(row.get("files") or [])
+            if row.get("file"):
+                row["download"] = f"/api/exports/{self.server.offer_download(row['file'])}"
+        return 201, {**out, "expires_in": EXPORT_TTL, "view": koutputs.view(project)}
 
     # embeds: a chat window for a website, with exactly one capability
 
@@ -2479,11 +2841,12 @@ class Api:
             raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
         person, persona = self._sign(_text(body, "person", limit=200), persona, pid)
         layout, _ = self._layout_for(person, persona, lens)
-        ui = {"widgets": list(WIDGETS), "layout": layout}
+        where = self.factory.project(pid) if pid else self.factory      # the widgets and the model it may use
+        ui = {"widgets": [w for w in WIDGETS if kmodules.shown(where, "widgets", w)], "layout": layout}
         try:
             out = kassistant.ask(self.factory, question, persona=persona, project_id=pid,
                                  view=_text(body, "view", limit=64) or None, ui=ui,
-                                 model=self.server.assistant_model)
+                                 model=self.server.assistant_model if kmodules.is_on(where, "assistant") else None)
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
         out["lens"] = lens
@@ -2532,16 +2895,17 @@ def embed_base_note(base: str | None) -> str:
 
 def gnomon_found() -> bool:
     """Whether ``kernel.model.gnomon_cmd()`` names a Gnomon that exists on this machine."""
-    import shutil
+    from kernel.models_setup import gnomon_found as found
 
-    from kernel.model import gnomon_cmd
+    return found()
 
-    cmd = gnomon_cmd()
-    if not cmd:
-        return False
-    if len(cmd) > 1 and cmd[1].endswith(".js"):
-        return Path(cmd[1]).exists() and (Path(cmd[0]).exists() or shutil.which(cmd[0]) is not None)
-    return Path(cmd[0]).exists() or shutil.which(cmd[0]) is not None
+
+def chat_model() -> object:
+    """Shape it in chat's model: the analyst, through Gnomon in the analyst lane, compiled again from the routing
+    before each answer (kernel.models_setup.LaneModel). None when Gnomon is not found: the chat says so."""
+    from kernel.models_setup import LaneModel
+
+    return LaneModel(timeout=600) if gnomon_found() else None
 
 
 def assistant_model_for(choice: str | None):
@@ -2614,6 +2978,7 @@ def main(argv: list | None = None) -> int:
         print(f"could not listen on {LOOPBACK}:{args.port}: {exc}", file=sys.stderr)
         return 1
     server.quiet = args.quiet
+    server.shape_model = chat_model()
     server.public_origin = public
     print(f"Rihma cockpit for {factory.home}", flush=True)
     print(note, flush=True)

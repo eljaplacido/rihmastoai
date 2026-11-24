@@ -146,9 +146,10 @@ def _evidence(project: Any) -> list:
 
 def _gather(project) -> tuple[dict, bytes]:
     """The bundle's files, and the ledger bytes they were taken from."""
+    from kernel.repo_checks import evidence_files
     from kernel.security import summary as security_summary
 
-    kept = _kept_head(project)                  # first: a kept head only moves on, so it lies within any later read
+    kept = _kept_head(project)                 # first: a kept head only moves on, so it lies within any later read
     pack = _pack(project)                       # before the read: building it may append to the ledger
     raw, records = _ledger_snapshot(project)
     runs = [{k: r.get(k) for k in ("task", "round", "role", "model", "endpoint", "surface_hash", "verdict", "chain",
@@ -165,7 +166,7 @@ def _gather(project) -> tuple[dict, bytes]:
         "security.json": security_summary(project),
         "governance-map.json": _governance(project),
     }
-    return files, raw
+    return files | evidence_files(project), raw     # an attached repository's own releases (evidence only)
 
 
 # -- the governance map (docs/portability.md): which guarantee holds where a release runs --------------
@@ -382,6 +383,9 @@ def _readme(project, files: dict) -> str:
              f"- Gnomon runs: {len(files['gnomon-runs.json'])}, of which audit chain not intact: {broken_runs}.",
              _ledger_line(lc),
              f"- Security: {_security_line(files.get('security.json') or {})}.",
+             *([f"- The repository's own releases: {len(files['repository-releases.json'])}, each with its tag, commit "
+                "and what the kernel checked there (`repository-releases.json`; dates as git states them)."]
+               if files.get("repository-releases.json") else []),
              "", "## Governance map", "", where, "", *governance_lines(gov.get("map") or []),
              "", "## Not in this bundle", "",
              "- Holdout scenarios: they stay in their own custody. Only their scores are here.",

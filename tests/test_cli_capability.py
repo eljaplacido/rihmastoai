@@ -48,10 +48,11 @@ SIGNED_WRITES = ("security ingest", "security accept", "evidence", "embed create
 
 
 def leaves(parser: argparse.ArgumentParser, prefix: tuple = ()) -> dict:
-    """Every command line the parser takes, as its table key, with its own parser."""
+    """Every command line the parser takes, as its table key, with its own parser. A command whose own commands
+    are optional (`rihmasto shape`, the interactive chat) is a command line too."""
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
-            out = {}
+            out = {} if action.required else {" ".join(prefix): parser}
             for name, sub in action.choices.items():
                 out.update(leaves(sub, (*prefix, name)))
             return out

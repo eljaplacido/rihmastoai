@@ -23,6 +23,12 @@ Each pass (of a project that is not paused) first carries out the decided update
 (`kernel.observations.apply_updates`), so a trial a person approved is recorded before anything
 moves (FR-V2-AC-2).
 
+Before it waits on cards, the run asks the delegations in force (kernel/delegation.py): a card a
+person delegated to one of the factory's rules is decided by that rule in their name, and the pass
+goes on. A human checkpoint a person set to hold the run stops it once its stage is reached, until
+a person has looked (kernel/track.py); while an autopilot run is bound to a sandbox, a delivery that
+would leave it waits for a person (kernel/autopilot.py).
+
 An adopted solution (`rihma adopt`) had no intake. Until a change is applied to it, it says what
 it waits for by its intent (FR-B1-AC-3): to monitor, `monitoring` with the last probe result; to
 maintain or improve, `waiting` for a change, a workspace submission or a person. Once a change
@@ -37,10 +43,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from kernel.attach import attached_state
 from kernel.canon import Canon
 from kernel.compile import author_holdouts, compile_project
 from kernel.dispatch import build
 from kernel.intake import SendBack, blocking_open
+from kernel.modules import stop_before
 from kernel.spec import make_spec
 from kernel.store import Factory, Project
 
@@ -67,10 +75,13 @@ def advance(project, *, model, **kwargs) -> dict:
     """Move the project forward until a person is needed. A model endpoint that fails (an apparatus
     failure, for example during a network outage) stops the run cleanly: what was recorded stays,
     and running again resumes."""
+    from kernel.confidential import ConfidentialRefused
     from kernel.model import ModelError
 
     try:
         return _advance(project, model=model, **kwargs)
+    except ConfidentialRefused as exc:     # a confidential project's next step would leave for a hosted endpoint
+        return {"state": "refused", "stage": project.meta.get("stage"), "confidential": True, "why": str(exc)}
     except ModelError as exc:
         project.log("apparatus_failure", {"where": "pipeline", "error": str(exc)[:300]})
         return {"state": "apparatus_failure", "stage": project.meta.get("stage"), "apparatus": True,
@@ -81,25 +92,47 @@ def _advance(project, *, model, lanes=None, cell_runner=None, verifier_runner=No
              max_steps: int = 12) -> dict:
     history: list = []
     for _ in range(max_steps):
-        held = _paused(project, history)
+        held = _paused(project, history) or _checkpoint(project, history)
         if held is not None:
             return held
         _apply_updates(project, history)
-        idle = adopted_state(project)
+        idle = adopted_state(project) or attached_state(project)
         if idle is not None:
             return idle | {"history": history}
         canon = Canon(project)
         step = _shape(project, model, history)
-        if step is None:
-            step = _gatekeep(project, canon, history)
+        if step is None:  # the edge of the project's modules (FR-MOD2): spec only stops before the build
+            step = stop_before(project, "build", history) or _gatekeep(project, canon, history)
         if step is None:
             step = _build(project, canon, history, lanes=lanes, cell_runner=cell_runner,
                           verifier_runner=verifier_runner)
         if step is None:
-            step = _deliver(project, model, canon, history, deliver_kwargs)
+            step = stop_before(project, "delivery", history) or _deliver(project, model, canon, history, deliver_kwargs)
         if isinstance(step, dict):
+            if step.get("state") == "waiting" and _delegated(project, step, history):
+                continue
             return step
     return {"state": "progress", "stage": project.meta["stage"], "history": history}
+
+
+def _delegated(project: Project, step: dict[str, Any], history: list[Any]) -> bool:
+    """Whether a delegation decided a card the run waits on (kernel/delegation.py): then it goes on."""
+    from kernel.delegation import consult
+
+    decided = consult(project, list(step.get("waiting_on") or []))
+    if decided:
+        history.append({"delegated": [{k: d[k] for k in ("card", "verdict", "delegation")} for d in decided]})
+    return bool(decided)
+
+
+def _checkpoint(project: Project, history: list[Any]) -> dict[str, Any] | None:
+    """A human checkpoint that holds the run: its stage is reached and no person has looked yet; or an
+    autopilot pass whose run a person stopped while it ran, which ends here (kernel/autopilot.py)."""
+    from kernel.autopilot import pass_stopped
+    from kernel.track import checkpoint_hold
+
+    held = pass_stopped(project) or checkpoint_hold(project)
+    return None if held is None else held | {"history": history}
 
 
 def _paused(project: Project, history: list[Any]) -> dict[str, Any] | None:
@@ -131,6 +164,12 @@ def _apply_updates(project, history: list) -> None:
 def _shape(project, model, history: list) -> dict | str | None:
     """Intake, spec and contract: whatever the project still lacks of them."""
     meta = project.meta
+    from kernel.project_material import pending_intake  # sent back to its questions, or material added (FR-CHG1)
+
+    redone = pending_intake(project, model=model)
+    if redone:
+        history.append(redone)
+        return AGAIN
     if not project.path("source.json").exists() and meta.get("source_kind") != "adopted":
         need = project.read("need.json")
         if need:  # a concept a person validated: intake starts from the need as it arrived
@@ -200,6 +239,11 @@ def _build(project, canon: Canon, history: list, **runners) -> dict | str | None
     escalations = canon.cards(kind="escalation")
     if escalations:
         return _waiting(5, [c["id"] for c in escalations], "a task did not pass its gate") | {"history": history}
+    from kernel.autopilot import pass_stopped        # an autopilot pass a person stopped ended between tasks
+
+    stopped = pass_stopped(project)
+    if stopped is not None:
+        return stopped | {"history": history}
     return {"state": "failed", "stage": 5, "why": "build stopped", "history": history}
 
 
@@ -208,6 +252,7 @@ def _deliver(project, model, canon: Canon, history: list, deliver_kwargs: dict |
     maturity decides. A ruling leads to a rebuild or a new delivery, so it waits below level 3 as
     building does; landing asks for the landing's own level."""
     from kernel.autonomy import AutonomyCapped, cleared_to_build, cleared_to_deliver
+    from kernel.autopilot import delivery_hold
 
     try:
         from kernel.deliver import deliver
@@ -225,6 +270,9 @@ def _deliver(project, model, canon: Canon, history: list, deliver_kwargs: dict |
         cleared_to_deliver(project)
     except AutonomyCapped as exc:
         return _capped(project, exc, history)
+    held = delivery_hold(project)     # an autopilot run bound to a sandbox never delivers outside it
+    if held is not None:
+        return held | {"history": history}
     kwargs = dict(deliver_kwargs or {})
     if project.meta.get("redeliver"):
         kwargs["new"] = True

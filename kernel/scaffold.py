@@ -27,7 +27,9 @@ Add behaviour by registering routes in app/routes.py (or modules it imports):
         return 201, req.body
 
 A handler gets a Request and returns (status, body). A dict or list body is sent as JSON, a str as
-HTML. Tests call handle() directly, with no socket.
+HTML. It may also return (status, body, content_type), or (status, body, content_type, headers) with
+a list of (name, value) response headers. Tests call handle() directly, with no socket: it runs the
+handler without the guards. respond() is the service as the network sees it, guards included.
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 ROUTES = []
+GUARDS = []  # each runs before every route's handler (app/sign_in.py adds one when the product has it)
 _LOCK = threading.Lock()
 
 
@@ -49,6 +52,14 @@ class Request:
     def __init__(self, method, path, params, query, body, headers):
         self.method, self.path, self.params = method, path, params
         self.query, self.body, self.headers = query, body, headers
+        self.handler, self.user, self.out_headers = None, None, []
+
+
+def guard(fn):
+    """Run ``fn(req)`` before every route's handler: it returns None to let the request through, or a
+    response that answers it instead. It may add response headers to ``req.out_headers``."""
+    GUARDS.append(fn)
+    return fn
 
 
 def route(method, pattern):
@@ -82,33 +93,55 @@ def save_data(name, value):
     os.replace(tmp, os.path.join(data_dir(), name + ".json"))
 
 
-def handle(method, path, body=None, headers=None):
-    """Route one request. Returns (status, payload, content_type)."""
+def _shaped(result, extra):
+    """A handler's result as (status, payload, content_type, headers)."""
+    status, payload = result[0], result[1]
+    if len(result) > 2:  # (status, payload, content_type[, headers]), e.g. a stylesheet
+        ctype = result[2]
+    else:
+        ctype = "text/html; charset=utf-8" if isinstance(payload, str) else "application/json"
+    return status, payload, ctype, list(result[3] if len(result) > 3 else []) + list(extra)
+
+
+def _dispatch(method, path, body, headers, guards):
+    """Route one request: the guards first, in order, then its route's handler. A guard sees every
+    request, one that matches no route included, so it answers before a 404 or 405 would."""
     method = method.upper()
     parsed = urlparse(path)
     query = {k: v[0] if len(v) == 1 else v for k, v in parse_qs(parsed.query).items()}
-    allowed = False
+    found, allowed = None, False
     for m, regex, fn in ROUTES:
         match = regex.match(parsed.path)
-        if not match:
-            continue
-        allowed = True
-        if m != method:
-            continue
-        req = Request(method, parsed.path, match.groupdict(), query, body, headers or {})
-        try:
-            result = fn(req)
-        except Exception as exc:  # a handler bug is a 500, never a crash
-            return 500, {"error": type(exc).__name__, "detail": str(exc)}, "application/json"
-        if len(result) == 3:  # (status, payload, content_type), e.g. a stylesheet
-            return result
-        status, payload = result
-        if isinstance(payload, str):
-            return status, payload, "text/html; charset=utf-8"
-        return status, payload, "application/json"
-    if allowed:
-        return 405, {"error": "method not allowed"}, "application/json"
-    return 404, {"error": "not found", "path": parsed.path}, "application/json"
+        if match:
+            allowed = True
+            if m == method:
+                found = (fn, match.groupdict())
+                break
+    req = Request(method, parsed.path, found[1] if found else {}, query, body, headers or {})
+    req.handler = found[0] if found else None
+    try:
+        result = next((r for r in (check(req) for check in guards) if r is not None), None)
+        if result is None and found:
+            result = found[0](req)
+    except Exception as exc:  # a handler bug is a 500, never a crash
+        return 500, {"error": type(exc).__name__, "detail": str(exc)}, "application/json", list(req.out_headers)
+    if result is None:
+        result = (405, {"error": "method not allowed"}) if allowed else (404, {"error": "not found",
+                                                                               "path": parsed.path})
+    return _shaped(result, req.out_headers)
+
+
+def respond(method, path, body=None, headers=None):
+    """The service as the network sees it: every guard (app/sign_in.py adds one when the product has
+    sign-in), then the route's handler. Returns (status, payload, content_type, headers), headers a
+    list of (name, value). The HTTP server answers every request through it."""
+    return _dispatch(method, path, body, headers, GUARDS)
+
+
+def handle(method, path, body=None, headers=None):
+    """A route's handler, without the guards: a handler's own logic, as the product's tests check it.
+    Returns (status, payload, content_type). respond() is what the network sees."""
+    return _dispatch(method, path, body, headers, ())[:3]
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -158,14 +191,27 @@ def health(req):
     return 200, {"status": "ok", "version": os.environ.get("APP_VERSION", "dev")}
 
 
+# Paths whose requests never reach the traffic log, because they carry passwords (app/sign_in.py).
+UNRECORDED = set()
+
+
 def _record(method, path, body, status):
     """Record traffic for shadow tests when TRAFFIC_LOG is set."""
     log = os.environ.get("TRAFFIC_LOG")
-    if not log or path == "/health":
+    if not log or path == "/health" or urlparse(path).path in UNRECORDED:
         return
     line = json.dumps({"at": time.time(), "method": method, "path": path, "body": body, "status": status})
     with _LOCK, open(log, "a", encoding="utf-8", newline="\n") as fh:
         fh.write(line + "\n")
+
+
+def _headers(message):
+    """The request's headers by name. A header sent more than once keeps every value, joined with
+    ", " as HTTP reads a list, so a check on it sees them all, never only the first."""
+    out = {}
+    for name, value in message.items():
+        out[name] = out[name] + ", " + value if name in out else value
+    return out
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -180,11 +226,13 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(raw)
             except json.JSONDecodeError:
                 body = raw.decode("utf-8", "replace")
-        status, payload, ctype = handle(self.command, self.path, body, dict(self.headers))
+        status, payload, ctype, extra = respond(self.command, self.path, body, _headers(self.headers))
         data = payload.encode("utf-8") if isinstance(payload, str) else json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        for name, value in extra:
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(data)
         _record(self.command, self.path, body, status)
@@ -204,12 +252,24 @@ def main():
     server.serve_forever()
 
 
+def _load_sign_in():
+    """Load app/sign_in.py when the product has one (the paved road adds it to a login-ready web
+    app). An error inside it stops the service: a product with sign-in never serves without it."""
+    try:
+        import app.sign_in  # noqa: F401
+    except ModuleNotFoundError as exc:
+        if exc.name != "app.sign_in":
+            raise
+
+
 if __name__ == "__main__":
     # `python -m app.server` runs this file as __main__, a second copy of the module; the routes
     # register on `app.server`. Hand over to that copy so they are the ones served.
     from app.server import main as _main
 
     _main()
+else:
+    _load_sign_in()
 '''
 
 ROUTES_PY = '''"""The product's routes. Cells add handlers here, or in modules imported from here."""
@@ -404,12 +464,17 @@ links every release to the requirement, the criterion and the test it rests on.
 """
 
 
-def files(title: str, pid: str, maturity: str, look: str = "neutral") -> dict[str, str]:
-    """Every file of the template, by path."""
+def files(title: str, pid: str, maturity: str, look: str = "neutral", *, sign_in: bool = False) -> dict[str, str]:
+    """Every file of the template, by path. ``sign_in`` adds the road's sign-in (kernel/scaffold_auth.py),
+    for a product asked to be a login-ready web app."""
     import json as _json
 
     from kernel.design_road import DESIGN_MD, LOOKS, PRODUCT_CSS
 
+    if sign_in:
+        from kernel.scaffold_auth import with_sign_in
+
+        return with_sign_in(files(title, pid, maturity, look))
     return {
         "app/__init__.py": "",
         "app/server.py": SERVER_PY,

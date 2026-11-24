@@ -155,6 +155,9 @@ def _p(description: str, *, required: bool = True, limit: int = 200, enum: Itera
 
 PID_ARG = _p("The project id, as rihma_projects lists it.", limit=81)
 COMMENT_TARGETS = Canon.COMMENT_TARGETS
+# A write tool is the cockpit's write by another door: refused, as that route is, where its module is not
+# enabled (kernel/modules.py, FR-MOD5). Every tool that writes names its route here.
+WRITE_ROUTES = {"rihma_report_change": "post_change", "rihma_comment": "post_comment", "rihma_signal": "post_signal"}
 
 TOOLS: dict[str, Tool] = {
     "rihma_projects": {
@@ -186,6 +189,18 @@ TOOLS: dict[str, Tool] = {
         "title": "Delivery square", "read": True, "params": {},
         "description": "The delivery square at a glance: signals waiting, concepts to validate, projects per "
                        "stage band, end-user feedback waiting for triage and what runs in production."},
+    "rihma_track": {
+        "title": "Staying on track", "read": True,
+        "params": {"pid": _p("Optional project id; without it, every project's line.", required=False, limit=81)},
+        "description": "How a project is doing against its approved plan: on track, at risk, off track or not "
+                       "measured, with each reason and every figure's basis (tasks, gate first round, assumption "
+                       "debt, scope changes, blocking cards, time and cost against a budget, posture), and the "
+                       "human checkpoints due."},
+    "rihma_autopilot": {
+        "title": "Autopilot and delegations", "read": True, "params": {"pid": PID_ARG},
+        "description": "A project's autopilot run (running, expired or stopped), the sandbox it is bound to, its "
+                       "delegations, the cards they decided and the ones they left to a person. Starting or "
+                       "stopping one is a person's act, in the cockpit or the command line."},
     "rihma_ask": {
         "title": "Ask where", "read": True,
         "params": {"question": _p("A question such as 'where do I approve the plan?'", limit=2000),
@@ -546,6 +561,19 @@ class RihmaMCP:
 
         return square(self.factory)
 
+    def tool_track(self, pid: str | None = None) -> dict:
+        from kernel.track import summary, track
+
+        if pid is not None:
+            return self._safe(track, self._project(pid))
+        return {"projects": [self._safe(summary, p) for p in self.factory.projects() if not p.pid.startswith("_")],
+                "note": DECIDE_IN_COCKPIT}
+
+    def tool_autopilot(self, pid: str) -> dict:
+        from kernel.autopilot import status
+
+        return {**self._safe(status, self._project(pid)), "note": DECIDE_IN_COCKPIT}
+
     def tool_ask(self, question: str, pid: str | None = None) -> dict:
         from kernel.assistant import ask
 
@@ -567,6 +595,16 @@ class RihmaMCP:
         signer = {"identity": self.identity.id} if self.identity is not None else {}
         return {"person": self.person, "persona": self.persona, **signer}
 
+    def _module_on(self, tool: str, pid: str | None) -> None:
+        """A write tool of a module that is not enabled where it acts is refused, saying how to enable it."""
+        from kernel import modules
+
+        if tool in WRITE_ROUTES:
+            try:
+                modules.require_route(self.kernel_factory, WRITE_ROUTES[tool], pid)
+            except modules.ModuleOff as exc:
+                raise ToolError(f"refused: {exc}") from None
+
     def _granted(self, pid: str) -> None:
         """With access enforced (D-0016), a proposal on ``pid`` needs the operator's persona granted there;
         a server started before access was enforced proposes nothing until it is started again."""
@@ -582,6 +620,7 @@ class RihmaMCP:
         from kernel.change import submit, triage
 
         project = self._project(pid)
+        self._module_on("rihma_report_change", pid)
         self._granted(pid)
         try:
             card = submit(project, persona=self.persona, person=self.person, text=text)
@@ -596,6 +635,7 @@ class RihmaMCP:
 
     def tool_comment(self, pid: str, target_kind: str, target_id: str, text: str) -> dict:
         project = self._project(pid)
+        self._module_on("rihma_comment", pid)
         self._granted(pid)
         try:
             c = Canon(project).comment({"kind": target_kind, "id": target_id}, text, person=self.person,
@@ -611,6 +651,7 @@ class RihmaMCP:
         from kernel.learn import FACTORY_PID, factory_project
         from kernel.signals import receive
 
+        self._module_on("rihma_signal", None)
         self._granted(FACTORY_PID)
         try:
             s = receive(self.factory, text, channel="manual", source=source, person=self.person,

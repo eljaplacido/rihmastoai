@@ -1,7 +1,6 @@
 """The way back: changes and feedback from any persona re-enter the factory (FR-I1, FR-I3, FR-A4).
 
-`submit` opens a change card. `triage` classifies the change and names the stage it returns
-to:
+`submit` opens a change card. `triage` classifies the change and names the stage it returns to:
 
 | Class | Returns to | Needs a business decision first |
 |---|---|---|
@@ -37,6 +36,7 @@ from typing import Any
 
 from kernel.canon import CARD_DECIDERS, Canon
 from kernel.compile import check_plan, retire_holdouts, to_contract, update_repo_contract
+from kernel.confidential import local_model
 from kernel.intake import _ask_json
 from kernel.people import PERSONAS, is_person
 from kernel.spec import KINDS, render_spec_md
@@ -231,11 +231,11 @@ def _hint_trusted(project: Project, canon: Canon, card: dict[str, Any]) -> bool:
 
 
 def triage(project, card_id: str, *, model=None) -> dict:
-    """Classify a change card. Feedback that mixes several requests is split: the card keeps the
-    first part, and each further part becomes its own change card with the same person and
-    persona (FR-I3-AC-2)."""
+    """Classify a change card. Feedback that mixes several requests is split: the card keeps the first part, and
+    each further part becomes its own change card with the same person and persona (FR-I3-AC-2)."""
     from kernel.store import write_json
 
+    model = local_model(project, model, "analyst")   # a confidential project's change is triaged by rule
     canon = Canon(project)
     card = canon.get_card(card_id)
     text, persona = card["payload"]["text"], card["payload"]["source"]
@@ -457,11 +457,11 @@ def _route(project: Project, canon: Canon, card_id: str, tri: dict[str, Any], te
 
 
 def apply_change(project: Project, card_id: str, *, model: Any = None, person: str | None = None) -> dict[str, Any]:
-    """Carry a triaged change back into the spec and contract. The amended spec is compiled before
-    anything is written: a change the compiler refuses raises and leaves the spec, the contract,
-    the lessons, the approvals and the card as they were, so the spec and the contract never
-    diverge. Once applied, the holdout scenarios of the criteria it withdrew or restated are
-    retired, so no holdout runs for a criterion the contract no longer holds as written."""
+    """Carry a triaged change back into the spec and contract. The amended spec is compiled before anything is
+    written: a change the compiler refuses raises and leaves the spec, the contract, the lessons, the approvals
+    and the card as they were, so the spec and the contract never diverge. Once applied, the holdout scenarios
+    of the criteria it withdrew or restated are retired: no holdout runs for a criterion no longer held."""
+    model = local_model(project, model, "analyst")   # confidential: amended by rule rather than sent
     canon = Canon(project)
     card = canon.get_card(card_id)
     tri = card["payload"].get("triage") or triage(project, card_id, model=model)

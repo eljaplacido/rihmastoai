@@ -12,6 +12,8 @@ import { squareDiagram, catalogueCard, WIDGET_DEFS, liveState } from "./widgets.
 import { impactPanelFor, tryPanel } from "./project.js";
 import { dataTable } from "./charts.js";
 import { currentTheme, setTheme, loadLayout, applyTheme } from "./dashboard.js";
+import { loadModules, modulesCard, moduleShows } from "./modules.js";
+import { scanStep, looksLikeFolder } from "./scan.js";
 
 const CHANNEL_ICON = { chat: "message-square", feed: "signal", form: "file-check", email: "send", monitoring: "activity",
   meeting: "users", embed: "code", manual: "edit" };
@@ -412,7 +414,7 @@ export async function renderProjectsPage(seq) {
     { label: "Yours to decide", value: (p) => mineOf(p), num: true }, { label: "Open cards", key: "open_cards", num: true }], shown, "Projects");
   fill(main,
     pageHead("Projects", "Each thread runs from a business need to the running service. " + plural(products.length, "project") + " in this factory.",
-      { icon: "folder", actions: [button("New project", { icon: "plus", kind: "primary", "data-control": "new_project", onclick: () => newProjectModal() })] }),
+      { icon: "folder", actions: [moduleShows("controls", "new_project") ? button("New project", { icon: "plus", kind: "primary", "data-control": "new_project", onclick: () => newProjectModal() }) : null] }),
     h("div", { class: "filters" }, filter, h("span", { class: "spacer" }),
       segmented("proj-view", [["cards", "Cards", "catalogue"], ["table", "Table", "table"]], mode, (v) => { setViewChoice("projects", v); nav.rerender(); }, { label: "View", iconOnly: true })),
     !products.length ? h("div", { class: "card intro" }, empty("folder", "No project yet. Rihma turns a business need into a running, monitored service.",
@@ -688,7 +690,7 @@ export async function renderSettings(seq) {
   const may = (em.creators || []).includes(S.persona);
   const t = currentTheme();
   const rows = em.embeds.map((e) => {
-    const revoke = e.state === "active" && may ? button("Revoke", { icon: "x", kind: "small", key: "revoke:" + e.id, aria: "Revoke " + (e.label || e.id) }) : null;
+    const revoke = e.state === "active" && may ? button("Revoke", { icon: "x", kind: "small", key: "revoke:" + e.id, "data-control": "revoke_embed", aria: "Revoke " + (e.label || e.id) }) : null;
     if (revoke) {
       revoke.addEventListener("click", () => {
         if (!needPerson()) return;
@@ -714,14 +716,22 @@ export async function renderSettings(seq) {
   // Only a persona that may create an embed is offered Create; the others are told who creates one.
   const create = may ? button("Create a chat", { icon: "plus", kind: "small primary", "data-control": "create_embed", key: "create-embed", onclick: () => openEmbedForm() })
     : h("span", { class: "muted small" }, icon("user"), " A " + embedCreators() + " creates a chat.");
+  await loadModules();
+  if (seq !== S.seq) return;
+  // Integrations off: no new chat, but a chat made before is still listed, so its owners can revoke it (FR-MOD5).
+  const embedsOn = moduleShows("controls", "create_embed");
+  const offNote = embedsOn ? null : h("p", { class: "note warning", "data-key": "embeds-off" }, icon("alert"), h("span", null,
+    h("b", null, "Integrations is off. "), "These chats take no messages while it is off. Revoke one here to stop it for good."));
   fill(main,
-    pageHead("Settings", "Embeds for websites, how the cockpit looks, and sign-in links.", { icon: "settings" }),
-    card({ title: "Embeds: a chat window for a website", icon: "message-square", id: "embeds", cls: "emb-card",
-      tools: [create],
+    pageHead("Settings", "The modules in use, embeds for websites, how the cockpit looks, and sign-in links.", { icon: "settings" }),
+    modulesCard(projects),
+    !embedsOn && !em.embeds.length ? null : card({ title: "Embeds: a chat window for a website", icon: "message-square", id: "embeds", cls: "emb-card",
+      tools: [embedsOn ? create : null],
       info: "An embed has exactly one capability: it files end-user feedback as a change, or a business need as a signal. It answers only from a public brief "
         + "and never from the project's records. Its key is shown once and kept only as a hash; a person revokes it with one click." },
+    offNote,
     h("p", { class: "note" }, icon("shield"), h("span", null, "An embed sees nothing of a project's records: it only files what people tell it.")),
-    embedBaseNote(em),
+    embedsOn ? embedBaseNote(em) : null,
     rows.length ? h("ul", { class: "emb-list" }, rows) : empty("message-square", "No embed yet.")),
     h("div", { class: "sq-cols" },
       card({ title: "Appearance", icon: "sun", info: "Kept with your layout for the lens you are in, and in this browser." },
@@ -846,19 +856,105 @@ export function newProjectModal() {
   const maturity = segmented("np-maturity", Object.keys(S.meta.maturities).map((m) => [m, cap(m)]), "demo", () => {}, { label: "Maturity" });
   const mode = segmented("np-mode", Object.keys(S.meta.modes).map((m) => [m, cap(m)]), "mixed", () => {}, { label: "Mode" });
   const val = (seg) => (seg.querySelector('[aria-checked="true"]') || {}).dataset.key.split(":")[1];
+  // Start from a need, or from an existing project: a local git folder or an address git clones without a
+  // password. Adopting reads the repository (it never changes the folder) and records its tests as a baseline.
+  const repo = h("input", { maxlength: "2000", placeholder: "C:\\code\\my-app, /home/me/my-app or https://github.com/org/my-app.git",
+    "aria-label": "Folder or git address", autocomplete: "off", spellcheck: "false", "data-control": "adopt_project" });
+  const runsAt = h("input", { maxlength: "500", placeholder: "https://my-app.example.com (optional)", "aria-label": "Where it runs today" });
+  const intents = { monitor: "Watch it: probes, incidents, upstream changes as cards.",
+    maintain: "Keep it healthy: updates, fixes and security, through the gate.",
+    improve: "Develop it further: changes go round the factory's full loop." };
+  const intentHelp = h("small", { class: "muted", "aria-live": "polite" }, intents.improve);
+  const intent = segmented("np-intent", [["monitor", "Monitor"], ["maintain", "Maintain"], ["improve", "Improve"]], "improve",
+    (k) => { intentHelp.textContent = intents[k]; }, { label: "What Rihmasto should do" });
+  // Confidential material stays on local models: a role routed to a hosted model is refused, never sent.
+  const secret = h("input", { type: "checkbox", id: "np-confidential", "data-control": "confidential" });
+  const secretField = h("div", { class: "field np-secret" },
+    h("label", { class: "np-check", for: "np-confidential" }, secret, h("span", null, "Confidential: keep on local models")),
+    h("small", { class: "muted" }, "Intake and every model call for this project may go only to a model on this machine or your private network. A role routed to a hosted model is refused, never sent."));
+  // A folder, in either path, is scanned first: the person sees what would be read before anything is sent.
+  let startFrom = "need";
+  const scanner = scanStep({ get adopting() { return startFrom === "existing"; }, confidential: () => secret.checked,
+    person: () => by.value.trim(), onScanned: () => setSubmit(),
+    onNoCode: (folder) => {
+      start.querySelector('[data-key="np-start:need"]').click();
+      source.value = folder;
+      actKeep(form, submit, () => scanner.scan(folder)).then(setSubmit);   // after act() gives the buttons back
+    } });
+  const folderOf = () => {
+    const v = startFrom === "existing" ? repo.value : source.value;
+    return looksLikeFolder(v) ? v.trim() : "";
+  };
+  const scanned = () => !!folderOf() && !!scanner.result && scanner.source === folderOf();
+  const needPart = h("div", { class: "np-part" },
+    h("div", { class: "field" }, h("label", null, "The need, the idea or a written spec"), source,
+      h("small", { class: "muted" }, "Or the path of a folder on this machine: Rihmasto scans any files in it (documents, slides, sheets, PDFs, code) and shows what it would read first.")),
+    h("div", { class: "np-prof-h" }, h("span", { class: "label-h" }, "Work profile"), propose), basis, grid);
+  const modeField = h("div", { class: "field" }, h("label", null, "Mode"), mode, h("small", { class: "muted" }, "Who answers the panel's questions: people, the factory, or both."));
+  const repoPart = h("div", { class: "np-part" },
+    h("div", { class: "field" }, h("label", null, "Folder or git address"), repo,
+      h("small", { class: "muted" }, "A folder on this machine (a git repository or not), or an https address git clones without a password. For a private repository, clone it first and give the folder. Rihmasto scans it first, and never changes your folder.")),
+    h("div", { class: "field" }, h("label", null, "What should Rihmasto do with it?"), intent, intentHelp),
+    h("div", { class: "field" }, h("label", null, "Where it runs today"), runsAt,
+      h("small", { class: "muted" }, "Optional: Rihmasto probes it there and opens an incident if it stops answering.")),
+    h("p", { class: "muted small" }, "Rihma proposes the work profile from the repository's README; you can change it later."));
+  repoPart.hidden = true;
+  const submit = h("button", { type: "submit", class: "btn primary", "data-control": "new_project" }, icon("plus"), "Create and start the intake");
+  const submitNote = h("span", { class: "muted small" }, "Nothing is built until the questions that block it are answered.");
+  function setSubmit() {
+    const scan = !!folderOf() && !scanned();
+    const need = startFrom === "need";
+    fill(submit, icon(scan ? "search" : need ? "plus" : "folder"), scan ? "Scan the folder" : need ? "Create and start the intake" : "Adopt the project");
+    submit.disabled = !need && scanned() && !scanner.result.code;
+    submitNote.textContent = scan ? "Rihmasto shows what it would read of the folder first. Nothing is sent or created yet."
+      : need ? "Nothing is built until the questions that block it are answered."
+        : "It runs as a job: Rihmasto reads the project and runs its tests for a baseline. Your folder is never changed.";
+  }
+  const start = segmented("np-start", [["need", "A need or a spec"], ["existing", "An existing project"]], "need", (k) => {
+    startFrom = k;
+    needPart.hidden = k !== "need";
+    modeField.hidden = k !== "need";
+    repoPart.hidden = k !== "existing";
+    scanner.reset();
+    setSubmit();
+  }, { label: "Start from", control: "np_start" });
+  for (const field of [repo, source]) {
+    field.addEventListener("input", () => { if (scanner.source && scanner.source !== folderOf()) scanner.reset(); setSubmit(); });
+  }
   const form = h("form", { class: "np-form", novalidate: true },
+    h("div", { class: "field" }, h("label", null, "Start from"), start),
     h("div", { class: "field" }, h("label", null, "Title"), title),
-    h("div", { class: "field" }, h("label", null, "The need, the idea or a written spec"), source),
-    h("div", { class: "np-prof-h" }, h("span", { class: "label-h" }, "Work profile"), propose), basis, grid,
+    needPart, repoPart, scanner.el,
     h("div", { class: "row2" }, h("div", { class: "field" }, h("label", null, "Maturity"), maturity, h("small", { class: "muted" }, "Explore, demo, pilot or production: which stages and gates run.")),
-      h("div", { class: "field" }, h("label", null, "Mode"), mode, h("small", { class: "muted" }, "Who answers the panel's questions: people, the factory, or both."))),
+      modeField),
+    secretField,
     h("div", { class: "field" }, h("label", null, "Requested by"), by),
-    h("div", { class: "btns" }, h("button", { type: "submit", class: "btn primary", "data-control": "new_project" }, icon("plus"), "Create and start the intake"),
-      h("span", { class: "muted small" }, "Nothing is built until the questions that block it are answered.")));
+    h("div", { class: "btns" }, submit, submitNote));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const data = { title: title.value.trim(), source: source.value, profile: chosen, maturity: val(maturity), mode: val(mode),
-      requested_by: by.value.trim(), persona: S.persona };
+    const folder = folderOf();
+    if (folder && !scanned()) {          // the scan step first: what would be read, before anything is sent
+      if (!by.value.trim()) { say("Name the person who asks for it: the scan is signed.", "warning"); by.focus(); return; }
+      actKeep(form, submit, () => scanner.scan(folder)).then(setSubmit);   // after act() gives the buttons back
+      return;
+    }
+    const picked = folder ? { exclude: scanner.exclude() } : {};
+    if (startFrom === "existing") {
+      const data = Object.assign({ title: title.value.trim(), source: repo.value.trim(), intent: val(intent), maturity: val(maturity),
+        base_url: runsAt.value.trim(), person: by.value.trim(), persona: S.persona, confidential: secret.checked }, picked);
+      if (!data.title) { say("Give the project a title.", "warning"); title.focus(); return; }
+      if (!data.source) { say("Give the folder or the git address of the existing project.", "warning"); repo.focus(); return; }
+      if (!data.person) { say("Name the person who adopts it.", "warning"); by.focus(); return; }
+      actKeep(form, submit, async () => {
+        const out = await api("POST", "/api/adopt", data);
+        closeModal();
+        say("Adopting " + data.title + " as job " + out.job.id + ": it appears in Projects once its baseline is recorded.", "good");
+        location.hash = "#/jobs";
+      });
+      return;
+    }
+    const data = Object.assign({ title: title.value.trim(), source: folder || source.value, profile: chosen, maturity: val(maturity), mode: val(mode),
+      requested_by: by.value.trim(), persona: S.persona, confidential: secret.checked }, folder ? { folder: true, exclude: scanner.exclude() } : {});
     if (!data.title || !data.source.trim()) { say("A new project needs a title and the need.", "warning"); (data.title ? source : title).focus(); return; }
     if (!data.requested_by) { say("Name the person who asks for it.", "warning"); by.focus(); return; }
     actKeep(form, form.querySelector('button[type="submit"]'), async () => {

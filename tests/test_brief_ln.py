@@ -9,6 +9,7 @@ signing a ledger head and anchoring it off this machine (FR-L3), state rebuilt f
 
 import hashlib
 import json
+import subprocess
 import sys
 import threading
 import unittest
@@ -260,8 +261,11 @@ class PackHeadTest(FactoryTestCase):
 # -- FR-N1: a factory API with read models; its writes are signed ------------------------------------------
 
 # Write routes that record no state: a second sign-in link (kept in memory), the assistant (it proposes,
-# kernel/assistant.py) and the profile proposal (a rule over text).
-RECORD_NOTHING = {"post_link", "post_assistant", "post_profile_propose"}
+# kernel/assistant.py), the profile proposal (a rule over text), a folder's material map (kernel/material.py,
+# read and shown, never kept) and a settings change's preview (FR-CHG1). Adopting records its request,
+# signed, before its job runs, so it is a signed write here.
+RECORD_NOTHING = {"post_link", "post_assistant", "post_profile_propose", "post_source_preview",
+                  "post_settings_preview"}
 # The one write route that takes no person: it starts the pipeline as a job. Recorded as not built in
 # contract/deferred/ln.json (FR-N1), so it is not exercised here.
 UNSIGNED = {"post_advance"}
@@ -294,6 +298,13 @@ class FactoryApiTest(CockpitTestCase):
         """Every signed write route, in an order where each one's target exists: (route name, method, path,
         body for a person). Paths may name what an earlier write made, through ``got``."""
         b, a, pl = w["built"].pid, w["asking"].pid, w["planning"].pid
+        repo = self.tmp / "adopt-source"                                     # an existing project to adopt
+        if not (repo / ".git").exists():
+            repo.mkdir(parents=True, exist_ok=True)
+            (repo / "README.md").write_text("# Order tracker\n", encoding="utf-8")
+            for cmd in (["init", "-q"], ["add", "-A"],
+                        ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "x"]):
+                subprocess.run(["git", *cmd], cwd=repo, check=True, capture_output=True)
         return [
             ("post_signal", "POST", "/api/signals",
              lambda who, got: {"text": "The loans page should show overdue loans first", "channel": "chat",
@@ -305,6 +316,9 @@ class FactoryApiTest(CockpitTestCase):
             ("post_project", "POST", "/api/projects",
              lambda who, got: {"title": "Parking permits", "source": "We hand out parking permits by email.",
                                "requested_by": who, "persona": "business_owner"}),
+            ("post_adopt", "POST", "/api/adopt",                       # an existing project, adopted as a job
+             lambda who, got: {"title": "Order tracker", "source": str(repo), "intent": "maintain",
+                               "person": who, "persona": "developer"}),
             ("post_decide", "POST", f"/api/projects/{b}/cards/{w['change']}/decide",
              lambda who, got: {"verdict": "accept", "reason": "worth it", "person": who, "persona": "product_owner"}),
             ("post_answer", "POST", f"/api/projects/{a}/questions/Q-001/answer",
@@ -322,6 +336,16 @@ class FactoryApiTest(CockpitTestCase):
              lambda who, got: {"reason": "audit week", "person": who, "persona": "developer"}),
             ("post_resume", "POST", f"/api/projects/{b}/resume",
              lambda who, got: {"person": who, "persona": "developer"}),
+            # change anything set at creation, add material, go back a step (FR-CHG1)
+            ("put_settings", "PUT", f"/api/projects/{pl}/settings",
+             lambda who, got: {"title": "Room and desk bookings", "reason": "the desks too", "person": who,
+                               "persona": "product_owner"}),
+            ("post_material", "POST", f"/api/projects/{pl}/material",
+             lambda who, got: {"text": "Desks are booked by the half day.", "note": "desks", "person": who,
+                               "persona": "product_owner"}),
+            ("post_rewind", "POST", f"/api/projects/{pl}/rewind",
+             lambda who, got: {"to": "spec", "reason": "write it again with the desks", "person": who,
+                               "persona": "product_owner"}),
             ("post_comment", "POST", f"/api/projects/{b}/comments",
              lambda who, got: {"target": {"kind": "requirement", "id": "R-1"}, "text": "keep the form short",
                                "person": who, "persona": "stakeholder"}),
@@ -337,11 +361,31 @@ class FactoryApiTest(CockpitTestCase):
              lambda who, got: {"person": who, "persona": "compliance"}),
             ("post_pack_build", "POST", f"/api/projects/{b}/pack/build",
              lambda who, got: {"person": who, "persona": "compliance"}),
+            ("put_outputs", "PUT", f"/api/projects/{b}/outputs",     # outputs per audience (kernel/outputs.py)
+             lambda who, got: {"targets": ["report"], "reason": "for the owner", "person": who,
+                               "persona": "business_owner"}),
+            ("post_outputs_build", "POST", f"/api/projects/{b}/outputs/build",
+             lambda who, got: {"targets": ["report"], "person": who, "persona": "compliance"}),
             ("post_embed", "POST", "/api/embeds",
              lambda who, got: {"kind": "feedback", "origins": ["https://shop.example"], "project": b,
                                "label": "Shop feedback", "person": who, "persona": "it"}),
             ("post_embed_revoke", "POST", lambda got: f"/api/embeds/{got['post_embed']['embed']['id']}/revoke",
              lambda who, got: {"person": who, "persona": "it"}),
+            # autopilot, delegation and tracking (FR-AP2, FR-AP3)
+            ("post_autopilot_start", "POST", f"/api/projects/{a}/autopilot",
+             lambda who, got: {"kinds": ["question"], "until": "8h", "person": who, "persona": "developer"}),
+            ("post_delegation_revoke", "POST", f"/api/projects/{a}/delegations/DL-001/revoke",
+             lambda who, got: {"person": who, "persona": "business_owner"}),
+            ("post_autopilot_stop", "POST", f"/api/projects/{a}/autopilot/stop",
+             lambda who, got: {"person": who, "persona": "developer"}),
+            ("put_tracking", "PUT", f"/api/projects/{a}/tracking",
+             lambda who, got: {"checkpoints": [2], "person": who, "persona": "product_owner"}),
+            ("post_checkpoint_look", "POST", f"/api/projects/{a}/checkpoints/2/look",
+             lambda who, got: {"note": "seen", "person": who, "persona": "product_owner"}),
+            ("put_modules", "PUT", "/api/modules",                      # every module stays on (kernel/modules.py)
+             lambda who, got: {"preset": "full", "reason": "the whole factory", "person": who, "persona": "it"}),
+            ("put_project_modules", "PUT", f"/api/projects/{b}/modules",
+             lambda who, got: {"preset": "full", "person": who, "persona": "developer"}),
             ("put_layout", "PUT", "/api/layout?persona=developer&lens=delivery",
              lambda who, got: {"person": who, "layout": LAYOUT}),
         ]
@@ -395,6 +439,11 @@ class FactoryApiTest(CockpitTestCase):
         self.assertEqual(status, 200, out)
         status, out, _ = self.call("POST", "/api/profiles/propose", {"text": "Sync orders from SAP to our CRM"})
         self.assertEqual(status, 200, out)
+        pl = next(p for p in self.factory.projects() if p.meta.get("title") == "Room bookings")
+        status, out, _ = self.call("POST", f"/api/projects/{pl.pid}/settings/preview",
+                                   {"kind": "integration", "maturity": "pilot", "person": "Dev", "persona": "developer"})
+        self.assertEqual(status, 200, out)
+        self.assertEqual(out["rewind"], "questions")
         self.assertEqual(tree(home), before)
 
     def test_FR_N1_AC_1_every_read_model_answers_from_the_records_and_writes_nothing(self):

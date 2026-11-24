@@ -8,10 +8,37 @@ measured" as a state, everything in the ledger, and people decide.
 ## Adopting an existing solution
 
 ```
-python -m kernel.cli adopt "Legacy loans" --source <path or URL> --intent monitor|maintain|improve \
-    --person Aino --persona developer [--base-url https://loans.example]
+python -m kernel.cli adopt "Legacy loans" --source <folder or URL> --intent monitor|maintain|improve \
+    --person Aino --persona developer [--base-url https://loans.example] [--exclude GLOB] [--confidential]
 python -m kernel.cli sync <pid>
 ```
+
+### Any folder
+
+The source may be **any folder** on this machine, not only a git repository
+([kernel/material_adopt.py](../kernel/material_adopt.py), FR-MAT1):
+
+- **A git repository** is adopted as below. Its documents are also scanned
+  ([kernel/material.py](../kernel/material.py), see [the material map](guides/inputs.md#any-folder-the-material-map))
+  as context for the panel and the coming assessment: the project keeps the map (`material.json`) and
+  the text built from it (`material.md`), and the ledger's `material_scanned` holds the counts. Nothing
+  is sent to a model at adoption.
+- **A folder that is not a git repository** is first **snapshotted**: the files that pass the scan's
+  rules (no dependency, build or cache folders, nothing that may hold secrets, nothing you excluded) are
+  copied into a new git repository under the factory home (`snapshots/`) and committed as the baseline
+  ("Baseline snapshot of <folder>"). Your folder is never changed: no `.git` is created in it. That
+  repository is then adopted like any other, and `adopted.json` and the ledger's `snapshot_taken` say
+  what was copied, skipped and excluded. A later `sync` reads the snapshot, which does not follow your
+  folder: adopt it again to take a new baseline.
+- **A folder with no code at all** (only documents) is refused: there is nothing to adopt. The message
+  offers to start a new project from it as material instead (`rihmasto new "Title" --source <folder>`).
+
+In the cockpit, **New project → An existing project** takes the folder and shows the same scan first
+(**Scan the folder**): what would be read, listed and skipped, and whether it is a git repository. Untick
+files to leave them out of the snapshot and the scanned documents; a folder of documents only gets a
+**Start a new project from it** button. `--confidential` (or the box) records the project as
+confidential, so every later model call for it stays on local models
+([inputs.md](guides/inputs.md#confidential-material-keep-it-on-local-models)).
 
 `kernel/adopt.py` makes the repository a project (`source_kind: adopted`):
 
@@ -133,6 +160,10 @@ the gate says "not measured: no security scan", never "passed". The capability p
 evidence pack name the latest scan, its counts and the accepted risks.
 
 ## Not built yet (honest list)
+
+- **A snapshot that follows its folder.** A folder that is not a git repository is adopted from a
+  snapshot taken once; changes in the folder afterwards are not seen by `sync`. Adopt it again, or make
+  the folder a git repository.
 
 - **Delivering adopted code.** There is no paved road that knows how to run an adopted repository,
   so `run` stops before delivery. The kernel's surface on an adopted `main` gives a builder cell

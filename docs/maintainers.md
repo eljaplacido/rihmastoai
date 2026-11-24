@@ -159,6 +159,33 @@ When the deletions are meant (files removed here since the last snapshot), expor
    with the `Rihmasto-Export:` trailer. While you are the only code owner, it merges through the
    bypass (see [the settings](#the-repositorys-settings)).
 8. **Confirm.** `status` now names the new export and says that nothing waits for import.
+9. **Publish a version** (only for a release with a version, step 4). Once the sync pull request
+   that carries the new version has merged, tag that commit on the public `main` and push the tag:
+
+   ```bash
+   git -C ../rihmasto-public pull --ff-only
+   git -C ../rihmasto-public tag -s v1.2.0 -m "Rihmasto 1.2.0"     # -a if you do not sign tags
+   git -C ../rihmasto-public push origin v1.2.0
+   ```
+
+   The tag starts [.github/workflows/release.yml](../.github/workflows/release.yml). It runs the
+   suite and the contract again, then [tools/release_build.py](../tools/release_build.py) builds
+   the source archives (`.tar.gz`, `.zip`), a CycloneDX SBOM (`.cdx.json`), `SHA256SUMS` and the
+   notes, which are the version's section of the changelog, word for word. GitHub signs a build
+   provenance attestation for the files, and a GitHub Release publishes them, marked as a
+   pre-release for an alpha, beta, release candidate or `.dev` version. The build refuses, and
+   nothing is published, when the tag is not `pyproject.toml`'s version or the changelog has no
+   section for it. Only the publishing job can write to the repository.
+
+   To rehearse, run the workflow from the Actions tab (**Release**, **Run workflow**) or build
+   locally with `python tools/release_build.py --dry-run --out dist`. A rehearsal builds from the
+   declared version and the *Unreleased* notes, keeps the files as a workflow artifact for 14 days,
+   and publishes nothing. Anyone can check a downloaded file with `sha256sum --check SHA256SUMS`
+   and `gh attestation verify <file> -R eljaplacido/rihmastoai`.
+
+   Rihmasto runs from a checkout (see `pyproject.toml`), so the source archive is the release:
+   there is no wheel on PyPI and no container image of Rihmasto itself. The cockpit only ever
+   listens on loopback, so an image would need its own decision first.
 
 **If the squash message lost the trailer** (another default, or an edit), the sync still knows the
 export by its title, "Sync from the development repository at `<short sha>`". If the title was

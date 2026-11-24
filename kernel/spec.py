@@ -260,6 +260,9 @@ def normalize(project, raw: dict) -> dict:
         req = _requirement(item, n, reqs, canon, requested_by, dropped)
         if req is not None:
             reqs.append(req)
+    from kernel.input_intake import keep_authors
+
+    reqs = keep_authors(project, reqs, limit, dropped)   # an expert's own ids and wording (docs/guides/inputs.md)
     if not reqs:
         raise ValueError("the analyst's draft holds no usable requirement")
     spec = {"title": str(raw.get("title") or meta["title"]).strip(), "summary": str(raw.get("summary", "")).strip(),
@@ -310,6 +313,9 @@ def render_spec_md(spec: dict) -> str:
 
 
 def make_spec(project, *, model, feedback: str | None = None) -> dict:
+    from kernel.confidential import require_local
+
+    require_local(project, ("analyst",), where="spec")     # a confidential project's spec stays on local models
     still_open = blocking_open(project)
     if still_open:
         project.log("send_back", {"questions": [q["id"] for q in still_open]})

@@ -84,18 +84,23 @@ def notice_of(event: dict[str, Any]) -> dict[str, Any] | None:
         actor = event.get("actor") or {}
         person = actor.get("id")
         out["decided"] = {"verdict": event.get("correlation", {}).get("verdict"),
-                          "person": defang(person) if person else None, "persona": actor.get("persona")}
+                          "person": defang(person) if person else None, "persona": actor.get("persona"),
+                          "delegation": event.get("correlation", {}).get("delegation")}
     return out
 
 
 def lines(notice: dict[str, Any]) -> tuple[str, str]:
-    """(the headline, the detail) a notice says in every sink."""
+    """(the headline, the detail) a notice says in every sink. The daily Track digest (kernel/track.py)
+    brings its own, made of defanged words."""
+    if notice.get("digest"):
+        return str(notice["headline"]), str(notice["detail"])
     label = KIND_LABEL.get(str(notice.get("card_kind")), "Card")
     decided = notice.get("decided")
     if decided:
         persona = PERSONA_LABEL.get(str(decided.get("persona")), decided.get("persona") or "a persona")
+        by = f", by delegation {decided['delegation']}" if decided.get("delegation") else ""
         return (f"Decided: {label.lower()} {notice['card']}, {notice['title']}",
-                f"{decided.get('verdict') or 'decided'} by {decided.get('person') or 'a person'}, as {persona}. "
+                f"{decided.get('verdict') or 'decided'} by {decided.get('person') or 'a person'}, as {persona}{by}. "
                 f"Project {notice['project']}.")
     return (f"{label} {notice['card']} waits for {_who(notice['waiting'])}: {notice['title']}",
             f"Project {notice['project']}. {NOT_HERE}")

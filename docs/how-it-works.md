@@ -10,7 +10,10 @@ decision names a person.
 ### 1. Intake
 
 A request comes in as a vague idea, a markdown spec, a folder of documents, or a signal from the
-[delivery square](#the-delivery-square). A **panel of perspectives** reads it: business, end user,
+[delivery square](#the-delivery-square). The kernel first reads it by rule: its kind (a need, a
+specification, a plan or a folder), and what it states, fact by fact with its lines, against a facet
+checklist. What it states is never asked again; the checklist finds its gaps
+([guides/inputs.md](guides/inputs.md)). A **panel of perspectives** reads it: business, end user,
 IT and security, operations, and delivery. Each asks the questions whose answers change what
 gets built, with the answer it would assume. Where perspectives disagree, the opinions stay side
 by side on the question. They are not averaged.

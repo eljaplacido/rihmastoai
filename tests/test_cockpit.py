@@ -1152,7 +1152,7 @@ WIDGET_MODEL = {"kpi_strip": "kpis", "square": "square", "pipeline": "pipeline",
                 "catalogue": "catalogue", "live": "projects", "timeline": "timelines", "gate_trend": "gate_trend",
                 "coverage": "coverage", "activity": "activity", "models": "models", "health": "projects",
                 "updates": "updates", "autonomy": "autonomy", "evidence_packs": "evidence_packs", "spend": "spend",
-                "feed_health": "feed_health", "eval_trend": "eval_trend", "try_it": "try_it"}
+                "feed_health": "feed_health", "eval_trend": "eval_trend", "try_it": "try_it", "track": "track"}
 
 
 class DashboardLayoutTest(RedesignTestCase):

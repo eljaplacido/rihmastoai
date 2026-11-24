@@ -3816,6 +3816,1038 @@
           "then": "an agentic run checks the scope before every turn and every question to the model and stops, recorded and not measured, when it was revoked or expired mid-run; only a server the factory started is driven; every leak form in tests/fixtures/redteam/agentic/leaks_missed.json, a canary split between fields or over turns, a canary reaching the prompt whatever the attacker sent, and a write to an existing or untracked record are found, while near misses stay quiet"
         }
       ]
+    },
+    {
+      "id": "FR-MOD1",
+      "group": "MOD. Modules",
+      "provenance": "vendor-proposed",
+      "notes": "D-0017: every way of using Rihmasto, the full factory, spec only or gate my code among them, writes the same trace. The modules stream (docs/guides/use-only-what-you-need.md).",
+      "statement": "A person can use a very small part of Rihmasto or the whole of it, and change that later: a catalogue of modules with their dependencies and presets, chosen per factory and overridable per project",
+      "acceptance": [
+        {
+          "id": "FR-MOD1-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "each module says what it adds, what it needs and what it yields; enabling one enables what it needs and says so; turning off one another module needs, an unknown module or preset and an empty set are refused; every preset is closed under its needs and says what you bring and get"
+        },
+        {
+          "id": "FR-MOD1-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a factory where nobody chose is the full factory, and reading its set creates nothing; the full factory chosen by its preset still holds a module added to the catalogue later"
+        },
+        {
+          "id": "FR-MOD1-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a set is chosen by a named person with a persona that may choose, and recorded in the factory's ledger with from, to, preset, person, persona and reason; nothing is recorded when nothing changes; a project's own set and its return to the factory's are recorded in its ledger"
+        },
+        {
+          "id": "FR-MOD1-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "`rihmasto modules show`, `modules presets` and `modules set` show and change the sets from the command line, refusing a writer who is not a person"
+        }
+      ]
+    },
+    {
+      "id": "FR-MOD2",
+      "group": "MOD. Modules",
+      "provenance": "vendor-proposed",
+      "notes": "D-0017: every way of using Rihmasto, the full factory, spec only or gate my code among them, writes the same trace. The modules stream (docs/guides/use-only-what-you-need.md).",
+      "statement": "What a set does: a module that is off is refused where it acts and hidden where it shows, and its records stay",
+      "acceptance": [
+        {
+          "id": "FR-MOD2-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the command line refuses a command of a module that is off where it acts, with exit 2 and the command that turns it on, a project's own set taking precedence over the factory's; core commands always run"
+        },
+        {
+          "id": "FR-MOD2-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the pipeline stops at the edge of the set as done, saying why and what to do next, and records the stop once: spec only stops once the contract is compiled, a set without delivery stops before delivery"
+        },
+        {
+          "id": "FR-MOD2-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the cockpit refuses a write route of a module that is off with 403 and never a read; it reads and changes the factory's set and a project's own, signed and recorded; a project's views are only those of its modules that are on"
+        },
+        {
+          "id": "FR-MOD2-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the assistant's map, its model's catalogue and its navigation leave out what is off; asked about it, the assistant names the module that adds it and takes the person to Settings, Modules; with the assistant module off it answers from the map without a model"
+        }
+      ]
+    },
+    {
+      "id": "FR-MOD3",
+      "group": "MOD. Modules",
+      "provenance": "vendor-proposed",
+      "notes": "D-0017: every way of using Rihmasto, the full factory, spec only or gate my code among them, writes the same trace. The modules stream (docs/guides/use-only-what-you-need.md).",
+      "statement": "Each standalone preset works end to end from the command line with what exists today, and the person's own repository is never written",
+      "acceptance": [
+        {
+          "id": "FR-MOD3-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "spec only: a need becomes a confirmed spec and a hashed contract, exported with a report of who decided what and a manifest; nothing is built, holdout scenarios never leave their custody, the export is recorded and never replaces an earlier one"
+        },
+        {
+          "id": "FR-MOD3-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "gate my code: a change in an attached repository meets the gate (tests, the trace, fail-first, the independent verifier, protected paths) in a temporary clone; the verdict is recorded with who asked and the revisions; without its verifier it is not measured; Rihmasto never merges"
+        },
+        {
+          "id": "FR-MOD3-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "gate my code holdouts: scenarios are imported from a folder outside the repository (inside is refused), kept in custody, run against the person's running service, and the ledger keeps each criterion's verdict and never a scenario's steps"
+        },
+        {
+          "id": "FR-MOD3-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a repository is attached with a contract whose hash is checked, a spec file compiled with no model and endorsed by the person, or its own contract file; a URL, a folder that is not a repository and a changed contract are refused and leave nothing behind; the pipeline says what an attached repository waits for"
+        },
+        {
+          "id": "FR-MOD3-AC-5",
+          "check": {
+            "kind": "test"
+          },
+          "then": "security only: Rihmasto's own static scan of a committed revision of the repository feeds the security gate as SARIF, and a person accepts a finding's risk until a date"
+        },
+        {
+          "id": "FR-MOD3-AC-6",
+          "check": {
+            "kind": "test"
+          },
+          "then": "evidence only: the repository's releases (its tags) are recorded with the commit each names, git's claims marked as claims, and what the kernel saw at each; a moved tag is recorded again; the evidence pack carries them"
+        },
+        {
+          "id": "FR-MOD3-AC-7",
+          "check": {
+            "kind": "test"
+          },
+          "then": "assess only adopts and syncs an existing system, and capability only starts a project on the chain to a capability; each refuses, with how to turn it on, what its set does not hold"
+        }
+      ]
+    },
+    {
+      "id": "FR-MOD4",
+      "group": "MOD. Modules",
+      "provenance": "vendor-proposed",
+      "notes": "D-0017: every way of using Rihmasto, the full factory, spec only or gate my code among them, writes the same trace. The modules stream (docs/guides/use-only-what-you-need.md).",
+      "statement": "The cockpit shows only what is enabled, says what a module that is off would add, and lets a person choose the set: on a new home's first visit and in Settings",
+      "acceptance": [
+        {
+          "id": "FR-MOD4-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the sidebar, the phone's bar, Home's widgets and key figures, the widget library, the palette, a project's views and the assistant's suggestions show only what is on; a page of a module that is off names the module and links to Settings, Modules, and so does the assistant"
+        },
+        {
+          "id": "FR-MOD4-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a new factory home offers a first-run choice of a preset, by keyboard, signed and recorded; Settings, Modules changes the factory's set and a project's own, and the page shows the change at once"
+        },
+        {
+          "id": "FR-MOD4-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "these pages fit at 1440 and 390 pixels in the dark and the light theme with nothing spilling sideways, every control has an accessible name, and no step leaves a console error or a Content-Security-Policy violation"
+        }
+      ]
+    },
+    {
+      "id": "FR-MOD5",
+      "group": "MOD. Modules",
+      "provenance": "vendor-proposed",
+      "notes": "D-0017: a module that is off is off on every surface, and turning one off never leaves a live thing that nobody may stop. The modules stream's repair (docs/guides/use-only-what-you-need.md).",
+      "statement": "A module that is off is off on every surface: a website's chat, an inbound webhook, the MCP server's write tools and the assistant's proposals ask the same set; a safety switch is never refused; an attached repository's own tests run only where access lets outside code run",
+      "acceptance": [
+        {
+          "id": "FR-MOD5-AC-1",
+          "given": "a website chat made while Integrations was on, and a set where Integrations, or what the chat files into, is off",
+          "when": "the website sends a message, and an owner revokes the chat",
+          "then": "the chat takes no message and files nothing (the website is told the chat is turned off); revoking it is core on the command line and in the cockpit, signed and recorded, while creating one is refused; Settings still lists the chats made before, says Integrations is off and offers Revoke, by keyboard",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MOD5-AC-2",
+          "given": "a set where the delivery square or the change loop is off where a write acts",
+          "when": "an MCP client calls rihma_signal or rihma_report_change",
+          "then": "the tool is refused with the module and the command that turns it on, nothing is written; a comment, which is core, is taken; every MCP tool that writes names the cockpit route whose module it asks",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MOD5-AC-3",
+          "given": "a set where a module is off and the assistant's model is asked to act",
+          "when": "the model proposes an action, a route or a widget of that module",
+          "then": "the proposal is not offered: it is listed as dropped with the module's name and that Settings, Modules turns it on; with the module on where the project is, the same proposal is offered",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MOD5-AC-4",
+          "given": "an attached repository and access enforced",
+          "when": "a person asks for repo gate or repo releases --check",
+          "then": "the repository's tests run only through IT's isolation runner, required before anything is cloned and serving this factory while they run; with no runner the request is refused (exit 2) and nothing runs; recording releases without checks runs no code and still works",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MOD5-AC-5",
+          "given": "an inbound webhook source IT added while Integrations was on, and a set where Integrations, or what the source files into, is off",
+          "when": "a ring with a signature that holds arrives, and IT removes the source",
+          "then": "the ring is answered 403, this source is turned off, and nothing is stored (an unverified ring is still 401); removing a source, ending a subscription, disabling a connector and the lists they are found in are core on the command line, signed and recorded, while adding a source is refused (exit 2)",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-OUT1",
+      "group": "Q. Outputs per audience",
+      "provenance": "vendor-proposed",
+      "statement": "Each audience's output is chosen by a named person, recorded and changeable, and built from the project's records and its release, the same records giving the same bytes.",
+      "notes": "Outputs per audience, proposed by the outputs stream (kernel/outputs.py); vendor-proposed until the owner confirms it. docs/guides/outputs.md marks what is built and what is planned.",
+      "acceptance": [
+        {
+          "id": "FR-OUT1-AC-1",
+          "given": "a project with no choice yet",
+          "when": "a person chooses its outputs, and chooses again",
+          "then": "outputs.json and an outputs_chosen ledger record keep who chose, as which persona, why, and what was chosen before, added and removed, with the history; a persona outside the choosers, a name that is not a person or an unknown target is refused and records nothing; before any choice the work profile's proposal is shown as proposed, never as chosen",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT1-AC-2",
+          "given": "chosen and unchosen targets",
+          "when": "a person builds outputs",
+          "then": "a target nobody chose, or a builder outside the builders' personas, is refused and nothing is recorded; every build, made or not, is an output_built record with the person and persona; a target that cannot be built yet says why in plain words (the MCP server is planned)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT1-AC-3",
+          "given": "the same records and release",
+          "when": "the report, API, container and source are built twice, by two people",
+          "then": "each zip has the same name (its content's sha256) and the same bytes; every entry carries a fixed time; MANIFEST.json holds the sha256 of every file",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT1-AC-4",
+          "given": "the command line",
+          "when": "rihmasto output <pid> runs with no flag, --choose and --target",
+          "then": "it shows the targets, chooses and builds; a choice or a build without --person and --persona is refused with exit 2",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-OUT2",
+      "group": "Q. Outputs per audience",
+      "provenance": "vendor-proposed",
+      "statement": "A product chosen to be a web app people sign in to gets the paved road's sign-in, checked at every gate and owned by the road.",
+      "notes": "Outputs per audience, proposed by the outputs stream (kernel/outputs.py); vendor-proposed until the owner confirms it. docs/guides/outputs.md marks what is built and what is planned.",
+      "acceptance": [
+        {
+          "id": "FR-OUT2-AC-1",
+          "given": "the template with the road's sign-in",
+          "when": "its own suite runs, and runs again with the sign-in removed or weakened",
+          "then": "the suite passes, the road's sign-in checks among them (salted PBKDF2-SHA256 hashes of at least 600000 rounds, an HttpOnly SameSite=Lax cookie that is Secure over TLS, a CSRF token on every state-changing request, a lockout after repeated failures, the first admin from the environment, the proxy mode for the organisation's own sign-in); without the sign-in, or with a cheap hash, no CSRF check, no lockout or a cookie scripts can read, it fails",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT2-AC-2",
+          "given": "a product with sign-in",
+          "when": "the red team's static rules scan it",
+          "then": "they find nothing; the Dockerfile runs the service as an unprivileged user that owns /data; the operator's guide names the first admin's and the proxy's settings",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT2-AC-3",
+          "given": "a person chooses the web app with sign-in",
+          "when": "before the product's repository exists, and after it",
+          "then": "the repository starts with the sign-in; an existing product gains it on main only when its whole suite passes with it (sign_in_added), a server without the sign-in hook is refused and main does not move (sign_in_refused), the choice is then not recorded; no builder cell may change app/sign_in.py or its tests",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT2-AC-4",
+          "given": "the product's server",
+          "when": "a request reaches it",
+          "then": "every request goes through the guards before its handler, an unknown path and a wrong method included; handle() runs a handler without them for the product's tests; a repeated header reaches a guard as all its values; a sign-in request's body never reaches the traffic log",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT2-AC-5",
+          "given": "the template with the road's sign-in",
+          "when": "its sign-in is changed to keep a session token that arrived with the sign-in request",
+          "then": "the road's own checks fail (session fixation is caught at every gate); the road's sign-in issues a fresh token, and a planted token, made up or someone else's live session, never signs the person in",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT2-AC-6",
+          "given": "a product compiled without sign-in",
+          "when": "a person chooses the web app with sign-in later",
+          "then": "main's Dockerfile runs the service as the unprivileged user that owns /data and the red team's static rules find nothing; the sign_in_added record and factory/SIGN-IN.md say how a data volume made before is handed over once",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-OUT3",
+      "group": "Q. Outputs per audience",
+      "provenance": "vendor-proposed",
+      "statement": "A developer, an integrator and a team each get their output: a container, an API description and the source.",
+      "notes": "Outputs per audience, proposed by the outputs stream (kernel/outputs.py); vendor-proposed until the owner confirms it. docs/guides/outputs.md marks what is built and what is planned.",
+      "acceptance": [
+        {
+          "id": "FR-OUT3-AC-1",
+          "given": "a release",
+          "when": "the container output is built",
+          "then": "it holds the product's source as committed at the release revision with its Dockerfile, a compose.yaml that publishes the service on 127.0.0.1:8080 with its data on a named volume, image.json and a README on how to run it; with sign-in, compose takes the first admin from the shell, never with a value",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT3-AC-2",
+          "given": "a release",
+          "when": "the API output is built",
+          "then": "it is an OpenAPI 3.1 document with every route of the spec's interface and /health; each operation lists the criteria whose action names it, with their evidence state, and the status codes they expect; with sign-in, the sign-in routes are open and every other operation needs the session cookie and the CSRF header",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT3-AC-3",
+          "given": "a release",
+          "when": "the source output is built",
+          "then": "it is a git bundle that git bundle verify accepts and that clones to a history holding the release's revision, with the commands to put it on a branch of the team's own; Rihmasto pushes nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT3-AC-4",
+          "given": "the source output, with a release and without one",
+          "when": "its README's commands run, word for word, in a folder outside any repository",
+          "then": "every command succeeds: the clone checks main out, the bundle verifies inside it, and the team's repository receives a branch at the release's revision, or at main's tip when there is no release",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-OUT4",
+      "group": "Q. Outputs per audience",
+      "provenance": "vendor-proposed",
+      "statement": "A business owner gets a plain delivery report, in HTML and Markdown, every statement traceable to a record.",
+      "notes": "Outputs per audience, proposed by the outputs stream (kernel/outputs.py); vendor-proposed until the owner confirms it. docs/guides/outputs.md marks what is built and what is planned.",
+      "acceptance": [
+        {
+          "id": "FR-OUT4-AC-1",
+          "given": "a project with a release, a decision and assumptions",
+          "when": "its report is written",
+          "then": "it has the eight sections (what was asked and by whom, what was built, the decisions, the assumptions, the evidence, how to try it, the cost, the limits); each statement names the record it rests on; who asked, who decided as which persona, each assumption's state and each criterion's evidence are said in words; an unpriced cost reads not measured, never 0",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT4-AC-2",
+          "given": "outputs built since",
+          "when": "the report is written again",
+          "then": "it is the same; the HTML escapes every value, runs no script and loads nothing from outside",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-OUT5",
+      "group": "Q. Outputs per audience",
+      "provenance": "vendor-proposed",
+      "statement": "The cockpit's Outputs view: pick the targets, build them, download them, with what each contains.",
+      "notes": "Outputs per audience, proposed by the outputs stream (kernel/outputs.py); vendor-proposed until the owner confirms it. docs/guides/outputs.md marks what is built and what is planned.",
+      "acceptance": [
+        {
+          "id": "FR-OUT5-AC-1",
+          "given": "the cockpit",
+          "when": "the outputs API is called",
+          "then": "GET shows the seven targets with what each holds; PUT chooses, signed, and a persona that may not is a 403; POST .../outputs/build builds and hands each file over through a link that works once; a target not chosen is a 403; a new project's request may name its outputs, chosen at intake by the requester, and is refused before the project is made when the persona may not choose",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT5-AC-2",
+          "given": "a demo home in headless Chrome",
+          "when": "a person asks the assistant for the outputs and uses the Outputs view",
+          "then": "the assistant takes them there; they choose by keyboard, build and download, in the dark and the light theme at 1440 and 390 px wide, every control named, nothing wider than the screen, with no console error, failed request or CSP violation; skipped when Chrome is not installed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT5-AC-3",
+          "given": "the cockpit's map",
+          "when": "it is read",
+          "then": "it names the Outputs view and its controls, and a where-is question about the outputs is taken to the view",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-OUT6",
+      "group": "Q. Outputs per audience",
+      "provenance": "vendor-proposed",
+      "statement": "An MCP server output plugs into the small-capability faces, and a posture may propose outputs, each through a documented hook.",
+      "notes": "Outputs per audience, proposed by the outputs stream (kernel/outputs.py); vendor-proposed until the owner confirms it. docs/guides/outputs.md marks what is built and what is planned.",
+      "acceptance": [
+        {
+          "id": "FR-OUT6-AC-1",
+          "given": "no faces module, or one without output_files",
+          "when": "the MCP server target is shown and built",
+          "then": "it is planned and not built, with the reason; once the faces module offers output_files, the target is available and its files are built like any other output",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT6-AC-2",
+          "given": "a postures module that offers proposed_outputs, or none",
+          "when": "a project's outputs are shown before anyone chose",
+          "then": "the posture's proposal is shown as proposed, never as chosen, and nothing is recorded; a proposal naming an unknown target, or no hook, falls back to the work profile's proposal",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-OUT7",
+      "group": "Q. Outputs per audience",
+      "provenance": "vendor-proposed",
+      "statement": "What a chosen output settles is known everywhere it matters: the factory's own checks never count the sign-in turning them away as a product failure, intake never asks it again, and the builder is told how the sign-in works.",
+      "notes": "From the independent check of the outputs stream; vendor-proposed until the owner confirms it. docs/guides/outputs.md marks what is built and what is planned (a test account for the runner).",
+      "acceptance": [
+        {
+          "id": "FR-OUT7-AC-1",
+          "given": "a running product with the road's sign-in",
+          "when": "the holdout runner, a probe round and a shadow replay send requests without a session",
+          "then": "a step the sign-in turns away that expected no 401 is not measured, never failed; a step that expects the 401 passes and a real mismatch still fails; the probe round counts it as neither a check nor a failure; a shadow replay that met the sign-in is not measured, never passed, and the canary leaves those requests out of its sample",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT7-AC-2",
+          "given": "a project whose web app with sign-in was chosen at intake",
+          "when": "the intake panel runs",
+          "then": "the panel's prompt names what the choice settles, a question on sign-in or single sign-on is not asked and a question_not_asked record names it with the person who chose; the brief, which the spec reads, keeps the choice as that person's word; a project without the choice is still asked",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-OUT7-AC-3",
+          "given": "a product with the road's sign-in, and one without",
+          "when": "a builder's envelope is written",
+          "then": "the envelope with sign-in tells the builder how req.user, require_role, csrf_field and session_headers work and that the road's sign-in files are never edited; the other says nothing of it",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AP1",
+      "group": "K. Antifragility",
+      "provenance": "vendor-proposed",
+      "notes": "D-0017 (governance everywhere: autopilot in a sandbox is one of the paths, and no path skips the record) and D-0007 (delegated conclusions); the owner asked for both ends: let Rihmasto run on its own in a test sandbox, or keep a tight hold, and see whether a project stays on track.",
+      "statement": "A person whose persona may decide a kind of card delegates named card kinds on one project, for at most seven days, to one of the factory's deterministic rules; the pipeline decides those cards by the rule in that person's name and persona, and nothing outside the delegation is decided.",
+      "acceptance": [
+        {
+          "id": "FR-AP1-AC-1",
+          "given": "a delegation of questions (rule assume) by a person as a persona",
+          "when": "the pipeline waits on a blocking question",
+          "then": "it assumes the question with the asking perspective's proposal and goes on; the decision records the delegating person, the persona and the delegation id on the decision record, the card's copy and the ledger; a decision with a reason of its own says 'by delegation DL-n (rule)'; a delegated_decision record keeps the rule and its basis",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP1-AC-2",
+          "given": "delegations of the plan's approval (plan_when_tested) and of escalations (retry_once)",
+          "when": "the plan or an escalation waits",
+          "then": "a plan whose every requirement has a test, every criterion a check, that compiles and contradicts no paved road is approved, and the pipeline's own plan gate sees it approved; a plan with a requirement with no test, and an approval that is not the plan's, wait for a person, the reason in the ledger once; an escalated task is retried once, and when it escalates again the card waits for a person; the rule never accepts as is and never stops a build",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP1-AC-3",
+          "given": "a delegation",
+          "when": "it is revoked, or its time passes, or a card of a kind not delegated waits",
+          "then": "the next card of that kind waits for a person at once; a card of a kind not delegated is never decided; only the delegator or a persona that decides a delegated kind may revoke; a delegation longer than seven days, ending in the past, with an unreadable time or naming no person is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP1-AC-4",
+          "given": "a request to delegate",
+          "when": "it names deploy_gate, trust, holdout_ruling, connector, road, concept, a kind with no rule, a kind the persona may not decide, or an unknown rule",
+          "then": "it is refused with the reason and nothing is recorded",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP1-AC-5",
+          "given": "access enforced (D-0016)",
+          "when": "a verified identity delegates and the delegation later decides",
+          "then": "only a verified identity granted the persona may delegate; the delegated decision names that identity and the delegation, and is checked again against the access file, so a grant IT removed refuses it and the card waits, with the refusal in the ledger",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AP2",
+      "group": "K. Antifragility",
+      "provenance": "vendor-proposed",
+      "notes": "D-0017 (governance everywhere: autopilot in a sandbox is one of the paths, and no path skips the record) and D-0007 (delegated conclusions); the owner asked for both ends: let Rihmasto run on its own in a test sandbox, or keep a tight hold, and see whether a project stays on track.",
+      "statement": "An autopilot run delegates named card kinds until a time and runs the pipeline on its own, bound to a sandbox: it delivers only to the local preview or a road marked sandbox, sends events only to sandbox receivers, keeps connectors read-only, and a person stops it.",
+      "acceptance": [
+        {
+          "id": "FR-AP2-AC-1",
+          "given": "rihmasto autopilot start <pid> --until --delegate --person --persona (or the cockpit)",
+          "when": "the project lands on the local preview",
+          "then": "the run delegates the kinds in the starter's name, runs pass after pass until a person is needed or it is done, and records autopilot_started, each pass and each delegated decision in the ledger; autopilot status shows the run, its sandbox, its delegation and what it decided",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP2-AC-2",
+          "given": "a run on a project that lands in staging, or on a demo road not marked sandbox",
+          "when": "the pipeline would deliver",
+          "then": "it waits for a person with the reason, nothing is deployed and no road card is opened, and the hold is in the ledger once; a demo road IT marked \"sandbox\": true is delivered to; staging and production are never a sandbox",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP2-AC-3",
+          "given": "a run that holds a project",
+          "when": "the relay runs, or a connector would write",
+          "then": "a subscription IT has not marked as a sandbox receiver gets none of the project's events: they wait in order, the hold is logged once, and they go after a person stops the run; a sandbox receiver gets them; only IT marks a receiver; write_hold answers that a connector write waits for a person",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP2-AC-4",
+          "given": "a run",
+          "when": "a person stops it, or its time passes, or a second run is started",
+          "then": "stopping revokes its delegation at once and the next card waits; once its time passes no pass runs and the sandbox holds until a person stops it; one run holds a project at a time; a persona that may not pause may not start or stop one; posture_preset offers the 'autopilot sandbox' preset",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP2-AC-5",
+          "given": "the cockpit",
+          "when": "a person starts or stops an autopilot, or revokes a delegation, from a project's Track view",
+          "then": "each write is signed with the person and persona through the kernel, which refuses what it does not allow; in headless Chrome, dark at 1440 px and light at 390 px, the Home widget, the Track pill and the Track view work with the keyboard focus kept, every control named, and no console error, failed request, CSP violation or sideways scroll",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AP3",
+      "group": "M. Cockpit and observation",
+      "provenance": "vendor-proposed",
+      "notes": "D-0017 (governance everywhere: autopilot in a sandbox is one of the paths, and no path skips the record) and D-0007 (delegated conclusions); the owner asked for both ends: let Rihmasto run on its own in a test sandbox, or keep a tight hold, and see whether a project stays on track.",
+      "statement": "Track says, deterministically and with every figure's basis, how a project is doing against its approved plan: on track, at risk, off track or not measured, with reasons; human checkpoints show when a person must look and can hold the run.",
+      "acceptance": [
+        {
+          "id": "FR-AP3-AC-1",
+          "given": "a project",
+          "when": "track runs",
+          "then": "each figure (baseline, tasks, gate first round and its trend, assumption debt, scope changes, cards holding the run and their age, time and cost against the budget, posture) has its value and basis, and a figure with nothing to rest on is not measured with the reason, never zero or passed; with no approved plan and nothing wrong the answer is not_measured",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP3-AC-2",
+          "given": "records that put a project at risk or off track",
+          "when": "an escalation is open, a card waits 3 or 7 days, an assumption is past due, first-round passes fall, changes pile up, the due date passes, spend exceeds the budget or the posture hook says not kept",
+          "then": "the answer is at_risk or off_track with each reason naming its figure, and the same records give the same answer",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP3-AC-3",
+          "given": "checkpoints a plan owner set on a project",
+          "when": "the project reaches a checkpoint's stage",
+          "then": "the checkpoint is due until a person records a look; with hold the pipeline waits at it, on record once, and goes on after the look; a look at a stage not reached, or checkpoints set by another persona, are refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP3-AC-4",
+          "given": "a project",
+          "when": "a person reads it from the command line, the cockpit or the MCP server",
+          "then": "rihmasto track, GET /api/projects/<pid>/track, the project's Track pill, the dashboard's track read model and the MCP reads rihma_track and rihma_autopilot show the same track, and reading writes nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP3-AC-5",
+          "given": "a relay notice subscription IT set to a daily digest",
+          "when": "the relay runs",
+          "then": "it sends one digest a UTC day through the notice sink with every project's answer, defanged titles and one link, to the cockpit's Home; a failed digest is tried again next round and every attempt is logged; a webhook subscription cannot take a digest",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-AP4",
+      "group": "K. Antifragility",
+      "provenance": "vendor-proposed",
+      "notes": "An independent check of the autopilot stream (D-0017, D-0007): a pass a person stopped still delivered outside the sandbox, the daily digest named a held project to receivers outside the sandbox, and the project header showed two on-track answers that could disagree.",
+      "statement": "An autopilot's sandbox holds to the end: a pass it started never leaves the sandbox even after a person stops the run, the daily digest leaves its project out for receivers outside the sandbox, and a project shows one on-track answer.",
+      "acceptance": [
+        {
+          "id": "FR-AP4-AC-1",
+          "given": "an autopilot pass under way on a project whose landing road is not marked sandbox",
+          "when": "a person stops the autopilot while the pass runs (the command line, or the cockpit's Stop)",
+          "then": "the pass delivers nothing and writes through no connector, ends at its next safe point (between pipeline steps or tasks) in state stopped with the stop on record once, the cockpit's Stop says the autopilot job ends there, and only a pass a person runs afterwards delivers",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP4-AC-2",
+          "given": "a notice subscription that asks for the daily Track digest and an autopilot that holds a project",
+          "when": "the relay sends the digest",
+          "then": "a subscription IT has not marked as a sandbox receiver gets a digest without that project's title or reasons, only how many projects were left out; a sandbox receiver gets it listed; the relay's record names the projects held",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-AP4-AC-3",
+          "given": "a project with a track",
+          "when": "a person opens it in the cockpit, or reads its track",
+          "then": "the project header shows one on-track answer (the Track pill, never beside a health chip with the same words) and the Health card shows that same answer; the track carries every reason the health reads, so an approval gone stale or a last release that stopped makes it at risk",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-IK1",
+      "group": "A. Intake",
+      "provenance": "vendor-proposed",
+      "statement": "Any input, from any author, is read for what it is: what it states is kept as given with its lines and never asked again, the facet checklist finds the gaps and the mode settles them, and the intake summary shows from your input, asked and assumed side by side.",
+      "notes": "D-0017: every path writes the same trace (who asked, what was given, what was assumed, what proves it), and the feature is learnable and reachable (docs/guides/inputs.md, cockpit/ui_map.json). Kernel: kernel/input_kind.py, kernel/input_facets.py, kernel/input_intake.py, kernel/input_summary.py.",
+      "acceptance": [
+        {
+          "id": "FR-IK1-AC-1",
+          "given": "a one-line need, a two-line Finnish need, an expert's specification with ids and criteria, a full plan with three deliberate gaps, and a folder of mixed documents (tests/fixtures/inputs)",
+          "when": "each is read by rule",
+          "then": "each is read as its kind (need, need, specification, plan, folder) with its language and the rules that decided it; a folder's documents are each read as their own kind; a long text with no structure is a need, read as uncertain",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IK1-AC-2",
+          "given": "the same inputs",
+          "when": "the facet checklist reads them",
+          "then": "every fact the input states is kept with its facet, document and lines, quoting the author's own words; the gaps are exactly the facets it does not state (all thirteen for the one-line need; data and its sensitivity, availability and acceptance criteria for the plan); the author's requirements keep their ids, statements and given / when / then criteria, and a plan's decisions their lines; a section that says only TBD leaves its facet open, with its lines",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IK1-AC-3",
+          "given": "an intake whose panel asks again what the input states",
+          "when": "the panel's questions are screened",
+          "then": "a question every facet of which the input states is not asked, and is recorded with the facts it rests on, in the reading and the ledger; the panel is told, word for word in one shared prefix, what the input states and what its gaps are; for a need, the profile's standing questions are still asked",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IK1-AC-4",
+          "given": "a specification, a plan or a folder in socratic, assume or mixed mode",
+          "when": "intake runs",
+          "then": "the checklist asks its own question for each gap no question covers, from the maturity that needs it (and as a posture preset changes that); socratic puts every asked question to a person, assume assumes each with a due date, mixed sends the blocking gaps (users and roles, outcomes, scope, data) to a person and assumes the rest; a need's gaps are the panel's to ask, so the checklist adds none",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IK1-AC-5",
+          "given": "an expert's specification and a plan",
+          "when": "the spec is written from the analyst's draft, and the plan is taken in",
+          "then": "each of the author's requirements keeps its id, its statement and its criteria word for word, with the draft's criterion kinds by place, as customer-endorsed by whoever asked; one the draft left out is kept as written and marked restored; the contract compiles from them; a plan's decisions arrive as given in the brief, never as an assumption, a question or a decision in the canon",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IK1-AC-6",
+          "given": "a recorded reading",
+          "when": "a named person asks the analyst's model to refine it",
+          "then": "the model's proposal is kept as model_proposed beside the rule's reading, with only the facets and lines the kernel checked and quoted itself, and what it left out with why; it changes no kind, question or decision; a model is never the one who asks; when no model answers it is not measured and nothing is written; in a folder a cited line is placed in its own document",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IK1-AC-7",
+          "given": "a project whose input was read",
+          "when": "a person asks for the intake summary on the command line or through the cockpit's API",
+          "then": "the summary sets from your input (facts, decisions, requirements with their lines), asked (with the answer and who gave it) and assumed (with the assumption and its due date) side by side, beside the questions not asked and every facet's state; `rihmasto inputs summary` prints it as JSON or text and `rihmasto inputs read` reads a request without writing; the ledger records who asked, the kind, every fact with its lines and the request's sha256, and the screening",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IK1-AC-8",
+          "given": "the cockpit on a project whose plan was taken in",
+          "when": "a person opens its Questions view in Chrome",
+          "then": "the intake summary shows its three columns side by side at 1440 px and stacked at 390 px with no sideways scroll, in light and dark; its regions are named by their headings; Tab reaches its first link and Enter opens that question; the facet checklist opens from the keyboard; Ask Rihma's Take me there brings the person to it; and no console error or CSP violation occurs",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-IK2",
+      "group": "A. Intake",
+      "provenance": "vendor-proposed",
+      "statement": "Screening never drops a question that asks more than the input states, a blocking question always reaches the mode, and a folder's housekeeping files are never read as the author's request.",
+      "notes": "Repair of FR-IK1 after an independent check (docs/guides/inputs.md, Never asked again). Kernel: kernel/input_intake.py (already_given, new_words), kernel/intake.py (folder_files, HOUSEKEEPING).",
+      "acceptance": [
+        {
+          "id": "FR-IK2-AC-1",
+          "given": "an expert's specification that states its users, outcomes, performance and acceptance, and a panel whose questions name those facets",
+          "when": "the panel's questions are screened",
+          "then": "a question with any word of its own that the stated facts of its facets and the input's titles do not hold (deleting a tool, an email reminder, working offline, the tests before a release) is asked; only a question that restates is not asked; a blocking question that restates is still asked, so the mode can put it to a person, with its rationale citing the facts and their lines, and the reading and the ledger record it as restated",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-IK2-AC-2",
+          "given": "a folder with a README, a notes file and docs/design.md beside CHANGELOG, LICENSE, SECURITY, CONTRIBUTING and requirements.txt files",
+          "when": "intake reads the folder",
+          "then": "the request holds the README, the notes and the design only; a housekeeping file states no facet, so a security policy does not mark security as given and a sign-in question is not screened away",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-MAT1",
+      "group": "A. Intake",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "Rihmasto scans whatever a project folder holds instead of expecting certain files: every file is read, summarised, listed or skipped with its reason, secrets are never read, the person sees what would leave before anything is sent to a model, confidential material stays on local models, and an existing project may be any folder.",
+      "notes": "The owner (2026-11-24): \"rihmasto should be smart enough to just scan what's going on with the given project instead of expecting strictly certain files\"; whatever is read is sent to the configured model endpoint, which may be a hosted provider, so the person must see what leaves before it leaves. Kernel: kernel/material.py, kernel/material_read.py, kernel/material_kinds.py, kernel/material_cli.py, kernel/material_adopt.py, kernel/confidential.py, kernel/source_guard.py; cockpit/static/scan.js. Docs: docs/guides/inputs.md, docs/brownfield.md.",
+      "acceptance": [
+        {
+          "id": "FR-MAT1-AC-1",
+          "given": "a real project folder of Markdown, text, HTML, Word, PowerPoint, Excel, OpenDocument text, slides and sheet, CSV, JSON, YAML, PDF, a deploy log, pictures and code (tests/material_fixture.py)",
+          "when": "it is scanned",
+          "then": "each format's text is taken by rule with no model: headings kept, scripts and styles dropped and entities decoded, slides in the deck's own order with their numbers, each sheet's name, header and first rows, a structured file's keys, a log's first and last lines, a PDF's Flate text said to be partly read and a scanned PDF not read: no text layer; each file is classified as brief or spec, plan, review, handover, notes, log, data, slides, code or other; code becomes an inventory of languages, entry points, test folders, dependency manifests and CI workflows and is never read as text; the same folder scans the same way every time",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MAT1-AC-2",
+          "given": "the folder also holds an environment file, an SSH key, a credentials file, a note whose text holds a token and code holding a cloud key",
+          "when": "it is scanned and its request is built",
+          "then": "each is listed as skipped: may hold secrets (never opened by its name, or its text holds a credential), and no secret appears in the request, the material map, the ledger, the panel's prompts, a snapshot or the cockpit page",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MAT1-AC-3",
+          "given": "a folder whose documents are larger than the budget, and exclusions by path, glob and folder",
+          "when": "it is scanned",
+          "then": "the most telling files are read first (the README, briefs and specs, then plans, reviews, handovers and the code inventory, then notes and slides, then data and logs), a long one is summarised to its first part and the rest are listed, every cut is named in the map's cut notes with why, the request never exceeds the budget, dependency, build, cache, virtual environment and version-control folders are not walked, and the person's exclusions are skipped with the pattern that dropped them",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MAT1-AC-4",
+          "given": "a folder given as intake's source",
+          "when": "intake runs",
+          "then": "the request is built from the material map, each part headed with its file path and kind; the map is kept in the project (material.json) and the ledger records its counts, never a file's contents; the any-input reading reads each part as its own document; a request confirmed from a scan arrives as text and keeps its documents by the map's digest",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MAT1-AC-5",
+          "given": "a person at the command line",
+          "when": "they run rihmasto scan on a folder, and rihmasto new with that folder as the source",
+          "then": "scan prints what would be read, summarised, listed and skipped and why, the characters it comes to and where they would go; new shows the same map and creates nothing and sends nothing without --yes or a yes at the terminal; with it the map is recorded with the person and how they confirmed, and --exclude drops files",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MAT1-AC-6",
+          "given": "the cockpit's New project dialog",
+          "when": "a person asks for a folder's preview, or creates or adopts a project from a scanned folder",
+          "then": "POST /api/source/preview answers a named person with a persona that may create or adopt a project, only for a folder under the home or a configured root, never a system folder or a folder of keys, and records nothing; the files the person unticked travel with the create and adopt requests, a created project keeps the map the person saw with who confirmed it, and its request leaves the unticked files out",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MAT1-AC-7",
+          "given": "a project marked confidential: keep on local models, and a role routed to a hosted endpoint",
+          "when": "intake, the spec, the holdouts, a build, a change's triage, a refinement or a run would call a model for it",
+          "then": "the call is refused before anything is sent, with the role and its endpoint named and how to configure a local model (docs/guides/local-models.md), the refusal is recorded, a run stops in a refused state and the cockpit and the command line refuse before a project is created; the setting is recorded in the ledger; with every role on loopback or a private address the work goes on",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MAT1-AC-8",
+          "given": "An existing project given as a git repository, a folder with code that is not a git repository, or a folder of documents only",
+          "when": "it is adopted",
+          "then": "a git repository is adopted as before and its documents are scanned as context; a folder that is not one is snapshotted into a new git repository under the factory home with only the files that pass the scan's rules, committed as the baseline and adopted from there, and the person's folder is never changed; a folder with no code is refused with the offer to start a new project from it as material",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-MAT1-AC-9",
+          "given": "a person in the cockpit in a real browser, light and dark, 1440 and 390 px wide",
+          "when": "they give New project a folder, scan it, untick a file and adopt it, and give it a folder of documents only",
+          "then": "the scan step shows the map grouped by read, summarised, unticked, listed and skipped with each reason, unticking scans again without the file and keeps the focus on it, adopt starts the job with the exclusion, a documents-only folder is offered as material for a new project and created from it; no secret is on the page, nothing scrolls sideways, and there is no console error, failed request or CSP violation",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-REL1",
+      "group": "PT. Portability",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "A person publishes a version by pushing its tag: the suite and the contract run again, the source archives, an SBOM, checksums and the notes are built from the tagged commit, and a GitHub Release publishes them with a signed build provenance attestation; nothing is published from a tag that does not match the declared version.",
+      "notes": "The owner asked that the CI/CD pipeline work, and approved a release workflow on 2026-11-24 (\"Yes do\"). Rihmasto runs from a checkout, so the source archive is the release; no wheel and no image. tools/release_build.py, .github/workflows/release.yml, docs/maintainers.md.",
+      "acceptance": [
+        {
+          "id": "FR-REL1-AC-1",
+          "given": "a checkout whose pyproject.toml declares 1.2.0",
+          "when": "a release is built for a tag that is not v1.2.0, is not a version, or for a version the changelog has no section for",
+          "then": "the build is refused with the reason and no file is written",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REL1-AC-2",
+          "given": "a checkout whose pyproject.toml declares 1.2.0 and whose changelog has a [1.2.0] section",
+          "when": "a release is built for the tag v1.2.0",
+          "then": "it holds a .tar.gz and a .zip of the files git tracks at HEAD under rihmasto-1.2.0/, a CycloneDX 1.5 SBOM naming rihmasto 1.2.0, its licence, the archives' hashes and Gnomon as its one runtime dependency, SHA256SUMS that verify, and the notes word for word from the [1.2.0] section; building again from the same commit gives the same bytes",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REL1-AC-3",
+          "given": "a declared version that is an alpha, beta, release candidate or development version",
+          "when": "a rehearsal is built, or a release for it",
+          "then": "the rehearsal takes the declared version and the [Unreleased] notes, and the release is marked a pre-release",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REL1-AC-4",
+          "given": "the release workflow",
+          "when": "a person pushes a version tag, or runs the workflow by hand",
+          "then": "the suite and the contract run before anything is built; the provenance attestation and the GitHub Release happen only for a pushed tag; the workflow reads by default, only the publishing job may write contents, no expression is expanded inside a script, and a run by hand publishes nothing",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-CHG1",
+      "group": "A. Intake",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "Anything set when a project was made can change: a person changes its kind of work, mode, maturity or title with a preview of what the change means for the work already done, sends it back to its material, questions, spec or plan so that step runs again, and adds material later; nothing is deleted, every change is signed and recorded, and a project always says what it waits for, who can act and the actions that move it forward.",
+      "notes": "The owner, using Rihmasto daily on a customer project: \"I don't want to see stupid mistakes like me choosing a template for the project or me generating a spec, then I'm getting stuck somewhere because Rihmasto assumed the project template wrong. I want all that to be able to change.\" kernel/project_settings.py, kernel/rewind.py, kernel/project_material.py, kernel/next_step.py, kernel/change_cli.py, cockpit/static/change.js, docs/guides/change-anything.md. The posture has its own change flow (kernel/posture_change.py) and is not changed here.",
+      "acceptance": [
+        {
+          "id": "FR-CHG1-AC-1",
+          "given": "a project whose intake ran for one kind of work, with an open question",
+          "when": "a person changes its kind of work with a reason, after a preview, and asks to go back",
+          "then": "the preview writes nothing and says the open questions no longer fit; project_changed records the person, persona, reason, before and after; the open questions are withdrawn with their cards decided as withdrawn and the reason; settled answers are kept; and the next run asks the questions again for the new kind without asking a settled one again",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-2",
+          "given": "a project whose spec is written",
+          "when": "a person changes its maturity and asks to go back",
+          "then": "the impact says the spec was written for the old maturity and whether a person now approves the plan; the spec is kept as a superseded version and written again at the next run",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-3",
+          "given": "a project whose questions wait on people",
+          "when": "a person changes its mode",
+          "then": "nothing is settled unless the person asks; when asked, each open question the new mode lets the factory assume is assumed in that person's name; a change by a non-person, a persona that may not, with no reason or to a value no setting takes is refused and writes nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-4",
+          "given": "a project compiled from its spec",
+          "when": "a person sends it back to the plan, the spec, the questions and the material in turn",
+          "then": "each step's files are moved under superseded/ and listed, never deleted; the ledger records rewound with the person, persona and reason; and the pipeline's next tick runs that step again (compile, spec, intake), or waits for material",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-5",
+          "given": "a project with a release",
+          "when": "a person asks to send it back to any step",
+          "then": "it is refused with a message that names the release and the change loop, and nothing changes; a settings change still records the new value and goes back nowhere",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-6",
+          "given": "a project whose intake ran and a question was answered",
+          "when": "a person adds material with re-intake",
+          "then": "the original request is kept and the material is appended under its own heading and kept with its sha256 in material.json and the ledger; the panel reads only the new material, told what was asked before, and only questions not on record are added and settled by the mode; every answer stands; from the cockpit the panel reads it in the next run; only scripted models answer in the test",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-7",
+          "given": "any state a project can be in",
+          "when": "next_step reads it",
+          "then": "every state the pipeline returns maps to at least one action naming who may take it and the control, view or command that carries it out; the records' own states (no material, blocking questions, decision cards, paused, a model endpoint that failed, an intake to run again, a stopped build, released, adopted, attached, running) each name their waits, who and actions",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-8",
+          "given": "the cockpit and the command line",
+          "when": "a person changes the settings, goes back a step, adds material or asks what is next",
+          "then": "PUT settings, POST settings/preview, rewind and material are signed by a person and persona, checked for access like every write route, recorded in the project's ledger (the preview records nothing), refuse a project a job runs for or with a release, and `rihmasto settings`, `rewind`, `material add` and `next` do the same",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHG1-AC-9",
+          "given": "the cockpit in a browser",
+          "when": "a person follows What's next, changes the kind with its preview, adds material, goes back a step and advances",
+          "then": "each write lands signed with their name; dark and light at 1440 and 390 pixels wide the overview and the three dialogs fit with nothing scrolling sideways, every control has an accessible name, and no step leaves a console error, a failed request or a Content-Security-Policy violation",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
     }
   ],
   "tasks": [
@@ -5708,6 +6740,516 @@
           "docs/guides/access.md",
           "docs/cockpit.md",
           "SECURITY.md"
+        ]
+      }
+    },
+    {
+      "id": "IK-01",
+      "title": "Any input, any author: read what arrived by rule, never ask again what it states, ask its gaps by the facet checklist, keep an expert's ids and wording and a plan's decisions, and show from your input, asked and assumed side by side",
+      "criteria": [
+        "FR-IK1-AC-1",
+        "FR-IK1-AC-2",
+        "FR-IK1-AC-3",
+        "FR-IK1-AC-4",
+        "FR-IK1-AC-5",
+        "FR-IK1-AC-6",
+        "FR-IK1-AC-7",
+        "FR-IK1-AC-8"
+      ],
+      "scope": {
+        "write": [
+          "kernel/input_kind.py",
+          "kernel/input_facets.py",
+          "kernel/input_intake.py",
+          "kernel/input_summary.py",
+          "kernel/intake.py",
+          "kernel/spec.py",
+          "kernel/cli.py",
+          "kernel/assistant_rules.py",
+          "cockpit/server.py",
+          "cockpit/static/inputs.js",
+          "cockpit/static/project.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "tests/test_inputs.py",
+          "tests/test_ui_inputs.py",
+          "tests/fixtures/inputs/**",
+          "docs/guides/inputs.md",
+          "docs/README.md",
+          "docs/how-it-works.md",
+          "docs/cockpit.md",
+          "tests/test_access.py"
+        ]
+      }
+    },
+    {
+      "id": "IK-02",
+      "title": "Inputs repair: screen only questions that restate the input, keep blocking questions for the mode, and leave a folder's housekeeping files out of the request",
+      "criteria": [
+        "FR-IK2-AC-1",
+        "FR-IK2-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/input_intake.py",
+          "kernel/intake.py",
+          "tests/test_inputs.py",
+          "docs/guides/inputs.md"
+        ]
+      }
+    },
+    {
+      "id": "AP-01",
+      "title": "Delegated decisions: grant, revoke and three deterministic rules the pipeline asks before it waits, recorded with the delegating person (D-0007, D-0017)",
+      "criteria": [
+        "FR-AP1-AC-1",
+        "FR-AP1-AC-2",
+        "FR-AP1-AC-3",
+        "FR-AP1-AC-4",
+        "FR-AP1-AC-5"
+      ],
+      "scope": {
+        "write": [
+          "kernel/delegation.py",
+          "kernel/pipeline.py",
+          "kernel/people.py",
+          "kernel/canon.py",
+          "kernel/events.py",
+          "kernel/notices.py",
+          "tests/test_autopilot.py",
+          "docs/guides/autopilot-and-tracking.md"
+        ]
+      }
+    },
+    {
+      "id": "AP-02",
+      "title": "Autopilot in a sandbox: runs bound to sandbox roads and receivers, stopped by a person, in the command line and the cockpit (D-0017)",
+      "criteria": [
+        "FR-AP2-AC-1",
+        "FR-AP2-AC-2",
+        "FR-AP2-AC-3",
+        "FR-AP2-AC-4",
+        "FR-AP2-AC-5"
+      ],
+      "depends_on": [
+        "AP-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/autopilot.py",
+          "kernel/autopilot_cli.py",
+          "kernel/roads.py",
+          "kernel/relay.py",
+          "kernel/pipeline.py",
+          "kernel/cli.py",
+          "cockpit/server.py",
+          "cockpit/static/track.js",
+          "cockpit/static/project.js",
+          "cockpit/static/core.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "kernel/assistant_rules.py",
+          "tests/test_autopilot.py",
+          "tests/test_autopilot_cockpit.py",
+          "tests/test_autopilot_ui.py",
+          "docs/guides/autopilot-and-tracking.md"
+        ]
+      }
+    },
+    {
+      "id": "AP-03",
+      "title": "Staying on track: figures with their basis, checkpoints, the budget, the daily digest, the Track view, pill and Home widget, and the MCP reads (D-0017)",
+      "criteria": [
+        "FR-AP3-AC-1",
+        "FR-AP3-AC-2",
+        "FR-AP3-AC-3",
+        "FR-AP3-AC-4",
+        "FR-AP3-AC-5"
+      ],
+      "depends_on": [
+        "AP-02"
+      ],
+      "scope": {
+        "write": [
+          "kernel/track.py",
+          "kernel/dashboard.py",
+          "kernel/relay.py",
+          "kernel/notices.py",
+          "kernel/pipeline.py",
+          "cockpit/server.py",
+          "cockpit/static/widgets.js",
+          "cockpit/static/track.js",
+          "mcp/server.py",
+          "tests/test_track.py",
+          "tests/test_autopilot_cockpit.py",
+          "tests/test_cockpit.py",
+          "tests/test_mcp.py",
+          "docs/guides/autopilot-and-tracking.md",
+          "docs/README.md"
+        ]
+      }
+    },
+    {
+      "id": "AP-04",
+      "title": "Autopilot repair: a stopped pass stays in its sandbox, the digest holds a held project back, and one on-track answer per project (D-0017)",
+      "criteria": [
+        "FR-AP4-AC-1",
+        "FR-AP4-AC-2",
+        "FR-AP4-AC-3"
+      ],
+      "depends_on": [
+        "AP-03"
+      ],
+      "scope": {
+        "write": [
+          "kernel/autopilot.py",
+          "kernel/pipeline.py",
+          "kernel/dispatch.py",
+          "kernel/track.py",
+          "kernel/relay.py",
+          "cockpit/server.py",
+          "cockpit/static/project.js",
+          "tests/test_autopilot_stop.py",
+          "tests/test_autopilot_cockpit.py",
+          "tests/test_autopilot_ui.py",
+          "docs/guides/autopilot-and-tracking.md"
+        ]
+      }
+    },
+    {
+      "id": "OUT-01",
+      "title": "Outputs per audience: the targets, the sign-in road, the delivery report, the CLI and the cockpit's Outputs view",
+      "criteria": [
+        "FR-OUT1-AC-1",
+        "FR-OUT1-AC-2",
+        "FR-OUT1-AC-3",
+        "FR-OUT1-AC-4",
+        "FR-OUT2-AC-1",
+        "FR-OUT2-AC-2",
+        "FR-OUT2-AC-3",
+        "FR-OUT2-AC-4",
+        "FR-OUT3-AC-1",
+        "FR-OUT3-AC-2",
+        "FR-OUT3-AC-3",
+        "FR-OUT4-AC-1",
+        "FR-OUT4-AC-2",
+        "FR-OUT5-AC-1",
+        "FR-OUT5-AC-2",
+        "FR-OUT5-AC-3",
+        "FR-OUT6-AC-1",
+        "FR-OUT6-AC-2"
+      ],
+      "scope": {
+        "write": [
+          "kernel/outputs.py",
+          "kernel/output_builders.py",
+          "kernel/report.py",
+          "kernel/scaffold.py",
+          "kernel/scaffold_auth.py",
+          "kernel/scaffold_auth_tests.py",
+          "kernel/profiles.py",
+          "kernel/compile.py",
+          "kernel/lanes.py",
+          "kernel/lenses.py",
+          "kernel/assistant_rules.py",
+          "kernel/cli.py",
+          "cockpit/server.py",
+          "cockpit/static/core.js",
+          "cockpit/static/project.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "tests/test_outputs.py",
+          "tests/test_scaffold_auth.py",
+          "tests/test_ui_outputs.py",
+          "docs/guides/outputs.md",
+          "docs/README.md",
+          "kernel/scaffold_auth_docs.py",
+          "cockpit/static/outputs.js",
+          "docs/cockpit.md",
+          "README.md",
+          "tests/test_access.py",
+          "tests/test_brief_ln.py"
+        ]
+      }
+    },
+    {
+      "id": "OUT-02",
+      "title": "Outputs per audience, repaired: a working source README, session fixation checked, a sign-in added later scans clean, the runner's sign-in wall not measured, and intake and the builder told",
+      "criteria": [
+        "FR-OUT2-AC-5",
+        "FR-OUT2-AC-6",
+        "FR-OUT3-AC-4",
+        "FR-OUT7-AC-1",
+        "FR-OUT7-AC-2",
+        "FR-OUT7-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "kernel/output_builders.py",
+          "kernel/outputs.py",
+          "kernel/scaffold_auth_tests.py",
+          "kernel/scaffold_auth_docs.py",
+          "kernel/holdouts.py",
+          "kernel/operate.py",
+          "kernel/intake.py",
+          "kernel/dispatch.py",
+          "tests/test_outputs.py",
+          "tests/test_scaffold_auth.py",
+          "tests/test_outputs_given.py",
+          "docs/guides/outputs.md",
+          "CHANGELOG.md",
+          "cockpit/ui_map.json"
+        ]
+      }
+    },
+    {
+      "id": "MOD-01",
+      "title": "The modules catalogue, presets and sets per factory and project, recorded, and `rihmasto modules show|set|presets`",
+      "criteria": [
+        "FR-MOD1-AC-1",
+        "FR-MOD1-AC-2",
+        "FR-MOD1-AC-3",
+        "FR-MOD1-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/modules.py",
+          "kernel/standalone.py",
+          "kernel/cli.py",
+          "tests/test_modules.py"
+        ]
+      }
+    },
+    {
+      "id": "MOD-02",
+      "title": "What a set does: the command line's refusal, the pipeline's stop, the cockpit's write refusal and views, and the assistant's map",
+      "depends_on": [
+        "MOD-01"
+      ],
+      "criteria": [
+        "FR-MOD2-AC-1",
+        "FR-MOD2-AC-2",
+        "FR-MOD2-AC-3",
+        "FR-MOD2-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/modules.py",
+          "kernel/pipeline.py",
+          "kernel/cli.py",
+          "kernel/assistant.py",
+          "kernel/assistant_rules.py",
+          "cockpit/server.py",
+          "cockpit/ui_map.json",
+          "tests/test_modules.py"
+        ]
+      }
+    },
+    {
+      "id": "MOD-03",
+      "title": "The standalone presets from the command line: contract export, an attached repository's gate, holdouts, scan and releases",
+      "depends_on": [
+        "MOD-01"
+      ],
+      "criteria": [
+        "FR-MOD3-AC-1",
+        "FR-MOD3-AC-2",
+        "FR-MOD3-AC-3",
+        "FR-MOD3-AC-4",
+        "FR-MOD3-AC-5",
+        "FR-MOD3-AC-6",
+        "FR-MOD3-AC-7"
+      ],
+      "scope": {
+        "write": [
+          "kernel/attach.py",
+          "kernel/gate_external.py",
+          "kernel/repo_checks.py",
+          "kernel/spec_export.py",
+          "kernel/standalone.py",
+          "kernel/evidence_pack.py",
+          "tests/test_standalone.py"
+        ]
+      }
+    },
+    {
+      "id": "MOD-04",
+      "title": "The cockpit shows only what is enabled: navigation, widgets, library, palette, views, suggestions, Settings, Modules and the first-run choice",
+      "depends_on": [
+        "MOD-02"
+      ],
+      "criteria": [
+        "FR-MOD4-AC-1",
+        "FR-MOD4-AC-2",
+        "FR-MOD4-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "cockpit/static/modules.js",
+          "cockpit/static/app.js",
+          "cockpit/static/dashboard.js",
+          "cockpit/static/screens.js",
+          "cockpit/static/project.js",
+          "cockpit/static/palette.js",
+          "cockpit/static/assistant.js",
+          "cockpit/static/widgets.js",
+          "cockpit/static/app.css",
+          "tests/test_ui_modules.py",
+          "docs/guides/use-only-what-you-need.md"
+        ]
+      }
+    },
+    {
+      "id": "MOD-05",
+      "title": "Modules repair: a chat that is off takes no message and stays revocable, MCP writes and the assistant's proposals ask the set, an attached repository's tests run only isolated under access",
+      "depends_on": [
+        "MOD-02",
+        "MOD-03",
+        "MOD-04"
+      ],
+      "criteria": [
+        "FR-MOD5-AC-1",
+        "FR-MOD5-AC-2",
+        "FR-MOD5-AC-3",
+        "FR-MOD5-AC-4",
+        "FR-MOD5-AC-5"
+      ],
+      "scope": {
+        "write": [
+          "kernel/modules.py",
+          "kernel/embeds.py",
+          "kernel/hooks.py",
+          "embed/webhooks.py",
+          "CHANGELOG.md",
+          "mcp/server.py",
+          "kernel/assistant.py",
+          "kernel/attach.py",
+          "kernel/gate_external.py",
+          "kernel/repo_checks.py",
+          "cockpit/static/screens.js",
+          "tests/test_modules_everywhere.py",
+          "tests/test_ui_modules.py",
+          "docs/guides/use-only-what-you-need.md"
+        ]
+      }
+    },
+    {
+      "id": "REL-01",
+      "title": "Releases from a version tag: build, SBOM, checksums, provenance, GitHub Release",
+      "depends_on": [],
+      "criteria": [
+        "FR-REL1-AC-1",
+        "FR-REL1-AC-2",
+        "FR-REL1-AC-3",
+        "FR-REL1-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "tools/release_build.py",
+          ".github/workflows/release.yml",
+          "tests/test_release_build.py",
+          "docs/maintainers.md",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "MAT-01",
+      "title": "Any folder as material: the scanner and its map, the preview before sending, confidential on local models, any-folder adoption",
+      "depends_on": [],
+      "criteria": [
+        "FR-MAT1-AC-1",
+        "FR-MAT1-AC-2",
+        "FR-MAT1-AC-3",
+        "FR-MAT1-AC-4",
+        "FR-MAT1-AC-5",
+        "FR-MAT1-AC-6",
+        "FR-MAT1-AC-7",
+        "FR-MAT1-AC-8",
+        "FR-MAT1-AC-9"
+      ],
+      "scope": {
+        "write": [
+          "kernel/material.py",
+          "kernel/material_read.py",
+          "kernel/material_kinds.py",
+          "kernel/material_cli.py",
+          "kernel/material_adopt.py",
+          "kernel/confidential.py",
+          "kernel/source_guard.py",
+          "kernel/intake.py",
+          "kernel/input_intake.py",
+          "kernel/adopt.py",
+          "kernel/cli.py",
+          "kernel/pipeline.py",
+          "kernel/spec.py",
+          "kernel/compile.py",
+          "kernel/dispatch.py",
+          "kernel/change.py",
+          "kernel/input_summary.py",
+          "kernel/assistant.py",
+          "kernel/assistant_rules.py",
+          "cockpit/server.py",
+          "cockpit/static/scan.js",
+          "cockpit/static/screens.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "docs/guides/inputs.md",
+          "docs/brownfield.md",
+          "tests/material_fixture.py",
+          "tests/test_material.py",
+          "tests/test_material_adopt.py",
+          "tests/test_material_cockpit.py",
+          "tests/test_ui_material.py",
+          "README.md",
+          "CHANGELOG.md",
+          "tests/test_inputs.py",
+          "tests/test_cockpit_adopt.py",
+          "tests/test_brief_ln.py",
+          "tests/fixtures/material/project/**"
+        ]
+      }
+    },
+    {
+      "id": "CHG-01",
+      "title": "Change anything set for a project, go back a step, add material, and say what is next",
+      "depends_on": [],
+      "criteria": [
+        "FR-CHG1-AC-1",
+        "FR-CHG1-AC-2",
+        "FR-CHG1-AC-3",
+        "FR-CHG1-AC-4",
+        "FR-CHG1-AC-5",
+        "FR-CHG1-AC-6",
+        "FR-CHG1-AC-7",
+        "FR-CHG1-AC-8",
+        "FR-CHG1-AC-9"
+      ],
+      "scope": {
+        "write": [
+          "kernel/project_settings.py",
+          "kernel/rewind.py",
+          "kernel/project_material.py",
+          "kernel/next_step.py",
+          "kernel/change_cli.py",
+          "kernel/cli.py",
+          "kernel/intake.py",
+          "kernel/input_summary.py",
+          "kernel/pipeline.py",
+          "kernel/assistant_rules.py",
+          "cockpit/server.py",
+          "cockpit/ui_map.json",
+          "cockpit/static/change.js",
+          "cockpit/static/project.js",
+          "cockpit/static/app.css",
+          "tests/test_project_change.py",
+          "tests/test_project_change_ui.py",
+          "tests/test_brief_ln.py",
+          "tests/test_access.py",
+          "docs/guides/change-anything.md",
+          "docs/README.md",
+          "docs/cockpit.md",
+          "CHANGELOG.md"
         ]
       }
     }

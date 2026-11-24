@@ -167,10 +167,10 @@ def run_scenario(base_url: str, scenario: dict, *, timeout: float = 10.0, secret
         request |= {"signed": signed} if signed else {}
         r = http_request(request["method"], base_url + request["path"], body, timeout=timeout, headers=headers)
         reason = _check(step, r)
-        if reason:
-            return {**out, "verdict": "failed", "failed_step": i, "request": request,
-                    "expected": {k: step[k] for k in EXPECT_KEYS if k in step}, "observed": _observed(r),
-                    "reason": reason}
+        if reason:  # failed, or not measured where the product's sign-in turned the runner away
+            expected = {k: step[k] for k in EXPECT_KEYS if k in step}
+            return {**out, "failed_step": i, "request": request, "expected": expected, "observed": _observed(r),
+                    **holdouts.judged(step, r, reason)}
         out["trail"].append({"step": i, "status": r["status"], "ms": r["ms"]})
         prev = r["json"] if r["is_json"] else None
     out["verdict"] = "passed" if steps else "not measured"
@@ -221,8 +221,10 @@ def smoke(base_url: str, *, version: str | None = None, timeout: float = 5.0) ->
 def _probe_round(base_url: str, version: str | None, scenarios: list) -> dict:
     health = smoke(base_url, version=version)
     results = [run_scenario(base_url, s) for s in scenarios]
-    failed = (0 if health["ok"] else 1) + sum(1 for s in results if s["verdict"] != "passed")
-    return {"checks": 1 + len(results), "failed": failed, "health": health, "scenarios": results}
+    unmeasured = sum(1 for s in results if s.get("reason") == holdouts.SIGNED_OUT)  # the sign-in turned it away
+    failed = (0 if health["ok"] else 1) + sum(1 for s in results if s["verdict"] != "passed") - unmeasured
+    return {"checks": 1 + len(results) - unmeasured, "failed": failed, "not_measured": unmeasured, "health": health,
+            "scenarios": results}
 
 
 def probe(project, env: str = "production", *, slot: str = "current", record: bool = True) -> dict:
@@ -236,7 +238,7 @@ def probe(project, env: str = "production", *, slot: str = "current", record: bo
     result = {"environment": env, "slot": slot, "release": state["release"], "revision": state["revision"],
               "base_url": state["base_url"], "at": at, "health": rnd["health"], "scenarios": rnd["scenarios"],
               "checks": rnd["checks"], "failed": rnd["failed"], "ok": rnd["failed"] == 0,
-              "verdict": "passed" if rnd["failed"] == 0 else "failed"}
+              "verdict": "failed" if rnd["failed"] else "not measured" if rnd["not_measured"] else "passed"}
     if record:
         _append(project.path("ops", "probes.jsonl"), result)
     return result
@@ -350,12 +352,12 @@ def shadow(project, env: str = "production", *, roads=None, docker=None, az=None
         else:
             current_url, safe, against = cur["base_url"], road.shadow_safe(env), "live"
         try:
-            report.update(replay(records, current_url=current_url, candidate_url=cand["base_url"], safe=safe,
-                                 volatile=volatile))
+            report.update(holdouts.set_apart_signed_out(replay(
+                records, current_url=current_url, candidate_url=cand["base_url"], safe=safe, volatile=volatile)))
         finally:
             if twin is not None:
                 road.stop(project, env, "twin")
-        report.update(against=against, safe=safe, verdict="failed" if report["differing"] else "passed")
+        report.update(against=against, safe=safe, **holdouts.shadow_verdict(report))  # the sign-in: not measured
     write_json(project.path("ops", "shadow", f"{release}.json"), report)
     project.log("shadow", {"release": release, "environment": env, "verdict": report["verdict"],
                            "replayed": report["replayed"], "differing": report["differing"],
@@ -379,7 +381,7 @@ def canary(project, env: str = "production", *, shadow_report: dict | None = Non
         raise RoadError(f"no candidate runs in {env}")
     release = release if release is not None else cand["release"]
     report = shadow_report if shadow_report is not None else read_json(project.path("ops", "shadow", f"{release}.json"), {})
-    entries = (report or {}).get("entries") or []
+    entries = [e for e in (report or {}).get("entries") or [] if not e.get("signed_out")]  # the sign-in's: no sample
     scenarios = load_scenarios(project, ("probe",))
     per_round = 1 + len(scenarios)
     rounds = max(probe_rounds, math.ceil(max(0, min_sample - len(entries)) / per_round))

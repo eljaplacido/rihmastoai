@@ -5,7 +5,8 @@ It answers two things only:
 - `POST /hooks/<source>`: one delivery from a source IT configured (`rihmasto hooks add`). It is
   verified (a Standard Webhooks or GitHub signature, the timestamp, a delivery id never seen before)
   and becomes a signal or a change proposal carrying only external ids. 202 accepted, 200 already
-  received (nothing stored), 401 a signature or timestamp that does not hold, 404 no such source,
+  received (nothing stored), 401 a signature or timestamp that does not hold, 403 a source whose
+  module is off (Integrations, or the square or change loop it files into), 404 no such source,
   411 no length, 413 a body over the limit (refused before it is read), 400 or 422 a body that names
   no item, 503 a source whose secret this server's environment lacks.
 - `GET /health`: 200, for IT's proxy.

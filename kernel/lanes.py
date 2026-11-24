@@ -234,7 +234,8 @@ For every role:
 # a workspace's submission (kernel/gate.py, kernel/workspace.py). The last is the paved road's own
 # tests (kernel/scaffold.py ROAD_CONTRACT_TESTS): Gnomon's write_allow has no exclusions, so `tests/**`
 # lets the write tool reach it, and this check is what refuses the change (FR-DF1-AC-2).
-PROTECTED = (".gnomon/", "contract.json", "factory/", "tests/test_road_contract.py")
+PROTECTED = (".gnomon/", "contract.json", "factory/", "tests/test_road_contract.py",
+             "app/sign_in.py", "tests/test_road_sign_in.py")  # the road's sign-in (kernel/scaffold_auth.py)
 
 
 def protected_paths(repo_dir: Path, base: str, head: str) -> list[str]:

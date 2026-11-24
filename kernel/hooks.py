@@ -252,6 +252,16 @@ def _verified(src: dict[str, Any], headers: Mapping[str, str], body: bytes, env:
     return verify_standard(headers, body, key, now=now, tolerance=int(src.get("tolerance", TOLERANCE)))
 
 
+def turned_off(factory: Factory, src: dict[str, Any]) -> str | None:
+    """The module that is off where this source files (FR-MOD5): Integrations, and what a ring becomes, a
+    change on its project or a signal in the delivery square. A ring then stores nothing (403); removing
+    the source stays open to IT (`hooks remove` is core, kernel/modules.py)."""
+    from kernel import modules
+
+    return modules.first_off(factory, ("integrations", "change" if src["becomes"] == "change" else "square"),
+                             src.get("project"))
+
+
 def receive(factory: Factory, source_id: str, headers: Mapping[str, str], body: bytes, *,
             environ: Mapping[str, str] | None = None) -> dict[str, Any]:
     """One delivery to `/hooks/<source_id>`: the HTTP status to answer and what it became. Raises
@@ -264,6 +274,8 @@ def receive(factory: Factory, source_id: str, headers: Mapping[str, str], body: 
     lower = {k.lower(): v for k, v in headers.items()}
     now = int(factory.clock.now().timestamp())
     msg_id = _verified(src, lower, body, os.environ if environ is None else environ, now)
+    if turned_off(factory, src):   # told only to a sender whose signature holds
+        raise HookRefused(403, "this source is turned off")
     keep = GITHUB_KEEP if src["scheme"] == "github" else 2 * int(src.get("tolerance", TOLERANCE))
     with updating_json(_path(factory, "seen.json"), {}) as seen:
         if msg_id in (seen.get(source_id) or {}):

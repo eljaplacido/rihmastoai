@@ -10,6 +10,8 @@ import {
   download, attachTip, infoButton, orList,
 } from "./core.js";
 import { columns, bars, stack100, segbar, waterfall, dataTable, legend, meter, SERIES, STATUS_MARK, tipBox } from "./charts.js";
+import { TRACK, trackState, reasonLine } from "./track.js";
+import { tileOn } from "./modules.js";
 
 const asOf = (d) => "as of " + String(d.generated_at || "").slice(11, 16) + " UTC";
 export const PROV_NOTE = { observed: "Observed: counted directly from the records", derived: "Derived: computed from observed counts" };
@@ -35,7 +37,7 @@ const PROBLEM_SOURCES = {
   kpi_strip: ["now", "decisions", "inbox", "gate_trend", "coverage", "catalogue"], square: ["square"], pipeline: ["pipeline"],
   decisions: ["decisions", "inbox"], catalogue: ["catalogue"], live: ["live", "now", "last_cell"], timeline: ["timeline"],
   gate_trend: ["gate_trend"], coverage: ["coverage"], activity: ["activity"], models: ["models"], health: ["health", "now"],
-  updates: ["updates"], autonomy: ["autonomy"], evidence_packs: ["evidence_packs"], try_it: ["try_it"],
+  updates: ["updates"], autonomy: ["autonomy"], evidence_packs: ["evidence_packs"], try_it: ["try_it"], track: ["track"],
 };
 export function problemsOf(d, names) {
   const want = new Set(names || []);
@@ -115,7 +117,7 @@ function kpis(d) {
     { label: "Capabilities in use", icon: "catalogue", value: k.in_use ? k.in_use.value : null, provenance: "observed",
       denom: k.in_use ? "of " + k.in_use.of + " in the catalogue" : null, info: k.in_use && k.in_use.basis,
       problems: problemsOf(d, ["catalogue"]) },
-  ];
+  ].filter((t) => tileOn(t.label));   // a figure of a module that is off is not shown (cockpit/static/modules.js)
 }
 
 // -- decisions: inline actions go through the same routes as the Inbox ----------------------------
@@ -717,6 +719,33 @@ DEF.try_it = {
     { label: "Checks", key: "checks", num: true }], d.try_it || [], "What to try"),
 };
 
+// Staying on track (kernel/track.py): each project against its approved plan, worst first, with a checkpoint
+// due and a running autopilot; a project with no approved plan yet is "not measured", never on track.
+DEF.track = {
+  views: ["list", "table"],
+  render: (d) => {
+    const t = d.track || {};
+    const rows = t.projects || [];
+    if (!rows.length) return empty("flag", "No project yet.");
+    const counts = t.counts || {};
+    return h("div", null,
+      h("p", { class: "muted small tr-counts" }, Object.keys(TRACK).filter((s) => counts[s]).map((s) => counts[s] + " "
+        + TRACK[s].word.toLowerCase()).join(" · ") + (t.autopilots ? " · " + plural(t.autopilots, "autopilot") + " holding" : "")),
+      h("ul", { class: "health-list" }, rows.map((r) => h("li", { class: "health-row" }, trackState(r),
+        h("div", { class: "hr-b" }, h("a", { href: link(r.project, "track") }, r.title || r.project),
+          h("p", { class: "muted small" }, reasonLine(r))),
+        h("span", { class: "hr-f" }, (r.due || []).length ? chip("warning", "eye", "Checkpoint due") : null,
+          (r.autopilot || {}).holding ? chip("info", "bot", "Autopilot " + r.autopilot.state) : null)))));
+  },
+  table: (d) => dataTable([{ label: "Project", value: (r) => r.title || r.project },
+    { label: "Track", value: (r) => (TRACK[r.state] || TRACK.not_measured).word },
+    { label: "Why", value: (r) => reasonLine(r) },
+    { label: "Tasks done", value: (r) => (r.tasks.total === null || r.tasks.total === undefined ? null : r.tasks.done + " of " + r.tasks.total) },
+    { label: "Checkpoints due", value: (r) => (r.due || []).join(", ") || "-" },
+    { label: "Autopilot", value: (r) => ((r.autopilot || {}).holding ? r.autopilot.id + ", " + r.autopilot.state : "-") }],
+  (d.track || {}).projects || [], "Staying on track"),
+};
+
 Object.entries(DEF).forEach(([type, def]) => {
   def.render = withProblems(type, def.render);
   def.table = withProblems(type, def.table);
@@ -744,4 +773,5 @@ export const SOURCES = {
   feed_health: "An integration's freshness probe.",
   eval_trend: "A model or agent release's evals, re-measured over time.",
   try_it: "kernel.status.try_it: where the latest release was deployed, and its checks. Whether it still runs is not checked.",
+  track: "kernel.track: each project's figures against its approved plan, every one with its basis; checkpoints and autopilots.",
 };

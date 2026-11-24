@@ -1,0 +1,4 @@
+Review comments from the pilot
+
+- The sign-in screen is too small on the lobby tablet.
+- Hosts want a text message as well as email.

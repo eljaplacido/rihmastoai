@@ -36,6 +36,7 @@ from kernel.canon import Canon, DecisionRefused  # noqa: E402
 from kernel.cli import build_parser, main  # noqa: E402
 from kernel.learn import FACTORY_PID, factory_project  # noqa: E402
 from kernel.people import Identity  # noqa: E402
+from kernel.source_guard import ROOTS_ENV  # noqa: E402
 from kernel.store import write_json  # noqa: E402
 from mcp.server import RihmaMCP, tool_list  # noqa: E402
 
@@ -403,11 +404,26 @@ class EveryWriteRouteTest(EnforcedCockpitCase):
 
     def writes(self, w):
         b = w["built"].pid
+        # a folder of code for the routes that read one (FR-MAT1): under a root the cockpit may read
+        src = self.tmp / "existing-app"
+        src.mkdir(exist_ok=True)
+        (src / "README.md").write_text("# Orders\n\nA small order service.\n", encoding="utf-8")
+        (src / "app.py").write_text("print('orders')\n", encoding="utf-8")
+        patcher = mock.patch.dict(os.environ, {ROOTS_ENV: str(self.tmp)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         return [*ln.FactoryApiTest.writes(self, w),
                 ("post_advance", "POST", f"/api/projects/{b}/advance",
                  lambda who, got: {"person": who, "persona": "developer"}),
                 ("post_assistant", "POST", "/api/assistant",
-                 lambda who, got: {"question": "What waits on me?", "persona": "developer", "person": who})]
+                 lambda who, got: {"question": "What waits on me?", "persona": "developer", "person": who}),
+                ("post_source_preview", "POST", "/api/source/preview",
+                 lambda who, got: {"source": str(src), "person": who, "persona": "developer"}),
+                ("post_adopt", "POST", "/api/adopt",
+                 lambda who, got: {"title": "Orders", "source": str(src), "intent": "maintain", "person": who,
+                                   "persona": "developer"}),
+                ("post_settings_preview", "POST", f"/api/projects/{b}/settings/preview",     # records nothing
+                 lambda who, got: {"maturity": "pilot", "person": who, "persona": "product_owner"})]
 
     def test_FR_M8_AC_3_every_write_route_refuses_a_persona_not_granted_on_its_project(self):
         w = ln.FactoryApiTest.world(self)
@@ -433,8 +449,9 @@ class EveryWriteRouteTest(EnforcedCockpitCase):
             got[name] = out
             added = [r["event"]["payload"] for pid, recs in self.ledgers().items()
                      for r in recs[len(ledgers.get(pid, [])):]]
-            if name in ("put_layout", "post_advance", "post_assistant"):     # kept outside every ledger
-                continue
+            if name in ("put_layout", "post_advance", "post_assistant", "post_source_preview",
+                        "post_settings_preview"):
+                continue                     # kept outside every ledger: a preview records nothing
             self.assertTrue(any(e.get("identity") == IDA for e in added), (name, added))
         for p in self.factory.projects():
             self.assertTrue(p.ledger().verify().intact, p.pid)
@@ -477,6 +494,31 @@ def cli_writes(pid: str, tmp: Path) -> dict:
         "relay unsubscribe": ["relay", "unsubscribe", "SUB-1", *who, "--persona", "it"],
         "connector enable": ["connector", "enable", "example", *who, "--persona", "it"],
         "connector disable": ["connector", "disable", "example", *who, "--persona", "it"],
+        "inputs refine": ["inputs", "refine", pid, *who, "--persona", "product_owner"],   # who asks a model to read
+        "autopilot start": ["autopilot", "start", pid, "--until", "8h", "--delegate", "question", *who,
+                            "--persona", "developer", "--arm-only"],
+        "autopilot stop": ["autopilot", "stop", pid, *who, "--persona", "developer"],
+        "autopilot relay": ["autopilot", "relay", "SUB-1", *who, "--persona", "it"],
+        "delegation grant": ["delegation", "grant", pid, "--kinds", "question", "--until", "8h", *who,
+                             "--persona", "business_owner"],
+        "delegation revoke": ["delegation", "revoke", pid, "DL-001", *who, "--persona", "business_owner"],
+        "tracking set": ["tracking", "set", pid, "--checkpoints", "5", *who, "--persona", "product_owner"],
+        "tracking look": ["tracking", "look", pid, "5", *who, "--persona", "product_owner"],
+        "tracking digest": ["tracking", "digest", "SUB-1", "daily", *who, "--persona", "it"],
+        "output": ["output", pid, "--choose", "report", *who, "--persona", "business_owner"],
+        # the modules and an attached repository of your own (kernel/standalone.py)
+        "modules set": ["modules", "set", "--preset", "full", *who, "--persona", "it"],
+        "repo attach": ["repo", "attach", "Old app", "--repo", str(tmp), *who, "--persona", "developer"],
+        "repo contract": ["repo", "contract", pid, "--contract", "contract.json", *who, "--persona", "developer"],
+        "repo gate": ["repo", "gate", pid, *who, "--persona", "developer"],
+        "repo holdouts": ["repo", "holdouts", pid, "--base-url", "http://127.0.0.1:9", *who, "--persona", "it"],
+        "repo scan": ["repo", "scan", pid, *who, "--persona", "it"],
+        "repo releases": ["repo", "releases", pid, *who, "--persona", "compliance"],
+        "contract export": ["contract", "export", pid, "--out", str(tmp / "out"), *who, "--persona", "product_owner"],
+        # change anything set at creation, go back a step, add material (FR-CHG1)
+        "settings": ["settings", pid, "--maturity", "pilot", "--reason", "r", *who, "--persona", "product_owner"],
+        "rewind": ["rewind", pid, "--to", "questions", "--reason", "r", *who, "--persona", "product_owner"],
+        "material add": ["material", "add", pid, "--text", "more", *who, "--persona", "product_owner"],
     }
 
 

@@ -1,0 +1,2 @@
+Varaston työntekijät kirjaavat lainatut työkalut nyt paperille, ja tavaraa katoaa joka kuukausi.
+Haluamme yksinkertaisen tavan lainata ja palauttaa työkaluja; käyttäjinä ovat varaston työntekijät ja työnjohtajat.

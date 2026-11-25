@@ -9,6 +9,10 @@
 <link rel="icon" type="image/png" href="/static/favicon.png">
 <link rel="stylesheet" href="/static/tokens.css">
 <link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/walkthrough.css">
+<link rel="stylesheet" href="/static/insights.css">
+<link rel="stylesheet" href="/static/review.css">
+<link rel="stylesheet" href="/static/agents.css">
 <script type="module" src="/static/app.js"></script>
 </head>
 <body>
@@ -54,6 +58,7 @@
   <div class="dr-head">
     <span class="bot-av" aria-hidden="true"><svg class="ic"><use href="#i-bot"/></svg></span>
     <div class="dr-title"><h2 id="as-h">Assistant</h2><p id="as-mode" class="muted small"></p></div>
+    <button type="button" class="icon-btn" id="as-walk" aria-label="Walkthroughs" data-tip="Walkthroughs: Rihma walks you through it" data-control="walkthroughs"><svg class="ic"><use href="#i-flag"/></svg></button>
     <button type="button" class="icon-btn" id="as-clear" aria-label="Clear the conversation" data-tip="Clear the conversation"><svg class="ic"><use href="#i-refresh"/></svg></button>
     <button type="button" class="icon-btn" id="as-close" aria-label="Close the assistant" data-tip="Close (Esc)"><svg class="ic"><use href="#i-x"/></svg></button>
   </div>

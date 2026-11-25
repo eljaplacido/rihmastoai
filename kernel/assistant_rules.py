@@ -67,7 +67,8 @@ CONTROL_PAGES: dict[str, tuple[str | None, str | None]] = {
     "shape_say": (None, "shape"), "shape_attach": (None, "shape"), "shape_draft": (None, "shape"),
     "shape_create": (None, "shape"), "models_open": (None, "settings"), "models_set": (None, "models"),
     "models_test": (None, "models"), "models_remove": (None, "models"), "models_preset": (None, "models"),
-    "models_private": (None, "models"), "posture": ("overview", None), "run_assessment": ("assessment", None),
+    "models_private": (None, "models"), "models_use_claude": (None, "models"), "models_use_codex": (None, "models"),
+    "models_use_opencode": (None, "models"), "posture": ("overview", None), "run_assessment": ("assessment", None),
     "assessment_changes": ("assessment", None), "capability_faces": ("releases", None), "access": (None, None),
     "ai_tools": ("overview", None), "ide_setup": ("overview", None), "ide_section": ("overview", None),
     "integrations": ("plan", None), "runners_open": (None, "settings"), "runners_check": (None, "runners"),
@@ -78,6 +79,33 @@ CONTROL_PAGES: dict[str, tuple[str | None, str | None]] = {
     "automations_dry_run": ("automations", "automations_all"), "automations_pause": ("automations", "automations_all"),
     "automations_resume": ("automations", "automations_all"), "automations_edit": ("automations", "automations_all"),
     "automations_remove": ("automations", "automations_all"), "automations_tags": ("automations", None)}
+# Walkthroughs (FR-WLK1): the button on Home's header, and each walkthrough in the Ask Rihma panel (the shell).
+CONTROL_PAGES.update({"walkthroughs": (None, "home"), "walk_plug_in": (None, None), "walk_new_idea": (None, None),
+                      "walk_documents": (None, None), "walk_model": (None, None), "walk_tour": (None, None)})
+# The console and Health (cockpit/static/console.js, cockpit/static/health.js; FR-CON1, FR-CHK1).
+CONTROL_PAGES.update({
+    "console_run": ("console", None), "console_gnomon": ("console", None), "console_stop": ("console", None),
+    "console_terminal": ("console", None), "console_settings": ("console", None),
+    "health_run": ("checks", None), "health_enable": ("checks", None), "health_disable": ("checks", None),
+    "health_enable_all": (None, "health_all")})
+# Alignment with a repository's own specs and tests (cockpit/static/alignment.js, FR-ALN1).
+CONTROL_PAGES.update({"align_scan": ("align", None), "align_decide": ("align", None), "align_bulk": ("align", None),
+                      "align_suggestions": ("align", None)})
+# Insights (cockpit/static/insights.js, FR-INS1): the page across projects and a project's tab.
+CONTROL_PAGES.update({"insights_dimension": ("insights", "insights_all"),
+                      "insights_window": ("insights", "insights_all"), "insights_scope": (None, "insights_all"),
+                      "insights_export": ("insights", "insights_all"), "insights_pin": (None, "insights_all")})
+# Since you last looked (FR-REV1, cockpit/static/review.js).
+CONTROL_PAGES.update({"review_card": (None, "home"), "mark_all_reviewed": ("review", "review_all"),
+                      "review_mark": ("review", "review_all"), "review_digest": (None, "review_all")})
+# The paved roads and the Google Drive connector (kernel/road_settings.py, cockpit/static/roads.js).
+CONTROL_PAGES.update({"paved_roads": (None, "settings"), "configure_gcp_road": (None, "settings"),
+                      "choose_road": ("releases", None), "drive_connector": (None, "settings")})
+# Goal help, the hand-off and the agent channel (cockpit/static/goal.js, agents.js; FR-CPL1, FR-BRG1, FR-CHN1).
+CONTROL_PAGES.update({
+    "handoff": ("overview", None), "channel_panel": ("overview", None), "agents_strip": ("overview", None),
+    "channel_post": ("agents", None), "channel_pause": ("agents", None), "channel_settle": ("agents", None),
+    "channel_trace": ("agents", None), "goal_plan": (None, None), "agent_activity": (None, "agents_all")})
 # As the cockpit names them (cockpit/server.py PERSONA_INFO), for the reasons a proposal is not offered.
 PERSONA_LABEL = {"business_owner": "Business owner", "product_owner": "Product owner", "it": "IT / partner",
                  "concept_evaluator": "Concept evaluator", "end_user": "End-user tester", "developer": "Developer",

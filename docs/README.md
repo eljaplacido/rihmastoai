@@ -13,6 +13,11 @@ built and what is not.
 - [How it works](how-it-works.md): the chain step by step, the delivery square, personas and
   lenses, and what Gnomon does beside the kernel.
 - [The acceptance matrix](acceptance.md): every use case and mode, measured, and the live acid test.
+- [Walkthroughs in Ask Rihma](guides/walkthroughs.md): Rihma walks you through plugging in an existing
+  project, starting from an idea or documents, setting up a model, or a tour, step by step in the chat.
+- [Review what agents shipped](guides/review.md): since you last looked, grouped by what needs you
+  (waiting on you, went wrong, decided for you, shipped, from your IDE, cost), acted on in place, marked
+  reviewed, and sent to you every morning.
 - [Use only what you need](guides/use-only-what-you-need.md): the modules and the presets (spec only,
   gate my code, assess, security or evidence only, a capability, the full factory), and changing them.
 
@@ -36,9 +41,16 @@ built and what is not.
   regulated, tuned by weights; what each does, previewed before you choose, and changing it during
   the run.
 - [Work profiles](guides/profiles.md): the kinds of work, and what each one asks.
+- [Insights](guides/insights.md): health, compliance, governance, security, context drift, QA and
+  token, skill and memory usage, per project and factory-wide, counted from the records; what is not
+  measured and how to measure it; exporting to your own observability stack (JSON, CSV, OpenTelemetry).
 - [Change anything, go back a step, never get stuck](guides/change-anything.md): change a project's
   kind of work, mode, maturity or title with a preview of what it means, send it back to its material,
   questions, spec or plan, add material later, and see what it waits for.
+- [Agentic help: goals, hand-offs and the agent channel](guides/agentic-help.md): ask Rihma for a goal
+  ("hook this to Google Drive") and get a plan you take one click at a time; hand a project off to
+  Claude Code, Codex, OpenCode or Cursor; what agents read and write back; and the agent channel where
+  people, Rihma's agents and coding agents talk, traced and watched.
 - [Outputs](guides/outputs.md): what each audience receives (a web app with sign-in, a container,
   an API description, a delivery report, an evidence pack, the source), chosen by a person and built
   from the records.
@@ -51,6 +63,13 @@ built and what is not.
 
 - [Existing solutions, your own terminal, security findings](brownfield.md): adopting a
   repository, workspaces for your own agent, and SARIF findings.
+- [The console, a terminal, and checks](guides/console-and-checks.md): where the line is between your
+  IDE, Rihmasto's console and a real terminal; running a project's commands or Gnomon in its workspace,
+  recorded; opening a terminal there; and checks with a Health view for keeping a project healthy.
+- [Alignment: your repository's own specs and tests](guides/alignment.md): the specs, criteria, tests,
+  tasks, ADRs and API contracts a team keeps in its repository (spec-kit, Kiro, BMAD, Gherkin, OpenAPI and
+  more), proposed for the project's contract and accepted, edited or rejected, the gaps, suggested changes
+  for the repository, the drift after it changes, and continuing in your IDE.
 - [Security: Rihmasto checks what it builds](guides/security.md): its own static scan, dynamic
   probes and agentic red team, the scope a person authorises, and what they do not catch.
 - [Your IDE and Rihmasto](guides/ide-and-rihmasto.md): where the line is between the IDE and
@@ -78,6 +97,11 @@ built and what is not.
 
 - [Models setup](guides/models-setup.md): which model answers for each role (a local server or a
   hosted OpenAI-compatible provider), its key, and a Test, from the cockpit or `rihmasto models`.
+- [Run Rihmasto with the coding agent you already have](guides/harness-models.md): no API key? Claude
+  Code (your login), Codex or OpenCode answers the text roles (`rihmasto models use claude-code`), run
+  headless with no tools, each call recorded as run by it.
+- [A harness provider for Gnomon](upstream/gnomon-harness-provider.md) (*proposal*): how Gnomon itself
+  could spawn a coding agent for a role and keep it in its own audit trail.
 - [Harnesses](guides/harnesses.md): who runs the factory's cells. Gnomon by default (in-run policy
   enforced), or Claude Code, Codex, OpenCode or a command you name, approved by IT with its version
   pinned and checked after every run; the docker sandbox; adding a command runner.
@@ -86,6 +110,9 @@ built and what is not.
   or Keycloak; Google IAP; an AWS load balancer) whose signed token the cockpit verifies, and the
   isolation runner untrusted code runs through.
 - [Deploying on paved roads](guides/deploying.md): the short version of how a product lands.
+- [Google Cloud and Google Drive](guides/gcp.md): a Cloud Run service or a scheduled Cloud Run job on
+  IT's Google Cloud road, and a capability that reads new recordings from a Drive folder and writes
+  transcripts back, with where the audio goes.
 - [Paved roads](paved-roads.md): the full reference: configuring a road, what each maturity does,
   and what is real and what is not.
 - [The capability gateway](guides/gateway.md): one OpenAI-compatible endpoint for a site's

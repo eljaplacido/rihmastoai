@@ -495,3 +495,5 @@ def set_tags(project: Project, tags: list[str], *, person: str, persona: str) ->
     project.log("project_tagged", {"tags": clean, "before": before, "person": person, "persona": persona})
     return clean
 
+
+import kernel.automations_more  # noqa: E402,F401  (last: run_check and align_scan join the allow-list)

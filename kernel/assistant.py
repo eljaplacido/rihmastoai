@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from kernel import assistant_status as status_q
+from kernel import copilot, model_usage
 from kernel.assistant_rules import (
     ACTIONS,
     CONTROL_PAGES,
@@ -467,6 +468,7 @@ def ask(factory: Any, question: str, *, persona: str, project_id: str | None = N
     from kernel.modules import hidden_ids
 
     project, about = status_q.resolve(factory, question, project_id)   # a pasted link names the project
+    about = copilot.routed(factory, project, question, about, persona=persona, model=model)   # a goal: a plan
     if about is not None:
         return about
     hidden = hidden_ids(project if project is not None else factory)   # the map of what is enabled there
@@ -478,9 +480,10 @@ def ask(factory: Any, question: str, *, persona: str, project_id: str | None = N
         require_local(project, ("assistant",), where="assistant")
     snap = snapshot(factory, project=project, persona=persona)
     try:
-        raw = extract_json(_own_lane(model, secret).ask(prompt(question, snap, persona=persona, view=view, ui=ui,
-                                                       hints=find_in_map(question, hidden=hidden), hidden=hidden),
-                                                role="assistant"))
+        with model_usage.for_project(project, task="assistant", factory=factory):   # its run, as model_run
+            raw = extract_json(_own_lane(model, secret).ask(prompt(question, snap, persona=persona, view=view, ui=ui,
+                                                           hints=find_in_map(question, hidden=hidden), hidden=hidden),
+                                                    role="assistant"))
         if not isinstance(raw, dict):
             raise ModelError("the answer is not a JSON object")
     except (ModelError, OSError, RuntimeError, ValueError) as exc:   # LockHeld is a RuntimeError

@@ -15,6 +15,7 @@ import { currentTheme, setTheme, loadLayout, applyTheme } from "./dashboard.js";
 import { loadModules, modulesCard, moduleShows } from "./modules.js";
 import { scanStep, looksLikeFolder } from "./scan.js";
 import { postureSection } from "./posture.js";
+import { roadsCard, integrationsCard } from "./roads.js";
 
 const CHANNEL_ICON = { chat: "message-square", feed: "signal", form: "file-check", email: "send", monitoring: "activity",
   meeting: "users", embed: "code", manual: "edit" };
@@ -724,7 +725,7 @@ export async function renderSettings(seq) {
   const offNote = embedsOn ? null : h("p", { class: "note warning", "data-key": "embeds-off" }, icon("alert"), h("span", null,
     h("b", null, "Integrations is off. "), "These chats take no messages while it is off. Revoke one here to stop it for good."));
   fill(main,
-    pageHead("Settings", "The models, the cell runners, the modules in use, embeds for websites, how the cockpit looks, and sign-in links.", { icon: "settings" }),
+    pageHead("Settings", "The models, the cell runners, the modules in use, the paved roads, integrations, embeds for websites, how the cockpit looks, and sign-in links.", { icon: "settings" }),
     card({ title: "Models", icon: "cpu", id: "set-models", tools: [h("a", { href: "#/models", class: "btn small primary", "data-control": "models_open", "data-key": "set:models" },
       icon("cpu"), h("span", { class: "lbl" }, "Open Models setup"))] },
     h("p", null, "Which model answers for each role (the analyst, the builder, the verifier, the assistant and more): a server on this machine or a hosted "
@@ -734,6 +735,7 @@ export async function renderSettings(seq) {
     h("p", null, "Which harness runs the factory's cells: Gnomon, which enforces the rules during a run, or another harness such as Claude Code, Codex or "
       + "OpenCode, approved by IT with its version pinned and checked after every run.")),
     modulesCard(projects),
+    roadsCard(), integrationsCard(),   // paved roads and what a capability can reach (roads.js)
     !embedsOn && !em.embeds.length ? null : card({ title: "Embeds: a chat window for a website", icon: "message-square", id: "embeds", cls: "emb-card",
       tools: [embedsOn ? create : null],
       info: "An embed has exactly one capability: it files end-user feedback as a change, or a business need as a signal. It answers only from a public brief "

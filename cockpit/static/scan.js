@@ -36,7 +36,7 @@ const n = (x) => Number(x || 0).toLocaleString("en");
 
 export function scanStep(opts) {
   const o = opts || {};
-  const unticked = new Set();
+  const unticked = new Set(o.exclude || []);   // a walkthrough's full map opens with what was unticked before
   let source = "";
   let out = null;
   let timer = 0;
@@ -120,7 +120,7 @@ export function scanStep(opts) {
     get source() { return source; },
     exclude: () => [...unticked],
     async scan(folder) {
-      if (folder !== source) unticked.clear();
+      if (source && folder !== source) unticked.clear();
       source = folder;
       el.hidden = false;
       fill(summary, "Scanning the folder…");

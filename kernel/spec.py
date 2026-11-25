@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from kernel import model_usage
 from kernel.canon import Canon
 from kernel.intake import MATURITY_MEANING, SendBack, _ask_json, blocking_open
 from kernel.people import is_person
@@ -329,6 +330,7 @@ def render_spec_md(spec: dict) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+@model_usage.recorded("spec")        # the analyst's runs in the project's ledger (model_run)
 def make_spec(project, *, model, feedback: str | None = None) -> dict:
     from kernel.confidential import guard
     from kernel.posture_rules import check_spec, questions_to_settle

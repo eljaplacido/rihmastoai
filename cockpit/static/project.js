@@ -19,11 +19,19 @@ import { trackPill, trackState, viewTrack } from "./track.js";
 import { viewOutputs } from "./outputs.js";
 import { viewOn, moduleShows } from "./modules.js";
 import { changeButtons, nextStrip } from "./change.js";
+import { agentsStrip, viewAgents, channelPanelButton } from "./agents.js";   // the agent channel (FR-CHN1)
+import { handoffButton } from "./goal.js";                                     // hand off to an agent (FR-BRG1)
 import { postureChip } from "./posture.js";
 import { assuranceChip } from "./runners.js";
 import { viewAssessment } from "./assessment.js";
 import { aiTools } from "./aitools.js";
 import { viewAutomations } from "./automations.js";
+import { viewConsole } from "./console.js";
+import { viewChecks } from "./health.js";
+import { viewAlign, alignCallout } from "./alignment.js";
+import { insightsView } from "./insights.js";
+import { viewReview } from "./review.js";
+import { deployCard } from "./roads.js";
 
 // -- shims the views were written against: a state is a chip with an icon and a word ---------------
 
@@ -774,6 +782,7 @@ VIEW_FN.overview = function viewOverview(p, inbox, ctx) {
   const out = [
     viewHead("Overview", "Where is this project, and what waits on you?"),
     nextStrip(p),
+    agentsStrip(p),
     planCard ? h("p", { class: "callout" }, glyph("human"), h("span", null, "The plan waits on approval before anything is built: "
       + "read it, edit a requirement, approve it, or send it back with a reason."),
     h("a", { href: link(meta.id, "plan"), class: "callout-go" }, "Open the plan")) : null,
@@ -804,6 +813,7 @@ VIEW_FN.overview = function viewOverview(p, inbox, ctx) {
   out.push(h("div", { class: "two" }, waiting, attention));
   if (!healthFirst) out.push(h("div", { class: "section" }, healthCard(p)));
   out.push(aiTools(p));   // an adopted or attached project: its AI tools, and working on it from an IDE (aitools.js)
+  out.push(alignCallout(p));   // adopted or attached, not aligned yet: the next step (alignment.js)
   if (p.stale.length) {
     out.push(h("section", { class: "section", "aria-labelledby": "stale-h" },
       h("h3", { id: "stale-h" }, "Stale approvals: these must be given again"),
@@ -860,7 +870,7 @@ function advancePanel(p) {
     h("p", { class: "lede" }, "Runs ", h("code", null, "python -m kernel.cli run " + p.meta.id),
       " in the background. The factory goes as far as it can and stops at the next gate a person must decide. "
       + "It never decides for anyone."));
-  const running = p.jobs.some((j) => j.state === "running");
+  const running = p.jobs.some((j) => j.state === "running" && j.kind !== "console");   // a console run holds nothing
   const paused = !!p.meta.pause;
   if (!mayAdvance()) {
     box.append(h("p", { class: "muted small" }, glyph("human"), " A " + orList(advancers()) + " persona advances the project. "
@@ -2161,8 +2171,14 @@ function orderedViews(p, ctx, planOpen) {
   if (!views.includes("evidence")) views.push("evidence");
   if (!views.includes("track")) views.push("track");     // staying on track, autopilot and delegations (track.js)
   if (!views.includes("automations")) views.push("automations");   // what runs on its own here (automations.js)
+  ["console", "checks"].forEach((v) => { if (!views.includes(v)) views.push(v); });   // console.js, health.js
+  if (!views.includes("insights")) views.push("insights");   // health to usage, from the records (insights.js)
+  if (!views.includes("review")) views.push("review");   // since you last looked (review.js)
+  if (!views.includes("agents")) views.push("agents");   // the agent channel (agents.js, FR-CHN1)
   // An adopted system brings its Assessment forward: what to fix, from every perspective.
   if (p.meta.source_kind === "adopted" && !views.includes("assessment")) views.splice(1, 0, "assessment");
+  // A project with a repository of its own brings its Alignment forward (alignment.js, FR-ALN1).
+  if (["adopted", "attached"].includes(p.meta.source_kind) && !views.includes("align")) views.splice(1, 0, "align");
   views = views.filter((v) => v !== "plan" || planOpen);
   if (planOpen && !views.includes("plan")) views.splice(1, 0, "plan");
   return views.filter((v) => viewOn(v, p.meta.id));   // only the views of the project's modules that are on
@@ -2208,6 +2224,7 @@ async function drawProject(main, r, seq, done) {
     !isFactory && view === "outputs" ? api("GET", base + "/outputs") : none,
     !isFactory && view === "assessment" ? api("GET", base + "/assessment").catch((e) => ({ error: e.message })) : none,
   ]);
+  const align = !isFactory && view === "align" ? await api("GET", base + "/repo-alignment").catch((e) => ({ error: e.message })) : null;
   if (seq !== S.seq) return false;
   let plan = planFirst;
   let tryIt = tryFirst;
@@ -2232,7 +2249,7 @@ async function drawProject(main, r, seq, done) {
       v === "plan" && planOpen ? h("span", { class: "tab-wait", tip: "Waits on approval" }, icon("user")) : null)))),
   isFactory ? null : h("label", { class: "tabs-all" }, h("input", { type: "checkbox", checked: S.allViews, "data-key": "allviews",
     onchange: (e) => { S.allViews = e.target.checked; nav.route(true); } }), "Show all views"));
-  const ctxObj = { pid, focus: r.focus, cell: cellRows, plan, tryIt, planOpen, timeline, comments, attestation, pack, track, outputs, assessment };
+  const ctxObj = { pid, focus: r.focus, cell: cellRows, plan, tryIt, planOpen, timeline, comments, attestation, pack, track, outputs, assessment, align };
   let body = VIEW_FN[view](p, inbox, ctxObj);
   if (comments) decorateComments(body, pid, view, comments.comments || []);
   if (view === "overview" && !isFactory) {
@@ -2251,7 +2268,8 @@ async function drawProject(main, r, seq, done) {
 // The person did nothing to cause that re-render, so the focus stays where they left it (refocus).
 const JOBS_EVERY = 4000;
 function watchJobs(p, seq) {
-  const running = (p.jobs || []).filter((j) => j.state === "running").map((j) => j.id);
+  // a console run follows itself on the Console tab (console.js): it never re-renders the page
+  const running = (p.jobs || []).filter((j) => j.state === "running" && j.kind !== "console").map((j) => j.id);
   if (!running.length) return;
   const pid = p.meta.id;
   const again = () => { if (seq === S.seq) S.timer = setTimeout(tick, JOBS_EVERY); };
@@ -2303,7 +2321,8 @@ function projectHead(p, isFactory, ctx) {
           : profileChip(meta.profile || (p.profile || {}).id || "web_service"),
         h("h1", { id: "view-title", tabindex: "-1" }, meta.title),
         h("span", { class: "mono muted small" }, meta.id)),
-      isFactory ? null : h("div", { class: "ph-acts" }, changeButtons(p), pauseControls(p), advanceButton(p))),
+      isFactory ? null : h("div", { class: "ph-acts" }, changeButtons(p), handoffButton(p), channelPanelButton(p),
+        pauseControls(p), advanceButton(p))),
     h("div", { class: "chips" }, chips),
     nowLine(p.now, meta.id, p),
     isFactory ? h("p", { class: "lede" }, "Proposals to change " + BRAND + " itself, such as a default check every new project carries. "
@@ -2428,7 +2447,7 @@ function advanceWrite(p, btn, container, to) {
 }
 function advanceButton(p) {
   if (!mayAdvance()) return null;   // like Pause: the Advance panel says who advances the project
-  const running = p.jobs.some((j) => j.state === "running");
+  const running = p.jobs.some((j) => j.state === "running" && j.kind !== "console");   // a console run holds nothing
   const paused = !!p.meta.pause;
   const b = button(running ? "Running" : "Advance", { icon: running ? "refresh" : "play", kind: "primary", key: "advance",
     disabled: running || paused, tip: paused ? "Paused: resume it first" : running ? "A job is running for this project"
@@ -2585,6 +2604,7 @@ function packCard(pk, pid) {
 }
 VIEW_FN.releases = function viewReleases(p, inbox, ctx) {
   const out = h("div", null, viewHead("Releases", "What was delivered where, through which steps, and did the holdouts, shadow and canary hold?"));
+  if (p.meta.id !== FACTORY_PID) out.append(deployCard(p.meta.id));   // where each environment deploys (roads.js)
   if (!p.releases.length) {
     out.append(empty("package", "No releases yet. They appear here once delivery has run"
       + (p.meta.maturity === "explore" ? " (at explore maturity the result stays a local preview)." : ".")));
@@ -2650,6 +2670,8 @@ function evidenceExport(pid) {
 
 // Assessment: an adopted system judged from every perspective (cockpit/static/assessment.js).
 VIEW_FN.assessment = (p, inbox, ctx) => viewAssessment(p, ctx, { viewHead, run, settle });
+// Alignment: a repository's own specs, tests and tasks mapped onto the project (cockpit/static/alignment.js).
+VIEW_FN.align = (p, inbox, ctx) => viewAlign(p, ctx, { viewHead, run, settle });
 
 // Evidence: the attestation (never "compliant"), the control table, and the export.
 VIEW_FN.evidence = function viewEvidence(p, inbox, ctx) {
@@ -2688,10 +2710,16 @@ VIEW_FN.evidence = function viewEvidence(p, inbox, ctx) {
 };
 
 VIEW_FN.track = viewTrack;      // staying on track, the autopilot and delegations (track.js)
+VIEW_FN.insights = (p, inbox, ctx) => insightsView(ctx.pid);    // the project's insights (insights.js)
+VIEW_FN.agents = (p) => viewAgents(p);   // the agent channel (agents.js, FR-CHN1)
 // -- outputs: what each audience receives (cockpit/static/outputs.js, kernel/outputs.py) -----------------
 VIEW_FN.outputs = (p, inbox, ctx) => viewOutputs(p, ctx, { viewHead, run, settle });
 // -- automations: what runs on its own for the project (cockpit/static/automations.js, kernel/automations.py)
 VIEW_FN.automations = (p) => viewAutomations(p);
+// -- the console and Health: commands in the workspace, and the project's checks (console.js, health.js)
+VIEW_FN.console = (p) => viewConsole(p);
+VIEW_FN.checks = (p) => viewChecks(p);
+VIEW_FN.review = viewReview;    // since you last looked, for this project (review.js)
 
 // -- comments: a remark on a requirement, criterion, task, release or card decides nothing ----------
 

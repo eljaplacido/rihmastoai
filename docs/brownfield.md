@@ -126,6 +126,20 @@ upstream after a fetch that worked (a default branch renamed from `master` to `m
 one change card naming the new default branch; the project keeps tracking the old name until a
 person decides. For a monitored project, `rihma sync` also runs a probe round.
 
+## Aligning with the repository's own specs and tests
+
+The as-is spec says only "the existing suite keeps passing". A team that worked in an IDE usually has more:
+specs and user stories (spec-kit, Kiro, BMAD, agent-os, PRDs), acceptance criteria (given / when / then,
+EARS, Gherkin), ADRs, OpenAPI or GraphQL contracts, task lists, CI jobs and linters. The **Alignment** tab of
+an adopted or attached project (`rihmasto align <pid>`, FR-ALN1) reads them by rule from the committed
+revision, proposes requirements, criteria, a trace from the existing tests (with its basis and confidence),
+tasks, decisions, API contract references and the gaps between them, and lets a person accept, edit or reject
+each. What is accepted goes into the project's contract, customer-endorsed by that person and noted as
+imported from the repository; on an adopted project an imported requirement's task is held as the existing
+work, never built unasked. Suggested changes for the repository are text or a patch, never written there. A
+re-scan after the repository changed shows the drift. `rihmasto structure <folder>` shows the structure map of
+any folder. The whole walk: [docs/guides/alignment.md](guides/alignment.md).
+
 ## Assessing an adopted system
 
 ```

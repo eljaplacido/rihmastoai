@@ -431,6 +431,8 @@ class EveryWriteRouteTest(EnforcedCockpitCase):
         patcher = mock.patch.dict(os.environ, {ROOTS_ENV: str(self.tmp)})
         patcher.start()
         self.addCleanup(patcher.stop)
+        # ln.FactoryApiTest.writes ends with the Alignment tab's writes (FR-ALN1, ln.alignment_writes): a scan of a
+        # repository attached for them and a decision on an item it proposed, each refused for Mallory here.
         return [*ln.FactoryApiTest.writes(self, w),
                 ("post_advance", "POST", f"/api/projects/{b}/advance",
                  lambda who, got: {"person": who, "persona": "developer"}),
@@ -472,6 +474,10 @@ class EveryWriteRouteTest(EnforcedCockpitCase):
             self.assertEqual(tree(home), before, name)
             ledgers = self.ledgers()
             status, out = self.pcall(method, path, body("Ida Example", got), who=IDA)
+            if name == "post_console_terminal":   # FR-CON1-AC-7: through IT's proxy the person is elsewhere
+                self.assertEqual((status, tree(home)), (403, before), out)
+                self.assertIn("from its own address", out["error"])
+                continue
             self.assertIn(status, (200, 201, 202), (name, out))
             got[name] = out
             added = [r["event"]["payload"] for pid, recs in self.ledgers().items()
@@ -576,7 +582,32 @@ def cli_writes(pid: str, tmp: Path) -> dict:
                        "--persona", "it"],
         "models remove": ["models", "remove", "analyst", *who, "--persona", "it"],
         "runners set": ["runners", "set", "builder", "gnomon", *who, "--persona", "it"],      # D-0019
+        # -- walkthroughs in a terminal (kernel/walkthrough_cli.py, FR-WLK1)
+        "walkthrough": ["walkthrough", "tour", *who, "--persona", "developer"],
+        # the console, a shell and the checks (kernel/console_cli.py; FR-CON1, FR-CHK1)
+        "console": ["console", pid, *who, "--persona", "developer", "--", "git", "status"],
+        "shell": ["shell", pid, *who, "--persona", "developer"],
+        "checks enable": ["checks", "enable", pid, "secrets", *who, "--persona", "developer"],
+        "checks disable": ["checks", "disable", pid, "secrets", *who, "--persona", "developer"],
+        "checks run": ["checks", "run", pid, "secrets", *who, "--persona", "developer"],
+        # alignment with a repository's own specs and tests (FR-ALN1): a decision is signed; reading is not
+        "align": ["align", pid, "accept", "req-0000000000", *who, "--persona", "developer"],
+        # since you last looked (FR-REV1): `review` signs mark, done and digest; reading it takes no signer
+        "review": ["review", "done", *who, "--persona", "developer"],
+        # the paved roads (kernel/road_settings.py, FR-GCP1): IT configures a road, chooses a project's, rolls back
+        "road configure": ["road", "configure", "company-gcp", "--file", str(tmp / "road.json"), *who, "--persona", "it"],
+        "road choose": ["road", "choose", pid, "company-gcp", *who, "--persona", "it"],
+        "road rollback": ["road", "rollback", pid, "--reason", "r", *who, "--persona", "it"],
+        **bridge_cli_writes(pid),
+        # the coding agent you already have answers the text roles (kernel/harness_setup.py, FR-HMD1)
+        "models use": ["models", "use", "claude-code", "--roles", "assistant", *who, "--persona", "it"],
     }
+
+
+def bridge_cli_writes(pid: str) -> dict:
+    """The agent channel's signed command (kernel/bridge_cli.py, FR-CHN1): an agent posts for its operator."""
+    return {"channel post": ["channel", pid, "post", "--as", "claude-code", "--text", "added the form",
+                             "--person", "Mallory Example", "--persona", "developer"]}
 
 
 class CommandLineAndMcpTest(FactoryTestCase):

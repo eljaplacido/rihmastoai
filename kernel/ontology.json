@@ -399,7 +399,12 @@
     "trial": {"attribute": "a sandbox trial's id; the Trial kind is planned (phase 2)"},
     "workspace": {"attribute": "the branch of a person's workspace"},
     "person": {"attribute": "the person a workspace card is for"},
-    "connector": {"attribute": "the connector (its system name) a connector card asks IT to turn on"}
+    "connector": {"attribute": "the connector (its system name) a connector card asks IT to turn on"},
+    "cards": {"relation": "about"},
+    "questions": {"relation": "asks"},
+    "message": {"attribute": "the agent channel message a post answers or follows (kernel/agent_channel.py)"},
+    "commits": {"attribute": "the commits an agent's channel post names"},
+    "checks": {"attribute": "the checks an agent's channel post or gate request names"}
   },
   "ledger": {
     "question_added": {"id": "question"},

@@ -59,4 +59,6 @@ rihma-embed = "embed.server:main"
 rihma-mcp = "mcp.server:main"
 
 [tool.setuptools]
-packages = ["kernel", "kernel.runners", "adapters", "cockpit", "embed", "mcp"]
+# Every package directory (tests/test_wiring.py lists them): the checks, Insights, the red team, the cell runners.
+packages = ["kernel", "kernel.checks", "kernel.insights", "kernel.redteam", "kernel.runners", "adapters", "cockpit",
+            "embed", "mcp"]

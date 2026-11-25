@@ -176,6 +176,13 @@ def _intake(factory: Any, args: argparse.Namespace, emit: Emit, model: Callable[
     return None
 
 
+def _progress(step: str) -> None:
+    """An adoption's step as it starts, on stderr: a terminal shows it, and the cockpit's job log carries it to
+    the walkthrough that waits on the job (kernel/walkthrough_flows.py progress_of)."""
+    sys.stderr.write(f"adopt: {step}\n")
+    sys.stderr.flush()
+
+
 def _adopt(factory: Any, args: argparse.Namespace, emit: Emit) -> int | None:
     from kernel.adopt import adopt
     from kernel.posture import for_new_project
@@ -186,7 +193,8 @@ def _adopt(factory: Any, args: argparse.Namespace, emit: Emit) -> int | None:
         (args.maturity or "production", args.mode or "mixed", None)
     p = adopt(factory, args.title, source=args.source, intent=args.intent, person=args.person, persona=args.persona,
               base_url=args.base_url, maturity=maturity, mode=mode, posture=posture, exclude=tuple(args.exclude),
-              profile=None if args.profile == "auto" else args.profile, confidential=args.confidential)
+              profile=None if args.profile == "auto" else args.profile, confidential=args.confidential,
+              progress=_progress)
     meta, adopted = p.meta, p.read("adopted.json") or {}
     mp = p.read("material.json") or {}
     emit({"project": p.pid, "stage": meta["stage"], "intent": meta.get("intent"), "profile": meta.get("profile"),

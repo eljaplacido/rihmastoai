@@ -53,11 +53,24 @@ def status_answer(project: Any) -> dict[str, Any]:
     actions = [a for a in nxt.get("actions") or [] if a.get("label")]
     if actions:
         parts.append("Next: " + "; ".join(a["label"] for a in actions[:3]) + ".")
+    parts += _agents_line(project)
     first = actions[0] if actions else {}
     view = first.get("view") or "overview"
     nav = {"route": f"#/p/{project.pid}/{view}", "control": first.get("control")}
     return {"answer": " ".join(parts), "navigate": nav, "propose": [], "dropped": [], "sources": [], "by": "map",
             "matches": [a.get("id") for a in actions[:3]]}
+
+
+def _agents_line(project: Any) -> list[str]:
+    """The agents working on it (the overview's Agents strip, kernel/agent_writes.py), when any posted."""
+    from kernel.agent_writes import activity
+
+    a = activity(project, limit=3)
+    if not a["agents"] and not a["handoffs"]:
+        return []
+    said = f"Agents working on it: {', '.join(a['agents']) or 'none yet'}; {a['handoffs']} hand-off(s) given"
+    waiting = len(a["proposals_waiting"])
+    return [said + (f"; {waiting} agent proposal(s) wait on a person in the Agent channel." if waiting else ".")]
 
 
 def resolve(factory: Any, question: str, project_id: str | None) -> tuple[Any, dict[str, Any] | None]:

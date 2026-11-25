@@ -70,8 +70,15 @@ rihmasto demo && rihmasto-cockpit --home var/demo
   `python -m kernel.cli demo` and `python -m cockpit.server --home var/demo` from the checkout.
 - `rihmasto doctor` shows what this machine has: Python, Gnomon, git, docker, the lanes and the
   model keys. It exits 1 until Gnomon is installed; the demo does not need Gnomon.
+- No API key? If Claude Code, Codex or OpenCode is installed, `rihmasto models use claude-code --person
+  "Your Name" --persona it` lets it answer the text roles with your own login. It is slower than an API
+  and spends your subscription ([docs/guides/harness-models.md](docs/guides/harness-models.md)).
 
-For a first real project, read [docs/getting-started.md](docs/getting-started.md).
+For a first real project, read [docs/getting-started.md](docs/getting-started.md). Or let Rihma walk
+you through it: in the cockpit, **Walkthroughs** on Home (or "I have an existing project" in Ask Rihma)
+plugs in a project you have, starts from an idea or documents, sets up a model, or gives a tour, step
+by step in the chat ([walkthroughs](docs/guides/walkthroughs.md); `rihmasto walkthrough plug_in` in a
+terminal).
 
 ## Use only what you need
 
@@ -154,6 +161,12 @@ model pipelines, tuned harnesses, and ops agents that do a job and prove it.
 Guides: [packs and evidence](docs/guides/packs-and-evidence.md), [autonomy](docs/guides/autonomy.md),
 [the capability layer](docs/capability-layer.md).
 
+- **Insights.** Health, compliance, governance, security, context drift, QA and token, skill and memory
+  usage of the projects and their agents, per project and factory-wide, over 24 hours to all records:
+  every figure counted from the records, "not measured" with how to measure it, and an export as JSON,
+  CSV or OpenTelemetry JSON for your own observability tools. Command: `rihmasto insights`
+  ([docs/guides/insights.md](docs/guides/insights.md)).
+
 ## Work profiles
 
 A work profile shapes the panel's questions, the spec guidance and the cockpit around the same
@@ -190,10 +203,16 @@ What connects today:
 - **Website chats:** an embed files end-user feedback as a change, or a need as a signal
   ([docs/guides/embeds.md](docs/guides/embeds.md)).
 - **Your own coding agent:** an MCP server over stdio, with reads and proposals, never decisions
-  ([docs/mcp.md](docs/mcp.md)).
+  ([docs/mcp.md](docs/mcp.md)); a hand-off brief for Claude Code, Codex, OpenCode or Cursor
+  (`rihmasto handoff`), a per-project agent channel where your agents and Rihma's talk while you watch
+  (`rihmasto channel`), and goal help: ask Rihma "hook this to Google Drive" and get a plan
+  ([docs/guides/agentic-help.md](docs/guides/agentic-help.md)).
 - **Signals:** from the command line, the cockpit's JSON API or the MCP server.
 - **Models:** any OpenAI-compatible endpoint, per role, in [kernel/routing.json](kernel/routing.json)
   or in your own `kernel/routing.local.json`, which is merged over it.
+- **Google Drive, for a capability:** a product that declares a Drive folder imports the paved road's
+  client to list new files, download them and upload results, with credentials by name only
+  ([docs/guides/gcp.md](docs/guides/gcp.md)).
 
 ## Portability
 
@@ -230,18 +249,33 @@ still change before 1.0.0.
   trigger an allow-listed action with its owner's rights, with guards, limits and a circuit breaker
   (`rihmasto automations`, the cockpit's Automations page,
   [docs/guides/automations.md](docs/guides/automations.md));
+- the Review: since you last looked, what agents and automations shipped, what went wrong, what was
+  decided in your name and what waits on you, acted on in place and marked reviewed, and sent to you
+  each morning (`rihmasto review`, [docs/guides/review.md](docs/guides/review.md));
 - outputs per audience, chosen by a person and built from the records: a web app with sign-in, a
   container, an OpenAPI description, a delivery report, an evidence pack and the source
   (`rihmasto output`, the cockpit's Outputs view; the MCP server output is planned,
   [docs/guides/outputs.md](docs/guides/outputs.md));
+- a console in each project: run its commands or ask Gnomon in its workspace, the output line by line,
+  recorded and persona-limited, isolated when access is enforced; open a terminal there; and checks for
+  maintenance (tests, CI/CD status, dependency audit, secrets, licences, SBOM, an HTTP probe, the gates)
+  with a Health view (`rihmasto console`, `shell`, `checks`;
+  [docs/guides/console-and-checks.md](docs/guides/console-and-checks.md));
 - access control, phase A: in enforced mode a decision is signed by the identity your organisation's
   sign-in verified, through IT's identity-aware proxy, as a persona an IT-owned access file grants on
-  that project ([docs/guides/access.md](docs/guides/access.md)).
+  that project ([docs/guides/access.md](docs/guides/access.md));
+- alignment with a repository you built in an IDE: its own specs, acceptance criteria, tests, tasks, ADRs
+  and API contracts (spec-kit, Kiro, BMAD, Gherkin, OpenAPI and more) proposed for the project's contract
+  and accepted, edited or rejected by a person, with the gaps, suggested changes for the repository that are
+  never written there, and the drift after it changes (`rihmasto align`, the cockpit's Alignment tab,
+  [docs/guides/alignment.md](docs/guides/alignment.md)).
 
 **Preview:**
 - five of the eight profiles, which run on the web-service template;
 - the docker road, which the tests run against a fake docker CLI, not a daemon;
 - the Azure Container Apps road, rendered and validated but never deployed;
+- the Google Cloud Run road (a service, or a job Cloud Scheduler runs), tested end to end against a fake
+  gcloud but not yet run against a real Google Cloud project ([docs/guides/gcp.md](docs/guides/gcp.md));
 - recipes, sandbox trials, measured fit and offline bundles, which have no command or screen yet
   ([docs/guides/recipes-and-fit.md](docs/guides/recipes-and-fit.md));
 - the capability gateway, run as `python -m gateway.server` ([docs/guides/gateway.md](docs/guides/gateway.md)).

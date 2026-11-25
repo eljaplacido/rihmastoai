@@ -11,12 +11,15 @@ export const PAGE_ROUTES = {
   "home": "#/home", "square": "#/square", "catalogue": "#/catalogue", "projects": "#/projects",
   "inbox_all": "#/inbox", "floor": "#/floor", "jobs": "#/jobs", "settings": "#/settings",
   "shape": "#/shape", "models": "#/models", "runners": "#/runners", "automations_all": "#/automations",
+  "insights_all": "#/insights", "insights": "#/p/{pid}/insights",
   "overview": "#/p/{pid}/overview", "inbox": "#/p/{pid}/inbox", "questions": "#/p/{pid}/questions",
   "assumptions": "#/p/{pid}/assumptions", "plan": "#/p/{pid}/plan", "spec": "#/p/{pid}/spec",
   "tasks": "#/p/{pid}/tasks", "cell": "#/p/{pid}/cell", "releases": "#/p/{pid}/releases",
   "try": "#/p/{pid}/try", "changes": "#/p/{pid}/changes", "ledger": "#/p/{pid}/ledger",
   "evidence": "#/p/{pid}/evidence", "track": "#/p/{pid}/track", "outputs": "#/p/{pid}/outputs",
-  "assessment": "#/p/{pid}/assessment", "automations": "#/p/{pid}/automations"
+  "assessment": "#/p/{pid}/assessment", "automations": "#/p/{pid}/automations",
+  "console": "#/p/{pid}/console", "checks": "#/p/{pid}/checks", "health_all": "#/health", "align": "#/p/{pid}/align",
+  "review_all": "#/review", "review": "#/p/{pid}/review", "agents": "#/p/{pid}/agents", "agents_all": "#/agents"
 };
 export const TOP_PAGES = Object.keys(PAGE_ROUTES).filter((k) => !PAGE_ROUTES[k].includes("{pid}"));
 export const PROJECT_VIEWS = Object.keys(PAGE_ROUTES).filter((k) => PAGE_ROUTES[k].includes("{pid}"));
@@ -27,13 +30,17 @@ export const PAGES = {
   catalogue: { label: "Catalogue", icon: "catalogue" },
   projects: { label: "Projects", icon: "folder" },
   inbox_all: { label: "Inbox", icon: "inbox" },
-  floor: { label: "Insight", icon: "insight" },
+  floor: { label: "Floor", icon: "factory" },
+  insights_all: { label: "Insights", icon: "insight" },
   jobs: { label: "Jobs", icon: "terminal" },
   settings: { label: "Settings", icon: "settings" },
   shape: { label: "Shape it in chat", icon: "message-square" },
   models: { label: "Models", icon: "cpu" },
   runners: { label: "Runners", icon: "layers" },
   automations_all: { label: "Automations", icon: "clock" },
+  health_all: { label: "Health", icon: "pulse" },      // checks across every project (health.js, FR-CHK1)
+  review_all: { label: "Review", icon: "eye" },   // since you last looked (review.js)
+  agents_all: { label: "Agent activity", icon: "bot" },   // every project's agent channel (agents.js, FR-CHN1)
 };
 export const VIEWS = {
   overview: { label: "Overview", icon: "home" },
@@ -53,6 +60,12 @@ export const VIEWS = {
   outputs: { label: "Outputs", icon: "send" },
   assessment: { label: "Assessment", icon: "gauge" },
   automations: { label: "Automations", icon: "clock" },
+  console: { label: "Console", icon: "terminal" },     // run commands in the workspace (console.js, FR-CON1)
+  checks: { label: "Health", icon: "pulse" },          // the project's checks (health.js, FR-CHK1)
+  align: { label: "Alignment", icon: "merge" },
+  insights: { label: "Insights", icon: "insight" },
+  review: { label: "Review", icon: "eye" },
+  agents: { label: "Agents", icon: "bot" },      // agents and people on this project (agents.js, FR-CHN1)
 };
 export const FACTORY_VIEWS = ["overview", "inbox", "ledger"];
 export const STAGE_ICON = { 1: "briefcase", 2: "lightbulb", 3: "code", 4: "file-check", 5: "hammer", 6: "users", 7: "server" };

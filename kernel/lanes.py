@@ -19,6 +19,7 @@ from pathlib import Path
 
 from kernel import git_guard
 from kernel.filelock import LockHeld, locked
+from kernel.harness_model import check_harness_routes, gnomon_endpoint  # a role a harness answers (FR-HMD1)
 from kernel.store import REPO_ROOT, read_json, write_json, write_text
 
 LANES_ENV = "GF_LANES"
@@ -114,6 +115,7 @@ def model_family(routing: dict, role: str) -> str:
 def check_routing(routing: dict) -> None:
     """The verifier must come from another model family than the builder (FR-G6)."""
     roles = routing.get("roles", {})
+    check_harness_routes(routing)
     for needed in ("analyst", "builder", "verifier"):
         if needed not in roles:
             raise ValueError(f"routing has no role {needed!r}")
@@ -170,7 +172,7 @@ def config_toml(routing: dict, roles_used) -> str:
              "[defaults]", f"max_context_tokens = {routing.get('max_context_tokens', 98304)}", "",
              "[resilience]", "request_timeout_ms = 300000", ""]
     for name in endpoints:
-        ep = routing["endpoints"][name]
+        ep = gnomon_endpoint(routing["endpoints"][name])
         lines += [f"[endpoints.{name}]", f"kind = {_toml_str(ep['kind'])}", f"url = {_toml_str(ep['url'])}"]
         if ep.get("api_key_env"):
             lines.append(f"api_key_env = {_toml_str(ep['api_key_env'])}")

@@ -925,7 +925,7 @@ def _check_request(person: str, persona: str, intent: str, profile: str | None, 
 
 def _take(bare: Path, location: str, *, base_url: str | None, timeout: int,
           which: Callable[[str], str | None], suite_timeout: int = 0, exclude: tuple[str, ...] = (),
-          confidential: bool = False) -> dict[str, Any]:
+          confidential: bool = False, progress: Callable[[str], None] = lambda step: None) -> dict[str, Any]:
     """Everything adoption reads from the upstream, before the project exists: the mirror, a
     checkout of the baseline with its inventory, characterisation and documents (scanned as context,
     kernel/material.py), and the kernel's surface on main. The checkout goes through the
@@ -933,15 +933,18 @@ def _take(bare: Path, location: str, *, base_url: str | None, timeout: int,
     from kernel.agent_context_use import apply_stated
     from kernel.material_adopt import context
 
+    progress("fetching the code")
     branch, baseline = _mirror(bare, location, timeout=timeout)
     with tempfile.TemporaryDirectory(prefix="gf-adopt-", ignore_cleanup_errors=True) as tmp:
         scratch = Path(tmp)
         _net(scratch, "clone", "-q", "-c", "core.autocrlf=false", str(bare), "w", timeout=timeout)
         work = scratch / "w"
         files = [f for f in _git_read(work, "ls-files", "-z").split("\0") if f]
+        progress("reading the code and the documents")
         inv = inventory(work, files, base_url=base_url) | {"revision": baseline}
         documents = context(work, exclude)
         apply_stated(inv, documents[0].get("agent_context"))   # the team's own test command first (FR-AGC1)
+        progress("running its own tests once for a baseline")
         character = characterise(work, inv["tests"], timeout=suite_timeout or SUITE_TIMEOUT, which=which)
         surface = _own_surface(bare, scratch, baseline, timeout=timeout, confidential=confidential)
     return {"branch": branch, "baseline": baseline, "inventory": inv, "character": character, "surface": surface,
@@ -1097,7 +1100,7 @@ def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, pe
           base_url: str | None = None, profile: str | None = None, maturity: str = "production",
           mode: str = "mixed", timeout: int = 600, which: Callable[[str], str | None] = shutil.which,
           suite_timeout: int = SUITE_TIMEOUT, exclude: tuple[str, ...] = (), confidential: bool = False,
-          posture: dict[str, Any] | None = None) -> Any:
+          posture: dict[str, Any] | None = None, progress: Callable[[str], None] = lambda step: None) -> Any:
     """Adopt an existing solution as a project. Returns the project.
 
     Everything that reads the upstream runs before the project exists, so an unreachable or
@@ -1105,7 +1108,8 @@ def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, pe
     ``timeout`` bounds each git call; ``suite_timeout`` bounds each detected test suite's run.
     A folder that is not a git repository is snapshotted first (kernel/material_adopt.py); ``exclude``
     drops files from the snapshot and the scanned documents; ``confidential`` keeps it on local models;
-    ``posture`` (kernel/posture.py) is recorded with who chose it, at the maturity and mode given."""
+    ``posture`` (kernel/posture.py) is recorded with who chose it, at the maturity and mode given. ``progress``
+    hears each step as it starts, in plain words (the cockpit's adoption job prints them)."""
     from kernel.material_adopt import NoCode, snapshot
 
     _check_request(person, persona, intent, profile, maturity, mode)
@@ -1117,12 +1121,15 @@ def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, pe
     snap: dict[str, Any] | None = None
     try:
         if kind == "folder":      # the person's folder is never changed: its snapshot is the upstream
+            progress("copying the folder into a baseline repository")
             try:
                 location, snap = snapshot(factory.home, location, exclude)
             except NoCode as exc:
                 raise AdoptionRefused(str(exc)) from None
         taken = _take(staging / "repo.git", location, base_url=req.base_url, timeout=timeout, which=which,
-                      suite_timeout=suite_timeout, exclude=exclude, confidential=confidential) | {"snapshot": snap}
+                      suite_timeout=suite_timeout, exclude=exclude, confidential=confidential,
+                      progress=progress) | {"snapshot": snap}
+        progress("recording the baseline, the as-is spec and the contract")
         project = factory.new_project(title, maturity=maturity, mode=mode, source_kind="adopted", profile=profile,
                                       posture=posture)
         try:

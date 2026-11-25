@@ -45,6 +45,7 @@ The capability layer (a write is signed with --person and --persona)
     rihmasto autonomy show [<pid>] | autonomy set <1-4> [--project PID] --reason "..."
     rihmasto signal log --text "..." --channel chat --source "..." | signal list | signal triage <S-id>
     rihmasto concept edit <C-id> [--title ...] [--profile ...] [--maturity ...] [--mode ...] | concept apply
+    rihmasto console <pid> -- <command> | shell <pid> | checks list|enable|disable|run|history|tick
     rihmasto observe <trigger> --facts '{"project": "<pid>"}' --source "..." | updates apply <pid>
     rihmasto square | catalogue                   the delivery square; the capability catalogue
     rihmasto automations list|add|edit|pause|resume|remove|run-now|dry-run|tick|history|install-help
@@ -66,10 +67,13 @@ from typing import Any
 
 from adapters import sarif
 from kernel import access, assess_cli, autonomy, embeds, evidence_pack, faces, graph_ask, integrations, observations
-from kernel import (access_cli, automations_cli, autopilot_cli, change_cli, ide, input_summary, integration_decl,
-                    material_cli, modules, outputs, packs, posture_cli, security, shape_cli, signals, standalone)
+from kernel import (access_cli, alignment_cli, automations_cli, autopilot_cli, bridge_cli, change_cli, ide,
+                    input_summary, integration_decl, material_cli, modules, outputs, packs, posture_cli, review_cli,
+                    road_settings, security, shape_cli, signals, standalone, walkthrough_cli)
 from kernel.canon import Canon, DecisionRefused
+from kernel.insights import cli as insights_cli
 from kernel.dashboard import catalogue
+from kernel import console_cli  # the console and the checks (FR-CON1, FR-CHK1)
 from kernel.people import PERSONAS, is_person
 from kernel.profiles import PROFILES
 from kernel.runners import cli as runners_cli
@@ -262,8 +266,12 @@ def build_parser() -> argparse.ArgumentParser:
                 standalone.add_parsers, material_cli.add_parsers, change_cli.add_parsers, shape_cli.add_parsers,
                 posture_cli.add_parsers, assess_cli.add_parsers, faces.add_parsers, access_cli.add_parsers,
                 integration_decl.add_parsers, ide.add_parsers, runners_cli.add_parsers,  # FR-DS1; FR-AGC1; D-0019
-                automations_cli.add_parsers):  # FR-AUT1
+                automations_cli.add_parsers, alignment_cli.add_parsers,  # FR-AUT1; FR-ALN1
+                insights_cli.add_parsers, review_cli.add_parsers,  # FR-INS1; FR-REV1
+                road_settings.add_parsers, bridge_cli.add_parsers):  # FR-GCP1; goal, handoff, channel
         add(sub)
+    walkthrough_cli.add_parsers(sub)          # walkthroughs in a terminal (FR-WLK1)
+    console_cli.add_parsers(sub)  # the console, a shell, and the checks (FR-CON1, FR-CHK1)
     return integrations.add_parsers(sub, ap)  # relay, hooks and connector (D-0015)
 
 
@@ -450,6 +458,13 @@ CAPABILITY: dict[str, Handler] = {
     **standalone.handlers(_print, _model), **change_cli.handlers(_print, _model), **runners_cli.handlers(_print),
     **shape_cli.handlers(_print, lambda: _model(), print), **integration_decl.handlers(_print), **ide.handlers(_print),
     **automations_cli.handlers(_print, lambda: _model())}
+CAPABILITY.update(walkthrough_cli.handlers(_print, lambda: _model()))     # walkthroughs in a terminal (FR-WLK1)
+CAPABILITY.update(console_cli.handlers(_print))  # FR-CON1, FR-CHK1
+CAPABILITY.update(alignment_cli.handlers(_print))  # FR-ALN1
+CAPABILITY.update(insights_cli.handlers(_print, print))  # FR-INS1
+CAPABILITY.update(review_cli.handlers(_print, print))  # FR-REV1
+CAPABILITY.update(road_settings.handlers(_print))  # paved roads (FR-GCP1)
+CAPABILITY.update(bridge_cli.handlers(_print, print))  # FR-CPL1, FR-BRG1, FR-CHN1
 
 
 def command_of(args: Args) -> str:

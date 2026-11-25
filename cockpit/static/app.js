@@ -21,6 +21,11 @@ import { renderShape } from "./shape.js";
 import { renderModels } from "./models.js";
 import { renderRunners } from "./runners.js";
 import { renderAutomations } from "./automations.js";
+import { resumeWalk } from "./walkthrough.js";
+import { renderHealth } from "./health.js";
+import { renderInsights } from "./insights.js";
+import { renderReview } from "./review.js";
+import { renderAgentActivity } from "./agents.js";
 
 applyTheme(Object.assign({}, THEME_DEFAULT, localJSON("gf.theme", {})));
 
@@ -273,9 +278,16 @@ function wireLens() {
 
 // -- the sidebar, the top bar and the bottom bar ----------------------------------------------------
 
-const NAV_ORDER = ["home", "square", "catalogue", "projects", "inbox_all", "floor", "jobs", "automations_all"];
+// Review first (since you last looked, FR-REV1); Health is the checks, Insights the dimensions: each once.
+const NAV_ORDER = ["review_all", "home", "square", "catalogue", "projects", "inbox_all", "insights_all", "floor",
+  "jobs", "automations_all"];
+NAV_ORDER.push("health_all");                       // Health across every project (health.js, FR-CHK1)
 const PAGE_ROUTE = { home: "#/home", square: "#/square", catalogue: "#/catalogue", projects: "#/projects",
-  inbox_all: "#/inbox", floor: "#/floor", jobs: "#/jobs", settings: "#/settings", automations_all: "#/automations" };
+  inbox_all: "#/inbox", insights_all: "#/insights", floor: "#/floor", jobs: "#/jobs", settings: "#/settings",
+  automations_all: "#/automations", review_all: "#/review" };
+PAGE_ROUTE.health_all = "#/health";
+NAV_ORDER.push("agents_all");                       // Agent activity across every project (agents.js, FR-CHN1)
+PAGE_ROUTE.agents_all = "#/agents";
 
 /* A page in the sidebar. Its label is hidden in the icon rail, where the tooltip carries it and what its
    badge counts. A note the badge alone shows (the cells running now) is a tooltip at every width, on
@@ -500,7 +512,8 @@ function parseRoute() {
     const view = parts[2] && PROJECT_VIEWS.includes(parts[2]) ? parts[2] : null;
     return { name: "project", pid: parts[1], view, focus: parts[3] || null };
   }
-  const name = parts[0] === "inbox" ? "inbox_all" : parts[0] === "automations" ? "automations_all" : parts[0];
+  const name = { inbox: "inbox_all", insights: "insights_all", automations: "automations_all",
+    health: "health_all", review: "review_all", agents: "agents_all" }[parts[0]] || parts[0];
   if (name === "shape") return { name, id: parts[1] || null };   // a conversation: #/shape/SH-001
   if (name === "runners") return { name, id: parts[1] || null }; // a project's runners: #/runners/<pid>
   if (TOP_PAGES.includes(name)) return { name };
@@ -510,8 +523,10 @@ function parseRoute() {
 const RENDER = {
   home: renderHome, square: renderSquare, catalogue: renderCatalogue, projects: renderProjectsPage, inbox_all: renderInboxAll,
   floor: renderFloor, jobs: renderJobs, settings: renderSettings, shape: renderShape, models: renderModels, runners: renderRunners,
-  automations_all: renderAutomations,
+  automations_all: renderAutomations, insights_all: renderInsights, review_all: renderReview,
 };
+RENDER.health_all = renderHealth;
+RENDER.agents_all = renderAgentActivity;
 void PAGE_ROUTES;
 
 async function route(keep) {
@@ -641,6 +656,7 @@ async function start() {
   drawLens();
   await route();
   firstRun();                              // a new factory home: where to start (kernel/modules.py presets)
+  resumeWalk();                            // a walkthrough that was going (walkthrough.js, FR-WLK1)
 }
 
 async function boot() {

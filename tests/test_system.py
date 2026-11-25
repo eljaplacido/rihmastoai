@@ -873,7 +873,8 @@ class GovernanceStory(SystemCase):
         answers = {a["id"]: a for a in map(json.loads, proc.stdout.decode("utf-8").splitlines())}
         tools = {t["name"] for t in answers[2]["result"]["tools"]}
         for word in ("decide", "approve", "accept", "reject", "answer", "assume", "pause", "resume", "deploy"):
-            self.assertFalse([t for t in tools if word in t], word)
+            # a proposal waits on a person (rihma_propose_answer, FR-BRG1): it decides nothing
+            self.assertFalse([t for t in tools if word in t and not t.startswith("rihma_propose_")], word)
         listed = answers[3]["result"]["structuredContent"]["projects"]
         self.assertEqual([x["id"] for x in listed], [p.pid])
         filed = answers[4]["result"]["structuredContent"]

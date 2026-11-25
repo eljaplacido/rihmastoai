@@ -14,7 +14,10 @@ import { dataTable } from "./charts.js";
 import { currentTheme, setTheme, loadLayout, applyTheme } from "./dashboard.js";
 import { loadModules, modulesCard, moduleShows } from "./modules.js";
 import { scanStep, looksLikeFolder } from "./scan.js";
+import { adoptLabel, adoptChoice, adoptEach } from "./feedin.js";
+import { foldersCard } from "./folders.js";
 import { postureSection } from "./posture.js";
+import { roadsCard, integrationsCard } from "./roads.js";
 
 const CHANNEL_ICON = { chat: "message-square", feed: "signal", form: "file-check", email: "send", monitoring: "activity",
   meeting: "users", embed: "code", manual: "edit" };
@@ -724,7 +727,7 @@ export async function renderSettings(seq) {
   const offNote = embedsOn ? null : h("p", { class: "note warning", "data-key": "embeds-off" }, icon("alert"), h("span", null,
     h("b", null, "Integrations is off. "), "These chats take no messages while it is off. Revoke one here to stop it for good."));
   fill(main,
-    pageHead("Settings", "The models, the cell runners, the modules in use, embeds for websites, how the cockpit looks, and sign-in links.", { icon: "settings" }),
+    pageHead("Settings", "The models, the cell runners, the modules in use, the paved roads, integrations, embeds for websites, how the cockpit looks, and sign-in links.", { icon: "settings" }),
     card({ title: "Models", icon: "cpu", id: "set-models", tools: [h("a", { href: "#/models", class: "btn small primary", "data-control": "models_open", "data-key": "set:models" },
       icon("cpu"), h("span", { class: "lbl" }, "Open Models setup"))] },
     h("p", null, "Which model answers for each role (the analyst, the builder, the verifier, the assistant and more): a server on this machine or a hosted "
@@ -734,6 +737,8 @@ export async function renderSettings(seq) {
     h("p", null, "Which harness runs the factory's cells: Gnomon, which enforces the rules during a run, or another harness such as Claude Code, Codex or "
       + "OpenCode, approved by IT with its version pinned and checked after every run.")),
     modulesCard(projects),
+    roadsCard(), integrationsCard(),   // paved roads and what a capability can reach (roads.js)
+    foldersCard(),             // the folders the cockpit may read for a person (FR-RPJ1)
     !embedsOn && !em.embeds.length ? null : card({ title: "Embeds: a chat window for a website", icon: "message-square", id: "embeds", cls: "emb-card",
       tools: [embedsOn ? create : null],
       info: "An embed has exactly one capability: it files end-user feedback as a change, or a business need as a signal. It answers only from a public brief "
@@ -931,8 +936,12 @@ export function newProjectModal() {
   function setSubmit() {
     const scan = !!folderOf() && !scanned();
     const need = startFrom === "need";
-    fill(submit, icon(scan ? "search" : need ? "plus" : "folder"), scan ? "Scan the folder" : need ? "Create and start the intake" : "Adopt the project");
-    submit.disabled = !need && scanned() && !scanner.result.code;
+    const ch = scanner.choice;
+    const res = scanned() ? scanner.result : null;
+    const label = adoptLabel(res, ch);
+    fill(submit, icon(scan ? "search" : need ? "plus" : ch.track ? "eye" : "folder"), scan ? "Scan the folder" : need ? "Create and start the intake" : label);
+    submit.disabled = !need && !!res && ((!res.code && !ch.track) || ((res.adopted_as || []).length > 0 && !ch.again)
+      || (ch.each && !ch.repos.size));
     submitNote.textContent = scan ? "Rihmasto shows what it would read of the folder first. Nothing is sent or created yet."
       : need ? "Nothing is built until the questions that block it are answered."
         : "It runs as a job: Rihmasto reads the project and runs its tests for a baseline. Your folder is never changed.";
@@ -969,14 +978,18 @@ export function newProjectModal() {
     const picked = folder ? { exclude: scanner.exclude() } : {};
     if (startFrom === "existing") {
       const data = Object.assign({ title: title.value.trim(), source: repo.value.trim(), intent: val(intent),
-        base_url: runsAt.value.trim(), person: by.value.trim(), persona: S.persona, confidential: secret.checked }, how.value(), picked);
+        base_url: runsAt.value.trim(), person: by.value.trim(), persona: S.persona, confidential: secret.checked }, how.value(), picked,
+      folder ? adoptChoice(scanner.result, scanner.choice, !!how.value().posture) : {});
       if (!data.title) { say("Give the project a title.", "warning"); title.focus(); return; }
       if (!data.source) { say("Give the folder or the git address of the existing project.", "warning"); repo.focus(); return; }
       if (!data.person) { say("Name the person who adopts it.", "warning"); by.focus(); return; }
+      const many = folder ? adoptEach(scanner.result, scanner.choice, data) : null;
       actKeep(form, submit, async () => {
-        const out = await api("POST", "/api/adopt", data);
+        const jobs = [];
+        for (const one of many || [data]) jobs.push((await api("POST", "/api/adopt", one)).job.id);
         closeModal();
-        say("Adopting " + data.title + " as job " + out.job.id + ": when its baseline is recorded, Open the project here takes you to it.", "good");
+        say(many ? "Adopting " + many.length + " projects as jobs " + jobs.join(", ") + ": each opens from the Jobs page when its baseline is recorded."
+          : (data.documents ? "Tracking " : "Adopting ") + data.title + " as job " + jobs[0] + ": when its baseline is recorded, Open the project here takes you to it.", "good");
         location.hash = "#/jobs";
       });
       return;

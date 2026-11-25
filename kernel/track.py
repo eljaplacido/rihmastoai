@@ -196,13 +196,15 @@ def health(project: Project) -> dict[str, Any]:
     and a last release that stopped. Track carries them, so the one answer the cockpit's header shows is
     never better than the health."""
     from kernel.insight import alignment
-    from kernel.status import _releases
+    from kernel.status import _releases, failed_baseline
 
     stale = [f["text"] for f in alignment(project) if f["kind"] == "stale_approval"]
     rels = _releases(project)
     failed = rels[-1].get("number") if rels and rels[-1].get("state") == "failed" else None
-    return figure(len(stale) + (failed is not None), "approvals gone stale, and whether the last release stopped",
-                  stale=stale, release_failed=failed)
+    base = failed_baseline(project)
+    return figure(len(stale) + (failed is not None) + bool(base), "approvals gone stale, whether the last release "
+                  "stopped, and an adopted baseline whose tests fail", stale=stale, release_failed=failed,
+                  baseline_failed=base or None)
 
 
 def posture(project: Project) -> dict[str, Any]:
@@ -351,6 +353,8 @@ def _work_reasons(f: dict[str, Any]) -> list[dict[str, str]]:
 def _watch_reasons(f: dict[str, Any], cps: dict[str, Any], held: dict[str, Any] | None) -> list[dict[str, str]]:
     """What the watch says: the budget, the posture, checkpoints due and an autopilot whose time is up."""
     out = _budget_reasons(f["time"], f["cost"])
+    if f["health"].get("baseline_failed"):     # an adopted project's existing tests fail (FR-RPJ1)
+        out.append(_reason("at_risk", "health", f["health"]["baseline_failed"]))
     if f["posture"]["value"] is False:
         out.append(_reason("at_risk", "posture", f"the run does not keep its posture: {f['posture']['basis']}"))
     out += [_reason("at_risk", "checkpoints", f"checkpoint {s} ({STAGES.get(s)}) is due: a person looks")

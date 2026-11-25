@@ -7,6 +7,7 @@ import {
   S, h, icon, chip, api, say, signed, needPerson, enc, nav, plural, cap, short, ago, card, button, empty, link,
   personBadge, agentBadge,
 } from "./core.js";
+import { openAssistant, send as askRihma } from "./assistant.js";
 
 const VERDICT = { failed: ["critical", "x-circle", "Finding"], "not measured": ["nm", "dashed", "Not measured"],
   passed: ["good", "check-circle", "Passed"], "not applicable": ["neutral", "info", "Not applicable"] };
@@ -15,6 +16,8 @@ const CLASSES = [["new_requirement", "New requirement: a business decision first
   ["defect", "Defect"], ["infra_change", "Infra change: IT decides"]];
 const POLL_MS = 2000;
 let poll = null;
+let onPick = () => {};
+let suggested = new Map();     // finding id -> its suggested kind and why (kernel/assess_priority.py)
 
 function verdictChip(v) { const t = VERDICT[v] || ["neutral", "info", v]; return chip(t[0], t[1], t[2]); }
 function severityChip(s, n) {
@@ -115,7 +118,19 @@ function findingRow(pid, f, filed, picked) {
     (f.evidence || []).length ? h("ul", { class: "plain as-ev" }, f.evidence.map((e) => h("li", null, where(e)))) : null,
     (f.rests_on || []).length ? h("p", { class: "small" }, "Rests on: ", f.rests_on.map((x2) => chip(x2.found ? "good" : "warning",
       x2.found ? "check" : "alert", x2.ref + (x2.found ? "" : ": not found in the repository")))) : null,
-    f.suggestion ? h("p", { class: "small as-fix" }, h("b", null, "Suggested change: "), f.suggestion) : null);
+    f.suggestion ? h("p", { class: "small as-fix" }, h("b", null, "Suggested change: "), f.suggestion) : null,
+    x ? null : kindField(f));
+}
+
+// The kind this finding is filed as: Rihma's suggestion, with its reason, which the person may change.
+function kindField(f) {
+  const s = suggested.get(f.id);
+  if (!s) return null;
+  const id = "as-kind-" + f.id;
+  const sel = h("select", { id, "data-key": "cls:" + f.id, class: "as-kind" },
+    CLASSES.map(([v, t]) => h("option", { value: v, selected: v === s.suggested || null }, t.split(":")[0])));
+  return h("p", { class: "small as-kind-row" }, h("label", { for: id }, "File as "), sel,
+    h("span", { class: "muted" }, " Suggested: " + s.suggested_why + "."));
 }
 
 function otherRow(c) {
@@ -151,15 +166,62 @@ function proposalsCard(pid, a, picked) {
     + ": " + e.error).join("; "))) : null);
 }
 
+// Tick or untick findings by id, in the set and on the page at once.
+function tick(picked, ids, on) {
+  ids.forEach((id) => {
+    if (on) picked.add(id); else picked.delete(id);
+    const box = document.querySelector('input[data-key="pick:' + CSS.escape(id) + '"]');
+    if (box) box.checked = on;
+  });
+}
+
+// The suggested order (kernel/assess_priority.py, by rule) with its why, quick selections, and Ask Rihma.
+function priorityBlock(a, picked) {
+  const order = a.priority || [];
+  const all = order.map((r) => r.id);
+  const severe = order.filter((r) => r.severity === "critical" || r.severity === "high").map((r) => r.id);
+  const top = all.slice(0, Math.min(5, all.length));
+  const count = h("span", { class: "muted small", role: "status", "aria-live": "polite" });
+  const shown = () => { count.textContent = plural(picked.size, "finding") + " ticked"; };
+  const pick = (label, ids, key, on = true) => button(label, { kind: "small", key, type: "button", disabled: !ids.length || null,
+    onclick: () => { tick(picked, on ? ids : Array.from(picked), on); shown(); } });
+  document.removeEventListener("change", onPick);      // one listener, for the view drawn last
+  onPick = (e) => { if (e.target && String(e.target.dataset.key || "").startsWith("pick:")) shown(); };
+  document.addEventListener("change", onPick);
+  shown();
+  return h("div", { class: "as-prio" },
+    order.length ? h("details", { class: "as-more", open: true }, h("summary", null, "Suggested order: fix these first"),
+      h("ol", { class: "small" }, order.slice(0, 5).map((r) => h("li", null, h("b", { class: "mono" }, r.id), " " + r.title,
+        h("span", { class: "muted" }, ": " + r.why + "."))))) : h("p", { class: "muted small" }, "Nothing open to prioritise."),
+    h("div", { class: "btns" },
+      pick("Select the top " + top.length, top, "as-top"),
+      pick("Select critical and high (" + severe.length + ")", severe, "as-severe"),
+      pick("Select all open (" + all.length + ")", all, "as-all"),
+      pick("Clear", all, "as-clear", false),
+      button("Ask Rihma what to fix first", { icon: "bot", kind: "small", key: "as-ask", type: "button", "data-control": "assessment_ask",
+        onclick: () => { openAssistant(); askRihma("Which findings should I fix first, and why?"); } })),
+    count);
+}
+
+// The kind chosen on each ticked finding's row.
+function kindsOf(picked) {
+  const out = {};
+  picked.forEach((id) => {
+    const sel = document.querySelector('select[data-key="cls:' + CSS.escape(id) + '"]');
+    if (sel) out[id] = sel.value;
+  });
+  return out;
+}
+
 function fileForm(pid, a, picked, kit) {
-  const sel = h("select", { id: "as-class", name: "as" }, CLASSES.map(([v, t]) => h("option", { value: v }, t)));
   const send = button("File the ticked findings as changes", { icon: "send", kind: "primary", key: "as-file", type: "submit",
     "data-control": "assessment_changes" });
   const form = h("form", { class: "form panel", "aria-labelledby": "as-file-h", novalidate: true },
     h("h3", { id: "as-file-h" }, "Fix what matters"),
-    h("p", { class: "small muted" }, "Tick findings above, then file them: each becomes a change card from " + a.latest.id
-      + ", signed with your name. A finding whose card is still open is not filed twice."),
-    h("div", { class: "field" }, h("label", { for: "as-class" }, "File them as"), sel),
+    h("p", { class: "small muted" }, "Tick findings above, or choose them here, then file them: each becomes a change card from "
+      + a.latest.id + " as the kind shown on it (Rihma suggests one for each, with why; change any), signed with your name. "
+      + "A finding whose card is still open is not filed twice."),
+    priorityBlock(a, picked),
     h("div", { class: "btns" }, send));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -167,7 +229,7 @@ function fileForm(pid, a, picked, kit) {
     if (!needPerson()) return;
     kit.run(send, form, async () => {
       const out = await api("POST", "/api/projects/" + enc(pid) + "/assessment/changes",
-        Object.assign({ findings: Array.from(picked), version: a.latest.id, as: sel.value }, signed()));
+        Object.assign({ findings: Array.from(picked), version: a.latest.id, classes: kindsOf(picked) }, signed()));
       const opened = out.opened.map((c) => c.card + " (" + c.finding + ")").join(", ");
       say((opened ? "Filed " + opened + "." : "Nothing new filed.")
         + (out.skipped.length ? " Skipped " + out.skipped.map((s) => s.finding + ": " + s.why).join("; ") + "." : ""), "good");
@@ -197,6 +259,7 @@ export function viewAssessment(p, ctx, kit) {
     return out;
   }
   const picked = new Set();
+  suggested = new Map((a.priority || []).map((r) => [r.id, r]));
   out.append(summaryCard(a));
   Object.entries(a.perspectives || {}).forEach(([key, label]) => out.append(perspectiveCard(pid, a, key, label, picked)));
   out.append(proposalsCard(pid, a, picked), fileForm(pid, a, picked, kit), historyCard(a));

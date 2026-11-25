@@ -90,6 +90,7 @@ default, or `$GNOMONFACTORY_HOME/paved_roads.json`). IT edits it, then decides t
 | `local-process` | Runs the product from a checkout of the product repository at the release's revision, on a free loopback port. Data and the traffic log live under `envs/<env>/` in the project folder (a twin's under `envs/<env>/twin/`, removed when the twin stops). | configured |
 | `docker` | `docker build` per revision (`gf-<pid>:<rev12>`), `docker run -d` per environment and slot (`gf-<pid>-<env>-<slot>`), a port published on `bind`, a named volume for `/data` (`gf-<pid>-<env>-data`; a twin or candidate gets its own, removed when it stops), `APP_VERSION` and `TRAFFIC_LOG=/data/traffic.jsonl` set, with each approved integration's settings, and its `env:` credentials by name only (`--env NAME`, the value in the docker CLI's environment). Uses the docker CLI on the kernel's host. | configured, and `docker` is on PATH |
 | `azure-containerapps` | Renders an Azure Container Apps YAML (one replica, TLS-only ingress, the image tagged with the revision, Key Vault secret references, a user-assigned identity, an Azure Files volume) and the `az` command plan, and validates both. It hosts no twin for the holdouts. | configured, an `identity`, subscription, resource group, environment, registry and `rules.region`, and `az` on PATH |
+| `gcp-cloudrun` | A Cloud Run service (`service.yaml`: one instance, port 8080, `/health` probes, a revision per release, a candidate tagged with no traffic) or a Cloud Run job run by Cloud Scheduler (`job.yaml` and the scheduler job, production by default), built by Cloud Build and pinned by digest, Secret Manager references by name, the exact gcloud commands rendered and validated. A job's smoke check is one execution; its probe reads its executions. It hosts no twin. [guides/gcp.md](guides/gcp.md). | configured, projects, `region`, `repository`, a `deployer` and a `runtime_service_account` (and a job's `schedule`), and `gcloud` on PATH and signed in |
 
 A **slot** is one running copy in an environment: `current` is what people use, `candidate` is a
 new release beside it in production, and `twin` is a disposable copy on its own empty data. The
@@ -298,6 +299,9 @@ scenario of kind `probe`. Results go to `ops/probes.jsonl`. A failing probe open
   configure the road with an identity, and the `az` CLI on the deploying host; neither exists
   today. Its YAML is checked by reading it
   back with the factory's own reader, not by Azure.
+- **Real, tested against a fake gcloud on PATH, not yet run against a real Google Cloud project**: the
+  `gcp-cloudrun` road, a service or a scheduled job, from Cloud Build to promotion, rollback and the
+  job's executions ([guides/gcp.md](guides/gcp.md)).
 - **Not in v1**: injecting a road secret's value into local or docker products (packages carry the
   references only; a declared integration's `env:` credential is the exception, FR-DS2 and FR-DS5), traffic splitting by weight, and reading an Azure product's traffic log
   (shadow reports `not measured` there, and the canary uses probes alone).

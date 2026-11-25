@@ -40,6 +40,44 @@ Dependency, build, cache, virtual-environment and version-control folders (`node
 `__pycache__/`, `build/`, `dist/`, `target/`, `.git/` and the like) are not walked, and a link is
 never followed. A scan looks at the first 5,000 files and counts the rest.
 
+**Housekeeping is listed, never read** (FR-RPJ1). The files a tool keeps beside the work are counted on
+one line, wherever they sit: ignore and attribute lists (`.gitignore`, a nested `.gitignore` too,
+`.gitattributes`, `.ignore`, `.dockerignore`), editor and linter settings (`.editorconfig`, `.prettierrc`),
+checksum lists (`SHA256SUMS`, `*.sha256`, `checksums.txt`), example environments (`.env.example`), and
+lockfiles (`uv.lock`, `poetry.lock`, `package-lock.json`, `go.sum`). A game engine's or 3D tool's own files
+(scenes, assets, project settings: `.tscn`, `.unity`, `.uasset`, `.glb`, `.blend`) are listed too, and
+counted by area for an adopted project. **The README at the top is read first and in full** whenever it
+fits the budget, before plans and other documents, however many other files wait.
+
+**Archives are read inside, never extracted** (FR-RPJ1, [kernel/material_zip.py](../../kernel/material_zip.py)).
+A `.zip` (an experiment's `results.zip`) is opened in place: its entries are listed as
+`results.zip!/results/metrics.csv`, and each is decided by the same rules as a file in the folder (excluded,
+secret-looking, binary, housekeeping, code listed, documents read within the budget). Nothing is written to
+disk. An entry over 2 MB is listed; an archive whose entries would inflate past 8 GB, or more than 200 times
+their packed size, is refused as a zip bomb, and so is an entry that inflates beyond the cap whatever its
+header says; an archive inside an archive is listed, not opened.
+
+**A copy is read once.** A folder that holds copies (`app_snapshot/`, `app-copy/`, `app-prep/`) would spend
+the budget twice on the same text: a document whose text another holds is listed as "the same text as
+<path>: read once", and the one read is outside the copy-named folder.
+
+**A git repository is scanned as it will be adopted.** In New project's An existing project, the scan of a
+repository reads its **last commit** (a file changed since is read from git, an unchanged one from disk,
+[kernel/material_git.py](../../kernel/material_git.py)), so the map's numbers are the adoption's; choosing
+**Adopt the working copy as it is now** scans the folder as it is. See
+[brownfield.md](../brownfield.md#uncommitted-work-workspaces-and-adopted-already).
+
+**A long scan shows how far it is.** The cockpit scans in the background: the step says how many files it
+looked at, the time and the folder it is in, with **Cancel the scan**. A folder the cockpit may not read,
+or a scan that fails, is said in the step with what to do, never a scan that stays on "Scanning the folder".
+
+**Folders the cockpit may read.** Your home folder, the operator's `RIHMASTO_SOURCE_ROOTS` and the folders
+allowed in **Settings > Folders the cockpit may read** (kept in the factory home, `source_roots.json`,
+signed and recorded as `source_root_allowed`, at once and without a restart). A single operator allows one
+after saying yes, and a refused folder offers **Allow C:\dev** in the scan step; under enforced access only
+IT allows one, and the refusal says **Ask IT to allow it**. A system folder, a folder of keys or a drive's
+root is never allowed.
+
 **The formats** ([kernel/material_read.py](../../kernel/material_read.py), standard library only):
 Markdown, reStructuredText and text as they are; HTML with its scripts and styles dropped, its entities
 decoded and its headings kept as `#` lines; Word (`.docx`) paragraphs with their headings; PowerPoint
@@ -150,6 +188,15 @@ resolve names. A model server on your own network that you reach by name (a GPU 
 VPN) is local once you say so: tick **On my own network** in Models setup, or
 `rihmasto models set <role> --base-url http://<name>:<port>/v1 --model <name> --private`, which writes
 `"private": true` on its endpoint in `kernel/routing.local.json`.
+
+**A confidential adoption** calls no model: it reads the repository and runs its tests. So New project
+says it plainly (FR-RPJ1, [kernel/confidential_local.py](../../kernel/confidential_local.py)): "Adopting
+works (it calls no model). These roles would be refused until they use a local model: ...". When the
+routing already has a local or private model that a role uses (the shipped assistant on `local`, for
+example), **Use my local model for these roles** points the hosted roles at it in one click, signed and
+recorded as `models_set` (`via: confidential: use my local model`), each role's fallback kept. The verifier
+keeps to a family other than the builder's, as the routing requires: with no such local model it is left
+out, and the dialog says so.
 
 ## The kinds of input
 

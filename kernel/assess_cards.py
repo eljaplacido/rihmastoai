@@ -94,15 +94,18 @@ def _wanted(ids: Iterable[str]) -> list[str]:
 
 
 def to_changes(project: Any, ids: Iterable[str], *, person: str, persona: str, version: int | str | None = None,
-               as_class: str = CLASS_DEFAULT) -> dict[str, Any]:
+               as_class: str = CLASS_DEFAULT, classes: dict[str, str] | None = None) -> dict[str, Any]:
     """File each chosen finding of an assessment (the latest by default) as a change card signed by
-    ``person``; skip one whose earlier card is still open. Returns what was opened and what was skipped."""
+    ``person``, each as its own kind (``classes``, by finding id) or ``as_class``; skip one whose earlier card
+    is still open. Returns what was opened and what was skipped."""
     from kernel.canon import Canon
     from kernel.change import CLASSES
 
     _check_asker(person, persona)
-    if as_class not in CLASSES:
-        raise AssessmentRefused(f"a change is filed as one of {', '.join(CLASSES)}, not {as_class!r}")
+    kinds = {str(k).upper(): v for k, v in (classes or {}).items()}
+    for kind in {as_class, *kinds.values()}:
+        if kind not in CLASSES:
+            raise AssessmentRefused(f"a change is filed as one of {', '.join(CLASSES)}, not {kind!r}")
     wanted = _wanted(ids)
     record = load(project, version)
     found = _by_id(record)
@@ -119,7 +122,8 @@ def to_changes(project: Any, ids: Iterable[str], *, person: str, persona: str, v
             if earlier and _state(canon, earlier["card"]) == "open":
                 skipped.append({"finding": fid, "card": earlier["card"], "why": "its change card is still open"})
                 continue
-            card = _open_card(project, record, f, person=person, persona=persona, as_class=as_class)
+            card = _open_card(project, record, f, person=person, persona=persona,
+                              as_class=kinds.get(fid.upper(), as_class))
             filed[f["key"]] = {"card": card["card"], "assessment": record["id"], "finding": fid,
                                "person": person, "at": project.factory.clock.stamp()}
             opened.append(card)
@@ -144,10 +148,13 @@ def view(project: Any) -> dict[str, Any]:
         latest, problem = (load(project) if index else None), None
     except LookupError as exc:
         latest, problem = None, str(exc.args[0] if exc.args else exc)
-    return {"project": project.pid, "adopted": is_adopted(project), "has_repo": project.path("repo.git").is_dir(),
-            "perspectives": PERSPECTIVES, "severities": list(SEVERITIES),
-            "history": checked(project),
-            "latest": latest, "problem": problem, "filed": filed(project)}
+    from kernel.assess_priority import ranked
+
+    out = {"project": project.pid, "adopted": is_adopted(project), "has_repo": project.path("repo.git").is_dir(),
+           "perspectives": PERSPECTIVES, "severities": list(SEVERITIES),
+           "history": checked(project),
+           "latest": latest, "problem": problem, "filed": filed(project)}
+    return out | {"priority": ranked(out)}        # which open findings to fix first, and why (by rule)
 
 
 def for_evidence(project: Any) -> dict[str, Any]:

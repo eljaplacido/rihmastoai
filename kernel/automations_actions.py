@@ -399,4 +399,10 @@ def _probe(factory: Factory, a: dict[str, Any], f: dict[str, Any], tools: Any) -
 
 HANDLERS: dict[str, Callable[[Factory, dict[str, Any], dict[str, Any], Any], dict[str, Any]]] = {
     "advance": _advance, "gate": _gate, "rescan": _rescan, "notify": _notify, "change": _change, "signal": _signal,
-    "output": _output, "command": _command, "ask": _ask, "probe": _probe}
+    "output": _output, "command": _command, "ask": _ask, "probe": _probe,
+    "watch": lambda factory, a, f, tools: __import__("kernel.adopt_watch", fromlist=["fire"]).fire(
+        _project(factory, f), str(a["action"].get("what") or "commits"))}
+# run_check, align_scan and review_digest (kernel/automations_more.py), whichever module loads first.
+from kernel.automations_more import handlers as _more  # noqa: E402
+
+HANDLERS.update(_more())

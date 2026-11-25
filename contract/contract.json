@@ -4459,6 +4459,15 @@
           "check": {
             "kind": "test"
           }
+        },
+        {
+          "id": "FR-BA1-AC-18",
+          "given": "an assessed repository with open findings; the owner (2026-11-25): \"in the assessment I should be able to ask Rihma what fixes to prioritise and why, and choose select all instead of clicking through each\"",
+          "when": "a person asks Ask Rihma which findings to fix first, or opens the Assessment view",
+          "then": "by rule and with no model, the open findings not already filed as an open change come in order (severity, then security and compliance before the rest, then still open since the version before, the panel's opinions after the rules' findings), each with why; the answer takes the person to the assessment; the view offers select the top findings, critical and high, all open, and clear",
+          "check": {
+            "kind": "test"
+          }
         }
       ]
     },
@@ -5660,6 +5669,15 @@
           "check": {
             "kind": "test"
           }
+        },
+        {
+          "id": "FR-REL1-AC-5",
+          "given": "the checkout's package directories (each with an __init__.py under kernel, adapters, cockpit, embed and mcp)",
+          "when": "pyproject.toml's packages are read",
+          "then": "they list every one of them, kernel.checks, kernel.insights, kernel.redteam and kernel.runners included, and nothing else",
+          "check": {
+            "kind": "test"
+          }
         }
       ]
     },
@@ -6466,6 +6484,928 @@
       ]
     },
     {
+      "id": "FR-CPL1",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "A person states a goal in a project in their own words, in English or Finnish, and Rihma answers with a plan grounded in the project's records and in a catalogue of what this Rihmasto can do read from its code at run time, with honest gaps; each step is one action the person takes with one click, and nothing is written until a person takes a step that writes, signed, through the existing routes.",
+      "notes": "The owner (2026-11-24): \"I described a case of trying to work with a project in Rihmasto and was unclear what to do with it. I shouldn't be left in the dark in Rihmasto: if I have a question like 'I want to hook this solution to Google Drive', I should get agentic help for that. Essentially all visible work I do in projects, as well as insights feeding from Rihmasto to the terminal / IDE / Claude / Codex / OpenCode / whatever agents are actually developing: configurations and insights, feedback from Rihmasto towards agents, Rihmasto using its own agents to deliver a capability or package, or agents checking for feedback, plans and assessments done in Rihmasto.\" kernel/copilot.py, kernel/copilot_steps.py, kernel/copilot_catalog.py, cockpit/static/goal.js, docs/guides/agentic-help.md.",
+      "acceptance": [
+        {
+          "id": "FR-CPL1-AC-1",
+          "given": "an adopted project, no model, and the goal 'I want to hook this solution to Google Drive' (and the same goals in Finnish, and goals to run it nightly in the cloud, deploy to test, add sign-in, monitor it and give it to a coding agent)",
+          "when": "Rihma plans it",
+          "then": "the goals are recognised by rule; the Google Drive plan has a drafted change request with the goal and the questions it raises, the gap that no Google Drive connector exists with the options, a REST integration step, where it runs (the deployment road), a schedule automation and a hand-off to a coding agent; every step is one of the allowed action kinds with a route the cockpit has; nothing is written",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CPL1-AC-2",
+          "given": "a factory with a configured docker road, a connector folder IT has not enabled, and the streams this build has or lacks",
+          "when": "a plan is made for a goal that reaches that system or a road",
+          "then": "the catalogue names the configured road and its environments, the connector and its state with the command IT enables it with, the declared integration kind, and marks a step whose feature is not in this build as not available yet with the reason",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CPL1-AC-3",
+          "given": "a scripted assistant model, and a confidential project whose assistant model is hosted",
+          "when": "a goal is planned with the model",
+          "then": "the model's steps are checked: an unknown kind, a route the cockpit lacks or a command that is not one plain rihmasto command is dropped with its reason, a claim that it acted is taken out; the confidential project gets the rule-based plan, the model is never asked, and the note says how to fix it in Models setup",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CPL1-AC-4",
+          "given": "Ask Rihma in a project",
+          "when": "a person states a goal, asks where something is, or asks how the project is doing",
+          "then": "the goal gets the plan in the answer, the others keep the map and the status answers",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CPL1-AC-5",
+          "given": "the cockpit in headless Chrome, dark and light, 1440 and 390 pixels wide",
+          "when": "a person asks Ask Rihma to hook the project to Google Drive and presses Draft it on the plan",
+          "then": "the plan shows its gap and steps, the change form opens prefilled with the goal, filing it opens a change card signed with the person's name, nothing scrolls sideways and no console error is left",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CPL1-AC-6",
+          "given": "an adopted project and a configured gcp-cloudrun road for production",
+          "when": "a person asks to hook it to Google Drive and run it in Google Cloud",
+          "then": "the plan has no gap: it declares a Google Drive integration (kind gdrive, through the road's own Drive client) and runs on the configured Google Cloud road",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-BRG1",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "Rihmasto and the coding agents developing a project work both ways: a hand-off brief gives an agent the goal or change, the criteria, open questions, the plan, findings and feedback, the conventions, how to run the tests and how to report back, with the way Claude Code, Codex, OpenCode or Cursor takes it; MCP tools let an agent read what Rihmasto holds; and every agent write is signed as the agent for its named operator, recorded and visible, and never decides a card.",
+      "notes": "The owner (2026-11-24): \"I described a case of trying to work with a project in Rihmasto and was unclear what to do with it. I shouldn't be left in the dark in Rihmasto: if I have a question like 'I want to hook this solution to Google Drive', I should get agentic help for that. Essentially all visible work I do in projects, as well as insights feeding from Rihmasto to the terminal / IDE / Claude / Codex / OpenCode / whatever agents are actually developing: configurations and insights, feedback from Rihmasto towards agents, Rihmasto using its own agents to deliver a capability or package, or agents checking for feedback, plans and assessments done in Rihmasto.\" kernel/agent_bridge.py, kernel/agent_writes.py, mcp/bridge_tools.py, kernel/bridge_cli.py, cockpit/bridge_routes.py, cockpit/static/goal.js, cockpit/static/agents.js.",
+      "acceptance": [
+        {
+          "id": "FR-BRG1-AC-1",
+          "given": "a project with a contract, open questions and assumptions, a change card naming one requirement and a failed gate",
+          "when": "a hand-off brief is built for the change, for each agent, and from the command line",
+          "then": "the brief holds the change, only that requirement's criteria, the open questions and assumptions, the plan, the failed gate, how to run the tests and how to report back; each agent gets its prompt file, MCP configuration and command line (claude -p, codex exec, opencode run, Cursor's MCP file); building it writes nothing and recording a hand-off notes who, to which agent and the brief's sha256",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BRG1-AC-2",
+          "given": "Rihma's MCP server over the stdio protocol",
+          "when": "an agent calls rihma_next, rihma_plan, rihma_questions, rihma_handoff, rihma_feedback, rihma_insights, rihma_alignment and rihma_health",
+          "then": "each answers from the records without an error, and a part not in this build says it is not available yet",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BRG1-AC-3",
+          "given": "an agent connected over MCP as its operator",
+          "when": "it posts progress, proposes an answer to an open question, and requests the gate on an attached repository and on a project the factory builds",
+          "then": "each write names the agent and its operator in the ledger and the channel, the question stays open as a proposal, the attached repository's gate runs signed as the operator and its result posts itself, the factory-built project is refused with why, and no card is decided",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-BRG1-AC-4",
+          "given": "the cockpit in headless Chrome, dark and light, 1440 and 390 pixels wide",
+          "when": "a person opens a project whose agents posted progress and presses Hand off to an agent",
+          "then": "the Agents working on this strip shows the agent's posts, hand-offs and gate results; the dialog shows the brief and each agent's way to use it; copying records the hand-off; nothing scrolls sideways and no console error is left",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-CHN1",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "Each project has an agent channel: one threaded conversation between people, Rihma's own agents and the external coding agents, with every post recorded without its text in the ledger; Rihma's agents answer questions addressed to them from the records by rule, else through Gnomon in the matching role with a trace, within limits that stop two agents looping; a person watches it live, steps in, confirms or rejects proposals and pauses it, and an Agent activity monitor lists the live channels across the factory.",
+      "notes": "The owner (2026-11-24): \"I described a case of trying to work with a project in Rihmasto and was unclear what to do with it. I shouldn't be left in the dark in Rihmasto: if I have a question like 'I want to hook this solution to Google Drive', I should get agentic help for that. Essentially all visible work I do in projects, as well as insights feeding from Rihmasto to the terminal / IDE / Claude / Codex / OpenCode / whatever agents are actually developing: configurations and insights, feedback from Rihmasto towards agents, Rihmasto using its own agents to deliver a capability or package, or agents checking for feedback, plans and assessments done in Rihmasto.\" And: \"per project, the Rihma agents should be able to do this back and forth with terminal or IDE agents, and me being able to track it, in a chat window or some agent tracing / monitoring.\" kernel/agent_channel.py, kernel/channel_rihma.py, mcp/bridge_tools.py, kernel/bridge_cli.py, cockpit/bridge_routes.py, cockpit/static/agents.js.",
+      "acceptance": [
+        {
+          "id": "FR-CHN1-AC-1",
+          "given": "two fake external agents, each over its own MCP stdio server and operator",
+          "when": "they post progress, read the channel, post a question to @verifier and ask Rihma what a criterion means",
+          "then": "Rihma's analyst answers the criterion from the contract and the verifier the gate from the ledger, each with its sources; each agent sees the other's posts; every post is in the ledger as channel_posted with ids, author and kind and never its text",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHN1-AC-2",
+          "given": "a scripted model for Rihma's agents, and a confidential project whose model is hosted",
+          "when": "an agent asks something the rules cannot answer, once pointing at a commit",
+          "then": "the analyst (the verifier, for the commit) answers through the model with a trace naming the role, the model and how long it took, a claim that it acted is taken out; the confidential project's question is answered without asking the model, saying how to fix it in Models setup",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHN1-AC-3",
+          "given": "an agent's proposed answer to an open question in the channel",
+          "when": "a person confirms it in the cockpit, and rejects another",
+          "then": "the confirmed one answers the question with its text signed by the person through the Questions view's route and the message says confirmed by whom; the rejected one leaves its question open",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHN1-AC-4",
+          "given": "an agent asking Rihma",
+          "when": "it asks the same question again, asks more than the hourly cap in a thread, and posts while a person has paused the channel",
+          "then": "the repeat gets one pointer to the first answer and then silence, the cap gets one note and then silence, a post while paused waits unanswered and hidden from agents until a person resumes the channel",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHN1-AC-5",
+          "given": "the command line",
+          "when": "an agent without MCP posts to the channel for its operator and a person reads and follows it",
+          "then": "the post is signed and recorded, a question to @analyst is answered, and the channel prints line by line with authors, kinds and references",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHN1-AC-6",
+          "given": "the cockpit in headless Chrome, dark and light, 1440 and 390 pixels wide",
+          "when": "a person opens a project's Agent channel and the Agent activity page",
+          "then": "the messages show their author badges and kinds, a Rihma answer's trace opens, a post to @analyst is answered, an agent's proposal is confirmed inline, the channel pauses and resumes, the kind filter narrows the list, the monitor lists the channel with its proposals waiting, nothing scrolls sideways and no console error is left",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-GCP1",
+      "group": "PT. Portability",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "IT can configure a gcp-cloudrun paved road (Google Cloud projects per environment, a region, an Artifact Registry repository, the identity Rihmasto deploys as and the one the product runs as, network and egress, Secret Manager secrets by name) on which a product runs as a Cloud Run service or as a Cloud Run job that Cloud Scheduler runs on a schedule with retries; the road renders and validates the exact YAML and gcloud commands, deploys to the test environment first and to production only through IT's deploy gate, promotes and rolls back by revision or by image, reads a job's executions into its probes, and runs gcloud only when it is on PATH and signed in and the road is configured, saying exactly what is missing otherwise.",
+      "notes": "The owner (2026-11-24), on an adopted project, an agentic workflow that transcribes recordings: it must be \"taken into the company's Google Cloud, to be run regularly, to read recordings in Google Drive and generate transcripts\". kernel/roads_gcp.py, kernel/roads_gcp_config.py, kernel/roads_gcp_check.py, kernel/roads_gcp_ops.py, kernel/road_settings.py (`rihmasto road`), cockpit/road_routes.py, cockpit/static/roads.js, docs/guides/gcp.md. Rendered, validated and tested against a fake gcloud on PATH; not yet run against a real Google Cloud project.",
+      "acceptance": [
+        {
+          "id": "FR-GCP1-AC-1",
+          "given": "a gcp-cloudrun road entry, whole or with a gap (no deploying identity, a project id or region Cloud Run does not take, no repository, a cron or time zone Cloud Scheduler does not take, a secret given a value or not in Secret Manager, egress none without the VPC)",
+          "when": "IT configures it in the cockpit or with rihmasto road configure, or chooses a project's workload and schedule",
+          "then": "a whole entry is written to paved_roads.json and the factory's ledger records who configured it with the entry's sha256; each gap is named and nothing is written; only a named person with the it persona sets a road or a project's road, workload and schedule, and the choice is recorded",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-GCP1-AC-2",
+          "given": "a configured road and a release, as a service and as a scheduled job",
+          "when": "its deploy package is made for the test environment and for production",
+          "then": "the package holds a serving.knative.dev/v1 Service (one instance, port 8080, /health probes, the runtime service account, the image pinned by digest, settings by value and secrets as Secret Manager references, never PORT) or a run.googleapis.com/v1 Job with a Cloud Scheduler job that calls it in production only, and the exact gcloud commands with the environment's project, the region and the deploying identity; the YAML reads back as the model, and a rendering edited, stale or holding a secret that is not a Secret Manager reference fails validation",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-GCP1-AC-3",
+          "given": "a product at production maturity on the road and a fake gcloud on PATH",
+          "when": "it is delivered, and a person and IT decide its cards",
+          "then": "it is built by Cloud Build and deployed to the test project first: a service answers /health with the release's version, a job is executed once and its execution decides the smoke check, and a failing execution stops the release before the deploy gate; nothing reaches the production project until IT approves the deploy gate, after which a service runs as a candidate and is promoted and a job gets its image and its Cloud Scheduler job",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-GCP1-AC-4",
+          "given": "a second release on the road",
+          "when": "it is promoted, and IT or operations rolls it back with a reason",
+          "then": "a service's candidate revision takes no traffic beside the current one until promotion moves all of it, and the rollback moves the traffic back to the previous revision; a job keeps its previous image and the rollback gives it back; anyone else is refused, and the rollback is recorded with who, why and how",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-GCP1-AC-5",
+          "given": "a scheduled job running in production",
+          "when": "an operation round reads its executions with gcloud run jobs executions list",
+          "then": "the probe records the last executions, passes when the latest finished one succeeded, is not measured while none has finished, and fails when it failed, which opens an incident card the relay notifies",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-GCP1-AC-6",
+          "given": "a road with no gcloud on PATH, gcloud not signed in, or an incomplete entry",
+          "when": "a release is delivered, or rihmasto road list and road render are asked",
+          "then": "a road card names exactly what is missing and nothing is built or deployed; the commands say the same and render the YAML and gcloud commands without running them",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-GCP1-AC-7",
+          "given": "the cockpit in a browser",
+          "when": "IT opens Settings and a project's Releases view, in the dark and the light theme, wide and narrow",
+          "then": "Settings lists every paved road with what is missing and lets IT configure a Google Cloud road whose configuration is signed and recorded; the Releases view shows where each environment deploys and lets IT choose the road and the schedule; no console error, failed request or overflow",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-GCP1-AC-8",
+          "given": "a scheduled job delivered on the gcp-cloudrun road and its check \"Scheduled job executions\" enabled",
+          "when": "an execution fails, the operation round runs and the release is rolled back",
+          "then": "release_reached_test, promoted, rolled_back and check_failed fire for automations as on any road; the check says not measured before an execution finished and failed after, with the executions as evidence; the Review shows the failed probe, the incident and the check; Insights' health counts the job as not answering",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-GDR1",
+      "group": "DS. Data systems",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "A capability Rihmasto builds can read from and write to a Google Drive folder through the paved road's client, declared as a gdrive integration: it lists only the files that arrived since a cursor across every page, downloads a file and uploads a result, with its scopes stated and its credentials by name only (an OAuth token or a service account key file for a local run, the runtime service account on Google Cloud), and it never logs a token or a file's content.",
+      "notes": "The owner (2026-11-24), on an adopted project, an agentic workflow that transcribes recordings: it must be \"taken into the company's Google Cloud, to be run regularly, to read recordings in Google Drive and generate transcripts\". kernel/connectors_gdrive.py (copied into the product as app/gdrive.py), kernel/gdrive_standin.py (the gate's and the tests' Drive v3 stand-in), kernel/integration_decl.py, kernel/integration_standins.py, kernel/compile.py, cockpit/static/roads.js, docs/guides/gcp.md.",
+      "acceptance": [
+        {
+          "id": "FR-GDR1-AC-1",
+          "given": "a Drive folder with recordings, other files, a subfolder and a trashed file, and a cursor",
+          "when": "the client lists new files, page by page",
+          "then": "every page is read, the folder's files come oldest first, a second run returns nothing, a file that arrives in the cursor's own second or later is returned once, and an id or cursor that is not one is refused before any request",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-GDR1-AC-2",
+          "given": "an integration declared read-write, and one declared read",
+          "when": "the client downloads a file, uploads a transcript and keeps its cursor in the folder",
+          "then": "the bytes and the uploaded file are as sent, a file is found by name so a rerun writes nothing twice, the cursor is updated in place; an integration declared read refuses to upload before any request, and a token with the read scope is refused by Drive",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-GDR1-AC-3",
+          "given": "a token by name, a service account's key file, or no credential on Google Cloud",
+          "when": "the client calls Drive, and Drive refuses or fails",
+          "then": "a token variable is used as given, a key file's JWT signed with RS256 is exchanged for the declared scopes, the metadata server is asked for the Drive scopes; a refusal names the call and the status and never the token or the content, a 5xx is retried, and nothing is printed or logged",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-GDR1-AC-4",
+          "given": "a spec that declares a gdrive integration",
+          "when": "it is compiled, the gate runs the product's tests, and the integration is bound on a Google Cloud road",
+          "then": "the spec's guidance and kinds name Google Drive, the kernel writes its INT- requirement, the product gets app/gdrive.py importable with nothing from Rihmasto, the gate's Drive stand-in serves the tests and catches a write to a read integration, and the deploy package names the Drive settings and the credential as a Secret Manager reference, never a value",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-GDR1-AC-5",
+          "given": "the cockpit in a browser",
+          "when": "a person opens Settings",
+          "then": "the Integrations card shows the Google Drive connector with its scopes, its credentials by name and the client the product imports, in the dark and the light theme, wide and narrow, with no console error",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-REV1",
+      "group": "REV. Review what agents shipped",
+      "statement": "A person reviews what agents and automations did since they last looked, across their projects or one project, from the records alone, grouped and ranked by what needs them (waiting on you, went wrong, decided for you, shipped, from your IDE, cost and usage), each item linked to its record and saying who or what did it; they act in place through the existing signed routes, mark what they looked at as reviewed, mark the whole review done, and can get it every morning as a message.",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "notes": "The owner (2026-11-24), quoting an engineer: \"You're not supposed to watch Claude Code work. You're supposed to wake up and review what it shipped.\" And: \"so how can Rihmasto be for reviewing all visible work of agents, essentially\". kernel/review.py, kernel/review_items.py, kernel/review_ledger.py, kernel/review_marks.py, kernel/review_digest.py, kernel/review_cli.py; cockpit/review_routes.py and cockpit/static/review.js; docs/guides/review.md.",
+      "acceptance": [
+        {
+          "id": "FR-REV1-AC-1",
+          "given": "a home where builder cells merged one task and failed another's gate, which escalated, a model endpoint failed, a release went to a test environment, a model run was priced, an autopilot assumed answers by its delegation in a person's name, the factory assumed answers with due dates, a commit was gated from a developer's IDE and a cockpit job failed",
+          "when": "that person reads their review",
+          "then": "the items are grouped as waiting on you (the cards the persona may decide, with their age and verdicts), went wrong, decided for you (overturnable, each assumption once), shipped (the merged task with its gate verdict, rounds and diff stats, the release to test), from your IDE (verdict, who asked and the diff) and cost by project and role; each group is ranked, every item names who or what did it and links only to views the cockpit routes and to its own ledger record, and reading records nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REV1-AC-2",
+          "given": "a person who has never marked a review done, and another person",
+          "when": "the first marks their review done, more happens, and one project's review is marked done",
+          "then": "a first review covers the last 24 hours; review_done records the period and each group's count, and the person's next review starts there with nothing shown twice, while the other person's still covers the last 24 hours; a project's marker moves that project's review only; a period asked for overrides the marker",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REV1-AC-3",
+          "given": "a review with a shipped task, an escalation card, a factory assumption and a delegated decision",
+          "when": "the person marks the task reviewed, approves the card, overturns the assumption and the delegated decision, stops the delegation and reports a change from the review",
+          "then": "each goes through its own signed route and is recorded with the person and persona; review_marked records the item and its revision and the review shows who looked; a write by a non-person, a card marked instead of decided, or an item that did not happen is refused and records nothing; the preview drawer reads the diff file by file",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REV1-AC-4",
+          "given": "a review in the cockpit",
+          "when": "the person presses Mark all reviewed, across their projects or on one project",
+          "then": "review_done is recorded with the counts in the factory's ledger or that project's, signed, and the review now starts at the person's last review",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REV1-AC-5",
+          "given": "a person's morning digest at 07:30 local on weekdays to a receiver IT configured for their persona, on 127.0.0.1",
+          "when": "relay rounds run before and after that time, again the same day, the next day with nothing new, and on a Saturday",
+          "then": "the digest goes once per local day after its time, with the review's headline, its groups' first items, a project bound to an autopilot's sandbox left out and counted, and one link to the Review page; it is held back when nothing happened and the delivery log says so; it is never sent on a day it is not set for; a mail receiver gets the same",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REV1-AC-6",
+          "given": "the command line",
+          "when": "rihmasto review, review <pid> --json, review mark <item> and review done run, signed where they write",
+          "then": "the review prints its headline and items, a project's review answers as JSON, a mark and a done are recorded for the signer, and a card to mark, an unsigned done or a non-person is refused with exit 2 and a message",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REV1-AC-7",
+          "given": "the cockpit in headless Chrome",
+          "when": "a person reads Home's first card, opens the Review page, moves with j and k, opens and closes the preview drawer with Enter and Esc, marks a task reviewed with r, approves a card with a, overturns an assumption with d, opens a record with o, reports a change from a row, marks all reviewed, switches dark and light, opens a project's Review tab and reads it at 390 px",
+          "then": "every step works by keyboard and is recorded as signed, the drawer shows the diff, the groups follow the theme, there is no console error, failed request or CSP violation, and nothing scrolls sideways",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REV1-AC-8",
+          "given": "a project whose ledger holds a failed automation run, a failed check, a failed console command, a task a cell runner refused and a confidential refusal, and the factory's ledger an automation the circuit breaker paused",
+          "when": "the Review is read",
+          "then": "each shows under Went wrong by the record kind the stream really writes (automation_ran with a failed or refused outcome, check_ran with the verdict failed, console_ran failed, timed out or not started, runner_refused, confidential_refused, automation_paused); a passing run says nothing, an automation run is said once, and no guessed kind is read",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REV1-AC-9",
+          "given": "a project's agent channel with an agent's progress, a proposal waiting on a person, a gate result an agent asked for and a person's note",
+          "when": "the Review is read",
+          "then": "From agents holds the progress, the proposal (first, as waiting on a person) and the gate result, not the person's note; the headline counts them; the agent bridge's review feedback is read from the Review itself",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-REV1-AC-10",
+          "given": "an automation made from the template \"Morning review digest\" with a relay subscription",
+          "when": "it runs with nothing new, then after a check failed",
+          "then": "the first run sends nothing and says it held back; the second sends one notice with the review's headline through the subscription; the relay's own digest round stays",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-INS1",
+      "group": "INS. Insights",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "Insights show health, compliance, governance, security, context drift, QA and token, skill and memory usage of the projects and their agentic features, per project and factory-wide, over 24 hours, 7 days, 30 days or all records: stat tiles and charts with a one-line insight computed by rule, every number counted from the records and none estimated, \"not measured\" with why and how where there is no record, and an export as JSON, CSV or OpenTelemetry-style JSON for the customer's own observability tools that sends nothing anywhere (D-0017).",
+      "notes": "The owner, 2026-11-24: \"about the insights view, inspired by the different dimensions of Rihmasto + Gnomon + an agentic observability stack: enable data visualization views, dashboards and insights on health, compliance, governance, security, context drift, QA, token/skill/memory usage of projects and their agentic features.\" kernel/insights/ (the read models, the rule-based lines, the export and the command line), cockpit/insights_routes.py, cockpit/static/insights.js and insights.css; docs/guides/insights.md.",
+      "acceptance": [
+        {
+          "id": "FR-INS1-AC-1",
+          "given": "a factory home whose ledgers hold Gnomon runs (with tokens, priced cost, context window, trims and audit kinds), their chained trails in a lane, gate rounds, decisions and a security scan, spread over ten days, and a second project with no record",
+          "when": "each dimension is read for the factory and for one project over 24h, 7d, 30d and all",
+          "then": "every figure equals what the records hold for that window: tokens and cost summed per project, role, model, endpoint, runner and local or hosted, tool calls by tool from the trails, skills used and compactions from the audit kinds, gate pass rate and rounds per task, decisions and time to decide, open findings and secrets; a tile compares with the window before it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-INS1-AC-2",
+          "given": "a dimension or figure with no record behind it (no model run, no gate, no posture, no scan, no contract, a feature such as pluggable checks or repository alignment that is not there)",
+          "when": "it is read, exported or drawn",
+          "then": "it is not measured: its value is empty, never 0, and it says why and how to get it measured; the export gives it no data point and an empty CSV value, and what a dimension cannot measure here is listed with why and how",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-INS1-AC-3",
+          "given": "figures for a window and the window before it",
+          "when": "the insight lines are computed",
+          "then": "each tile and chart has one plain line computed by rule from its own figures: a change against the window before (doubled, grew n-fold, rose, fell, halved, held steady) with both numbers, the largest of a ranked list with its share, the tasks that needed many rounds, the oldest card waiting; a figure not measured says why",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-INS1-AC-4",
+          "given": "a project whose spec was written before merges, whose requirements lack passing criteria, whose canon holds a contradiction and whose runs trimmed their context, and whose ledger chain is intact or broken",
+          "when": "context drift and governance are read",
+          "then": "drift counts the merges since the spec, the requirements without a verified or held-out criterion, the contradictions, the assumptions settled against open and the runs that trimmed their context or came near their window; governance counts decisions by person, delegation or automation and says which ledgers verify",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-INS1-AC-5",
+          "given": "the same home",
+          "when": "rihmasto insights runs with and without a project, a dimension, a window and --json, and rihmasto insights export runs with --format json, csv and otlp-json, to a file and to the terminal",
+          "then": "the text says each figure, its line and how to measure what is not measured; the JSON is the read model; the CSV has one row per figure; the OTLP JSON has one gauge per measured tile and one span per model run with gen_ai.operation.name, gen_ai.request.model, gen_ai.usage.input_tokens and gen_ai.usage.output_tokens; nothing opens a network connection",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-INS1-AC-6",
+          "given": "the cockpit in headless Chrome over that home",
+          "when": "a person opens Insights from the sidebar, switches every dimension, the window and the scope, toggles a chart to its table, opens a project's Insights tab, pins a tile to Home and exports, in dark and light at 1440 and 390 pixels",
+          "then": "every dimension renders its tiles and charts or says not measured, nothing scrolls sideways, every control is named, the chart colours pass the palette validator in both themes, the pinned tile shows on Home, and no console error, failed request or Content-Security-Policy violation happens",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-INS1-AC-7",
+          "given": "the assistant's map and snapshot",
+          "when": "a person asks where to see token usage or context drift, and asks with and without a project open",
+          "then": "the map leads to Insights, its controls say where they are, and the snapshot carries a few key figures per dimension with no project title, no insight line and no decision's reason; with a project open only that project's figures",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-INS1-AC-8",
+          "given": "a project with checks that ran (one failed, one passed) and a project aligned with its repository",
+          "when": "Insights' health and context drift are read",
+          "then": "the checks are measured from each enabled check's last check_ran result (failing counted, not measured said apart) and the repository drift from alignment_scanned, with the alignment_accepted and alignment_rejected decisions; neither says not measured once its records exist",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-INS1-AC-9",
+          "given": "a project whose analyst, holdout author, verifier and assistant ask a model, and whose autonomy cap is below building",
+          "when": "those runs happen and the factory tries to build",
+          "then": "each run is recorded in the project's ledger as model_run with its role, model, endpoint, tokens, cost when priced (not measured otherwise), duration and task, never the prompt or the holdouts; the builder keeps its own gnomon_run; Insights' usage counts every role; the refused build is recorded as autonomy_capped and Governance counts it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-INS1-AC-10",
+          "given": "a check failing on a project",
+          "when": "a person opens the cockpit",
+          "then": "the sidebar holds Health (the checks) and Insights (the dimensions) once each, with no label twice; Home says the failing check once; Insights' health shows it as measured",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-INS1-AC-11",
+          "given": "a project's agent channel with agents' proposals (one waiting, one rejected) and an agent's question Rihma answered with a model",
+          "when": "Insights' governance and usage are read",
+          "then": "Governance counts the agents' proposals and how they were settled; Usage counts Rihma's channel answers (model_run with task channel) and their tokens, or says the tokens were not recorded",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-ALN1",
+      "group": "B. Brownfield adoption",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "Rihmasto captures the development structure a team keeps in its own repository (specs and requirements, user stories, acceptance criteria, decisions, API contracts, test suites, task lists, CI/CD, quality tools, architecture documents and the AI tools' setup, in the conventions IDE tools use), proposes how it maps onto the project (requirements, criteria, a trace from the existing tests with its basis and confidence, tasks, decisions, API contract references, and the gaps), lets a person accept, edit or reject each proposal, writes what is accepted into the project's contract and records signed by that person, suggests changes for the repository as text or a patch without ever writing there, shows the drift after the repository changes, and gives the accepted contract and the open gaps to the IDE so the work can continue there.",
+      "notes": "The owner, 2026-11-24: \"I've been working on something in Claude Code or Cursor or any IDE (VS Code, Antigravity and so on). They have their own contracts and specs and tests and everything code-structure-wise. Rihmasto's job is to capture all that structure and context, and suggest how it would be configured the Rihmasto way. There should be a view of suggested changes, suggested alignment. It has to capture any existing repo structure and feed it so the work can be continued or further developed, not necessarily in Rihmasto: in an IDE, because many people prefer that.\" kernel/repo_structure.py, kernel/repo_specs.py, kernel/repo_suites.py, kernel/alignment.py, kernel/alignment_suggest.py, kernel/alignment_records.py, kernel/alignment_contract.py, kernel/alignment_cli.py, cockpit/align_routes.py, cockpit/static/alignment.js, docs/guides/alignment.md.",
+      "acceptance": [
+        {
+          "id": "FR-ALN1-AC-1",
+          "given": "a repository kept with spec-kit, Kiro, ADR, Gherkin, OpenAPI, pytest, jest and GitHub Actions conventions, with a file that holds a secret and files that would leave a mark if anything ran them",
+          "when": "its structure is captured from a folder and from a committed revision",
+          "then": "the structure map names each convention and where it is: requirements with their own refs and their criteria, tasks done or open, decisions with their status, the API contract's operations, each test's name and framework, how the tests are run, the CI jobs and whether they run tests, the quality tools and the AI tools' files, with commit dates when there is a history; the secret is not read and never shown, and nothing found is run",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ALN1-AC-2",
+          "given": "the structure map of that repository",
+          "when": "alignment proposes how it maps onto the project",
+          "then": "requirements keep their own refs and titles as their source with a proposed Rihmasto id, criteria are given / when / then from acceptance scenarios, EARS and Gherkin (derived from the statement, and said so, when the repository gives none), each test is traced to a criterion by name, by file or by text similarity with its basis and confidence, tasks carry done or open and the requirements they serve, ADRs become decisions and API contracts references, every item says what it adds to the project, why and its source lines, and the same source gives the same item ids",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ALN1-AC-3",
+          "given": "a repository whose spec is older than the code it describes, with a criterion no test can observe, a test with no requirement, requirements with no test and a CI that runs no test",
+          "when": "it is aligned",
+          "then": "each gap is an item with its reason, the summary counts the tests that trace to a criterion and the requirements with no test, the suggested changes for the repository are text to copy or a patch that git apply takes, and nothing in the repository changes",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ALN1-AC-4",
+          "given": "an attached project aligned with its repository",
+          "when": "a person accepts, edits and rejects items, a group at once too, and a non-person, a rejection of what the contract holds, an id another requirement has and an edit of a field the item does not have are tried",
+          "then": "accepted requirements and criteria are in the project's contract, customer-endorsed by that person with a note naming the repository source, and the contract passes its check; tasks, decisions and traces are kept as the project's records; the ledger holds alignment_accepted and alignment_rejected with the item ids, the person and the persona; each refusal writes nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ALN1-AC-5",
+          "given": "an aligned project whose repository then changes: a requirement added, an accepted criterion restated, a feature removed",
+          "when": "the repository is read again",
+          "then": "the drift lists the new, changed and removed items; the restated criterion reads changed since accepted until a person accepts it again, which restates it in the contract; unchanged items keep their ids and decisions",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ALN1-AC-6",
+          "given": "an aligned project",
+          "when": "rihmasto structure, rihmasto align (show, --scan, --drift, accept, edit, reject) and the cockpit's alignment routes are used",
+          "then": "they show and record the same, a write with no person is refused (exit 2, 403) and writes nothing, the text for the IDE lists the requirements accepted from the repository and the gaps still open, and the repo gate's note names the accepted criteria a change's tests touch",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ALN1-AC-7",
+          "given": "an adopted project",
+          "when": "it is aligned and a requirement accepted",
+          "then": "the repository read is the upstream as last fetched, the requirement is in the project's spec and the contract is compiled again with every other task keeping its id and committed to the mirror's main, and the imported requirement's task is held as the existing work, never built by the factory",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ALN1-AC-8",
+          "given": "an attached repository in the cockpit",
+          "when": "a person follows the offer on the Overview to the Alignment tab, reads the repository, accepts, edits, rejects, accepts a group at once and copies and downloads a suggested change, in dark and light at 1440 and 390 pixels",
+          "then": "each step shows its result and is recorded with that person, every control has an accessible name, nothing scrolls sideways, no console error, failed request or Content-Security-Policy violation happens, and the repository is never written",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ALN1-AC-9",
+          "given": "an attached or adopted project aligned with its repository, with a requirement accepted",
+          "when": "the section for the IDE agent is made (rihmasto ide <pid> --section, or Copy the section)",
+          "then": "it carries the requirements accepted from the repository and the open gaps, inside its markers; before any scan it carries neither",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-ALN1-AC-10",
+          "given": "an attached project scanned once, and an automation from the template \"Re-read the repository for alignment when it changes\" (a repo trigger and the align_scan action)",
+          "when": "the repository gets a new commit and the scheduler ticks after its poll interval",
+          "then": "the repository is read again for alignment, signed by the automation's owner; alignment_scanned records the drift since the scan before (new, changed and removed items), the automation's history says what drifted, and Insights' repository drift counts it",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-CON1",
+      "group": "M. Cockpit",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "A person with a persona the project's console allows (developer and IT unless IT changes it) runs commands, or asks Gnomon, in a project's workspace from the cockpit's Console tab or the command line, sees the output line by line as it comes, can stop it and is stopped at a time limit; every run is a job recorded in the project's ledger as console_ran (who, persona, command line, exit, duration, never an environment value or the output), goes through IT's isolation runner while access is enforced, and a person at the cockpit's own machine can open the operating system's terminal in the workspace (refused through a public origin); the person keeps developing in their own IDE.",
+      "notes": "The owner (2026-11-24): \"where do we draw the line if a user wants to run a Gnomon shell inside Rihmasto? Could they develop or do something to some extent inside Rihmasto? In maintenance and administration you want automations of compliance checks or integration CI/CD checks or whatsoever, because eventually it is not just about getting something deployed, but how you keep on monitoring it and governing it and having checks. It should be effortless that if a user wants to run some of these things, it is possible inside Rihmasto, while they keep developing in their chosen IDE. And if they want to run something inside a terminal in Rihmasto, it should be possible.\" kernel/console.py, kernel/console_run.py, kernel/console_offers.py, kernel/console_term.py, kernel/console_cli.py, cockpit/console_routes.py, cockpit/static/console.js, docs/guides/console-and-checks.md (where the line is between your IDE, the console and a real terminal).",
+      "acceptance": [
+        {
+          "id": "FR-CON1-AC-1",
+          "given": "a project's console and a person",
+          "when": "they run a command as a persona the console allows, as one it does not, as a non-person, and IT changes which personas it allows",
+          "then": "the run is recorded as console_ran with the person, persona, masked command line, workspace, how it ended, its exit code and seconds, its output kept only in the job log and no environment value anywhere; the others are refused and write nothing; only IT changes the personas, recorded as console_settings",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CON1-AC-2",
+          "given": "an attached repository, a built or adopted project, and a project with no code",
+          "when": "the console resolves the workspace and lists what it offers",
+          "then": "an attached repository runs in its own folder, a built project in the console's working copy made at the first run whose origin cannot push, a project without code is refused with why; the offers are the stated commands, the test command detected by rule, package.json scripts, Makefile targets and CI steps, a step that needs the shell marked so",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CON1-AC-3",
+          "given": "a command that prints, waits and prints again, and one that reads its input",
+          "when": "it runs from the console",
+          "then": "its first line is readable before it ends (the log read by offset gives whole lines while it runs), stdin is closed so nothing waits for keys, one program runs without a shell, and a line with a pipe or && is refused unless the person asks for the shell",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CON1-AC-4",
+          "given": "a command that starts a child and sleeps",
+          "when": "its time limit runs out, or a person presses Stop",
+          "then": "the command and every process it started are stopped, the log and console_ran say timed_out or stopped, and the child never finishes its work",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CON1-AC-5",
+          "given": "access enforced with no isolation runner, then with a container runner",
+          "when": "a console run or a Gnomon run is asked for",
+          "then": "without a runner it is refused before anything runs or is recorded; with one the command runs in the container with no network, no capabilities, a read-only root and the workspace at /work, and a Gnomon run goes through IT's cells command",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CON1-AC-6",
+          "given": "a workspace with and without a .gnomon surface, and a confidential project routed to a hosted endpoint",
+          "when": "a person asks Gnomon to do something from the console",
+          "then": "gnomon task runs in the workspace under its own surface with the person's words, the role when given and --yes only when asked, recorded as kind gnomon; a person's repository without a surface is refused and never written to; the confidential project's run is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CON1-AC-7",
+          "given": "the cockpit on 127.0.0.1 with a terminal launcher, and the same cockpit behind a public origin",
+          "when": "a person presses Open a terminal here, or runs rihmasto shell",
+          "then": "the operating system's terminal opens in the workspace with the routing's model keys, Gnomon first on PATH and the project named, recorded as console_opened without any environment value; a request through the public origin is refused with why and opens nothing; a cockpit made without a launcher opens nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CON1-AC-8",
+          "given": "the cockpit in headless Chrome, dark and light, at 1440 and 390 px",
+          "when": "a person runs a command from the Console tab, watches its output, stops a long one and opens a terminal",
+          "then": "the output streams into the tab until it ends, Stop ends the run, the run is on the Jobs page, and there is no console error, failed request, CSP violation, nameless control or overflow",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CON1-AC-9",
+          "given": "the command line",
+          "when": "rihmasto console <pid> -- <command> and rihmasto shell <pid> are run",
+          "then": "the command's output streams to the terminal and it exits with the command's own code, recorded as a run from the command line; a persona the console does not allow exits 2 with why",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-CHK1",
+      "group": "M. Cockpit",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "A person enables checks for maintenance and administration per project or across projects (the test suite, CI/CD status, a dependency audit, a secret scan, a licence check, an SBOM, an HTTP probe, the repo gate, Rihmasto's security gate, a custom command); each produces a recorded result, passed, failed or not measured with its evidence and why, never not measured shown as passed; a check runs on demand, from an automation (run_check) or on a schedule with the rights of the person who enabled it; a failure can log a signal or open a change proposal; and a Health view per project and across the factory shows each check's last result, trend and last run, and feeds What's next and Home.",
+      "notes": "The owner (2026-11-24): \"where do we draw the line if a user wants to run a Gnomon shell inside Rihmasto? Could they develop or do something to some extent inside Rihmasto? In maintenance and administration you want automations of compliance checks or integration CI/CD checks or whatsoever, because eventually it is not just about getting something deployed, but how you keep on monitoring it and governing it and having checks. It should be effortless that if a user wants to run some of these things, it is possible inside Rihmasto, while they keep developing in their chosen IDE. And if they want to run something inside a terminal in Rihmasto, it should be possible.\" kernel/checks/ (catalogue, store, health, automation_hook and one module per family), cockpit/health_routes.py, cockpit/static/health.js, docs/guides/console-and-checks.md.",
+      "acceptance": [
+        {
+          "id": "FR-CHK1-AC-1",
+          "given": "the catalogue and a project",
+          "when": "a person enables, changes and disables a check, on one project and on several at once, and a persona that may not, a non-person, an unknown check or bad settings is tried",
+          "then": "each is kept with its settings, schedule and what a failure does, signed, and recorded as check_enabled or check_disabled with who; the refused ones write nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHK1-AC-2",
+          "given": "a project with tests that pass, then fail, and custom commands present and absent",
+          "when": "the test suite and custom checks run",
+          "then": "passed and failed follow the exit codes with the output's tail as evidence; a command that cannot start is not measured, never passed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHK1-AC-3",
+          "given": "a 127.0.0.1 stand-in for the GitHub API, a token in the variable the check names, a stand-in gh, and neither",
+          "when": "the CI/CD check runs",
+          "then": "the latest finished run on the default branch decides passed or failed through the API with the token sent only as its bearer and never recorded; an API refusal is not measured; without a token gh run list decides; without both it is not measured and says which is missing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHK1-AC-4",
+          "given": "a workspace with Python requirements and a package-lock.json, audit tools present and absent",
+          "when": "the dependency audit runs",
+          "then": "each ecosystem is audited by its own tool and its findings counted, failed with a finding, passed without; an ecosystem whose tool is not installed makes it not measured",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHK1-AC-5",
+          "given": "a workspace with a planted credential, lockfiles with a copyleft, an unknown and permissive licences",
+          "when": "the secret scan, the licence check and the SBOM run",
+          "then": "the secret scan fails with masked evidence, the copyleft fails the licence check, an unknown licence makes it not measured, permissive ones pass, and a CycloneDX SBOM of the pinned components is kept with the project",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHK1-AC-6",
+          "given": "a 127.0.0.1 server answering 200, 503 and slowly, then gone",
+          "when": "the HTTP probe runs",
+          "then": "200 within the limit passes; a wrong status, a slow answer or no answer fails, with status and latency",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHK1-AC-7",
+          "given": "an attached repository without a contract, a built project and a project without a security scan",
+          "when": "the repo gate and the security gate run as checks",
+          "then": "each is not measured with why, never passed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHK1-AC-8",
+          "given": "enabled checks, a schedule, a failing check with on_fail, access enforced, and the automations' allow-list",
+          "when": "checks run on demand, on a tick, after a grant is gone, and from run_check",
+          "then": "each result is check_ran in the ledger and kept with its evidence; a tick runs what is due once, as the person who enabled it; with no verified identity a scheduled run is not measured with why; a failure logs a signal and opens a change once per change of verdict; run_check runs an enabled check and does nothing for one that is not",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHK1-AC-9",
+          "given": "checks that passed, failed, were not measured and never ran, and the cockpit in headless Chrome dark and light at 1440 and 390 px",
+          "when": "Health is opened for the project and the factory, and Home and What's next are read",
+          "then": "each check shows its last result, trend and last run with Run now; not measured is never shown as passed; What's next and Home say how many checks fail and which; no console error, failed request, CSP violation, nameless control or overflow",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-CHK1-AC-10",
+          "given": "the automations loaded in the cockpit, the command line or the scheduler's tick, and a project with a check that passes and one that fails",
+          "when": "an automation is made from the template \"Notify when a check fails\" and the checks run",
+          "then": "run_check is in the automations' allow-list without any further call; the template reacts to check_ran with the guard verdict = failed, so the failing check notifies the channel once with the project and the passing one says nothing",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-WLK1",
+      "group": "WLK. Walkthroughs",
+      "statement": "Ask Rihma walks a person through plugging in an existing project, starting from a new idea or from documents, setting up a model, and getting started, step by step in the chat: each step asks with the expected answers as buttons, shows what it found, and every change waits on a Confirm the person presses, signed with their name and persona and carried out by the cockpit's own route; it works without a model, and with one the model only reads a free-text reply into an offered option. The owner, 2026-11-24: \"if I would ask on the chat, or go to some walkthrough button, maybe chat would be the most convenient: Hey, I have this project, existing project, or a new idea, and the agent would actually do the walkthrough with me, having the inputs. If it's an existing project, scan the project here and wait for the results. It would be useful if users could have these agentic walkthroughs of plugging in their project or getting started.\"",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "notes": "The owner's words: \"if I would ask on the chat, or go to some walkthrough button, maybe chat would be the most convenient: Hey, I have this project, existing project, or a new idea, and the agent would actually do the walkthrough with me, having the inputs. If it's an existing project, scan the project here and wait for the results. It would be useful if users could have these agentic walkthroughs of plugging in their project or getting started.\"",
+      "acceptance": [
+        {
+          "id": "FR-WLK1-AC-1",
+          "given": "each walkthrough (Plug in an existing project, Start from documents, Start from a new idea, Set up a model, Get started) and no model",
+          "when": "a person answers with a typed path, yes or no in English or Finnish, an option's number or label, a button, or Back",
+          "then": "each step asks its question with its options, reads the reply by rule and moves on, or says why not with its buttons again; a folder outside the allowed roots is refused with how the operator allows it; a folder's scan shows the files read, summarised, listed and skipped, the languages, the AI-tool setup and the secret-looking files skipped; a folder with no code is offered as documents; the tour takes five stops with Take me there; a key typed into Set up a model is never kept",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-WLK1-AC-2",
+          "given": "a person's plain words in English and Finnish (\"I have an existing project\", \"minulla on olemassa oleva projekti\", \"new idea\", \"uusi idea\", \"how do I get started\", \"set up a model\"), and a model's answer whose Take me there names a walkthrough",
+          "when": "Ask Rihma answers",
+          "then": "the answer offers the matching walkthrough as a button, by rule without a model and from the model's Take me there with one; a question about something else offers none",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-WLK1-AC-3",
+          "given": "a walkthrough at its proposal",
+          "when": "nothing has been confirmed yet, then the proposal is confirmed, or confirmed and refused",
+          "then": "before the confirm no project, job, model setting or other record exists beyond the walkthrough's own file and the factory's walkthrough_started and walkthrough_step records, which hold ids and step names only and never a path or a reply; the confirm runs the proposal once; a refusal is said in the chat with the proposal offered again, and nothing changed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-WLK1-AC-4",
+          "given": "Plug in an existing project in the cockpit with a real git repository, and with a folder that is not one",
+          "when": "the person confirms Adopt",
+          "then": "the cockpit's adoption job starts as New project's Adopt starts it, signed by the person; the chat shows the job's progress as it prints it, and when it ends the baseline, the kind of work proposed (or the kinds as buttons when unclear), What's next with its buttons and Open the project; a job that failed says why and offers Adopt again",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-WLK1-AC-5",
+          "given": "a walkthrough whose material the person says is confidential while a role it needs goes to a hosted model",
+          "when": "the confidential step is answered",
+          "then": "the chat names each hosted role and its host and offers Set up a model, which pauses this walkthrough and returns to it where it was when it ends; Start from documents offers to go on without confidential, since such a project is refused while the analyst is hosted",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-WLK1-AC-6",
+          "given": "a person with a walkthrough going",
+          "when": "they start it again, start another, reply after it ended, have another person reply with access enforced, or cancel it at any step",
+          "then": "the same walkthrough resumes; another is refused unless it replaces the first (ended as replaced); a reply to an ended one is refused; another person is refused; a cancel ends it, recorded with walkthrough_done, and what was confirmed stays; folders given before are offered again",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-WLK1-AC-7",
+          "given": "the command line",
+          "when": "rihmasto walkthrough plug_in runs with typed answers, and a walkthrough is left and resumed",
+          "then": "the same walkthrough runs in the terminal, a confirm carries it out through the command line's own adopt with the adoption's progress on stderr, /quit leaves it to resume with --resume and /cancel ends it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-WLK1-AC-8",
+          "given": "the cockpit's walkthrough routes",
+          "when": "they are called, signed or not, and the assistant is asked where the walkthroughs are",
+          "then": "every write is signed by a named person with a persona granted on the factory and is in the tables of signed writes; a confirm goes through the cockpit's own route with its module check, so a module that is off refuses it; reading a walkthrough writes nothing; the cockpit's map names Walkthroughs and each walkthrough with a label of its own, and Take me there finds them",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-WLK1-AC-9",
+          "given": "the cockpit in a real browser, dark and light, at 1440 and 390 pixels",
+          "when": "a person starts Plug in an existing project from Home, types a folder into the chat, answers with the buttons and confirms Adopt",
+          "then": "the scan's summary shows in the chat, the focus moves to the options, the chat waits on the job and shows the result with What's next and Open the project, nothing scrolls sideways, and there is no console error, failed request or CSP violation",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-WLK1-AC-10",
+          "given": "the walkthrough Plug in an existing project",
+          "when": "the adoption finishes",
+          "then": "the chat offers Open Alignment (the project's Alignment tab) and the AI tools in this project card beside Open the project; neither is offered before the adoption is done",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
       "id": "FR-AUT1",
       "group": "F. Scheduling",
       "provenance": "customer-confirmed",
@@ -6843,6 +7783,253 @@
           "given": "a runner chosen for a project and waiting on IT's card, and a project waiting on its look at the spec",
           "when": "What's next and the Inbox are read",
           "then": "What's next names the runner card with who decides it (IT) and opens Settings > Runners for that project, and the go-ahead's Go and Skip; the factory's Inbox and the Inbox across projects hold the runner card for IT, grouped with the cards a deploy waits on",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-RPJ1",
+      "group": "B. Brownfield adoption",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "Real projects of every shape feed in as a person would feed them through New project: housekeeping and archives are read by rule, uncommitted work, workspaces, copies and projects adopted already are said with their choices, long scans show progress and refusals what to do, a confidential adoption is said plainly with a one-click fix, and an adopted project is held as what it is: its kind of work, its real state, its health, its areas and its watch.",
+      "notes": "The owner (2026-11-24): \"I will give you examples to scan and hook into Rihmasto (do it like you would in the UI to understand how feeding in projects works). Here are very different ones: a machine learning / fine-tuning experiment, a transcript agent to be productionised, another software factory product for a customer to monitor, govern and develop further, my local devbrain project as a second brain of my dev and agentic work, and my massive game dev project, to monitor further development, get ideas to optimise or improve it, and monitor how developing assets, the game world, lore etc. goes.\" Kernel: kernel/material.py, kernel/material_kinds.py, kernel/material_zip.py, kernel/material_git.py, kernel/source_guard.py, kernel/profiles_shapes.py, kernel/adopt.py, kernel/adopt_seen.py, kernel/adopt_stated.py, kernel/adopt_watch.py, kernel/adopted_state.py, kernel/areas.py, kernel/confidential_local.py, kernel/status.py, kernel/track.py, kernel/assistant_status.py; cockpit/source_routes.py, cockpit/adopted_routes.py, cockpit/static/scan.js, cockpit/static/feedin.js, cockpit/static/adopted.js, cockpit/static/folders.js. Docs: docs/guides/inputs.md, docs/brownfield.md, docs/guides/profiles.md.",
+      "acceptance": [
+        {
+          "id": "FR-RPJ1-AC-1",
+          "given": "a folder whose top holds a README and many housekeeping files (.gitattributes, .gitignore, .editorconfig, .ignore, a nested .gitignore, SHA256SUMS and checksum files, .env.example, lockfiles)",
+          "when": "it is scanned",
+          "then": "the housekeeping files are listed and counted under housekeeping, never read in full as material, and the root README is read first and in full before plans and other documents",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-2",
+          "given": "a folder holding a zip archive of results (csv, json, md, txt, html, logs, images, an archive inside it, a secret-looking entry)",
+          "when": "it is scanned",
+          "then": "the archive's entries are listed and its readable text is read from inside it by the same rules and within the budget, never extracted to disk; an entry over the size cap is listed, an archive or entry that inflates beyond the ratio or total caps is refused as a zip bomb, and an archive inside an archive is listed, not opened",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-3",
+          "given": "a git repository with uncommitted changes and untracked files",
+          "when": "it is scanned and adopted",
+          "then": "the scan and the dialog say how many uncommitted changes and untracked files are not in the last commit and that they will not be included, offer adopting the last commit (the default) or the working copy as it is now (a snapshot baseline, the folder unchanged), and the preview scans exactly what will be adopted, so its numbers are the adoption's",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-4",
+          "given": "a folder or repository that is already adopted (the same resolved path or the same origin, credentials taken out)",
+          "when": "it is given to New project again",
+          "then": "the dialog says it is already adopted with Open <project>, and adopting it again as a new project needs the explicit Adopt it again as a new project (the adopt route refuses it otherwise)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-5",
+          "given": "a confidential adoption while some roles' models are hosted",
+          "when": "the folder is scanned",
+          "then": "the dialog says Adopting works (it calls no model) and names the roles that would be refused until they use a local model, never saying refused for a step that proceeds; when a local or private endpoint is in the routing, Use my local model for these roles points them at it in one click, signed and recorded as a Models setup change, keeping the verifier to another family than the builder's",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-6",
+          "given": "a folder holding several git repositories and copies of one (_snapshot, -copy, -experiment, -prep)",
+          "when": "it is scanned",
+          "then": "the dialog lists the repositories with their commits and uncommitted counts and offers Adopt each as its own project (choosing which) or Adopt the folder as one; a file whose text another holds is read once and listed as its copy, so a copy does not eat the budget",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-7",
+          "given": "a long scan, a refused folder or a scan that fails",
+          "when": "a person scans it in New project",
+          "then": "the scan shows its progress (files looked at, the time and the folder) and can be cancelled, and a refusal or an error is shown in the scan step with what to do, never a scan that stays on Scanning the folder",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-8",
+          "given": "a folder outside the home and the configured roots",
+          "when": "it is refused",
+          "then": "the refusal offers Allow <folder> to a single operator (after a yes) or says Ask IT to allow it under enforced access; a folder allowed in Settings (stored in the factory home, signed and recorded) is read at once, without a restart; system folders, folders of keys and a drive's root are never allowed",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-9",
+          "given": "a project shaped like a game, an ML experiment or model, a knowledge or tooling project, a library or CLI, or a data pipeline",
+          "when": "its kind of work is proposed",
+          "then": "each has a work profile with its panel focus, questions and gates, recognised by rule from its words and from its files (a game engine's project files, assets beside lore and world documents; training scripts, datasets and evaluation results; a notes vault; DAGs and dbt), the Which kind of work question offers them, and the header shows Kind: not chosen yet while no kind is chosen",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-10",
+          "given": "an adopted project",
+          "when": "its page is opened",
+          "then": "it shows its real state (adopted: monitoring, maintaining or improving; what was taken; its baseline and the command that produced it; its activity) instead of the seven stages ticked by the adoption, and its maturity is asked in the dialog (How is it used today: an experiment, a prototype, in use by a few, in production), inferred by rule from its files, never defaulted to demo",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-11",
+          "given": "an adopted project whose existing tests fail at the baseline",
+          "when": "its health is read",
+          "then": "existing tests fail at the baseline (recorded, not judged) is a health item and a Track reason, never On track",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-12",
+          "given": "an adopted project whose instructions state a test command that no known runner maps (a script of its own)",
+          "when": "a person runs it as the baseline",
+          "then": "it is offered on the project page and run only after the person's yes (it runs the project's own code; through the isolation runner under enforced access), only as stated, and the baseline records which command produced it and who said yes",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-13",
+          "given": "a project adopted to monitor or maintain",
+          "when": "a person sets up the watch it offers",
+          "then": "new commits upstream become a summary in Review and the timeline, the activity by area is summed up weekly and failed checks notify a channel, through the automations engine in that person's name (else the upstream polling), and the project says Watching: ...",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-14",
+          "given": "an adopted repository that is not just code (a game, content, data, ML)",
+          "when": "it is adopted or watched",
+          "then": "an inventory by top-level area (files, types, sizes, asset kinds such as models, textures, audio and scenes), activity from its git history (commits, files changed and lines per area over 7 and 30 days, recently active areas, authors) and an index of design, lore and world documents by title are kept, shown as an Areas card, served to Insights and answered by Ask Rihma (how are the assets coming along?)",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-15",
+          "given": "a folder of documents only",
+          "when": "it is scanned in New project",
+          "then": "the dialog offers Build something from these documents (a new project, as before) or Track and evaluate this work: a project in a monitoring state whose material is the documents, with no build questions, and the ML experiment profile when its files fit",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-RPJ1-AC-16",
+          "given": "a person in the cockpit in a real browser, light and dark, 1440 and 390 px wide",
+          "when": "they feed in neutral folders of every shape through New project (a documents-only experiment with a results zip, a repository with uncommitted work and skills, a workspace with a copy, a long scan, a folder outside the allowed ones, a game-like repository adopted already) and open the adopted project's page",
+          "then": "the warnings, offers and adoptions are as above, the page shows the kind, the adopted state, the failed baseline as health, the Areas card and the watch; nothing scrolls sideways and there is no console error, failed request or CSP violation",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-HMD1",
+      "group": "PT. Portability",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-24",
+      "statement": "A person with no API key can run Rihmasto's text roles (the analyst, the holdout author, the verifier and the assistant) with the coding agent they already have (Claude Code with their own login, Codex, OpenCode, or a command they name): the agent runs headless as a text completion with no tools in an empty folder, its answer, model, tokens and cost are read from its own output, and each call is recorded in the ledger as run by that harness, not through Gnomon's lane. The verifier stays another model family than the builder, a confidential project refuses a hosted harness, no harness is given the repository, the contract or the holdouts beyond what its role needs, and Models setup, Home and doctor offer the harness found on the machine.",
+      "notes": "The owner (2026-11-24): \"I would use this with Claude Code equivalently if OpenCode is not available. I should be able to virtually run it with any agentic harness with the help of Gnomon.\" Gnomon's endpoints are openai or ollama only, so the harness answers outside Gnomon's lane and the record says so (as D-0019); docs/upstream/gnomon-harness-provider.md proposes the Gnomon side. kernel/harness_model.py (the harness model and the guard in kernel/model.py run_gnomon_task), kernel/harness_setup.py (Models setup, `rihmasto models use`, doctor), hooks in kernel/lanes.py, kernel/confidential.py, kernel/models_setup.py, kernel/doctor.py and kernel/shape_cli.py, cockpit/shape_routes.py, cockpit/static/harness.js, docs/guides/harness-models.md. Every harness in the tests is a fake executable written by the test.",
+      "acceptance": [
+        {
+          "id": "FR-HMD1-AC-1",
+          "given": "Claude Code, Codex or OpenCode on this machine",
+          "when": "a role it answers is asked",
+          "then": "the harness is started headless as a text completion with no tools (claude -p --output-format json --tools \"\" with MCP servers and sessions off and the role's rules as the system prompt; codex exec --json in its read-only sandbox; opencode run --format json with every tool off and denied; a named command), in an empty temporary folder with the task on standard input or as a file; its answer, model, token use and cost are read from its own output, and a harness that fails or is not found says so",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HMD1-AC-2",
+          "given": "the text roles answered by Claude Code (`rihmasto models use claude-code`)",
+          "when": "intake, the spec, Ask Rihma and a Shape it in chat answer run",
+          "then": "each runs through Claude Code, not Gnomon (the lane's surface keeps a placeholder endpoint nothing answers on), and each call is a model_run in the project's ledger (the factory's when no project) with the role, the harness, its version, the model, tokens, cost, duration and the assurance \"run by Claude Code, not through Gnomon's lane: no Gnomon audit trail for this call\"; the builder is never a harness model and a harness is never a fallback",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HMD1-AC-3",
+          "given": "a builder and a verifier",
+          "when": "a harness is set for the verifier, or a verifier's harness answers",
+          "then": "a setting that makes the verifier the builder's model family is refused (Claude Code counts as claude, Codex as gpt, OpenCode and a command by the model or family named, which is required), and a verifier whose harness answered with the builder's family gives no verdict",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HMD1-AC-4",
+          "given": "a confidential project",
+          "when": "its intake would run on Claude Code or Codex",
+          "then": "it is refused and recorded, nothing is sent, and Claude Code or Codex cannot be declared private; an OpenCode on a local model declared private serves it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HMD1-AC-5",
+          "given": "a project with holdout scenarios, and a change to review",
+          "when": "a harness answers a role",
+          "then": "its folder is empty and its environment names no factory home, lanes or keys; a task for any role but the holdout author that quotes a holdout scenario is refused before anything runs; the verifier is given the change's diff, never the repository or the contract",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HMD1-AC-6",
+          "given": "Models setup",
+          "when": "a person looks at it, uses a harness and tests a role",
+          "then": "the harnesses on this machine are listed with their versions and presets Use Claude Code (your login), Use Codex and Use OpenCode; `rihmasto models use` and POST /api/models/use are signed by a person and recorded; a harness role reads ready without Gnomon or a key, and Test sends a tiny prompt through the harness and shows its latency or its error, recording nothing; the page says a harness is slower than an API and spends the person's subscription",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HMD1-AC-7",
+          "given": "a machine with a coding agent and a missing key or no Gnomon",
+          "when": "`rihmasto doctor` runs",
+          "then": "it lists the harnesses found and suggests \"No API key? Claude Code found: use it\" with the command, until a text role uses one",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HMD1-AC-8",
+          "given": "the cockpit in a browser with no key and Claude Code and Codex on the machine",
+          "when": "a person uses them from Home and Models setup",
+          "then": "Home's Set up a model card offers Use Claude Code with the version found and goes once it is used; Models setup shows which harness answers each role, tests one, and sets the verifier to Codex, in dark at 1440 px and light at 390 px, with no console error, no failed request, every control named and nothing wider than the screen",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-HMD1-AC-9",
+          "given": "the text roles answered by a coding agent a person already has (rihmasto models use claude-code), and a project",
+          "when": "an agent asks Rihma in the project's agent channel and a person asks goal help with a model",
+          "then": "both go through the same guard as every model call and the harness answers them; each run is one model_run in the project's ledger with the harness and its task (channel, goal), never a second one and never in the factory's; Insights' usage counts them and shows the harness as the runner; and when no model Rihmasto talks with answers but a coding agent is on this machine, a goal plan offers \"Use the coding agent you already have\"",
           "check": {
             "kind": "test"
           }
@@ -9469,7 +10656,8 @@
         "FR-BA1-AC-14",
         "FR-BA1-AC-15",
         "FR-BA1-AC-16",
-        "FR-BA1-AC-17"
+        "FR-BA1-AC-17",
+        "FR-BA1-AC-18"
       ],
       "depends_on": [
         "V-40"
@@ -10055,6 +11243,674 @@
           "kernel/deliver.py",
           "kernel/dispatch.py",
           "tests/test_automation_lifecycle.py"
+        ]
+      }
+    },
+    {
+      "id": "WLK-01",
+      "title": "Walkthroughs in Ask Rihma: plug in a project, start from an idea or documents, set up a model, a tour",
+      "criteria": [
+        "FR-WLK1-AC-1",
+        "FR-WLK1-AC-2",
+        "FR-WLK1-AC-3",
+        "FR-WLK1-AC-4",
+        "FR-WLK1-AC-5",
+        "FR-WLK1-AC-6",
+        "FR-WLK1-AC-7",
+        "FR-WLK1-AC-8",
+        "FR-WLK1-AC-9"
+      ],
+      "depends_on": [],
+      "scope": {
+        "write": [
+          "kernel/walkthrough.py",
+          "kernel/walkthrough_flows.py",
+          "kernel/walkthrough_adopt.py",
+          "kernel/walkthrough_more.py",
+          "kernel/walkthrough_intent.py",
+          "kernel/walkthrough_cli.py",
+          "kernel/cli.py",
+          "kernel/adopt.py",
+          "kernel/material_cli.py",
+          "kernel/assistant_rules.py",
+          "cockpit/walkthrough_routes.py",
+          "cockpit/server.py",
+          "cockpit/ui_map.json",
+          "cockpit/static/walkthrough.js",
+          "cockpit/static/walkthrough.css",
+          "cockpit/static/assistant.js",
+          "cockpit/static/app.js",
+          "cockpit/static/dashboard.js",
+          "cockpit/static/scan.js",
+          "cockpit/static/index.html",
+          "tests/test_walkthrough.py",
+          "tests/test_walkthrough_cockpit.py",
+          "tests/test_ui_walkthrough.py",
+          "tests/walkthrough_fakes.py",
+          "tests/test_brief_ln.py",
+          "tests/test_access.py",
+          "docs/guides/walkthroughs.md",
+          "docs/README.md",
+          "docs/cockpit.md",
+          "README.md",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "CON-01",
+      "title": "The console and Open a terminal here: runs in the workspace, recorded, persona-limited, isolated under enforced access",
+      "criteria": [
+        "FR-CON1-AC-1",
+        "FR-CON1-AC-2",
+        "FR-CON1-AC-3",
+        "FR-CON1-AC-4",
+        "FR-CON1-AC-5",
+        "FR-CON1-AC-6",
+        "FR-CON1-AC-7",
+        "FR-CON1-AC-8",
+        "FR-CON1-AC-9"
+      ],
+      "depends_on": [],
+      "scope": {
+        "write": [
+          "kernel/console.py",
+          "kernel/console_run.py",
+          "kernel/console_offers.py",
+          "kernel/console_term.py",
+          "kernel/console_cli.py",
+          "kernel/cli.py",
+          "cockpit/console_routes.py",
+          "cockpit/server.py",
+          "cockpit/static/console.js",
+          "cockpit/static/core.js",
+          "cockpit/static/app.js",
+          "cockpit/static/project.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "kernel/assistant_rules.py",
+          "tests/console_fakes.py",
+          "tests/test_console.py",
+          "tests/test_console_cockpit.py",
+          "tests/test_ui_console.py",
+          "tests/test_brief_ln.py",
+          "tests/test_access.py",
+          "docs/guides/console-and-checks.md",
+          "docs/cockpit.md",
+          "docs/README.md",
+          "README.md",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "CHK-01",
+      "title": "Pluggable checks for maintenance and administration, and Health",
+      "criteria": [
+        "FR-CHK1-AC-1",
+        "FR-CHK1-AC-2",
+        "FR-CHK1-AC-3",
+        "FR-CHK1-AC-4",
+        "FR-CHK1-AC-5",
+        "FR-CHK1-AC-6",
+        "FR-CHK1-AC-7",
+        "FR-CHK1-AC-8",
+        "FR-CHK1-AC-9"
+      ],
+      "depends_on": [
+        "CON-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/checks/__init__.py",
+          "kernel/checks/store.py",
+          "kernel/checks/health.py",
+          "kernel/checks/tools.py",
+          "kernel/checks/suite.py",
+          "kernel/checks/ci.py",
+          "kernel/checks/deps.py",
+          "kernel/checks/scans.py",
+          "kernel/checks/licences.py",
+          "kernel/checks/probe.py",
+          "kernel/checks/automation_hook.py",
+          "kernel/console_cli.py",
+          "cockpit/health_routes.py",
+          "cockpit/server.py",
+          "cockpit/static/health.js",
+          "cockpit/static/dashboard.js",
+          "cockpit/static/app.js",
+          "cockpit/static/core.js",
+          "cockpit/static/project.js",
+          "cockpit/ui_map.json",
+          "kernel/assistant_rules.py",
+          "tests/console_fakes.py",
+          "tests/test_checks.py",
+          "tests/test_console_cockpit.py",
+          "tests/test_ui_console.py",
+          "tests/test_brief_ln.py",
+          "tests/test_access.py",
+          "docs/guides/console-and-checks.md",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "ALN-01",
+      "title": "Capture a repository's own structure, propose its alignment, record what a person accepts, and give it to the IDE",
+      "criteria": [
+        "FR-ALN1-AC-1",
+        "FR-ALN1-AC-2",
+        "FR-ALN1-AC-3",
+        "FR-ALN1-AC-4",
+        "FR-ALN1-AC-5",
+        "FR-ALN1-AC-6",
+        "FR-ALN1-AC-7",
+        "FR-ALN1-AC-8"
+      ],
+      "depends_on": [],
+      "scope": {
+        "write": [
+          "kernel/repo_structure.py",
+          "kernel/repo_specs.py",
+          "kernel/repo_suites.py",
+          "kernel/alignment.py",
+          "kernel/alignment_suggest.py",
+          "kernel/alignment_records.py",
+          "kernel/alignment_contract.py",
+          "kernel/alignment_cli.py",
+          "kernel/cli.py",
+          "kernel/compile.py",
+          "kernel/gate_external.py",
+          "kernel/assistant_rules.py",
+          "cockpit/server.py",
+          "cockpit/align_routes.py",
+          "cockpit/ui_map.json",
+          "cockpit/static/alignment.js",
+          "cockpit/static/project.js",
+          "cockpit/static/core.js",
+          "cockpit/static/app.css",
+          "tests/alignment_fixture.py",
+          "tests/test_alignment.py",
+          "tests/test_ui_alignment.py",
+          "tests/test_brief_ln.py",
+          "tests/test_access.py",
+          "docs/guides/alignment.md",
+          "docs/README.md",
+          "docs/brownfield.md",
+          "docs/cockpit.md",
+          "README.md",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "INS-01",
+      "title": "Insights: seven dimensions from the records, rule-based lines, the cockpit page and tab, and the export",
+      "criteria": [
+        "FR-INS1-AC-1",
+        "FR-INS1-AC-2",
+        "FR-INS1-AC-3",
+        "FR-INS1-AC-4",
+        "FR-INS1-AC-5",
+        "FR-INS1-AC-6",
+        "FR-INS1-AC-7"
+      ],
+      "depends_on": [],
+      "scope": {
+        "write": [
+          "kernel/insights/",
+          "cockpit/insights_routes.py",
+          "cockpit/static/insights.js",
+          "cockpit/static/insights.css",
+          "tests/test_insights.py",
+          "tests/test_ui_insights.py",
+          "tests/insights_fixture.py",
+          "tests/insights_palette.py",
+          "docs/guides/insights.md"
+        ]
+      }
+    },
+    {
+      "id": "WIRE-01",
+      "title": "Wire the round-two features together: checks and alignment in automations, alignment in the IDE section, Insights measuring checks, alignment, every role's runs and cap hits, the walkthrough's next steps, the packages",
+      "criteria": [
+        "FR-CHK1-AC-10",
+        "FR-REL1-AC-5",
+        "FR-ALN1-AC-9",
+        "FR-ALN1-AC-10",
+        "FR-WLK1-AC-10",
+        "FR-INS1-AC-8",
+        "FR-INS1-AC-9",
+        "FR-INS1-AC-10"
+      ],
+      "depends_on": [],
+      "scope": {
+        "write": [
+          "kernel/automations_more.py",
+          "kernel/model_usage.py",
+          "kernel/ide.py",
+          "kernel/insights/",
+          "kernel/checks/__init__.py",
+          "kernel/autonomy.py",
+          "kernel/walkthrough_flows.py",
+          "kernel/walkthrough_adopt.py",
+          "pyproject.toml",
+          "tests/test_wiring.py",
+          "tests/test_ui_console.py",
+          "tests/test_walkthrough.py"
+        ]
+      }
+    },
+    {
+      "id": "REV-01",
+      "title": "Since you last looked: review what agents shipped, act in place, mark it reviewed, and get it every morning (FR-REV1)",
+      "criteria": [
+        "FR-REV1-AC-1",
+        "FR-REV1-AC-2",
+        "FR-REV1-AC-3",
+        "FR-REV1-AC-4",
+        "FR-REV1-AC-5",
+        "FR-REV1-AC-6",
+        "FR-REV1-AC-7"
+      ],
+      "scope": {
+        "write": [
+          "kernel/review.py",
+          "kernel/review_items.py",
+          "kernel/review_ledger.py",
+          "kernel/review_marks.py",
+          "kernel/review_diff.py",
+          "kernel/review_digest.py",
+          "kernel/review_cli.py",
+          "kernel/relay.py",
+          "kernel/notices.py",
+          "kernel/cli.py",
+          "kernel/assistant_rules.py",
+          "cockpit/review_routes.py",
+          "cockpit/server.py",
+          "cockpit/ui_map.json",
+          "cockpit/static/review.js",
+          "cockpit/static/review.css",
+          "tests/review_fixture.py",
+          "tests/test_review.py",
+          "tests/test_ui_review.py",
+          "docs/guides/review.md"
+        ]
+      }
+    },
+    {
+      "id": "GCP-01",
+      "title": "The gcp-cloudrun road: its configuration, rendering, validation and refusals",
+      "depends_on": [],
+      "criteria": [
+        "FR-GCP1-AC-1",
+        "FR-GCP1-AC-2",
+        "FR-GCP1-AC-6"
+      ],
+      "scope": {
+        "write": [
+          "kernel/roads_gcp.py",
+          "kernel/roads_gcp_config.py",
+          "kernel/roads_gcp_check.py",
+          "kernel/road_settings.py",
+          "kernel/roads.py",
+          "kernel/cli.py",
+          "kernel/evidence_pack.py",
+          "tests/test_roads_gcp.py",
+          "tests/gcp_fakes.py",
+          "tests/test_access.py"
+        ]
+      }
+    },
+    {
+      "id": "GCP-02",
+      "title": "Delivery on Cloud Run through the deploy gate: a service's revisions, a scheduled job's executions, promotion and rollback",
+      "depends_on": [
+        "GCP-01"
+      ],
+      "criteria": [
+        "FR-GCP1-AC-3",
+        "FR-GCP1-AC-4",
+        "FR-GCP1-AC-5"
+      ],
+      "scope": {
+        "write": [
+          "kernel/roads_gcp_ops.py",
+          "kernel/deliver.py",
+          "kernel/operate.py",
+          "tests/test_roads_gcp_deliver.py",
+          "tests/gcp_fakes.py"
+        ]
+      }
+    },
+    {
+      "id": "GDR-01",
+      "title": "The Google Drive client a capability imports, and its Drive v3 stand-in",
+      "depends_on": [],
+      "criteria": [
+        "FR-GDR1-AC-1",
+        "FR-GDR1-AC-2",
+        "FR-GDR1-AC-3"
+      ],
+      "scope": {
+        "write": [
+          "kernel/connectors_gdrive.py",
+          "kernel/gdrive_standin.py",
+          "tests/test_gdrive.py"
+        ]
+      }
+    },
+    {
+      "id": "GDR-02",
+      "title": "A gdrive integration declared, scaffolded, stood in for at the gate and bound on Cloud Run",
+      "depends_on": [
+        "GDR-01",
+        "GCP-01"
+      ],
+      "criteria": [
+        "FR-GDR1-AC-4"
+      ],
+      "scope": {
+        "write": [
+          "kernel/integration_decl.py",
+          "kernel/integration_standins.py",
+          "kernel/compile.py",
+          "kernel/input_facets.py",
+          "tests/test_gdrive.py"
+        ]
+      }
+    },
+    {
+      "id": "GCP-03",
+      "title": "The cockpit: paved roads and the Google Cloud road in Settings, a project's deploy choices, the Drive connector in Integrations, and the guide",
+      "depends_on": [
+        "GCP-01",
+        "GDR-02"
+      ],
+      "criteria": [
+        "FR-GCP1-AC-7",
+        "FR-GDR1-AC-5"
+      ],
+      "scope": {
+        "write": [
+          "cockpit/road_routes.py",
+          "cockpit/server.py",
+          "cockpit/static/roads.js",
+          "cockpit/static/screens.js",
+          "cockpit/static/project.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "kernel/assistant_rules.py",
+          "tests/test_ui_gcp.py",
+          "tests/test_brief_ln.py",
+          "docs/guides/gcp.md",
+          "docs/guides/deploying.md",
+          "docs/guides/integrations.md",
+          "docs/README.md",
+          "README.md",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "CPL-01",
+      "title": "Goal help in a project: plans from the records and the catalogue, with honest gaps",
+      "criteria": [
+        "FR-CPL1-AC-1",
+        "FR-CPL1-AC-2",
+        "FR-CPL1-AC-3",
+        "FR-CPL1-AC-4",
+        "FR-CPL1-AC-5"
+      ],
+      "depends_on": [],
+      "scope": {
+        "write": [
+          "kernel/copilot.py",
+          "kernel/copilot_steps.py",
+          "kernel/copilot_catalog.py",
+          "kernel/assistant.py",
+          "kernel/assistant_rules.py",
+          "cockpit/static/goal.js",
+          "cockpit/static/assistant.js",
+          "cockpit/ui_map.json",
+          "tests/test_copilot.py",
+          "tests/test_agents_ui.py",
+          "docs/guides/agentic-help.md"
+        ]
+      }
+    },
+    {
+      "id": "BRG-01",
+      "title": "The agent bridge: hand-off briefs, MCP reads and signed agent writes",
+      "criteria": [
+        "FR-BRG1-AC-1",
+        "FR-BRG1-AC-2",
+        "FR-BRG1-AC-3",
+        "FR-BRG1-AC-4"
+      ],
+      "depends_on": [
+        "CPL-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/agent_bridge.py",
+          "kernel/agent_writes.py",
+          "mcp/bridge_tools.py",
+          "mcp/server.py",
+          "kernel/bridge_cli.py",
+          "kernel/cli.py",
+          "cockpit/bridge_routes.py",
+          "cockpit/server.py",
+          "cockpit/static/goal.js",
+          "cockpit/static/agents.js",
+          "cockpit/static/project.js",
+          "tests/test_agent_bridge.py",
+          "tests/test_mcp.py",
+          "tests/test_brief_ln.py",
+          "tests/test_access.py",
+          "docs/mcp.md"
+        ]
+      }
+    },
+    {
+      "id": "CHN-01",
+      "title": "The agent channel: Rihma's agents and coding agents back and forth, watched by people",
+      "criteria": [
+        "FR-CHN1-AC-1",
+        "FR-CHN1-AC-2",
+        "FR-CHN1-AC-3",
+        "FR-CHN1-AC-4",
+        "FR-CHN1-AC-5",
+        "FR-CHN1-AC-6"
+      ],
+      "depends_on": [
+        "BRG-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/agent_channel.py",
+          "kernel/channel_rihma.py",
+          "kernel/bridge_cli.py",
+          "cockpit/bridge_routes.py",
+          "cockpit/static/agents.js",
+          "cockpit/static/agents.css",
+          "cockpit/static/app.js",
+          "cockpit/static/core.js",
+          "tests/test_agent_channel.py",
+          "tests/test_agents_ui.py",
+          "docs/guides/agentic-help.md",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "WIRE-02",
+      "title": "Wire the Review, the Google Cloud road and the agent bridge into the merged streams",
+      "criteria": [
+        "FR-REV1-AC-8",
+        "FR-REV1-AC-9",
+        "FR-REV1-AC-10",
+        "FR-GCP1-AC-8",
+        "FR-CPL1-AC-6",
+        "FR-INS1-AC-11"
+      ],
+      "depends_on": [
+        "WIRE-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/review_streams.py",
+          "kernel/review_ledger.py",
+          "kernel/review.py",
+          "kernel/automations_more.py",
+          "kernel/checks/probe.py",
+          "kernel/insights/",
+          "kernel/copilot_catalog.py",
+          "kernel/copilot_steps.py",
+          "kernel/agent_bridge.py",
+          "kernel/channel_rihma.py",
+          "tests/test_wiring_streams.py"
+        ]
+      }
+    },
+    {
+      "id": "HMD-01",
+      "title": "Harness-backed models: the coding agent a person already has answers the text roles",
+      "depends_on": [],
+      "criteria": [
+        "FR-HMD1-AC-1",
+        "FR-HMD1-AC-2",
+        "FR-HMD1-AC-3",
+        "FR-HMD1-AC-4",
+        "FR-HMD1-AC-5",
+        "FR-HMD1-AC-6",
+        "FR-HMD1-AC-7",
+        "FR-HMD1-AC-8"
+      ],
+      "scope": {
+        "write": [
+          "kernel/harness_model.py",
+          "kernel/harness_setup.py",
+          "kernel/model.py",
+          "kernel/lanes.py",
+          "kernel/confidential.py",
+          "kernel/models_setup.py",
+          "kernel/doctor.py",
+          "kernel/shape_cli.py",
+          "kernel/assistant_rules.py",
+          "cockpit/shape_routes.py",
+          "cockpit/server.py",
+          "cockpit/static/harness.js",
+          "cockpit/static/models.js",
+          "cockpit/static/app.css",
+          "cockpit/ui_map.json",
+          "tests/harness_fakes.py",
+          "tests/test_harness_models.py",
+          "tests/test_ui_harness_models.py",
+          "tests/factory_fakes.py",
+          "tests/test_brief_ln.py",
+          "tests/test_access.py",
+          "docs/guides/harness-models.md",
+          "docs/guides/models-setup.md",
+          "docs/guides/harnesses.md",
+          "docs/upstream/gnomon-harness-provider.md",
+          "docs/README.md",
+          "README.md",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "WIRE-03",
+      "title": "Wire the coding-agent models into the agent channel, goal help and Insights",
+      "criteria": [
+        "FR-HMD1-AC-9"
+      ],
+      "depends_on": [
+        "WIRE-02"
+      ],
+      "scope": {
+        "write": [
+          "kernel/model.py",
+          "kernel/model_usage.py",
+          "kernel/harness_model.py",
+          "kernel/copilot.py",
+          "kernel/copilot_catalog.py",
+          "kernel/copilot_steps.py",
+          "kernel/insights/gnomon_records.py",
+          "tests/test_wiring_streams.py"
+        ]
+      }
+    },
+    {
+      "id": "RPJ-01",
+      "title": "Real projects of every shape: scan, adopt and hold them as what they are",
+      "depends_on": [],
+      "criteria": [
+        "FR-RPJ1-AC-1",
+        "FR-RPJ1-AC-2",
+        "FR-RPJ1-AC-3",
+        "FR-RPJ1-AC-4",
+        "FR-RPJ1-AC-5",
+        "FR-RPJ1-AC-6",
+        "FR-RPJ1-AC-7",
+        "FR-RPJ1-AC-8",
+        "FR-RPJ1-AC-9",
+        "FR-RPJ1-AC-10",
+        "FR-RPJ1-AC-11",
+        "FR-RPJ1-AC-12",
+        "FR-RPJ1-AC-13",
+        "FR-RPJ1-AC-14",
+        "FR-RPJ1-AC-15",
+        "FR-RPJ1-AC-16"
+      ],
+      "scope": {
+        "write": [
+          "kernel/material.py",
+          "kernel/material_kinds.py",
+          "kernel/material_zip.py",
+          "kernel/material_git.py",
+          "kernel/material_adopt.py",
+          "kernel/material_cli.py",
+          "kernel/source_guard.py",
+          "kernel/profiles.py",
+          "kernel/profiles_shapes.py",
+          "kernel/adopt.py",
+          "kernel/adopt_seen.py",
+          "kernel/adopt_stated.py",
+          "kernel/adopt_watch.py",
+          "kernel/adopted_state.py",
+          "kernel/areas.py",
+          "kernel/confidential_local.py",
+          "kernel/status.py",
+          "kernel/track.py",
+          "kernel/automations.py",
+          "kernel/automations_actions.py",
+          "kernel/assistant.py",
+          "kernel/assistant_status.py",
+          "cockpit/server.py",
+          "cockpit/source_routes.py",
+          "cockpit/adopted_routes.py",
+          "cockpit/static/scan.js",
+          "cockpit/static/feedin.js",
+          "cockpit/static/adopted.js",
+          "cockpit/static/folders.js",
+          "cockpit/static/screens.js",
+          "cockpit/static/project.js",
+          "cockpit/static/app.css",
+          "cockpit/static/index.html",
+          "cockpit/ui_map.json",
+          "tests/rpj_fixture.py",
+          "tests/test_real_projects.py",
+          "tests/test_real_projects_cockpit.py",
+          "tests/test_ui_real_projects.py",
+          "tests/test_material.py",
+          "tests/test_ui_material.py",
+          "tests/test_access.py",
+          "docs/guides/inputs.md",
+          "docs/brownfield.md",
+          "docs/guides/profiles.md",
+          "CHANGELOG.md"
         ]
       }
     }

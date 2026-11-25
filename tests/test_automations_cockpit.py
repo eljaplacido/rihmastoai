@@ -54,7 +54,7 @@ class CommandLineTest(FactoryTestCase):
         self.assertEqual(len(self.cli("automations", "list")["automations"]), 2)
         self.assertEqual([x["id"] for x in self.cli("automations", "list", "--project", b.pid)["automations"]],
                          ["AU-001", "AU-002"])                                  # B is the target of AU-001
-        self.assertEqual(len(self.cli("automations", "templates")["templates"]), 9)
+        self.assertEqual(len(self.cli("automations", "templates")["templates"]), 12)
         edited = self.cli("automations", "edit", "AU-001", "--guard-count", "release_done:1:720", *SIGNED)
         self.assertEqual((edited["version"], edited["guard"]["kind"]), (2, "count"))
         a.log("release_done", {"release": 1})
@@ -100,7 +100,7 @@ class CockpitRoutesTest(CockpitTestCase):
         status, out, _ = self.call("GET", "/api/automations")
         self.assertEqual((status, out["automations"], out["scheduler"]["running"]), (200, [], False))
         self.assertEqual({a["id"] for a in out["actions"]}, set(au.ACTIONS))
-        self.assertEqual(len(out["templates"]), 9)
+        self.assertEqual(len(out["templates"]), 12)   # with run_check's and align_scan's
         draft = {"name": "Every hour", "trigger": {"kind": "schedule", "every": "1h"},
                  "action": {"kind": "signal", "text": "hourly {project}"}, "scope": {"kind": "projects",
                                                                                    "projects": [p.pid, q.pid]}}

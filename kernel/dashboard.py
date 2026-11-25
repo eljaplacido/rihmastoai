@@ -215,7 +215,8 @@ def catalogue(factory) -> dict:
                       "summary": spec.get("summary") or p.meta.get("title"), "profile": prof["id"],
                       "profile_label": prof["label"], "deliverable": prof.get("deliverable", "product"),
                       "maturity": p.meta.get("maturity"), "stage": p.meta.get("stage"),
-                      "pack": {"version": latest.get("version"), "valid": latest["acceptance"]["valid"]}
+                      "adopted": p.meta.get("source_kind") == "adopted",   # an existing system kept, not built
+                      "pack":{"version": latest.get("version"), "valid": latest["acceptance"]["valid"]}
                       if latest else None})
     fp = factory_project(factory, create=False)     # a read never creates the factory's canon
     for c in Canon(fp).cards(kind="concept") if fp is not None else []:

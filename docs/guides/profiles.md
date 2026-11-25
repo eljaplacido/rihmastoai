@@ -11,7 +11,7 @@ only what sits around that core:
 
 The profiles live in [kernel/profiles.py](../../kernel/profiles.py).
 
-## The eight profiles
+## The thirteen profiles
 
 | Profile | For | Deliverable | Asks once | Status |
 |---|---|---|---|---|
@@ -23,6 +23,12 @@ The profiles live in [kernel/profiles.py](../../kernel/profiles.py).
 | `harness_engineering` | building or tuning an agent harness, policy or evaluation suite | capability pack | the baseline, and how much regression is acceptable | preview |
 | `ops_agent` | an agent that does a job and proves it: a compliance check, a security scan, a log analysis | report | the framework and who signs off; what the agent may read | preview |
 | `automation` | a scheduled or triggered job with no screens, a single workflow or one agentic capability, reached over MCP, an OpenAI-compatible endpoint, a website chat or HTTP ([small capabilities](small-capabilities.md)) | capability pack | what starts a run; where it must be reachable | ready |
+
+| `game` | a game: its code, assets, levels, world and lore, builds and playtests | product | the next build or milestone; how a build is checked | preview |
+| `ml_experiment` | a training or fine-tuning experiment, or a model: datasets, runs, metrics, evaluations, a model card | report | what the experiment must show, on which metric | preview |
+| `knowledge_tooling` | notes, scripts and local services for one's own work: a second brain, a dev toolbox | product | what you rely on it for every day | preview |
+| `library_cli` | a package other code imports, or a command-line tool | product | what counts as a breaking change | preview |
+| `data_pipeline` | ingestion, transformations and quality checks on a schedule | product | how fresh its outputs must be, and who is told of a failed run | preview |
 
 **Status** is honest about the template. The `automation` profile has its own, the capability
 template; every other profile builds on the paved-road web-service template today. `preview` means the intake, spec and checks are shaped for the work, and its own
@@ -44,6 +50,31 @@ template is still to come. A mobile prototype ships as a phone-first web app, fo
 - **Automation:** the product declares what it needs where it runs (`app/runtime.json`), each
   criterion is checked against a run, every system it calls is simulated in tests, and the road's
   checks fail a capability whose declaration, job or faces break.
+
+## Real project shapes
+
+The last five profiles are for the shapes real projects people feed in come in (FR-RPJ1,
+[kernel/profiles_shapes.py](../../kernel/profiles_shapes.py)): a game, an ML experiment or model (tied to
+D-0020: a run, a metric and a model card are evidence), a knowledge or tooling project, a library or
+command-line tool, and a data pipeline. Each has its panel focus, its questions and its **gates**, what
+must hold before a release of that kind counts:
+
+| Profile | Its gates |
+|---|---|
+| `game` | it builds headless; every scene in the build loads; a smoke playtest reaches the first goal; no asset is missing |
+| `ml_experiment` | each reported metric names its run and evaluation set; the evaluation set is fixed and versioned; a model card states its limits |
+| `knowledge_tooling` | its scripts' own checks pass; its local services answer |
+| `library_cli` | its test suite passes; the package builds and installs; the changelog names breaking changes |
+| `data_pipeline` | data-quality checks pass on the sample; a run finishes within its window |
+
+**Recognised by their files too.** For an existing folder, adoption reads its files as well as its title and
+README (`kernel.profiles_shapes.file_hints`): a Godot, Unity or Unreal project file, or assets, levels and lore
+folders, point to a game; training or evaluation scripts, datasets, runs, metrics and results archives to an
+ML experiment; a notes vault (`.obsidian/`, many notes) to knowledge or tooling; DAGs or a dbt project to a
+data pipeline; a package manifest with a `bin/` or `cli/` folder to a library or CLI. A strong sign counts as
+three of the profile's words, and when the words leave two kinds close, the files settle it. "Which kind of
+work is this?" offers these profiles among its candidates, and the project header says **Kind: not chosen
+yet** until a kind is chosen.
 
 ## Choosing a profile
 

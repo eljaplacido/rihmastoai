@@ -87,7 +87,8 @@ MODULES: dict[str, dict[str, Any]] = {
         "criterion to a test, checks fail-first, asks an independent verifier; escalations and workspaces; the "
         "same gate for your own repository, and holdouts against your running service", depends=("plan",),
         outputs=("gate verdicts per change, recorded", "merged code on the product's main"),
-        pages=("floor",), views=("tasks", "cell"), widgets=("live", "timeline", "gate_trend", "models"),
+        pages=("floor", "insights_all"), views=("tasks", "cell", "insights"),     # Insights: FR-INS1
+        widgets=("live", "timeline", "gate_trend", "models", "insight"),
         commands=("build", "resurface", "workspace open", "workspace submit", "workspace list", "repo gate",
                   "repo holdouts")),
     "delivery": _module(
@@ -140,8 +141,8 @@ MODULES: dict[str, dict[str, Any]] = {
         commands=("embed create", "relay subscribe", "relay cockpit", "relay run", "relay log", "hooks add",
                   "connector validate", "connector enable", "connector check"), routes=("post_embed",)),
     "assistant": _module(
-        "Assistant", "Ask Rihma in the cockpit answers from a model through Gnomon: how a run goes, what waits, "
-        "proposals you confirm; without it the assistant still points the way from the cockpit's map",
+        "Assistant", "Ask Rihma: answers about your projects from an AI model through Gnomon (how a run goes, what "
+        "waits, proposals you confirm); without it, Ask Rihma only shows the way around the cockpit",
         outputs=("answers and proposals you confirm",)),
 }
 

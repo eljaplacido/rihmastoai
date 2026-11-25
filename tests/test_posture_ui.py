@@ -243,7 +243,7 @@ class PostureUiTest(unittest.TestCase):
         self.assertEqual(b.eval(f"!!document.querySelector('[data-key=\"{card}:approve\"]')"), False)
         self.assertTrue(b.eval(FITS))
         # FR-POS7-AC-6: the project's Inbox counts nothing for a developer (the plan card is not theirs)
-        self.assertEqual(b.eval("(document.querySelector('#sb-project .count') || {}).textContent || ''"), "")
+        self.assertEqual(b.eval("(document.querySelector('.cap-t[data-capsule=\"now\"] .count') || {}).textContent || ''"), "")
         self.step("plan as a developer light 390")
         self.theme("light")                               # the theme menu is in the top bar at 1440 pixels
         self.width(390)
@@ -255,7 +255,7 @@ class PostureUiTest(unittest.TestCase):
         b.cmd("Page.navigate", {"url": plan})
         b.wait(f"!!document.querySelector('[data-key=\"{card}:approve\"]')", "Approve the plan for the business owner")
         self.assertEqual(b.eval(f"document.querySelector('[data-key=\"{card}:approve\"]').textContent"), "Approve the plan")
-        b.wait("(document.querySelector('#sb-project .count') || {}).textContent === '1'", "the plan card in her Inbox count")
+        b.wait("(document.querySelector('.cap-t[data-capsule=\"now\"] .count') || {}).textContent === '1'", "the plan card in her Inbox count")
         self.check()
 
 

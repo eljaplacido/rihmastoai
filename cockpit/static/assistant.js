@@ -17,6 +17,10 @@ import {
 } from "./core.js";
 import { previewProposal, previewing, keepPreview, undoPreview } from "./dashboard.js";
 import { suggestionOn } from "./modules.js";
+import { planBlock } from "./goal.js";   // a goal's plan, its steps one click each (FR-CPL1)
+import { strip } from "./progress.js";   // a long job's progress, small (FR-PRG1)
+import { askScope, convKey, scopeLine, answerScope, stepsBlock, localAnswer, layoutBlock } from "./askscope.js";   // FR-UXO1
+import { projectTitle } from "./scope.js";
 
 const A = {
   convs: {}, key: null, queue: [], current: null, busy: false, tick: null, embedCheck: new WeakMap(),
@@ -43,7 +47,7 @@ async function stillHere() {
 
 // -- conversations: one per persona and project, each saved under its own key ---------------------
 
-function storeKey() { return "gf.assistant." + (S.persona || "-") + "." + ((S.route && S.route.pid) || "-"); }
+function storeKey() { return convKey(); }   // per persona and project, or the whole platform (askscope.js)
 function conv(key) {
   if (!A.convs[key]) {
     let log = [];
@@ -120,7 +124,7 @@ function describe(p) {
 function suggestions() {
   const inProject = S.route && S.route.name === "project";
   const factory = inProject && S.route.pid === FACTORY_PID;
-  const out = [];
+  const out = [inProject && !factory ? "What should I do next?" : "How do I feed in an existing project?"];   // FR-JRN1
   if (mapMode()) {   // the map answers where things are; it cannot answer about runs or change anything
     if (factory) out.push("Where is the inbox?", "Where is the ledger?");
     else if (inProject) out.push("Where do I approve the plan?", "Where is the ledger?", "How do I pause this?");
@@ -200,9 +204,18 @@ export function highlight(el) {
   const target = el.matches(FOCUSABLE) ? el : el.querySelector(FOCUSABLE);
   if (target) target.focus({ preventScroll: true });
 }
+// The controls in New project's An existing project path (and its folder picker): Take me there opens the dialog.
+const NEW_PROJECT_CONTROLS = new Set(["adopt_project", "pick_browse", "pick_here"]);
 async function takeThere(nv) {
   if (nv.control === "assistant" && assistantOpen()) { say("You are in it: ask here.", "info"); $("#as-q").focus(); return; }
+  if (nav.walk && /^walk_/.test(nv.control || "")) { nav.walk.openPicker(nv.control); return; }   // in this panel
   let el = nv.control ? visibleControl(nv.control) : null;   // already in sight: highlight it where it is
+  if (!el && NEW_PROJECT_CONTROLS.has(nv.control) && nav.newProject) {   // in the New project dialog: open it there
+    if (phone()) closeAssistant(true);
+    nav.newProject({ start: "existing" });
+    el = await waitFor(() => visibleControl(nv.control), 1500);
+    if (el) { highlight(el); return; }
+  }
   const go = !el && nv.route && !onPage(nv.route);
   if (go) location.hash = nv.route;
   if (phone()) closeAssistant(true);   // the drawer covers the page
@@ -379,7 +392,9 @@ function proposalCard(p, item, i, key, idx) {
   const st = k + ":st";
   const open = !p.state;
   const el = h("div", { class: "prop" + (open || (p.state === "preview" && previewing()) ? "" : " settled") },
-    h("div", { class: "prop-h" }, icon(ic), h("b", null, title)),
+    h("div", { class: "prop-h" }, icon(ic), h("b", null, title),   // the proposal names its target (FR-UXO1)
+      h("span", { class: "prop-on muted small" }, p.project ? "on " + projectTitle(p.project)
+        : p.action === "layout_edit" || p.action === "theme" ? "your layout" : "Rihmasto")),
     h("ul", { class: "prop-args" }, describe(p).map((l) => h("li", null, l))),
     p.why ? h("p", { class: "prop-why" }, h("span", { class: "muted" }, "Why: "), p.why) : null);
   const again = (label) => button(label, { icon: "eye", kind: "small", key: k + ":again", onclick: () => { p.state = undefined; save(key); render(); settle(k + ":ok", st); } });
@@ -451,16 +466,26 @@ function bubble(item, idx, key) {
   const go = out.navigate && (out.navigate.route || out.navigate.control);
   return h("div", { class: "msg bot" }, av(),
     h("div", { class: "bub" },
+      answerScope(out, item.asked),
       h("p", null, out.answer || "I have no answer to that."),
       out.note ? h("p", { class: "muted small" }, out.note) : null,
+      out.plan ? planBlock(out, item) : null,
+      out.progress ? strip(out.progress, { title: out.progress.title || "Progress" }) : null,   // a long job, as it stood (FR-PRG1)
+      stepsBlock(out, idx, go ? () => takeThere(out.navigate) : null),
+      out.viewLayout ? layoutBlock(item, () => save(key), render) : null,
       (out.sources || []).length ? h("div", { class: "srcs" }, out.sources.map((s) => sourceChip(s, !unbacked.has(s), item.project))) : null,
-      go ? h("div", { class: "btns" }, button("Take me there", { icon: "arrow-right", kind: "small", key: "go:" + idx, onclick: () => takeThere(out.navigate) })) : null,
+      go && !(out.steps || []).some((s) => s.action === "navigate")
+        ? h("div", { class: "btns" }, button("Take me there", { icon: "arrow-right", kind: "small", key: "go:" + idx, onclick: () => takeThere(out.navigate) })) : null,
+      nav.journey && (out.journey || out.starters || out.projects) ? nav.journey.block(out, item) : null,   // FR-JRN1
+      out.walkthrough && nav.walk && !out.journey ? nav.walk.offerButton(out.walkthrough) : null,
       (out.propose || []).map((p, i) => proposalCard(p, item, i, key, idx)),
       (out.dropped || []).map((p) => h("div", { class: "prop dropped" }, h("div", { class: "prop-h" }, icon("x-circle"),
         h("b", null, (ACTION_WORDS[p.action] || [p.action])[0])), h("p", { class: "small" }, "Not offered: " + (p.refused || "outside the rules")))),
       out.unasked ? h("p", { class: "muted small" }, (out.unasked === 1 ? "An action was" : out.unasked + " actions were")
         + " suggested that you did not ask for, so none is offered. Ask for it if you want it.") : null,
-      h("p", { class: "by muted small" }, out.by === "map" ? "From the cockpit map" : (S.meta && S.meta.assistant === "gnomon" ? "From Gnomon" : "From the model")
+      h("p", { class: "by muted small" }, out.by === "journey" ? "From Rihmasto's journeys and the records, by rule: no model was asked"
+        : out.by === "goal" ? "A plan from the project's records and the features turned on here"
+        : out.by === "goal_model" ? "A plan from the model, each step checked against the features turned on here" : out.by === "map" ? "From the cockpit map" : (S.meta && S.meta.assistant === "gnomon" ? "From Gnomon" : "From the model")
         + ", checked against the Inbox rules")));
 }
 
@@ -481,17 +506,22 @@ function render() {
   const log = load();
   const box = $("#as-log");
   if (!box) return;
+  if (nav.walk && nav.walk.shown()) { nav.walk.render(); return; }   // a walkthrough is shown (walkthrough.js)
   const active = document.activeElement;
   const lost = !!active && (box.contains(active) || $("#as-suggest").contains(active));
   const had = lost ? active.getAttribute("data-key") : null;
   A.shown = renderSign();
+  const line = $("#as-scope");
+  if (line) fill(line, scopeLine(() => { A.key = storeKey(); render(); }));
   const strip = previewStrip(log);
   if (!log.length) {
     fill(box, strip, h("div", { class: "as-hello" }, h("span", { class: "bot-av big" }, icon("bot")),
       h("p", null, h("b", null, "Ask about the cockpit or your projects.")),
       h("p", { class: "muted small" }, mapMode()
         ? "I can take you to a view or a control and tell you what a button does. No model is set up here, so I cannot answer about runs or propose actions."
-        : "I can take you to a view, tell you what a button does, answer from the records, and propose actions or a new layout that you confirm.")));
+        : "I can take you to a view, tell you what a button does, answer from the records, and propose actions or a new layout that you confirm."),
+      nav.walk ? h("p", { class: "muted small" }, "Or let me walk you through it, step by step:") : null,
+      nav.walk ? nav.walk.pickerList() : null));
   } else {
     fill(box, strip, log.map((it, i) => bubble(it, i, A.key)));
   }
@@ -505,7 +535,7 @@ function render() {
 }
 // What the drawer shows depends on these; a re-render of the same page with the same conversation is skipped.
 function renderSign() {
-  return [storeKey(), S.lens, S.route && S.route.name, previewing(), mapMode()].join("|");
+  return [storeKey(), askScope().label, S.lens, S.route && S.route.name, previewing(), mapMode()].join("|");
 }
 
 // -- asking: one question at a time, the rest queued -------------------------------------------------------
@@ -514,10 +544,16 @@ export function send(question) {
   const q = String(question || "").trim();
   if (!q) return false;
   const key = storeKey();
-  const route = S.route || {};
+  const scope = askScope();   // this view, this project or the whole platform (askscope.js)
+  const local = localAnswer(q);   // a layout change for the view on screen, previewed here (viewcustom.js)
+  if (local) {
+    conv(key).push({ role: "person", text: q }, { role: "assistant", out: local, project: scope.project, persona: S.persona, asked: scope });
+    save(key);
+    if (assistantOpen()) render();
+    return true;
+  }
   const job = {
-    key, q, project: route.name === "project" ? route.pid : null,
-    view: route.name === "project" ? (S.projectViews || {}).current : route.name,
+    key, q, project: scope.project, view: scope.view,
     persona: S.persona, lens: S.lens, person: S.person.trim(),
     item: { role: "person", text: q, pending: true },
   };
@@ -545,7 +581,8 @@ async function drain() {
     let reply;
     try {
       const out = await api("POST", "/api/assistant", { question: job.q, persona: job.persona, project: job.project, view: job.view, person: job.person, lens: job.lens });
-      reply = { role: "assistant", out, project: job.project, persona: job.persona };
+      reply = { role: "assistant", out, project: (out.scope && out.scope.project) || job.project, persona: job.persona,
+        asked: { project: job.project, view: job.view } };
     } catch (e) {
       await stillHere();   // a reload aborted it: the next page says no answer came, never that the server did not answer
       reply = { role: "error", text: e.message || "The assistant did not answer." };
@@ -635,7 +672,12 @@ export function wireAssistant() {
   });
   const form = $("#as-form");
   const q = $("#as-q");
-  form.addEventListener("submit", (e) => { e.preventDefault(); if (send(q.value)) q.value = ""; q.focus(); });
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (nav.walk && nav.walk.shown() && nav.walk.send(q.value)) { q.value = ""; return; }   // an answer to the walkthrough
+    if (send(q.value)) q.value = "";
+    q.focus();
+  });
   q.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
     if (e.key === "Escape") { e.preventDefault(); closeAssistant(); }
@@ -647,3 +689,4 @@ export function wireAssistant() {
   document.addEventListener("visibilitychange", () => { if (!document.hidden) sweep(true); });   // back from another tab
 }
 export { chip };
+export { takeThere, render as rerenderAssistant };   // for the walkthroughs (walkthrough.js)

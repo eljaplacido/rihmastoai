@@ -3,6 +3,7 @@
    and lines; nothing here writes, and every decision on a question stays on its own card. */
 
 import { h, icon, chip, plural, link, PERSPECTIVE_LABEL } from "./core.js";
+import { tw } from "./words.js";
 
 const STATE = {
   given: ["good", "check-circle", "from your input"],
@@ -27,34 +28,34 @@ function column(id, title, iconName, note, items, emptyText) {
 }
 
 function factItem(f) {
-  return h("li", { class: "is-item" }, chip("neutral", null, f.label), " ", h("span", { class: "is-quote" }, f.text),
+  return h("li", { class: "is-item" }, chip("neutral", null, f.label, { "data-ud": "" }), " ", h("span", { class: "is-quote", "data-ud": "" }, f.text),
     h("span", { class: "is-where mono" }, where(f)));
 }
 function decisionItem(d) {
-  return h("li", { class: "is-item" }, chip("accent", "check", "decision " + d.id), " ", h("span", { class: "is-quote" }, d.text),
+  return h("li", { class: "is-item" }, chip("accent", "check", "decision " + d.id), " ", h("span", { class: "is-quote", "data-ud": "" }, d.text),
     h("span", { class: "is-where mono" }, where(d)));
 }
 function requirementItem(r) {
-  return h("li", { class: "is-item" }, chip("accent", "file-check", r.id), " ", h("span", { class: "is-quote" }, r.statement),
-    h("span", { class: "is-where mono" }, where(r) + " · " + plural(r.criteria, "criterion", "criteria")));
+  return h("li", { class: "is-item" }, chip("accent", "file-check", r.id), " ", h("span", { class: "is-quote", "data-ud": "" }, r.statement),
+    h("span", { class: "is-where mono" }, where(r) + " · " + plural(r.criteria, tw("criterion"), tw("criterion", 2))));
 }
 function facetChips(s, q) {
   const labels = Object.fromEntries((s.facets || []).map((f) => [f.facet, f.label]));
-  return (q.facets || []).map((f) => chip("neutral", null, labels[f] || f));
+  return (q.facets || []).map((f) => chip("neutral", null, labels[f] || f, { "data-ud": "" }));   // the intake's own facet names
 }
 function askedItem(pid, s, q) {
   const state = q.status === "answered"
     ? chip("good", "user", "answered by " + q.by)
     : chip("warning", "comment", q.blocking ? "open · blocking" : "open");
   return h("li", { class: "is-item" },
-    h("a", { href: link(pid, "questions", q.id), class: "mono" }, q.id), " ", h("span", { class: "is-quote" }, q.text), " ",
+    h("a", { href: link(pid, "questions", q.id), class: "mono" }, q.id), " ", h("span", { class: "is-quote", "data-ud": "" }, q.text), " ",
     state, facetChips(s, q), q.checklist ? chip("nm", null, "checklist") : null,
-    q.status === "answered" ? h("span", { class: "is-answer" }, "“" + q.answer + "”") : null);
+    q.status === "answered" ? h("span", { class: "is-answer", "data-ud": "" }, "“" + q.answer + "”") : null);
 }
 function assumedItem(pid, s, q) {
   return h("li", { class: "is-item" },
-    h("a", { href: link(pid, "questions", q.id), class: "mono" }, q.id), " ", h("span", { class: "is-quote" }, q.text),
-    h("span", { class: "is-answer" }, "→ " + q.answer), facetChips(s, q),
+    h("a", { href: link(pid, "questions", q.id), class: "mono" }, q.id), " ", h("span", { class: "is-quote", "data-ud": "" }, q.text),
+    h("span", { class: "is-answer", "data-ud": "" }, "→ " + q.answer), facetChips(s, q),
     h("span", { class: "is-where mono" }, (q.assumption || "") + (q.due ? " · due " + q.due : "")
       + (q.chosen_by ? " · chosen by " + q.chosen_by : "")));
 }
@@ -78,7 +79,7 @@ function notAsked(s) {
     h("span", null, "Not asked, because your input already says it"), " ",
     h("span", { class: "is-count" }, String(s.not_asked.length))),
   h("ul", { class: "plain is-list" }, s.not_asked.map((x) => h("li", { class: "is-item" },
-    h("span", { class: "is-quote" }, "“" + x.text + "”"), " ",
+    h("span", { class: "is-quote", "data-ud": "" }, "“" + x.text + "”"), " ",
     h("span", { class: "muted small" }, (x.from === "profile" ? "the profile" : PERSPECTIVE_LABEL[x.perspective] || x.perspective)
       + " · rests on " + x.because.join(", "))))));
 }

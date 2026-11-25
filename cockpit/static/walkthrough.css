@@ -1,0 +1,45 @@
+/* Walkthroughs in Ask Rihma (walkthrough.js, FR-WLK1). Colours, radii and type come from tokens.css, so
+   dark and light, the accents and the density all apply. Nothing scrolls sideways at 390 px: long paths wrap. */
+
+.wk { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+.wk-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: var(--s2) 0; border-bottom: 1px solid var(--border);
+  position: sticky; top: calc(-1 * var(--s4)); z-index: 1; background: var(--overlay); }
+.wk-head > .ic { color: var(--accent-text); flex: none; }
+.wk-title { display: flex; flex-direction: column; flex: 1; min-width: 8em; }
+.wk-head .btns { margin-top: 0; gap: 4px; }
+.wk .bub { overflow-wrap: anywhere; }
+.wk-bub p { margin: 0 0 4px; }
+.wk-bub p:last-of-type { margin-bottom: 0; }
+.wk-scan { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--s2); }
+.wk-scan .chip { max-width: 100%; white-space: normal; }
+.wk-opts .btn { flex-wrap: wrap; align-items: center; justify-content: flex-start; text-align: left; height: auto; min-height: var(--ctl); padding-top: 6px; padding-bottom: 6px; max-width: 100%; white-space: normal; }
+.wk-opts .btn .lbl { white-space: normal; }
+.wk-hint { flex-basis: 100%; color: var(--text-2); font-weight: 400; font-size: var(--fs-xs); line-height: 1.3; }
+.wk-opts .btn:disabled { opacity: 0.55; }
+.wk-links .btn, .wk-offer .btn { max-width: 100%; white-space: normal; height: auto; min-height: var(--ctl); text-align: left; }
+.wk-links .btn .lbl, .wk-offer .btn .lbl { white-space: normal; }
+.wk-offer { flex-direction: column; align-items: flex-start; }
+.wk-prop .prop-args { overflow-wrap: anywhere; }
+.wk-progress { margin-top: var(--s2); }
+.wk-run { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-2); }
+.wk-steps { margin: 6px 0 0 18px; padding: 0; }
+.wk-picker { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; }
+.wk-card { display: flex; gap: 10px; align-items: flex-start; width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color var(--t-fast); }
+.wk-card:hover, .wk-card:focus-visible { border-color: var(--accent-border); }
+.wk-card:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+.wk-card .ic { color: var(--accent-text); flex: none; margin-top: 2px; }
+.wk-card span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wk-card small { color: var(--text-2); font-size: var(--fs-sm); }
+.wk-going { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--accent-border); border-radius: var(--r-md); background: var(--accent-subtle); }
+.wk-going span { flex: 1; min-width: 8em; }
+.wk-picker.compact .wk-card { padding: 8px 10px; }
+.wk-map .scan-step { margin-bottom: var(--s3); }
+.home-walk:empty { display: none; }
+.home-walk .card { margin-bottom: var(--gap); }
+.home-walk .card-body { padding: 0 var(--pad, 16px) var(--pad, 16px); }
+.home-walk .wk-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+@media (max-width: 760px) {
+  .home-walk .wk-picker { grid-template-columns: 1fr; }
+  .wk-head .btn .lbl { display: none; }
+}

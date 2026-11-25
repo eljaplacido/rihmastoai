@@ -41,7 +41,9 @@ def gates(project) -> dict:
         pl = rec["event"]["payload"]
         rounds += 1
         passed += 1 if pl.get("verdict") == "passed" else 0
-        if pl.get("round") == 0:
+        # the task's very first round: a retry after an escalation numbers its rounds from 0 again, and that
+        # later round 0 is not a first round (kernel/track.py counts the same way)
+        if pl.get("round") == 0 and pl.get("task") not in first:
             first[pl["task"]] = pl.get("verdict") or "not measured"
     merged = {r["event"]["payload"]["task"] for r in project.ledger().of_kind("merged")}
     escalated = len(project.ledger().of_kind("escalated"))
@@ -72,7 +74,8 @@ def floor(factory) -> dict:
         for k in ("rounds", "rounds_passed", "tasks_gated", "first_round_passed", "first_round_not_measured",
                   "merged", "escalated"):
             totals[k] += g[k]
-        projects.append({"id": project.pid, "stage": stage, "runs": len(rows), "gates": g, **pass_rate(rows)})
+        projects.append({"id": project.pid, "title": project.meta.get("title"), "stage": stage, "runs": len(rows),
+                         "cells": len(project.ledger().of_kind("cell_ran")), "gates": g, **pass_rate(rows)})
     gate_total: dict[str, Any] = dict(totals)
     gate_total["first_round_rate"] = (totals["first_round_passed"] / totals["tasks_gated"]) if totals["tasks_gated"] else None
     return {"gates": gate_total, "by_phase": {k: dict(v) for k, v in sorted(by_phase.items())},

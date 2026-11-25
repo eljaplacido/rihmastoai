@@ -1,5 +1,4 @@
-"""The cockpit assistant: ask where something is, what it means, how a run is going. It can propose
-actions, but never takes one.
+"""The cockpit assistant: where something is, what it means, how a run goes. It proposes actions, never takes one.
 
 - **Navigation** comes from `cockpit/ui_map.json`, the cockpit's own map of views and controls, with
   the page each control is on. A "where is…" question is answered from the map even without a model,
@@ -28,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from kernel import assistant_status as status_q
+from kernel import journey_chat, model_usage
 from kernel.assistant_rules import (
     ACTIONS,
     CONTROL_PAGES,
@@ -309,8 +309,9 @@ def from_map(question: str, project: Any, *, hidden: Collection[str] = ()) -> di
     to act or to reshape the cockpit is told plainly that the map cannot, and where to do it oneself. What
     a module that is not enabled shows (``hidden``) is never pointed to; asked for, it is named."""
     act = asks_for_action(question)
-    if project is not None and not act and status_q.asks_status(question):   # how this project is doing
-        return status_q.status_answer(project)
+    if project is not None and not act and (status_q.asks_status(question)
+                                            or status_q.areas_answer(project, question)):
+        return status_q.status_answer(project, question)     # how this project, or a part of it, is doing
     views, controls = _by_id()
     hits, off = _map_hits(question, act, controls, hidden)
     if off is not None:
@@ -467,6 +468,7 @@ def ask(factory: Any, question: str, *, persona: str, project_id: str | None = N
     from kernel.modules import hidden_ids
 
     project, about = status_q.resolve(factory, question, project_id)   # a pasted link names the project
+    about = journey_chat.routed(factory, project, question, about, persona=persona, model=model)   # FR-JRN1, a goal
     if about is not None:
         return about
     hidden = hidden_ids(project if project is not None else factory)   # the map of what is enabled there
@@ -478,9 +480,10 @@ def ask(factory: Any, question: str, *, persona: str, project_id: str | None = N
         require_local(project, ("assistant",), where="assistant")
     snap = snapshot(factory, project=project, persona=persona)
     try:
-        raw = extract_json(_own_lane(model, secret).ask(prompt(question, snap, persona=persona, view=view, ui=ui,
-                                                       hints=find_in_map(question, hidden=hidden), hidden=hidden),
-                                                role="assistant"))
+        with model_usage.for_project(project, task="assistant", factory=factory):   # its run, as model_run
+            raw = extract_json(_own_lane(model, secret).ask(prompt(question, snap, persona=persona, view=view, ui=ui,
+                                                           hints=find_in_map(question, hidden=hidden), hidden=hidden),
+                                                    role="assistant"))
         if not isinstance(raw, dict):
             raise ModelError("the answer is not a JSON object")
     except (ModelError, OSError, RuntimeError, ValueError) as exc:   # LockHeld is a RuntimeError

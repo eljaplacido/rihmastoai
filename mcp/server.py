@@ -774,6 +774,9 @@ def _error(mid, code: int, message: str, data=None) -> dict:
     return {"jsonrpc": "2.0", "id": mid, "error": err}
 
 
+__import__("mcp.bridge_tools").bridge_tools.register(globals())   # the agent bridge's tools (FR-BRG1, FR-CHN1)
+
+
 # -- the stdio transport ----------------------------------------------------------------------------
 
 def handle_line(server: RihmaMCP, line: bytes) -> bytes | None:

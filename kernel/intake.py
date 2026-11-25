@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from kernel import input_intake as inputs
+from kernel import model_usage
 from kernel.canon import PERSPECTIVES, Canon
 from kernel.model import ModelError, extract_json
 
@@ -246,6 +247,25 @@ def conventions(project: Any, mp: dict[str, Any] | None) -> str:
     return ""
 
 
+def panel_given(project: Any, canon: Canon, mp: dict[str, Any] | None) -> str:
+    """What every perspective is told is settled already: the chosen outputs, the questions asked and settled
+    before, and the project's own conventions (the Context view reads the same, kernel/context_packs.py)."""
+    from kernel.outputs import given_for_panel
+
+    return given_for_panel(project) + settled_note(canon) + conventions(project, mp)
+
+
+def perspective_prompt(project: Any, perspective: str, text: str, kind: str, profile: dict | None, note: str,
+                       given: str) -> str:
+    """One perspective's whole prompt as intake sends it: the panel's shared part, this perspective, and what the
+    project's posture asks of it."""
+    from kernel.posture_rules import panel_note
+
+    return (_perspective_prompt(perspective, text, kind, project.meta["maturity"], profile, note, given)
+            + panel_note(project, perspective))
+
+
+@model_usage.recorded("intake")      # the analyst's runs in the project's ledger (model_run)
 def intake(project, source: str, *, model, requested_by: str | None = None,
            perspectives=PERSPECTIVES, literal: bool = False, kind: str | None = None) -> dict:
     """Run the panel on ``source`` and settle each question by the project's mode. With ``literal``
@@ -259,7 +279,7 @@ def intake(project, source: str, *, model, requested_by: str | None = None,
     if not text:
         raise ValueError("the request is empty")
     from kernel.confidential import guard
-    from kernel.posture_rules import panel_note, question_budget  # a posture's budget and emphasis, if any
+    from kernel.posture_rules import question_budget  # a posture's budget, if any
     from kernel.profiles import add_profile_question, choose, profile_of, propose_profile
 
     model = guard(project, model, ("analyst",), where="intake")     # confidential: nothing leaves for a hosted endpoint
@@ -278,14 +298,13 @@ def intake(project, source: str, *, model, requested_by: str | None = None,
                   "why": proposal["uncertain_because"]} if proposal["confidence"] == "uncertain" else {}
         choose(project, proposal["profile"], basis={"by": "rule", "keywords": proposal["basis"], **unsure})
     profile = profile_of(project)
-    from kernel.outputs import asked_again, given_for_panel  # what the chosen outputs settle is never asked again
+    from kernel.outputs import asked_again  # what the chosen outputs settle is never asked again
 
-    readings, added, given = {}, [], given_for_panel(project) + settled_note(canon) + conventions(project, mp)
+    readings, added, given = {}, [], panel_given(project, canon, mp)
     for perspective in perspectives:
         try:
-            answer = _ask_json(model, _perspective_prompt(perspective, text, kind, maturity, profile,
-                                                          inputs.panel_note(reading), given)
-                               + panel_note(project, perspective))
+            answer = _ask_json(model, perspective_prompt(project, perspective, text, kind, profile,
+                                                         inputs.panel_note(reading), given))
         except ModelError as exc:
             canon.note("intake", f"perspective {perspective} gave no usable answer: {exc}")
             readings[perspective] = "(no usable answer; not measured)"

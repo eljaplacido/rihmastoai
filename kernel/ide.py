@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from kernel import agent_context as ac
+from kernel import alignment_records
 
 BEGIN, END = "<!-- rihmasto:begin {pid} -->", "<!-- rihmasto:end {pid} -->"
 SECTION_TITLE = "Rihmasto's contract and open questions for your IDE agent"
@@ -102,7 +103,15 @@ def _quote(arg: str) -> str:
 
 
 def comes_back(project: Any) -> list[str]:
-    """How a developer's change comes back into Rihmasto from the IDE."""
+    """How a developer's change comes back into Rihmasto from the IDE, and how its `rihmasto` commands run as
+    written on this machine (not installed, or another factory home: kernel/console_term.py ``run_note``)."""
+    from kernel.console_term import run_note
+
+    note = run_note(project.factory.home)
+    return [*_comes_back(project), *([note] if note else [])]
+
+
+def _comes_back(project: Any) -> list[str]:
     pid = project.pid
     if kind_of(project) == "attached":
         return ["Commit in your repository as you always do: Rihmasto never writes to it, pushes to it or merges "
@@ -151,8 +160,9 @@ def section(project: Any) -> str:
               "- Never edit `.gnomon/`, `contract.json` or `factory/`: the kernel owns them.",
               "- A change to what is built is a decision: propose it, do not build it unasked.",
               "- Rihma over MCP (`rihma_project`, `rihma_waiting`, `rihma_evidence`, `rihma_report_change`, "
-              "`rihma_comment`) reads the factory and files proposals; it decides nothing.",
-              END.format(pid=pid)]
+              "`rihma_comment`) reads the factory and files proposals; it decides nothing."]
+    aligned = alignment_records.ide_lines(project)   # the accepted alignment and its open gaps (FR-ALN1)
+    lines += ([""] + aligned if aligned else []) + [END.format(pid=pid)]
     return "\n".join(lines) + "\n"
 
 

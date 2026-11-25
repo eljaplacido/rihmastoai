@@ -1,0 +1,66 @@
+/* The agent channel, the Agents strip, Agent activity, goal plans and the hand-off dialog (agents.js, goal.js). */
+
+.agents-strip .as-list { display: grid; gap: var(--s2); margin-top: var(--s2); }
+.agents-strip .as-list li { min-width: 0; overflow-wrap: anywhere; }
+.agents-strip .chips { margin-top: var(--s2); }
+
+.ab { display: inline-flex; align-items: center; gap: 4px; min-width: 0; flex-wrap: wrap; }
+.ab .ic { width: 14px; height: 14px; }
+.ab-sub { font-size: var(--fs-xs); }
+.ab-person .ic { color: var(--person); }
+.ab-rihma .ic { color: var(--accent-text); }
+.ab-agent .ic, .ab-automation .ic, .ab-system .ic { color: var(--agent); }
+
+.ch-panel { display: grid; gap: var(--s2); min-width: 0; }
+.ch-tools { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.ch-tools select { width: auto; flex: 0 1 220px; min-width: 0; max-width: 100%; }
+.ch-pause { display: inline-flex; gap: var(--s2); align-items: center; flex-wrap: wrap; margin-left: auto; }
+.ch-log { display: grid; gap: var(--s2); max-height: 60vh; overflow-y: auto; overflow-x: hidden; padding: var(--s2);
+  border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--sunken); min-width: 0; }
+.ch-msg { padding: 10px 12px; border-radius: var(--r-lg); border: 1px solid var(--border); background: var(--raised);
+  min-width: 0; overflow-wrap: anywhere; }
+.ch-msg.ch-person { border-color: var(--person); background: var(--person-bg); }
+.ch-msg.ch-rihma { border-color: var(--accent-border); background: var(--accent-subtle); }
+.ch-msg.ch-system { border-style: dashed; }
+.ch-msg.held { opacity: 0.75; border-style: dashed; }
+.ch-top { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.ch-at { margin-left: auto; }
+.ch-text { margin: 6px 0 0; white-space: pre-wrap; }
+.ch-refs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.ch-refs .ref { border: 1px solid var(--border); border-radius: var(--r-sm); padding: 0 4px; color: var(--text-2);
+  overflow-wrap: anywhere; max-width: 100%; }
+.ch-foot { display: flex; justify-content: flex-end; }
+.ch-drawer { margin-top: 6px; border-top: 1px solid var(--border); padding-top: 6px; }
+.ch-trace dd { overflow-wrap: anywhere; }
+.ch-compose { display: flex; gap: var(--s2); align-items: flex-end; }
+.ch-compose textarea { flex: 1; min-width: 0; resize: vertical; }
+
+.agent-aside { position: fixed; right: 12px; top: 72px; bottom: 12px; width: min(420px, calc(100vw - 24px)); z-index: 40;
+  background: var(--overlay); border: 1px solid var(--border-strong); border-radius: var(--r-xl); box-shadow: var(--e3);
+  padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); overflow: hidden; }
+.agent-aside .aa-head { display: flex; justify-content: space-between; align-items: center; }
+.agent-aside .ch-panel { flex: 1; min-height: 0; grid-template-rows: auto 1fr auto; }
+.agent-aside .ch-log { max-height: none; }
+
+.aa-list { display: grid; gap: var(--s3); }
+.aa-row { padding-bottom: var(--s2); border-bottom: 1px solid var(--border); min-width: 0; overflow-wrap: anywhere; }
+.aa-t { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; font-weight: 600; }
+
+.goal-plan { margin-top: var(--s2); display: grid; gap: var(--s2); }
+.goal-gap { border: 1px solid var(--warning-border); background: var(--warning-bg); color: var(--text);
+  border-radius: var(--r-md); padding: 8px 10px; }
+.goal-gap p { margin: 0; }
+.goal-gap ul { margin: 4px 0 0; padding-left: 18px; }
+.goal-steps { margin: 0; padding-left: 20px; display: grid; gap: var(--s2); }
+.goal-step { min-width: 0; overflow-wrap: anywhere; }
+.goal-step p { margin: 2px 0; }
+.goal-step.off b { color: var(--text-2); }
+.goal-step .btns { margin-top: 4px; }
+
+.ho, .dc { display: grid; gap: var(--s2); min-width: 0; }
+.ho-row { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.ho-row select, .ho-row input { max-width: 100%; }
+.ho-brief { max-height: 40vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-sm);
+  background: var(--sunken); border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px; margin: 0; }
+.ho-how code, .goal-step code { overflow-wrap: anywhere; }
+.dc textarea { width: 100%; box-sizing: border-box; }

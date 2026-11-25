@@ -29,7 +29,7 @@ function choice(pid, o, ui) {
   const boxes = o.targets.map((t) => h("label", { class: "check" },
     h("input", { type: "checkbox", name: "out-target", value: t.id, "data-key": "out-pick:" + t.id,
       checked: (proposedOnly ? t.proposed : t.chosen) || null }),
-    h("span", null, h("b", null, t.label), " ", h("span", { class: "muted small" }, "for " + t.audience))));
+    h("span", null, h("b", { "data-ud": "" }, t.label), " ", h("span", { class: "muted small" }, "for " + t.audience))));
   const reason = h("input", { id: "out-reason", type: "text", maxlength: "500", placeholder: "For the handover to the team", "data-key": "out-reason" });
   const save = button("Save the choice", { icon: "check", kind: "primary small", key: "out-save", "data-control": "choose_outputs" });
   const allowed = may(o.choosers);
@@ -97,10 +97,11 @@ function targetCard(pid, o, t, ui) {
   const link = (LINKS[pid] || {})[t.id];
   const last = t.last_build;
   return h("section", { class: "card out-card", "aria-labelledby": "out-h-" + t.id, "data-id": t.id },
-    h("div", { class: "hd" }, h("span", { class: "card-ic" }, icon(t.icon || "send")), h("h3", { class: "card-t", id: "out-h-" + t.id }, t.label)),
+    h("div", { class: "hd" }, h("span", { class: "card-ic" }, icon(t.icon || "send")), h("h3", { class: "card-t", id: "out-h-" + t.id, "data-ud": "" }, t.label)),
     h("p", { class: "muted small" }, "For " + t.audience),
     h("div", { class: "chips" }, state, ready),
-    h("ul", null, (t.contains || []).map((c) => h("li", null, c))),
+    // what the target holds, as the kernel lists it (kernel/outputs.py): a record of the target, not reworded here
+    h("ul", { "data-ud": "" }, (t.contains || []).map((c) => h("li", null, c))),
     last ? h("p", { class: "out-last" }, "Last built " + ago(last.at) + " by " + last.by + (last.release ? " from release " + last.release : "") + ": ",
       h("span", { class: "mono" }, last.file)) : null,
     link ? h("p", { class: "out-last" }, "Ready to download once: ", h("span", { class: "mono" }, link.file)) : null,

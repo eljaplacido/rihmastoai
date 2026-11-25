@@ -11,29 +11,43 @@ export const PAGE_ROUTES = {
   "home": "#/home", "square": "#/square", "catalogue": "#/catalogue", "projects": "#/projects",
   "inbox_all": "#/inbox", "floor": "#/floor", "jobs": "#/jobs", "settings": "#/settings",
   "shape": "#/shape", "models": "#/models", "runners": "#/runners", "automations_all": "#/automations",
+  "insights_all": "#/insights", "insights": "#/p/{pid}/insights",
   "overview": "#/p/{pid}/overview", "inbox": "#/p/{pid}/inbox", "questions": "#/p/{pid}/questions",
   "assumptions": "#/p/{pid}/assumptions", "plan": "#/p/{pid}/plan", "spec": "#/p/{pid}/spec",
   "tasks": "#/p/{pid}/tasks", "cell": "#/p/{pid}/cell", "releases": "#/p/{pid}/releases",
   "try": "#/p/{pid}/try", "changes": "#/p/{pid}/changes", "ledger": "#/p/{pid}/ledger",
   "evidence": "#/p/{pid}/evidence", "track": "#/p/{pid}/track", "outputs": "#/p/{pid}/outputs",
-  "assessment": "#/p/{pid}/assessment", "automations": "#/p/{pid}/automations"
+  "assessment": "#/p/{pid}/assessment", "automations": "#/p/{pid}/automations",
+  "console": "#/p/{pid}/console", "checks": "#/p/{pid}/checks", "health_all": "#/health", "align": "#/p/{pid}/align",
+  "review_all": "#/review", "review": "#/p/{pid}/review", "agents": "#/p/{pid}/agents", "agents_all": "#/agents",
+  "aitools": "#/p/{pid}/aitools",
+  "context": "#/p/{pid}/context", "data_all": "#/data",
+  "graph_all": "#/graph", "graph": "#/p/{pid}/graph",
+  "destinations": "#/p/{pid}/destinations"
 };
 export const TOP_PAGES = Object.keys(PAGE_ROUTES).filter((k) => !PAGE_ROUTES[k].includes("{pid}"));
 export const PROJECT_VIEWS = Object.keys(PAGE_ROUTES).filter((k) => PAGE_ROUTES[k].includes("{pid}"));
 
 export const PAGES = {
   home: { label: "Home", icon: "home" },
-  square: { label: "Square", icon: "square" },
-  catalogue: { label: "Catalogue", icon: "catalogue" },
+  // a page whose own name is a metaphor (Square, Floor) is called by what it shows to a business reader (words.js)
+  square: { get label() { return pageLabel("square", "Square"); }, icon: "square" },
+  catalogue: { get label() { return pageLabel("catalogue", "Catalogue"); }, icon: "catalogue" },
   projects: { label: "Projects", icon: "folder" },
   inbox_all: { label: "Inbox", icon: "inbox" },
-  floor: { label: "Insight", icon: "insight" },
-  jobs: { label: "Jobs", icon: "terminal" },
+  floor: { get label() { return pageLabel("floor", "Floor"); }, icon: "factory" },
+  insights_all: { label: "Insights", icon: "insight" },
+  jobs: { get label() { return pageLabel("jobs", "Jobs"); }, icon: "terminal" },
   settings: { label: "Settings", icon: "settings" },
-  shape: { label: "Shape it in chat", icon: "message-square" },
+  shape: { label: "Describe a new idea in chat", icon: "message-square" },
   models: { label: "Models", icon: "cpu" },
   runners: { label: "Runners", icon: "layers" },
   automations_all: { label: "Automations", icon: "clock" },
+  health_all: { label: "Health", icon: "pulse" },      // checks across every project (health.js, FR-CHK1)
+  review_all: { label: "Review", icon: "eye" },   // since you last looked (review.js)
+  agents_all: { label: "Agent activity", icon: "bot" },   // every project's agent channel (agents.js, FR-CHN1)
+  data_all: { label: "Data and context", icon: "server" },   // stores, ledgers, Context health (context.js, FR-CTX1)
+  graph_all: { label: "Knowledge graph", icon: "graph" },  // every project's records as linked (graph.js, FR-GRV1)
 };
 export const VIEWS = {
   overview: { label: "Overview", icon: "home" },
@@ -53,16 +67,28 @@ export const VIEWS = {
   outputs: { label: "Outputs", icon: "send" },
   assessment: { label: "Assessment", icon: "gauge" },
   automations: { label: "Automations", icon: "clock" },
+  console: { label: "Console", icon: "terminal" },     // run commands in the workspace (console.js, FR-CON1)
+  checks: { label: "Health", icon: "pulse" },          // the project's checks (health.js, FR-CHK1)
+  align: { label: "Alignment", icon: "merge" },
+  insights: { label: "Insights", icon: "insight" },
+  review: { label: "Review", icon: "eye" },
+  agents: { label: "Channel", icon: "bot" },     // agents and people on this project (agents.js, FR-CHN1)
+  aitools: { label: "AI tools", icon: "sparkles" },   // the repository's AI tools, in the Agents capsule (aitools.js)
+  context: { label: "Context", icon: "layers" },   // what Rihmasto knows and what each agent is given (FR-CTX1)
+  graph: { label: "Knowledge graph", icon: "graph" },   // the project's records as linked (graph.js, FR-GRV1)
+  destinations: { label: "Destinations", icon: "globe" },   // where it goes; the "Run" capsule's (destinations.js, FR-DST1)
 };
 export const FACTORY_VIEWS = ["overview", "inbox", "ledger"];
 export const STAGE_ICON = { 1: "briefcase", 2: "lightbulb", 3: "code", 4: "file-check", 5: "hammer", 6: "users", 7: "server" };
 export const STAGE_VIEW = { 1: "questions", 2: "questions", 3: "spec", 4: "spec", 5: "tasks", 6: "try", 7: "releases" };
-export const KIND_LABEL = {
+const KIND_TECH = {
   question: "Question", approval: "Approval", validation: "Validation", deploy_gate: "Deploy gate",
   incident: "Incident", change: "Change", escalation: "Escalation", road: "Paved road", trust: "Trust",
   holdout_ruling: "Holdout ruling", concept: "Concept", update: "Update", go_ahead: "Go-ahead",
   runner: "Cell runner",
 };
+// A card kind in the reader's words (words.js sets wordHooks.kind): "Stuck task" to a business owner, "Escalation" to a developer.
+export const KIND_LABEL = new Proxy(KIND_TECH, { get: (t, k) => (wordHooks.kind && wordHooks.kind(k)) || t[k] });
 export const KIND_ICON = {
   question: "comment", approval: "check-circle", validation: "users", deploy_gate: "server", incident: "alert",
   change: "refresh", escalation: "flag", road: "arrow-right", trust: "key", holdout_ruling: "shield",
@@ -72,7 +98,7 @@ export const VERDICT_LABEL = {
   answer: "Answer", assume: "Let Rihma assume", approve: "Approve", reject: "Reject", accept: "Accept",
   fix: "Fix", change: "Change", keep: "Keep", refuse: "Refuse", acknowledge: "Acknowledge",
   rollback: "Roll back", open_defect: "Open a defect", defer: "Defer", retry: "Retry",
-  accept_as_is: "Accept as is", stop: "Stop", configured: "Configured", declined: "Declined", granted: "Granted",
+  get accept_as_is() { return (wordHooks.verdict && wordHooks.verdict("accept_as_is")) || "Accept as is"; }, stop: "Stop", configured: "Configured", declined: "Declined", granted: "Granted",
   validate: "Validate", park: "Park", trial: "Start a trial", decline: "Decline", product_defect: "Product defect",
   scenario_defect: "Scenario defect", go: "Go: build it", skip: "Skip: build without my look",
 };
@@ -87,7 +113,8 @@ export const PERSPECTIVE_LABEL = {
 // A state always carries an icon and a word, never colour alone.
 export const NOW_STATE = {
   working: { tone: "info", icon: "refresh", word: "Working" },
-  waiting_on_you: { tone: "warning", icon: "user", word: "Waiting on you" },
+  // the project waits on a person, not always the reader: the Inbox says which cards are theirs
+  waiting_on_you: { tone: "warning", icon: "user", word: "Waiting on a person" },
   done: { tone: "good", icon: "check-circle", word: "Done" },
   failed: { tone: "critical", icon: "x-circle", word: "Failed" },
   paused: { tone: "neutral", icon: "pause", word: "Paused" },
@@ -319,6 +346,13 @@ export function profileOf(id) {
   return ((S.meta && S.meta.profiles) || []).find((p) => p.id === id) || { id, label: id || "Web app or service", icon: "globe" };
 }
 export function signed() { return { person: S.person.trim(), persona: S.persona }; }
+// A command the cockpit gives, with the person's own name in place of its placeholder, ready to paste.
+export function withName(text) {
+  const who = S.person.trim();
+  if (!who || typeof text !== "string") return text;
+  const q = JSON.stringify(who);
+  return text.split('"<your name>"').join(q).split("<your name>").join(q).replace(/--person \.\.\.(?=\s|$)/g, "--person " + q);
+}
 export function needPerson() {
   if (S.person.trim()) return true;
   say("Set your name first: every decision is signed with a person and a persona.", "warning");
@@ -330,10 +364,14 @@ export function personBadge(name, persona) {
     avatar(name), h("span", { class: "vh" }, "person: "), h("span", { class: "who-n" }, name || "?"),
     persona ? h("span", { class: "who-r" }, personaLabel(persona)) : null);
 }
+// Words per persona set from words.js (which imports this module): the kernel is "an automatic rule" to a business reader.
+export const wordHooks = { kernel: () => "the kernel" };
+function pageLabel(id, fallback) { return (wordHooks.page && wordHooks.page(id)) || fallback; }
 export function agentBadge(name, model) {
-  const kernel = name === "the kernel";
-  return h("span", { class: "who agent", tip: kernel ? "An agent: the kernel's deterministic rule" : "An agent: a model in a role" },
-    avatar(name, kernel ? "kernel" : "agent"), h("span", { class: "vh" }, "agent: "), h("span", { class: "who-n" }, name),
+  const kernel = name === "the kernel" || name === "kernel";
+  // the legend says a rule is never a model: a kernel row is labelled a rule, not an agent
+  return h("span", { class: "who agent", tip: kernel ? "An automatic rule (the kernel): it decides by fixed rules, never by a model" : "An agent: a model in a role" },
+    avatar(name, kernel ? "kernel" : "agent"), h("span", { class: "vh" }, kernel ? "rule: " : "agent: "), h("span", { class: "who-n", "data-ud": kernel ? null : "" }, kernel ? wordHooks.kernel() : name),   // an agent's role as recorded
     model ? h("span", { class: "who-r mono" }, model) : null);
 }
 export function actorBadge(a) {
@@ -681,11 +719,15 @@ export function segmented(name, options, value, onChange, opts) {
   });
   return wrapEl;
 }
+// The pages that exist per project too: outside a project they are about every project, and their title says so.
+export const ALL_SCOPE_PAGES = ["inbox_all", "insights_all", "automations_all", "health_all", "review_all", "agents_all"];
 export function pageHead(title, sub, opts) {
   const o = opts || {};
+  const all = !!S.route && ALL_SCOPE_PAGES.includes(S.route.name) && !o.noScope;
   return h("div", { class: "page-head" },
     h("div", { class: "ph-main" }, o.icon ? h("span", { class: "ph-ic" }, icon(o.icon)) : null,
-      h("div", null, h("h1", { id: "view-title", tabindex: "-1" }, title), sub ? h("p", { class: "lede" }, sub) : null),
+      h("div", null, h("h1", { id: "view-title", tabindex: "-1" }, title, all ? h("span", { class: "h-scope" }, " · all projects") : null),
+        sub ? h("p", { class: "lede" }, sub) : null),
       o.info ? infoButton(title, o.info) : null),
     o.actions ? h("div", { class: "ph-actions" }, o.actions) : null);
 }

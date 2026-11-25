@@ -500,7 +500,8 @@ class _Delivery:
         pkg = road.package(self.project, env=env, slot=slot, release=rel["release"], revision=rel["revision"],
                            artifact=rel["artifacts"][road.name], contract_revision=rel["contract_revision"])
         integration_bind.wire(pkg, rel, env)  # its approved integrations: settings and secret references
-        name = f"releases/{rel['release']}/package-{env}-{slot}.json"
+        road.render(self.project, pkg)        # so a rendered YAML holds them too (FR-GCP1)
+        name =f"releases/{rel['release']}/package-{env}-{slot}.json"
         write_json(self.project.dir / name, pkg)
         rel["packages"][f"{env}:{slot}"] = name
         return road, pkg
@@ -510,6 +511,9 @@ class _Delivery:
     def run_step(self, step: str) -> dict:
         name, _, env = step.partition(":")
         try:
+            own = self.road_step(name, env)   # a road's own step: a scheduled job's (FR-GCP1)
+            if own is not None:
+                return own
             if name == "build_image":
                 return self.build()
             if name in ("deploy", "deploy_candidate"):
@@ -532,6 +536,11 @@ class _Delivery:
         except Exception as exc:
             return {"outcome": "failed", "native": {"error": f"{type(exc).__name__}: {exc}",
                                                     "traceback": traceback.format_exc()[-2000:]}}
+
+    def road_step(self, name: str, env: str) -> dict | None:
+        """The outcome of a step the environment's road runs itself, or None (kernel/roads_gcp_ops.py)."""
+        hook = getattr(self.road(env), "delivery_step", None) if env else None
+        return hook(self, name, env) if hook is not None else None
 
     def build(self) -> dict:
         rel = self.rel
@@ -674,7 +683,7 @@ class _Delivery:
         rel = self.rel
         n, env = rel["release"], CARD_ENV[step]
         state = slot_state(self.project, env, "current")
-        url = state["base_url"] if state else None
+        url = (state["base_url"] or state.get("console")) if state else None   # a scheduled job: its console page
         ho = rel.get("holdouts") or {}
         holdouts = {k: ho.get(k) for k in ("environment", "slot", "verdict", "scenarios", "passed", "failed")}
         payload = {"release": n, "revision": rel["revision"], "environment": env, "url": url, "holdouts": holdouts,

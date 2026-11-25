@@ -53,6 +53,16 @@ class ModuleSetTest(FactoryTestCase):
             self.assertEqual(modules.closure(preset["modules"]), [m for m in modules.MODULES if m in preset["modules"]])
             self.assertTrue(preset["brings"] and preset["gets"])
 
+    def test_FR_MOD1_AC_1_the_knowledge_graph_and_the_data_and_context_pages_are_core_by_name(self):
+        """Every page of the navigation is either named by a module or core by name: the Knowledge graph and the
+        Data and context page (and each project's Graph and Context tabs) are core, so the smallest set shows
+        them, and the browser walk (tests/test_ui_modules.py) expects them there."""
+        for kind, name in (("pages", "graph_all"), ("pages", "data_all"), ("views", "graph"), ("views", "context")):
+            self.assertIn(name, modules.CORE[kind], name)
+            self.assertEqual(modules.owners(kind, name), [], name)
+        modules.set_modules(self.factory, person="Aino", persona="business_owner", preset="spec_only")
+        self.assertFalse({"graph_all", "data_all", "graph", "context"} & modules.hidden_ids(self.factory))
+
     def test_FR_MOD1_AC_2_a_factory_where_nobody_chose_is_the_full_factory_and_reading_it_creates_nothing(self):
         got = modules.factory_set(self.factory)
         self.assertEqual((got["preset"], got["modules"], got["chosen"]), ("full", list(modules.MODULES), False))

@@ -143,16 +143,19 @@ class UiModulesTest(unittest.TestCase):
         b.wait("!document.querySelector('#modal').open && !document.querySelector('#sb-nav a[href=\"#/square\"]')",
                "the dialog closed and the set in force")
         self.assertEqual(b.eval("document.querySelector('#pc-name').textContent"), PERSON)   # the name shows at once
-        self.assertEqual(self.nav_pages(), ["#/home", "#/projects", "#/inbox", "#/jobs", "#/automations"])
+        self.assertEqual(self.nav_pages(),   # Review first (core), then the rest, each once; the graph and data: core
+                         ["#/review", "#/home", "#/projects", "#/inbox", "#/jobs", "#/automations", "#/health",
+                          "#/agents", "#/data", "#/graph"])
         rec = self.records()[-1]
         self.assertEqual((rec["preset"], rec["by"], rec["persona"], rec["reason"]),
                          ("spec_only", PERSON, "business_owner", "the first-run choice"))
         self.step("settings")
         b.click('#sb-foot a[href="#/settings"]', what="Settings")
         b.wait("!!document.querySelector('.mod-card .mod-list')", "the modules card")
-        self.assertIn("This factory uses: Spec only", b.eval("document.querySelector('.mod-now').textContent"))
+        # a business owner reads each module in one plain line (modules.js MODULE_PLAIN); a developer, the kernel's own
+        self.assertIn("In use here: Spec only", b.eval("document.querySelector('.mod-now').textContent"))
         off = b.eval("document.querySelector('label[for=\"mod-m-square\"]').closest('.mod-row').textContent")
-        self.assertIn("Off. Turning it on adds needs arriving as signals", off)
+        self.assertIn("Off. Incoming requests: requests from chats", off)
         b.eval("document.querySelector('[data-key=\"mod:m:square\"]').focus(); true")
         self.press(" ", 32, " ")
         b.wait("document.querySelector('[data-key=\"mod:m:square\"]').checked"
@@ -186,7 +189,9 @@ class UiModulesTest(unittest.TestCase):
         self.step("home")
         self.sign_in()
         b.wait("!!document.querySelector('#grid .widget')", "the dashboard")
-        self.assertEqual(self.nav_pages(), ["#/home", "#/projects", "#/inbox", "#/jobs", "#/automations"])
+        self.assertEqual(self.nav_pages(),   # Review first (core), then the rest, each once; the graph and data: core
+                         ["#/review", "#/home", "#/projects", "#/inbox", "#/jobs", "#/automations", "#/health",
+                          "#/agents", "#/data", "#/graph"])
         self.assertFalse(b.eval("!!document.querySelector('#bottombar a[href=\"#/square\"]')"))
         types = b.eval("[...document.querySelectorAll('#grid .widget')].map((w) => w.dataset.type)")
         self.assertFalse({"square", "catalogue"} & set(types))                    # the business lens's two of them
@@ -212,17 +217,19 @@ class UiModulesTest(unittest.TestCase):
         self.step("a page that is off")
         b.eval("location.hash = '#/square'; true")
         said = b.wait("(document.querySelector('.mod-off') || {}).textContent", "the off page")
-        self.assertIn("Square is part of Delivery square and signals, which is not enabled here", said)
+        # the Square, by what it shows to a business owner (words.js PAGE_WORDS)
+        self.assertIn("Flow of work is part of Delivery square and signals, which is not enabled here", said)
         self.step("project views")
         b.eval(f"location.hash = '#/p/{p.pid}/releases'; true")                 # an address of a view that is off
-        b.wait(f"location.hash.startsWith('#/p/{p.pid}') && !!document.querySelector('.tabs')", "the project")
-        tabs = b.eval("[...document.querySelectorAll('.tabs a')].map((a) => a.getAttribute('href').split('/').pop())")
-        self.assertFalse({"tasks", "cell", "releases", "try", "changes", "evidence"} & set(tabs))
+        b.wait(f"location.hash.startsWith('#/p/{p.pid}') && !!document.querySelector('.caps')", "the project")
+        # FR-UXO1: every view is in a capsule (no Show all views): open each capsule and gather its views
+        tabs = set()
+        for cap in b.eval("[...document.querySelectorAll('.caps-top .cap-t:not(.pin)')].map((a) => a.dataset.capsule)"):
+            b.click(f'.cap-t[data-capsule="{cap}"]', what=f"the {cap} capsule")
+            b.wait(f"(document.querySelector('.cap-t.on') || {{dataset: {{}}}}).dataset.capsule === '{cap}'", cap)
+            tabs |= set(b.eval("[...document.querySelectorAll('.caps-sub a')].map((a) => a.dataset.view)"))
+        self.assertFalse({"tasks", "cell", "releases", "try", "changes", "evidence"} & tabs)
         self.assertIn("questions", tabs)
-        b.click(".tabs-all", what="Show all views")
-        b.wait("document.querySelector('.tabs-all input').checked", "all views")
-        tabs = b.eval("[...document.querySelectorAll('.tabs a')].map((a) => a.getAttribute('href').split('/').pop())")
-        self.assertFalse({"tasks", "cell", "releases", "try", "changes", "evidence"} & set(tabs))
         self.step("the assistant")
         b.click('#sb-nav a[href="#/home"]', what="Home")
         b.click("#assistant-fab", what="Ask Rihma")

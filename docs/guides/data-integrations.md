@@ -77,6 +77,7 @@ Never in the repository, the spec, the ledger, a package or a Compose file.
 | sqlite | database | sql | SQLite file | none needed |
 | snowflake, bigquery, databricks | warehouse | http, sql, mcp | HTTP server; SQLite file via sql | `connectors/snowflake` (others planned) |
 | s3, azure_blob, gcs | cloud storage | http | an object store in S3's path style | `connectors/s3` (Azure Blob, GCS planned) |
+| gdrive | a Google Drive folder | http | the Drive v3 API on loopback, with the metadata server's token | none; the product imports `app/gdrive.py` ([gcp.md](gcp.md)) |
 | openapi (sap, dynamics, netsuite, generic) | ERP or business API | http | HTTP server answering from the product's fixture | `connectors/openapi` |
 | mcp | MCP server | mcp | MCP over HTTP from the product's fixture | any connector |
 | rest | REST API | http | HTTP server answering from the product's fixture | none |

@@ -2,13 +2,11 @@
 
 The owner (2026-11-24): "we should be able to set and run automations and hooks per project, even across
 them." An automation is kept in the factory home (``<home>/automations/automations.json``) and changed only
-through this module, signed by a named person and persona; every change is in the factory's ledger
-(``automation_set``, ``automation_paused``, ``automation_resumed``, ``automation_removed``):
+through this module, signed and in the factory's ledger (``automation_set``, ``_paused``, ``_resumed``, ``_removed``):
 
 - **trigger**: a schedule (``every`` 5m to 7d, ``daily`` at HH:MM, ``weekly`` on a day at HH:MM, in UTC), a
   ledger event in the scoped projects (any record kind, the life-cycle transitions of kernel/automations_events.py,
-  ``card_waiting``), an inbound webhook source ringing (kernel/hooks.py), or new commits on a branch of an
-  attached or adopted repository (found by polling);
+  ``card_waiting``), an inbound webhook, or new commits on an attached or adopted repository (by polling);
 - **guard**, optional and cheap: a count of events within some hours, the branch, a field of the event, or
   the project's open cards. A guard that does not hold costs one read and records nothing;
 - **action**, from an allow-list (``ACTIONS``), each carried out by the kernel's own path with the owner's
@@ -17,7 +15,6 @@ through this module, signed by a named person and persona; every change is in th
 - **scope**: one project, a list, every project with a tag, a profile or a source kind, or the factory;
 - **limits**: runs per hour, a circuit breaker after failures in a row (it pauses the automation and says
   why on Home and in What's next), quiet hours, and a dry run that records what it would have done.
-
 Running them is kernel/automations_run.py; the command line kernel/automations_cli.py; the cockpit
 cockpit/automation_routes.py. docs/guides/automations.md has the templates and the scheduler lines.
 """
@@ -41,11 +38,11 @@ SCOPES = ("project", "projects", "tag", "profile", "source", "factory")
 GUARDS = ("count", "branch", "field", "open_cards")
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 ALL = tuple(PERSONAS)
+RUNS = ("business_owner", "product_owner", "developer", "it", "operations")   # who may move or watch the work
 # The allow-list. Each action: what it does, the personas whose rights it may run with, and whether it acts on
 # one project at a time (a factory-wide action runs once per firing).
 ACTIONS: dict[str, dict[str, Any]] = {
-    "advance": {"label": "advance the project", "personas": ("business_owner", "product_owner", "developer",
-                                                              "operations", "it"), "per_project": True},
+    "advance": {"label": "advance the project", "personas": RUNS, "per_project": True},
     "gate": {"label": "run the gate on the attached repository",
              "personas": ("developer", "it", "operations", "product_owner"), "per_project": True},
     "rescan": {"label": "re-scan a folder and add what is new as material",
@@ -58,8 +55,9 @@ ACTIONS: dict[str, dict[str, Any]] = {
     "command": {"label": "run the project's own tests in a sandbox", "personas": ("developer", "it", "operations"),
                 "per_project": True},
     "ask": {"label": "ask a model and post the answer as a comment", "personas": ALL, "per_project": True},
-    "probe": {"label": "run the probe check where the release runs", "per_project": True,
-              "personas": ("business_owner", "product_owner", "developer", "it", "operations")},
+    "probe": {"label": "run the probe check where the release runs", "personas": RUNS, "per_project": True},
+    "watch": {"label": "watch an adopted project: new commits to Review, activity by area (kernel/adopt_watch.py)",
+              "personas": RUNS, "per_project": True},
 }
 # What an automation never does, whatever it is called: a person's acts, the go-ahead on a spec and a runner too.
 NEVER = ("decide", "approve", "answer", "assume", "accept", "reject", "deploy", "merge", "grant", "trust",
@@ -262,7 +260,8 @@ _ACTION_FIELDS: dict[str, Any] = {
     "rescan": lambda factory, a: {"folder": _text(a.get("folder"), "folder")},
     "notify": lambda factory, a: {"subscription": _subscription(factory, a.get("subscription")),
                                   "text": _text(a.get("text"), "text", required=False)},
-    "change": _change_fields, "signal": _words, "ask": _words, "output": _targets, "probe": probe_fields}
+    "change": _change_fields, "signal": _words, "ask": _words, "output": _targets, "probe": probe_fields,
+    "watch": lambda factory, a: {"what": "areas" if a.get("what") == "areas" else "commits"}}
 
 
 def _project_scope(factory: Factory, s: dict[str, Any]) -> dict[str, Any]:
@@ -495,3 +494,5 @@ def set_tags(project: Project, tags: list[str], *, person: str, persona: str) ->
     project.log("project_tagged", {"tags": clean, "before": before, "person": person, "persona": persona})
     return clean
 
+
+import kernel.automations_more  # noqa: E402,F401  (last: run_check and align_scan join the allow-list)

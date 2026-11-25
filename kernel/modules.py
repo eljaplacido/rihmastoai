@@ -4,7 +4,8 @@ Rihmasto is a catalogue of modules with their dependencies. A factory chooses th
 project may override it; the choice is a named person's, recorded in the ledger, and editable later:
 
 - **core**, always on: projects, the Inbox and decisions, the ledger, personas and access, the autonomy
-  cap, the knowledge graph, settings and jobs, and attaching a repository of your own;
+  cap, the knowledge graph, the data and context of every agent, settings and jobs, and attaching a
+  repository of your own;
 - **the modules**, below, each with what it adds, what it needs, and what you get from it;
 - **presets** for the usual starting points, each saying what you bring and what you get.
 
@@ -57,8 +58,12 @@ def _module(label: str, adds: str, *, depends: tuple = (), outputs: tuple = (), 
 # What is always on. A command, page, view, widget or control no module names is core too.
 CORE = _module(
     "Core", "projects, the Inbox where people decide, the hash-chained ledger, personas and access, the autonomy "
-    "cap, the knowledge graph, settings and jobs, and attaching a repository of your own",
-    pages=("home", "projects", "inbox_all", "jobs", "settings"), views=("overview", "inbox", "ledger"),
+    "cap, the knowledge graph, the data and context of every agent, settings and jobs, and attaching a "
+    "repository of your own",
+    # The Knowledge graph (FR-GRV1) and the Data and context page (FR-CTX1) read the records every set keeps,
+    # and a clean-up of the factory home is never refused: they are core, in every set's navigation.
+    pages=("home", "projects", "inbox_all", "jobs", "settings", "graph_all", "data_all"),
+    views=("overview", "inbox", "ledger", "graph", "context"),
     widgets=("kpi_strip", "pipeline", "decisions", "activity", "health", "autonomy", "spend"),
     controls=("persona", "lens", "pause", "resume", "decide", "comment", "palette", "customize", "theme", "density",
               "autonomy", "modules", "assistant"),
@@ -87,7 +92,8 @@ MODULES: dict[str, dict[str, Any]] = {
         "criterion to a test, checks fail-first, asks an independent verifier; escalations and workspaces; the "
         "same gate for your own repository, and holdouts against your running service", depends=("plan",),
         outputs=("gate verdicts per change, recorded", "merged code on the product's main"),
-        pages=("floor",), views=("tasks", "cell"), widgets=("live", "timeline", "gate_trend", "models"),
+        pages=("floor", "insights_all"), views=("tasks", "cell", "insights"),     # Insights: FR-INS1
+        widgets=("live", "timeline", "gate_trend", "models", "insight"),
         commands=("build", "resurface", "workspace open", "workspace submit", "workspace list", "repo gate",
                   "repo holdouts")),
     "delivery": _module(
@@ -140,8 +146,8 @@ MODULES: dict[str, dict[str, Any]] = {
         commands=("embed create", "relay subscribe", "relay cockpit", "relay run", "relay log", "hooks add",
                   "connector validate", "connector enable", "connector check"), routes=("post_embed",)),
     "assistant": _module(
-        "Assistant", "Ask Rihma in the cockpit answers from a model through Gnomon: how a run goes, what waits, "
-        "proposals you confirm; without it the assistant still points the way from the cockpit's map",
+        "Assistant", "Ask Rihma: answers about your projects from an AI model through Gnomon (how a run goes, what "
+        "waits, proposals you confirm); without it, Ask Rihma only shows the way around the cockpit",
         outputs=("answers and proposals you confirm",)),
 }
 

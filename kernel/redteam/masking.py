@@ -56,6 +56,7 @@ _ENV_NAME = re.compile(r"[A-Z][A-Z0-9_]*\Z")
 _IDENTIFIER = re.compile(r"[a-z][a-z0-9]*(?:[_.-][a-z0-9]+)*\Z")
 _HEX_TOKEN = re.compile(r"[0-9a-f]{16,}\Z")
 _LONG_TOKEN = re.compile(r"[A-Za-z0-9+/=_-]{20,}")
+_PATH_LIKE = re.compile(r"[a-z0-9._-]{0,40}(?:/[a-z0-9._-]{0,40})+")
 MAX_EVIDENCE = 160
 
 
@@ -126,7 +127,10 @@ def assigned_secrets(line: str, *, config: bool = False) -> list[tuple[int, int]
 
 
 def _random_token(value: str) -> bool:
-    """A long token with letters and digits that looks random; `SimpleHTTPRequestHandler` is a name."""
+    """A long token with letters and digits that looks random; `SimpleHTTPRequestHandler` is a name, and
+    `output/build_notes/2026_10/lane_gates` a path (lower-case segments, none random on its own)."""
+    if _PATH_LIKE.fullmatch(value) and not any(len(s) >= 20 and secret_like(s) for s in value.split("/")):
+        return False
     return any(c.isdigit() for c in value) and any(c.isalpha() for c in value) and secret_like(value)
 
 

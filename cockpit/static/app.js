@@ -21,6 +21,18 @@ import { renderShape } from "./shape.js";
 import { renderModels } from "./models.js";
 import { renderRunners } from "./runners.js";
 import { renderAutomations } from "./automations.js";
+import { resumeWalk } from "./walkthrough.js";
+import { resumeGuide } from "./journey.js";   // guided journeys (FR-JRN1)
+import { renderHealth } from "./health.js";
+import { renderInsights } from "./insights.js";
+import { renderGraphPage } from "./graph.js";   // the Knowledge graph (FR-GRV1)
+import { renderReview } from "./review.js";
+import { renderAgentActivity } from "./agents.js";
+import { drawScope, projectSidebar, scopedLabel, ALL_SCOPE } from "./scope.js";
+import { toggleViewCustomize, endViewCustomize, applyPageLayout } from "./viewcustom.js";
+import { pick } from "./words.js";
+import { ensureViewLayouts } from "./layoutstore.js";
+import { renderData } from "./context.js";
 
 applyTheme(Object.assign({}, THEME_DEFAULT, localJSON("gf.theme", {})));
 
@@ -46,7 +58,7 @@ function showSignIn(message) {
     message ? h("p", { class: "toast-inline warning" }, icon("alert"), message) : null,
     h("p", null, "Open the one-use link that ", h("code", null, "python -m cockpit.server"),
       " printed when it started. It signs this tab in once; the session lives in this tab only."),
-    h("p", { class: "muted small" }, "For a second tab, use “Link for another tab” in the person menu of a signed-in tab, "
+    h("p", { class: "muted small" }, "For a second tab, use “Open in another browser tab” in the person menu of a signed-in tab, "
       + "or restart the server for a new link. From another machine, open an SSH tunnel to the same port first: ",
     h("code", null, "ssh -L 8787:127.0.0.1:8787 <host>"), "."))));
 }
@@ -95,8 +107,11 @@ function offeredPersonas() {
 
 function drawAccess() {
   const a = (S.meta && S.meta.access) || {};
-  $("#access-note-text").textContent = a.note || "";
-  $("#access-note").dataset.tip = a.note || "";
+  // a single operator's note in the reader's words: who uses the cockpit and where the role is chosen
+  const said = !enforced() && a.note ? pick("Only you use this cockpit", a.note) : a.note || "";
+  $("#access-note-text").textContent = said;
+  $("#access-note").dataset.tip = !enforced() && a.note
+    ? pick("Only you use this cockpit: pick your role in the menu on the right. Each decision is signed with the name and role you pick.", a.note) : a.note || "";
   $("#access-pop").textContent = a.detail || a.note || "";   // enforced: the sign-in, its end, where untrusted code runs
   for (const id of ["#access-note", "#access-pop"]) $(id).hidden = !a.note;
   $("#access-note").classList.toggle("enforced", enforced());
@@ -154,7 +169,7 @@ function drawPersonaList() {
       const r = h("input", { type: "radio", name: "pp-persona", id, value: p.id, checked: p.id === S.persona });
       r.addEventListener("change", () => setPersona(p.id));
       return h("div", { class: "pp-opt" }, r, h("label", { for: id }, h("b", null, p.label),
-        h("small", null, (((S.meta && S.meta.lenses) || {})[p.lens] || {}).label + " lens")));
+        h("small", null, "sees the " + String((((S.meta && S.meta.lenses) || {})[p.lens] || {}).label || "").toLowerCase() + " view")));
     }));
   } else {
     radios.forEach((r) => { r.checked = r.value === S.persona; });
@@ -170,6 +185,7 @@ function setPersona(id) {
   drawPersonChip();
   drawPersonaList();
   drawLens();
+  drawAccess();                         // the access note is said in the new role's words
   say("");
   route();
 }
@@ -238,7 +254,9 @@ function drawLens() {
   const keys = Object.keys(lenses);
   if ($$(".lens-b", box).map((b) => b.dataset.lens).join(" ") !== keys.join(" ")) {
     fill(box, keys.map((k) => {
-      const b = h("button", { type: "button", role: "radio", class: "lens-b", "data-lens": k, tip: lenses[k].question },
+      // what a lens changes, on hover and focus: the view of Home and the order of a project's views
+      const b = h("button", { type: "button", role: "radio", class: "lens-b", "data-lens": k,
+        tip: "View as " + lenses[k].label + ": " + lenses[k].question + " Home and each project show what this view needs first." },
         icon(LENS_ICON[k] || "eye"), h("span", { class: "lbl" }, lenses[k].label));
       b.addEventListener("click", () => chooseLens(k));
       return b;
@@ -273,9 +291,21 @@ function wireLens() {
 
 // -- the sidebar, the top bar and the bottom bar ----------------------------------------------------
 
-const NAV_ORDER = ["home", "square", "catalogue", "projects", "inbox_all", "floor", "jobs", "automations_all"];
+// Review first (since you last looked, FR-REV1); Health is the checks, Insights the dimensions: each once.
+const NAV_ORDER = ["review_all", "home", "square", "catalogue", "projects", "inbox_all", "insights_all", "floor",
+  "jobs", "automations_all"];
+NAV_ORDER.push("health_all");                       // Health across every project (health.js, FR-CHK1)
 const PAGE_ROUTE = { home: "#/home", square: "#/square", catalogue: "#/catalogue", projects: "#/projects",
-  inbox_all: "#/inbox", floor: "#/floor", jobs: "#/jobs", settings: "#/settings", automations_all: "#/automations" };
+  inbox_all: "#/inbox", insights_all: "#/insights", floor: "#/floor", jobs: "#/jobs", settings: "#/settings",
+  automations_all: "#/automations", review_all: "#/review" };
+PAGE_ROUTE.health_all = "#/health";
+NAV_ORDER.push("agents_all");                       // Agent activity across every project (agents.js, FR-CHN1)
+PAGE_ROUTE.agents_all = "#/agents";
+NAV_ORDER.push("data_all");                         // Data and context, factory-wide (context.js, FR-CTX1)
+PAGE_ROUTE.data_all = "#/data";
+NAV_ORDER.push("graph_all");                        // the Knowledge graph across projects (graph.js, FR-GRV1)
+PAGE_ROUTE.graph_all = "#/graph";
+const IN_PROJECT_PAGES = NAV_ORDER;   // the factory's pages stay reachable from inside a project, under "Factory"
 
 /* A page in the sidebar. Its label is hidden in the icon rail, where the tooltip carries it and what its
    badge counts. A note the badge alone shows (the cells running now) is a tooltip at every width, on
@@ -283,8 +313,10 @@ const PAGE_ROUTE = { home: "#/home", square: "#/square", catalogue: "#/catalogue
 function navItem(id, extra, note, everyWidth) {
   const pg = PAGES[id];
   const on = S.route && S.route.name === id;
+  const label = scopedLabel(id);   // "Inbox · all projects": a page that exists per project too says it is about all
   return h("a", { class: "nav-i" + (everyWidth ? "" : " rail-tip") + (on ? " on" : ""), href: PAGE_ROUTE[id], "aria-current": on ? "page" : null,
-    "data-tip": note ? pg.label + ": " + note : pg.label }, icon(pg.icon), h("span", { class: "lbl" }, pg.label), extra || null);
+    "data-tip": note ? label + ": " + note : label }, icon(pg.icon), h("span", { class: "lbl" }, pg.label,
+    ALL_SCOPE.has(id) ? h("small", { class: "lbl-scope" }, " · all projects") : null), extra || null);
 }
 
 // The sidebar and the bottom bar are drawn again after every route and count: a focused link or button in
@@ -311,7 +343,11 @@ function drawSidebar() {
   const running = (S.projects || []).filter((p) => p.running).length;   // a running cell, never a guess
   const waiting = S.inboxCount ? S.inboxCount + " waiting on you" : "";
   const live = running === 1 ? "1 cell running now" : running + " cells running now";
-  fill($("#sb-nav"), NAV_ORDER.filter(pageOn).map((id) => {   // only the pages of modules that are on
+  const inProject = S.route && S.route.name === "project";
+  // In a project the sidebar is the project's: its name, back to all projects, the recent ones to switch to, and
+  // a short way to the factory's pages. Its views are the capsules on the page, never a second copy here.
+  const pages = inProject ? IN_PROJECT_PAGES : NAV_ORDER;
+  const items = pages.filter(pageOn).map((id) => {   // only the pages of modules that are on
     if (id === "inbox_all" && S.inboxCount) {
       return navItem(id, h("span", { class: "count", "aria-label": waiting }, String(S.inboxCount)), waiting);
     }
@@ -320,23 +356,16 @@ function drawSidebar() {
         h("span", { class: "live-n", "aria-hidden": "true" }, String(running)), h("span", { class: "vh" }, live)), live, true);
     }
     return navItem(id);
-  }));
-  const pv = S.route && S.route.name === "project" ? S.projectViews : null;
+  });
+  const pv = inProject ? S.projectViews : null;
+  fill($("#sb-nav"), inProject ? [projectSidebar(S.route.pid, pv ? pv.inbox : 0),
+    h("div", { class: "sb-sec" }, h("span", { class: "lbl" }, "Factory")), items] : items);
   const sbp = $("#sb-project");
-  if (pv && S.project) {
-    sbp.hidden = false;
-    fill(sbp, h("div", { class: "sb-sec rail-tip", "data-tip": S.project.meta.title }, h("span", { class: "lbl" }, S.project.meta.title)),
-      pv.views.map((v) => h("a", { class: "nav-i sub rail-tip" + (v === pv.current ? " on" : ""), href: "#/p/" + enc(pv.pid) + "/" + v,
-        "aria-current": v === pv.current ? "page" : null, "data-tip": VIEWS[v].label + (v === "inbox" && pv.inbox ? ": " + pv.inbox + " waiting on you" : "") },
-      icon(VIEWS[v].icon), h("span", { class: "lbl" }, VIEWS[v].label),
-      v === "inbox" && pv.inbox ? h("span", { class: "count", "aria-label": pv.inbox + " waiting on you" }, String(pv.inbox)) : null)));
-  } else {
-    sbp.hidden = true;
-    fill(sbp);
-  }
+  sbp.hidden = true;
+  fill(sbp);
   fill($("#sb-foot"), navItem("settings"));
   $("#sb-new").hidden = !moduleShows("controls", "new_project");   // a new project starts with the intake module
-  fill($("#bottombar"), [["home", "Home"], ["square", "Square"], ["inbox_all", "Inbox"], ["projects", "Projects"]].filter(([id]) => pageOn(id)).map(([id, lbl]) => {
+  fill($("#bottombar"), [["home", "Home"], ["square", PAGES.square.label], ["inbox_all", "Inbox"], ["projects", "Projects"]].filter(([id]) => pageOn(id)).map(([id, lbl]) => {
     const on = S.route && S.route.name === id;
     return h("a", { href: PAGE_ROUTE[id], class: on ? "on" : null, "aria-current": on ? "page" : null }, icon(PAGES[id].icon),
       h("span", null, lbl), id === "inbox_all" && S.inboxCount ? h("span", { class: "count", "aria-label": waiting }, String(S.inboxCount)) : null);
@@ -344,18 +373,8 @@ function drawSidebar() {
     onclick: () => (assistantOpen() ? closeAssistant() : openAssistant()) }, icon("bot"), h("span", null, "Ask"))]));
 }
 
-function crumbs() {
-  const r = S.route || {};
-  const parts = [];
-  if (r.name === "project" && S.project) {
-    parts.push(h("a", { href: "#/p/" + enc(r.pid), class: "crumb-p" }, S.project.meta.title));
-    const v = (S.projectViews || {}).current;
-    if (v) parts.push(h("span", { "aria-current": "page" }, VIEWS[v].label));
-  } else if (PAGES[r.name]) {
-    parts.push(h("span", { "aria-current": "page" }, PAGES[r.name].label));
-  }
-  fill($("#crumbs"), parts.map((p, i) => [i ? icon("chevron-right", "crumb-sep") : null, p]));
-}
+// The scope bar replaces the breadcrumb: all projects or one project, its capsule and view (scope.js).
+function crumbs() { drawScope(); }
 
 nav.refreshShell = () => { refreshSidebar(); crumbs(); };
 
@@ -467,7 +486,8 @@ function wireShell() {
     const top = main.getBoundingClientRect().top + window.scrollY - $("#topbar").offsetHeight;
     if (window.scrollY > top) window.scrollTo(0, Math.max(0, top));
   });
-  $("#customize").addEventListener("click", toggleCustomize);
+  // Customize on every page: Home's widget grid, or the sections (and a project's tabs) of the view shown.
+  $("#customize").addEventListener("click", () => (S.route && S.route.name === "home" ? toggleCustomize() : toggleViewCustomize()));
   $("#density").addEventListener("click", () => changeTheme({ density: shownTheme().density === "compact" ? "comfortable" : "compact" }));
   $("#theme").addEventListener("click", () => {
     const t = shownTheme();
@@ -493,14 +513,17 @@ function wireShell() {
 // -- routing ----------------------------------------------------------------------------------------
 
 function parseRoute() {
-  const parts = (location.hash || "").replace(/^#\/?/, "").split("/").filter(Boolean).map((x) => {
+  // a query after the route is a view's own (the Knowledge graph's filters, FR-GRV1): it names no page
+  const parts = (location.hash || "").split("?")[0].replace(/^#\/?/, "").split("/").filter(Boolean).map((x) => {
     try { return decodeURIComponent(x); } catch (e) { return x; }
   });
   if (parts[0] === "p" && parts[1]) {
     const view = parts[2] && PROJECT_VIEWS.includes(parts[2]) ? parts[2] : null;
     return { name: "project", pid: parts[1], view, focus: parts[3] || null };
   }
-  const name = parts[0] === "inbox" ? "inbox_all" : parts[0] === "automations" ? "automations_all" : parts[0];
+  const name = { inbox: "inbox_all", insights: "insights_all", automations: "automations_all",
+    health: "health_all", review: "review_all", agents: "agents_all", data: "data_all",
+    graph: "graph_all" }[parts[0]] || parts[0];
   if (name === "shape") return { name, id: parts[1] || null };   // a conversation: #/shape/SH-001
   if (name === "runners") return { name, id: parts[1] || null }; // a project's runners: #/runners/<pid>
   if (TOP_PAGES.includes(name)) return { name };
@@ -510,8 +533,12 @@ function parseRoute() {
 const RENDER = {
   home: renderHome, square: renderSquare, catalogue: renderCatalogue, projects: renderProjectsPage, inbox_all: renderInboxAll,
   floor: renderFloor, jobs: renderJobs, settings: renderSettings, shape: renderShape, models: renderModels, runners: renderRunners,
-  automations_all: renderAutomations,
+  automations_all: renderAutomations, insights_all: renderInsights, review_all: renderReview,
 };
+RENDER.health_all = renderHealth;
+RENDER.agents_all = renderAgentActivity;
+RENDER.data_all = renderData;
+RENDER.graph_all = renderGraphPage;
 void PAGE_ROUTES;
 
 async function route(keep) {
@@ -523,6 +550,7 @@ async function route(keep) {
   const r = parseRoute();
   const same = S.route && S.route.name === r.name && S.route.pid === r.pid && S.route.view === r.view && S.route.focus === r.focus
     && S.route.id === r.id;
+  if (!same) endViewCustomize();   // each view is customized on its own
   S.route = r;
   keepGrantedPersona();
   const seq = ++S.seq;
@@ -534,6 +562,8 @@ async function route(keep) {
   onRouteChange();
   const main = $("#main");
   try {
+    await ensureViewLayouts();             // the person's own layouts, from the server (layoutstore.js); never throws
+    if (seq !== S.seq) return;
     if (r.name === "project") {
       const shown = await renderProject(r, keep || same, seq);
       if (shown && !keep && !same) showFocus(r.focus);
@@ -541,6 +571,7 @@ async function route(keep) {
       offPage(r.name);                       // a page whose module is off says so, and where to turn it on
     } else {
       await RENDER[r.name](seq);
+      if (seq === S.seq && r.name !== "home") applyPageLayout(r.name);   // the person's layout of this page
     }
     if (seq === S.seq) { main.dataset.loaded = "1"; crumbs(); refreshSidebar(); }   // what is shown now stays
     if (S.jumped && seq === S.seq) {
@@ -582,7 +613,7 @@ async function rerender() {
   if (again) again.focus();
 }
 nav.rerender = rerender;
-nav.newProject = () => newProjectModal();
+nav.newProject = (opts) => newProjectModal(opts);
 nav.openEmbedForm = openEmbedForm;
 
 // -- keys -------------------------------------------------------------------------------------------
@@ -641,6 +672,8 @@ async function start() {
   drawLens();
   await route();
   firstRun();                              // a new factory home: where to start (kernel/modules.py presets)
+  resumeWalk();                            // a walkthrough that was going (walkthrough.js, FR-WLK1)
+  resumeGuide();                           // a guide that was going (journey.js, FR-JRN1)
 }
 
 async function boot() {

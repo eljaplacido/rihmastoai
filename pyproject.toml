@@ -16,12 +16,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rihmasto"
 version = "1.0.0.dev0"
-description = "A governed AI solution factory for agentic capability, on the Gnomon harness."
+description = "Turns an idea or an existing repository into a spec and a tested contract, builds it with coding agents behind a gate that runs the tests itself, and has a person sign every decision. Alpha; delivers for real only to a local preview so far; on the Gnomon harness."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = []
-keywords = ["ai", "agents", "governance", "software factory", "llm", "gnomon"]
+keywords = ["ai", "agents", "agentic", "governance", "capability layer", "mcp", "platform engineering", "llmops",
+            "llm", "gnomon"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -59,4 +60,7 @@ rihma-embed = "embed.server:main"
 rihma-mcp = "mcp.server:main"
 
 [tool.setuptools]
-packages = ["kernel", "kernel.runners", "adapters", "cockpit", "embed", "mcp"]
+# Every package directory (tests/test_wiring.py lists them): the checks, Insights, the red team, the cell runners,
+# agent observability.
+packages = ["kernel", "kernel.checks", "kernel.insights", "kernel.redteam", "kernel.runners", "kernel.agentobs",
+            "adapters", "cockpit", "embed", "mcp"]

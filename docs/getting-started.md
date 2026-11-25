@@ -246,7 +246,7 @@ Open this link once to sign in: http://127.0.0.1:8787/#k=<one-use code>
 ```
 
 - **Sign in.** Open the link once. The page exchanges the code for a session token and keeps it
-  in that tab. **Link for another tab**, in the person menu, makes a new one-use link.
+  in that tab. **Open in another browser tab**, in the person menu, makes a new one-use link.
 - **Pick a persona.** The persona decides which cards you may decide; the kernel checks it on every
   decision. It is not a login: the cockpit is for one operator.
 - **Questions.** Pick an option or write your own, then **Answer**. Or press **Let Rihma assume**
@@ -378,7 +378,7 @@ warranted) or **stop**.
 configures it in `paved_roads.json`, then decides the card `configured`.
 
 **The cockpit refuses the page.** Use `127.0.0.1`, not `localhost`. Through an SSH tunnel, use
-the same local port as the server's. A sign-in link works once; **Link for another tab** makes
+the same local port as the server's. A sign-in link works once; **Open in another browser tab** makes
 another.
 
 **A Gnomon cell is clamped.** An untrusted surface that grants more than Gnomon's defaults runs

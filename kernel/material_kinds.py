@@ -46,7 +46,8 @@ LANGUAGES = {
     ".clj": "Clojure", ".hs": "Haskell", ".sh": "Shell", ".bash": "Shell", ".zsh": "Shell", ".ps1": "PowerShell",
     ".bat": "Batch", ".cmd": "Batch", ".sql": "SQL", ".vue": "Vue", ".svelte": "Svelte", ".css": "CSS",
     ".scss": "Sass", ".sass": "Sass", ".less": "Less", ".tf": "Terraform", ".bicep": "Bicep", ".groovy": "Groovy",
-    ".gradle": "Gradle", ".sol": "Solidity", ".zig": "Zig", ".nim": "Nim", ".ml": "OCaml", ".elm": "Elm"}
+    ".gradle": "Gradle", ".sol": "Solidity", ".zig": "Zig", ".nim": "Nim", ".ml": "OCaml", ".elm": "Elm",
+    ".gd": "GDScript", ".gdshader": "Godot shader", ".shader": "Shader", ".hlsl": "HLSL", ".glsl": "GLSL"}
 BINARY = frozenset({
     ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".tif", ".tiff", ".heic", ".psd", ".ai", ".sketch",
     ".fig", ".mp3", ".wav", ".flac", ".ogg", ".m4a", ".mp4", ".mov", ".avi", ".mkv", ".webm", ".zip", ".tar", ".gz",
@@ -55,6 +56,12 @@ BINARY = frozenset({
     ".woff2", ".ttf", ".otf", ".eot", ".db", ".sqlite", ".sqlite3", ".mdb", ".accdb", ".parquet", ".avro", ".orc",
     ".feather", ".pkl", ".pickle", ".npy", ".npz", ".h5", ".hdf5", ".onnx", ".pt", ".pth", ".safetensors", ".ckpt",
     ".doc", ".xls", ".ppt", ".vsdx", ".one", ".pages", ".numbers", ".keynote", ".eml", ".msg", ".pst"})
+# A game engine's or a 3D tool's files: scenes, assets and settings in the engine's own format, text or not. They
+# are counted by area (kernel/areas.py), never read as the author's words.
+ENGINE = frozenset({".glb", ".gltf", ".fbx", ".blend", ".blend1", ".dae", ".3ds", ".max", ".ma", ".mb", ".uasset",
+                    ".umap", ".uproject", ".tscn", ".scn", ".tres", ".res", ".godot", ".import", ".gdshader",
+                    ".unity", ".prefab", ".asset", ".mat", ".meta", ".controller", ".anim", ".physicmaterial", ".tga",
+                    ".dds", ".exr", ".hdr", ".ktx", ".aseprite", ".ldtk", ".tmx", ".vox", ".bank", ".wem"})
 MANIFESTS = re.compile(r"(?i)(requirements[\w.-]*\.txt|constraints[\w.-]*\.txt|pyproject\.toml|setup\.py|setup\.cfg"
                        r"|pipfile(\.lock)?|poetry\.lock|package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml"
                        r"|go\.mod|go\.sum|cargo\.toml|cargo\.lock|pom\.xml|build\.gradle(\.kts)?|settings\.gradle"
@@ -72,6 +79,24 @@ HOUSEKEEPING = re.compile(r"(changelog|changes|history|news|releases?|licen[cs]e
                           r"|contributing|code_of_conduct|authors|contributors|maintainers|codeowners|support"
                           r"|governance|funding|third[-_]party\w*|licen[cs]e[-_.]\w+)(\.(md|markdown|txt|rst))?",
                           re.IGNORECASE)
+# Files a tool keeps beside the work, never the author's words: ignore and attribute lists, editor settings,
+# checksum lists, example environments (their names only) and lockfiles. They are listed (and counted on the
+# scan step), never read in full as material, wherever they sit (a nested .gitignore too).
+HOUSEKEEPING_FILE = re.compile(
+    r"(?i)(\.git(attributes|ignore|modules|keep)|\.(docker|npm|prettier|eslint|stylelint|hg|helm|vercel|gcloud)?ignore"
+    r"|\.editorconfig|\.mailmap|\.gitlab-ci-local|\.(nvmrc|node-version|python-version|ruby-version|tool-versions)"
+    r"|\.(prettierrc|eslintrc|stylelintrc|markdownlint|yamllint)(\.\w+)?|\.pre-commit-config\.ya?ml|\.flake8"
+    r"|(sha(1|224|256|384|512)|md5|b2)sums(\.txt)?|checksums?([-_.]\w+)*\.txt|[\w.-]+\.(sha(1|256|512)|md5|sig|asc)"
+    r"|\.env\.(example|sample|template|dist|defaults?|schema)|(example|sample)\.env"
+    r"|[\w.-]+\.lock|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|go\.sum|[\w.-]+-lock\.(json|ya?ml)"
+    r"|thumbs\.db|desktop\.ini|\.ds_store)")
+LOCKFILE = re.compile(r"(?i)([\w.-]+\.lock|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.ya?ml|go\.sum"
+                      r"|[\w.-]+-lock\.(json|ya?ml))")
+# A folder named as a copy of another: its files are read once, wherever they are first (kernel/material.py).
+COPY = re.compile(r"(?i)(_+snapshots?[\w.-]*|[\w.-]+[-_ .](copy|copia|kopio|snapshot|backup|bak|old|orig|experiment"
+                  r"|exp|prep|wip|tmp)(\s*\(?\d+\)?)?|copy of [\w .-]+|[\w.-]+ \(\d+\))")
+COPY_BASE = re.compile(r"(?i)(^_+|[-_ .](copy|copia|kopio|snapshot|backup|bak|old|orig|experiment|exp|prep|wip|tmp)"
+                       r"(\s*\(?\d+\)?)?$|^copy of |\s\(\d+\)$)")
 SECRET_NAME = re.compile(r"(?i)^(\.env(\..*)?|.*\.env|.*\.pem|.*\.key|.*\.p12|.*\.pfx|.*\.jks|.*\.keystore"
                          r"|.*\.kdbx|id_(rsa|dsa|ecdsa|ed25519)(\..*)?|credentials.*|.*secrets?.*|\.netrc|_netrc"
                          r"|\.git-credentials|\.htpasswd|\.pgpass|.*\.tfstate(\..*)?|.*\.ovpn|.*\.ppk)$")

@@ -65,6 +65,9 @@ PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR =
 RESOURCE_NOT_FOUND = -32002
 
 LEDGER_TAIL = 100
+# A tool's answer and a resource as an agent reads them: JSON without indentation, which a model reads as well and
+# which is about a third smaller (FR-CTX1, docs/guides/context-and-data.md).
+COMPACT: dict[str, Any] = {"ensure_ascii": False, "separators": (",", ":")}
 MAX_MESSAGE = 4 << 20
 PID = re.compile(r"(?:_factory|[a-z0-9][a-z0-9-]{0,80})\Z")
 PROJECT_URI = re.compile(r"rihma://projects/(?P<pid>[^/]+)/(?P<what>spec|contract|ledger)\Z")
@@ -421,7 +424,7 @@ class RihmaMCP:
             text = str(exc) if isinstance(exc, InputRefused) else _redact(str(exc), held)
             return {"content": [{"type": "text", "text": text}], "isError": True}
         result = _redact(result, held)
-        return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2, default=str)}],
+        return {"content": [{"type": "text", "text": json.dumps(result, **COMPACT, default=str)}],
                 "structuredContent": result, "isError": False}
 
     @staticmethod
@@ -720,7 +723,7 @@ class RihmaMCP:
             raise RpcError(INVALID_PARAMS, "uri is required")
         held = self._held()
         if uri == MAP_URI:
-            return _contents(uri, "application/json", json.dumps(_redact(ui_map(), held), ensure_ascii=False, indent=2))
+            return _contents(uri, "application/json", json.dumps(_redact(ui_map(), held), **COMPACT))
         m = PROJECT_URI.match(uri)
         if not m:
             raise RpcError(RESOURCE_NOT_FOUND, "Resource not found", {"uri": uri})
@@ -739,13 +742,13 @@ class RihmaMCP:
                 contract = json.loads(path.read_text(encoding="utf-8"))
             except ValueError:
                 raise RpcError(INTERNAL_ERROR, f"the contract of {m['pid']} is not readable JSON") from None
-            return _contents(uri, "application/json", json.dumps(_redact(contract, held), ensure_ascii=False, indent=2))
+            return _contents(uri, "application/json", json.dumps(_redact(contract, held), **COMPACT))
         records = project.ledger().records()
         tail = [ledger_record(r) for r in records[-LEDGER_TAIL:]]   # without holdout details (kernel/custody.py)
         body = {"project": project.pid, "total": len(records), "shown": len(tail), "records": tail,
                 "note": "Holdout scenarios and what they met stay in the holdout custody; such fields are "
                         "redacted, so a redacted record no longer matches its hash."}
-        return _contents(uri, "application/json", json.dumps(_redact(body, held), ensure_ascii=False, indent=2))
+        return _contents(uri, "application/json", json.dumps(_redact(body, held), **COMPACT))
 
 
 def _posture(project) -> dict:
@@ -772,6 +775,9 @@ def _error(mid, code: int, message: str, data=None) -> dict:
     if data is not None:
         err["data"] = data
     return {"jsonrpc": "2.0", "id": mid, "error": err}
+
+
+__import__("mcp.bridge_tools").bridge_tools.register(globals())   # the agent bridge's tools (FR-BRG1, FR-CHN1)
 
 
 # -- the stdio transport ----------------------------------------------------------------------------

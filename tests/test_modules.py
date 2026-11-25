@@ -53,9 +53,20 @@ class ModuleSetTest(FactoryTestCase):
             self.assertEqual(modules.closure(preset["modules"]), [m for m in modules.MODULES if m in preset["modules"]])
             self.assertTrue(preset["brings"] and preset["gets"])
 
+    def test_FR_MOD1_AC_1_the_knowledge_graph_and_the_data_and_context_pages_are_core_by_name(self):
+        """Every page of the navigation is either named by a module or core by name: the Knowledge graph and the
+        Data and context page (and each project's Graph and Context tabs) are core, so the smallest set shows
+        them, and the browser walk (tests/test_ui_modules.py) expects them there."""
+        for kind, name in (("pages", "graph_all"), ("pages", "data_all"), ("views", "graph"), ("views", "context")):
+            self.assertIn(name, modules.CORE[kind], name)
+            self.assertEqual(modules.owners(kind, name), [], name)
+        modules.set_modules(self.factory, person="Aino", persona="business_owner", preset="spec_only")
+        self.assertFalse({"graph_all", "data_all", "graph", "context"} & modules.hidden_ids(self.factory))
+
     def test_FR_MOD1_AC_2_a_factory_where_nobody_chose_is_the_full_factory_and_reading_it_creates_nothing(self):
         got = modules.factory_set(self.factory)
-        self.assertEqual((got["preset"], got["modules"], got["chosen"]), ("full", list(modules.MODULES), False))
+        self.assertEqual((got["preset"], got["modules"], got["chosen"]), ("full", modules.default_on(), False))
+        self.assertNotIn("agentobs", got["modules"])          # an opt-in module is off until a person turns it on
         self.assertIsNone(factory_project(self.factory, create=False))          # reading created no canon
         self.assertTrue(modules.view(self.factory)["new_home"])
         modules.set_modules(self.factory, person="Aino", persona="it", preset="full")
@@ -76,7 +87,7 @@ class ModuleSetTest(FactoryTestCase):
         rec = store.ledger().of_kind("modules_set")[-1]["event"]["payload"]
         self.assertEqual((rec["scope"], rec["to"], rec["preset"], rec["by"], rec["persona"], rec["reason"]),
                          ("factory", ["intake", "plan"], "spec_only", "Aino", "business_owner", "we only need the spec"))
-        self.assertEqual(rec["from"], list(modules.MODULES))
+        self.assertEqual(rec["from"], modules.default_on())
         again = modules.set_modules(self.factory, person="Aino", persona="business_owner", preset="spec_only")
         self.assertFalse(again["changed"])
         self.assertEqual(len(store.ledger().of_kind("modules_set")), 1)       # nothing changed, nothing recorded

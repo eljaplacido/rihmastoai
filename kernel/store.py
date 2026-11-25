@@ -41,6 +41,8 @@ RIHMA_HOME_ENV = "RIHMA_HOME"
 HOME_ENV = "GNOMONFACTORY_HOME"
 HOME_ENVS = (RIHMASTO_HOME_ENV, RIHMA_HOME_ENV, HOME_ENV)
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# The records an archived project still takes: its archiving and its restoring (kernel/project_archive.py).
+ARCHIVE_KINDS = ("project_archived", "project_restored")
 # The payload fields that name the person who made a write (a ledger record's signer).
 SIGNED_KEYS = ("person", "by", "chosen_by", "requested_by", "stopped_by", "accepted_as_is_by")
 
@@ -182,6 +184,10 @@ def slugify(text: str, limit: int = 32) -> str:
     return (slug[:limit].rstrip("-")) or "project"
 
 
+class ProjectArchived(ValueError):
+    """A write to an archived project: it is read-only until a person restores it (kernel/project_archive.py)."""
+
+
 class Project:
     """One product the factory works on: a folder holding its canon, spec, contract and ledger."""
 
@@ -224,7 +230,10 @@ class Project:
     def log(self, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Record a transition in the project's ledger (FR-L2: state changes are appended). While a
         verified identity signs the write (enforced access, D-0016), a record that names its person
-        also names that identity."""
+        also names that identity. An archived project is read-only: only its restoring is recorded."""
+        if kind not in ARCHIVE_KINDS and self.meta.get("archived"):
+            raise ProjectArchived(f"{self.pid} is archived: it is read-only until a person restores it "
+                                  f"(rihmasto project restore {self.pid})")
         if "identity" not in payload:
             for key in SIGNED_KEYS:
                 stamp = signed_identity(payload.get(key))
@@ -290,11 +299,13 @@ class Factory:
             raise KeyError(f"no project {pid!r} in {self.projects_dir}")
         return project
 
-    def projects(self) -> list[Project]:
+    def projects(self, *, archived: bool = False) -> list[Project]:
+        """Every project, but not an archived one unless asked (kernel/project_archive.py): an archived project is
+        hidden from every list, and still opened by its id."""
         if not self.projects_dir.exists():
             return []
-        return [Project(self, p.name) for p in sorted(self.projects_dir.iterdir())
-                if (p / "project.json").exists()]
+        found = [Project(self, p.name) for p in sorted(self.projects_dir.iterdir()) if (p / "project.json").exists()]
+        return found if archived else [p for p in found if not p.meta.get("archived")]
 
 
 def _open_canon() -> Callable[[Project], Canon]:

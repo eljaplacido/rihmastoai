@@ -211,7 +211,8 @@ def delegations(project: Project) -> list[dict[str, Any]]:
 def active(project: Project, kind: str) -> dict[str, Any] | None:
     """The newest delegation in force on this project that covers ``kind``, or None."""
     now = project.factory.clock.now()
-    live = [d for d in project.read(FILE, []) or [] if kind in d["kinds"] and state_of(d, now) == "active"]
+    live = [d for d in project.read(FILE, []) or [] if kind in d["kinds"] and state_of(d, now) == "active"
+            and (d.get("agent") or {}).get("kind") != "bridge"]    # a named agent decides itself (agent_personas)
     return live[-1] if live else None
 
 
@@ -354,7 +355,8 @@ def _decide(project: Project, card: dict[str, Any], d: dict[str, Any]) -> dict[s
         return None
     out = {"card": card["id"], "kind": card["kind"], "verdict": verdict, "delegation": d["id"], "rule": rule,
            "decision": dec.get("id"), "person": d["person"], "persona": d["persona"], "why": why,
-           **({"task": basis["task"]} if basis.get("task") else {})}
+           **({"task": basis["task"]} if basis.get("task") else {}),
+           **({"agent": d["agent"]["name"]} if d.get("agent") else {})}     # a persona given to an agent
     project.log("delegated_decision", out | {"basis": basis})
     return out
 

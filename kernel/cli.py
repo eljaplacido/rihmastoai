@@ -1,5 +1,4 @@
-"""`rihmasto`: the operator's command line (FR-N2). `rihma` is the same command under its earlier
-name (D-0013). Without installing it, run `python -m kernel.cli`.
+"""`rihmasto`: the operator's command line (FR-N2); `rihma` is its earlier name (D-0013). Or `python -m kernel.cli`.
 
 The chain, from a need to a running product
     rihmasto new "Title" --source "idea text or a path" [--posture balanced] [--mode M --maturity M] --requested-by Aino
@@ -45,6 +44,7 @@ The capability layer (a write is signed with --person and --persona)
     rihmasto autonomy show [<pid>] | autonomy set <1-4> [--project PID] --reason "..."
     rihmasto signal log --text "..." --channel chat --source "..." | signal list | signal triage <S-id>
     rihmasto concept edit <C-id> [--title ...] [--profile ...] [--maturity ...] [--mode ...] | concept apply
+    rihmasto console <pid> -- <command> | shell <pid> | checks list|enable|disable|run|history|tick
     rihmasto observe <trigger> --facts '{"project": "<pid>"}' --source "..." | updates apply <pid>
     rihmasto square | catalogue                   the delivery square; the capability catalogue
     rihmasto automations list|add|edit|pause|resume|remove|run-now|dry-run|tick|history|install-help
@@ -65,10 +65,14 @@ from collections.abc import Callable
 from typing import Any
 
 from adapters import sarif
-from kernel import access, assess_cli, autonomy, embeds, evidence_pack, faces, graph_ask, integrations, observations
-from kernel import (access_cli, automations_cli, autopilot_cli, change_cli, ide, input_summary, integration_decl,
-                    material_cli, modules, outputs, packs, posture_cli, security, shape_cli, signals, standalone)
+from kernel import (access, assess_cli, autonomy, embeds, evidence_pack, faces, graph_ask, integrations, observations,
+                   access_cli, alignment_cli, automations_cli, autopilot_cli, bridge_cli, change_cli, console_cli,
+                   destinations_cli, evals_cli, ide, input_summary, integration_decl, journey_cli, material_cli,
+                   modules, outputs, packs, posture_cli, review_cli, road_settings, security, setup_cli, shape_cli,
+                   signals, standalone, walkthrough_cli)
+from kernel.agentobs import cli as agentobs_cli
 from kernel.canon import Canon, DecisionRefused
+from kernel.insights import cli as insights_cli
 from kernel.dashboard import catalogue
 from kernel.people import PERSONAS, is_person
 from kernel.profiles import PROFILES
@@ -164,11 +168,10 @@ def _chain_parsers(sub: Any) -> None:
     _add(sub, "apply", "pid", "card")
     _add(sub, "deliver", "pid").add_argument(
         "--new", action="store_true", help="start a new release even if this revision was delivered")
-    _add(sub, "learn")
     _add(sub, "tick", about="carry out decided concept cards: a validated concept becomes a project")
     _add(sub, "resurface", "pid").add_argument("--reason", default="routing changed")
-    _add(sub, "lanes")
-    _add(sub, "doctor")
+    for bare in ("learn", "lanes", "doctor"):     # commands with no arguments of their own
+        _add(sub, bare)
     _add(sub, "demo", about="build a demo factory home: no model keys, no network, no Gnomon").add_argument(
         "--home", dest="demo_home", help="where to build it (default: var/demo in this checkout). An earlier demo "
                                          "home there is replaced; any other folder that is not empty is refused")
@@ -262,8 +265,17 @@ def build_parser() -> argparse.ArgumentParser:
                 standalone.add_parsers, material_cli.add_parsers, change_cli.add_parsers, shape_cli.add_parsers,
                 posture_cli.add_parsers, assess_cli.add_parsers, faces.add_parsers, access_cli.add_parsers,
                 integration_decl.add_parsers, ide.add_parsers, runners_cli.add_parsers,  # FR-DS1; FR-AGC1; D-0019
-                automations_cli.add_parsers):  # FR-AUT1
+                automations_cli.add_parsers, alignment_cli.add_parsers,  # FR-AUT1; FR-ALN1
+                insights_cli.add_parsers, review_cli.add_parsers, setup_cli.add_parsers,  # FR-INS1; FR-REV1; FR-SET1
+                road_settings.add_parsers, bridge_cli.add_parsers,  # FR-GCP1; goal, handoff, channel
+                agentobs_cli.add_parsers):  # FR-OBS1
         add(sub)
+    walkthrough_cli.add_parsers(sub)          # walkthroughs in a terminal (FR-WLK1)
+    journey_cli.add_parsers(sub)              # guided journeys and the next step (FR-JRN1)
+    console_cli.add_parsers(sub)  # the console, a shell, and the checks (FR-CON1, FR-CHK1)
+    _kernel("context_cli").add_parsers(sub)   # the data and context layer (FR-CTX1)
+    destinations_cli.add_parsers(sub)  # destinations and publish (FR-DST1)
+    evals_cli.add_parsers(sub)  # Gnomon's audits and evals, and the role evals (FR-EVL1)
     return integrations.add_parsers(sub, ap)  # relay, hooks and connector (D-0015)
 
 
@@ -449,7 +461,15 @@ CAPABILITY: dict[str, Handler] = {
     **input_summary.handlers(_print, lambda: _model(), print), **autopilot_cli.handlers(_print, _model),
     **standalone.handlers(_print, _model), **change_cli.handlers(_print, _model), **runners_cli.handlers(_print),
     **shape_cli.handlers(_print, lambda: _model(), print), **integration_decl.handlers(_print), **ide.handlers(_print),
-    **automations_cli.handlers(_print, lambda: _model())}
+    **automations_cli.handlers(_print, lambda: _model()), **agentobs_cli.handlers(_print)}
+CAPABILITY.update(walkthrough_cli.handlers(_print, lambda: _model()))     # walkthroughs in a terminal (FR-WLK1)
+CAPABILITY.update(console_cli.handlers(_print))  # FR-CON1, FR-CHK1
+CAPABILITY.update(alignment_cli.handlers(_print))  # FR-ALN1
+CAPABILITY.update(road_settings.handlers(_print))  # paved roads (FR-GCP1)
+CAPABILITY.update(_kernel("context_cli").handlers(_print))  # context map, packs, audit; data (FR-CTX1)
+for _cli in (journey_cli, evals_cli, insights_cli, review_cli, bridge_cli, destinations_cli):   # FR-JRN1, FR-EVL1,
+    CAPABILITY.update(_cli.handlers(_print, print))   # FR-INS1, FR-REV1, FR-CPL1/BRG1/CHN1, FR-DST1: (_print, print)
+CAPABILITY.update(setup_cli.handlers(_print, lambda: _model()))  # set up, archive, suggest, describe (FR-SET1)
 
 
 def command_of(args: Args) -> str:

@@ -22,7 +22,7 @@ import json
 import math
 import re
 
-from kernel import holdouts
+from kernel import holdouts, roads_gcp_ops
 from kernel.canon import Canon
 from kernel.filelock import locked
 from kernel.roads import (PavedRoads, RoadError, http_request, road_for_slot, slot_state)
@@ -231,9 +231,10 @@ def probe(project, env: str = "production", *, slot: str = "current", record: bo
     """Probe what runs in ``env``: `/health` (and its latency) and every probe scenario."""
     state = slot_state(project, env, slot)
     at = _stamp(project)
-    if not state:
-        return {"environment": env, "slot": slot, "at": at, "ok": False, "verdict": "not applicable",
-                "reason": f"nothing is deployed in {env}"}
+    if not state or state.get("workload") == "job":  # a scheduled job: its executions (kernel/roads_gcp_ops.py)
+        return roads_gcp_ops.job_probe(project, env, state, record) if state else {
+            "environment": env, "slot": slot, "at": at, "ok": False, "verdict": "not applicable",
+            "reason": f"nothing is deployed in {env}"}
     rnd = _probe_round(state["base_url"], state["rev12"], load_scenarios(project, ("probe",)))
     result = {"environment": env, "slot": slot, "release": state["release"], "revision": state["revision"],
               "base_url": state["base_url"], "at": at, "health": rnd["health"], "scenarios": rnd["scenarios"],
@@ -455,7 +456,7 @@ def rollback(project, env: str = "production", *, release, reason: str, roads=No
     if restore and (cur is None or cur.get("revision") != restore["revision"]):
         cur = road_for_slot(restore, paved, docker=docker, az=az).deploy(project, restore["package"])
         restored = {"release": cur["release"], "revision": cur["revision"]}
-    health = smoke(cur["base_url"], version=cur["rev12"]) if cur else None
+    health = smoke(cur["base_url"], version=cur["rev12"]) if cur and cur.get("base_url") else None
     record = {"release": release, "environment": env, "reason": reason, "at": _stamp(project),
               "by": "factory: automatic rollback, no person involved", "stopped": stopped, "restored": restored,
               "kept": {"release": cur["release"], "revision": cur["revision"]} if cur else None,

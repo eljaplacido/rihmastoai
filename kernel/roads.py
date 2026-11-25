@@ -14,6 +14,8 @@ Kinds:
 - `azure-containerapps`: renders an Azure Container Apps YAML and an `az` command plan, and
   validates them. It deploys only when the road is configured, names an identity and the
   `az` CLI is on PATH.
+- `gcp-cloudrun`: a Cloud Run service, or a Cloud Run job Cloud Scheduler runs on a schedule, rendered,
+  validated and deployed with the `gcloud` CLI (kernel/roads_gcp.py, FR-GCP1).
 
 Every deployment goes through a deploy package: the artifact (image or process reference), the
 environment settings, secret *references* (never values) and the road's rules. A slot is one
@@ -52,7 +54,7 @@ from kernel.store import read_json, write_json, write_text
 
 SCHEMA = "gnomonfactory.paved_roads/1"
 PACKAGE_SCHEMA = "gnomonfactory.deploy_package/1"
-KINDS = ("local-process", "docker", "azure-containerapps")
+KINDS = ("local-process", "docker", "azure-containerapps", "gcp-cloudrun")
 ENVIRONMENTS = ("preview", "demo", "staging", "production")
 SLOTS = ("current", "candidate", "twin")
 APP_PORT = 8080
@@ -517,6 +519,10 @@ def make_road(name: str, cfg: dict, *, docker=None, az=None) -> "Road":
         return DockerRoad(name, cfg, docker=docker)
     if kind == "azure-containerapps":
         return AzureContainerAppsRoad(name, cfg, az=az)
+    if kind == "gcp-cloudrun":
+        from kernel.roads_gcp import GcpCloudRunRoad  # the gcloud CLI on PATH (FR-GCP1)
+
+        return GcpCloudRunRoad(name, cfg)
     raise RoadError(f"road {name!r} has an unknown kind {kind!r}")
 
 
@@ -1212,6 +1218,10 @@ def validate_package(pkg: dict) -> list:
     problems += secret_leaks({k: v for k, v in pkg.items() if k != "road_problems"}) + integration_problems(pkg)
     if pkg["road"].get("kind") == "azure-containerapps":
         problems += validate_containerapp(pkg)
+    if pkg["road"].get("kind") == "gcp-cloudrun":
+        from kernel.roads_gcp import validate_cloudrun
+
+        problems += validate_cloudrun(pkg)
     return problems
 
 

@@ -30,8 +30,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from kernel.attach import (AttachRefused, check_signer, checkout, commit_of, git, outside_code, repository,
-                           uncommitted)
+from kernel.attach import AttachRefused, check_signer, checkout, commit_of, git, outside_code, repository, uncommitted
 from kernel.gate import GateResult, Signal, _conclude, judge, judge_change, signal_protected, signal_tests
 from kernel.store import Project, write_json
 
@@ -108,11 +107,21 @@ def gate(project: Project, *, person: str, persona: str, head: str | None = None
     record = gate_record(label, round_no, result, repository=str(repository(project)), base=base_sha,
                          person=person, persona=persona, asked_as="gate my code", uncommitted_left_out=left_out)
     project.log("gate", record)
-    return {"project": project.pid, "repository": str(repository(project)), "task": label, "round": round_no,
+    aligned = _aligned(project, base_sha, head_sha)
+    return {**({"aligned": aligned} if aligned else {}),
+            "project": project.pid, "repository": str(repository(project)), "task": label, "round": round_no,
             "base": base_sha, "head": head_sha, "verdict": result.verdict, "warranted": result.warranted,
             "signals": [{"name": s.name, "verdict": s.verdict, "detail": s.detail} for s in result.signals],
             "objections": result.objections, "uncommitted_left_out": left_out,
             "merge": "yours: Rihmasto never merges into, writes to or pushes to an attached repository"}
+
+
+def _aligned(project: Project, base: str, head: str) -> dict[str, Any] | None:
+    """What the change touches of the criteria accepted from the repository (kernel/alignment_records.py)."""
+    from kernel.alignment_records import gate_note
+
+    changed = git(repository(project), "diff", "--name-only", base, head, check=False).splitlines()
+    return gate_note(project, changed)
 
 
 def exit_code(verdict: str) -> int:

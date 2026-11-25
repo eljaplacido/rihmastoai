@@ -65,6 +65,8 @@ KINDS: dict[str, dict[str, Any]] = {
     "openapi": {"family": "business_api", "vias": ("http",), "schemes": (), "connector": "openapi"},
     "mcp": {"family": "mcp", "vias": ("mcp",), "schemes": (), "connector": None},
     "rest": {"family": "rest", "vias": ("http",), "schemes": (), "connector": None},
+    # A Google Drive folder: the product imports app/gdrive.py, the paved road's client (FR-GDR1)
+    "gdrive": {"family": "drive", "vias": ("http",), "schemes": (), "connector": None, "client": "app/gdrive.py"},
 }
 REQUIRED = ("name", "kind", "access", "data_classes")
 OPTIONAL = ("via", "system", "credentials", "purpose", "sources", "provenance", "decided_by", "declared_by")
@@ -210,7 +212,11 @@ def standin_phrase(decl: dict[str, Any]) -> str:
     if decl["via"] == "sql":
         return f"a SQLite file (sqlite:/// and its absolute path), seeded from tests/standins/{name}.sql when that " \
                "file exists"
-    shape = "an object store" if KINDS[decl["kind"]]["family"] == "storage" else \
+    family = KINDS[decl["kind"]]["family"]
+    if family == "drive":   # kernel/gdrive_standin.py: Drive v3 files, seeded from that file's "files"
+        return ("the Google Drive v3 API's stand-in the gate runs beside the tests (the metadata server's token "
+                f"included), seeded from the files in tests/standins/{name}.json when that file exists")
+    shape = "an object store" if family == "storage" else \
         "an MCP server over HTTP" if decl["via"] == "mcp" else "an HTTP API"
     # No loopback address here: the plan review would read one as the service's own bind (kernel/roads.py).
     return f"{shape} the gate runs beside the tests, answering from tests/standins/{name}.json when that file exists"
@@ -268,7 +274,8 @@ def from_contract(contract: dict[str, Any]) -> tuple[list[dict[str, Any]], list[
 def guidance() -> str:
     """How the analyst declares the systems a product reaches (its spec prompt)."""
     return ("If the product must read or write a system outside it (a database, a data warehouse, cloud storage,\n"
-            "an ERP or business API, an MCP server or a REST API), declare each one in \"integrations\"; else "
+            "a Google Drive folder (gdrive), an ERP or business API, an MCP server or a REST API), declare each one "
+            "in \"integrations\"; else "
             "leave it\nempty. Each is {\"name\": \"orders_db\", \"kind\": \"" + "|".join(KINDS) + "\",\n"
             "\"access\": \"read\" or \"read-write\", \"data_classes\": [\"internal\"], \"credentials\": "
             "[\"ORDERS_DB_PASSWORD\"],\n\"purpose\": \"...\", \"sources\": [\"request\"]}, with \"system\": "
@@ -402,7 +409,8 @@ def kinds() -> list[dict[str, Any]]:
     """Every kind with its family, its ways (the default first), its stand-in and its reference connector."""
     return [{"kind": k, "family": v["family"], "via": list(v["vias"]),
              "standin": "sqlite file (via sql); local HTTP server (via http or mcp)",
-             "connector": f"connectors/{v['connector']}" if v["connector"] else "none yet (planned)"}
+             "connector": f"connectors/{v['connector']}" if v["connector"] else "none yet (planned)",
+             **({"client": v["client"]} if v.get("client") else {})}
             for k, v in KINDS.items()]
 
 

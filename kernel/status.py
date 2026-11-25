@@ -172,6 +172,10 @@ def now(project) -> dict:
         return {"state": "failed", "since": since,
                 "line": f"Release {rels[-1]['number']} stopped: "
                         f"{custody_safe(rels[-1].get('reason')) or rels[-1].get('failed_step')}"}
+    if meta.get("source_kind") == "adopted" and meta.get("intent"):     # its own state, not a stage (FR-RPJ1)
+        doing = {"monitor": "monitoring", "maintain": "maintaining", "improve": "improving"}.get(meta["intent"])
+        return {"state": "working", "line": f"Adopted, {doing}: waits for upstream changes, a change or a person.",
+                "since": since}
     return {"state": "working", "line": f"Stage {meta['stage']}: ready for the next step.", "since": since}
 
 
@@ -274,6 +278,24 @@ def try_it(project) -> dict:
     return {"release": number, "env": env, "url": base, "items": items}
 
 
+def _none_ran(base: dict) -> bool:
+    runs = [r.get("counts") or {} for r in base.get("runs") or [] if isinstance(r, dict)]
+    return bool(runs) and not any(c.get("passed") or c.get("failed") for c in runs)
+
+
+def failed_baseline(project) -> str:
+    """An adopted project whose existing tests fail at its baseline: a health item, recorded, never judged."""
+    if project.meta.get("source_kind") != "adopted":
+        return ""
+    base = project.read("baseline.json") or {}
+    if base.get("verdict") != "failed":
+        return ""
+    cmd = base.get("command") or " ".join((base.get("runs") or [{}])[0].get("command") or [])
+    said = ("the existing suite could not run at the baseline: errors while collecting, no test ran"
+            if _none_ran(base) else "existing tests fail at the baseline")
+    return said + " (recorded, not judged)" + (f": {cmd}" if cmd else "")
+
+
 def health(project) -> dict:
     canon = Canon(project)
     tasks = project.read("tasks.json", {}) or {}
@@ -289,6 +311,7 @@ def health(project) -> dict:
     rels = _releases(project)
     if rels and rels[-1].get("state") == "failed":
         reasons.append(f"release {rels[-1]['number']} stopped")
+    reasons += list(filter(None, [failed_baseline(project)]))       # an adopted baseline whose tests fail
     if reasons and status == "on_track":
         status = "at_risk"
     started, durations = {}, []

@@ -1,0 +1,174 @@
+/* The shell after FR-UXO1: the scope bar and the project accent, the capsules, Inbox cards that say what they
+   want, the Delivery square's lanes, Ask Rihma's scope and steps, Customize on any view, and the phone. */
+
+/* -- scope: all projects or one project ------------------------------------------------------------------ */
+
+.tb-fill { flex: 1 1 0; min-width: 0; }
+/* the strip at the top of the main area: which scope this page is about */
+.scopebar { display: flex; align-items: center; gap: 6px; width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--s3) var(--s6) 0;
+  white-space: nowrap; overflow: hidden; color: var(--text-2); font-weight: 500; }
+.scopebar:empty, html.signed-out .scopebar { display: none; }
+.scopebar + .toasts + main { padding-top: var(--s4); }
+.scopebar .crumb-sep { color: var(--text-3); width: 14px; height: 14px; flex: none; }
+.scope-sw { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 360px; height: 34px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: var(--r-pill); background: var(--surface); color: var(--text); font: 500 var(--fs-md)/1 var(--font-sans); cursor: pointer; }
+.scope-sw:hover { background: var(--hover); }
+.scope-sw .scope-t { overflow: hidden; text-overflow: ellipsis; }
+.scope-sw .scope-k { color: var(--text-3); font-weight: 500; }
+.scope-sw .chev { width: 14px; height: 14px; color: var(--text-3); flex: none; }
+.scope-back { display: inline-flex; align-items: center; gap: 2px; color: var(--text-2); flex: none; }
+.scope-cap, .scope-v { overflow: hidden; text-overflow: ellipsis; }
+.scope-v { color: var(--text); }
+/* Inside a project the frame takes the project's own colour: a top edge, the switcher and the header's edge. */
+html[data-scope="project"] { --proj: hsl(var(--proj-h, 200) 70% 48%); --proj-soft: hsl(var(--proj-h, 200) 70% 48% / 0.12); }
+html[data-scope="project"] .topbar { box-shadow: inset 0 4px 0 var(--proj); }
+html[data-scope="project"] .scope-sw { border-color: var(--proj); background: var(--proj-soft); }
+html[data-scope="project"] .scope-sw .scope-k { color: var(--text-2); }
+html[data-scope="project"] .proj-head { border-left: 4px solid var(--proj); padding-left: var(--s3); }
+.vh-scope, .h-scope { color: var(--text-3); font-weight: 500; }
+.lbl-scope { color: var(--text-3); font-weight: 400; }
+html.rail .lbl-scope { display: none; }
+/* The sidebar inside a project: its name, back to all projects, the recent ones. */
+.sb-back { color: var(--text-2); }
+.sb-proj { display: flex; align-items: flex-start; gap: 8px; margin: var(--s1) 0 var(--s3); padding: 10px; border-radius: var(--r-md); background: var(--proj-soft, var(--sunken));
+  border: 1px solid var(--proj, var(--border)); }
+.sb-proj .lbl { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sb-proj b { overflow: hidden; text-overflow: ellipsis; }
+.sb-proj small { color: var(--text-3); font-size: var(--fs-xs); }
+.sb-proj .sb-wait { color: var(--accent-text); }
+.sb-proj-dot { width: 10px; height: 10px; margin-top: 4px; border-radius: 50%; background: var(--proj, var(--accent)); flex: none; }
+html.rail .sb-proj { padding: 6px; justify-content: center; }
+html.rail .sb-proj .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* -- capsules: five top tabs, each with its own short row ---------------------------------------------- */
+
+.caps { margin-bottom: var(--s4); }
+.caps-top { list-style: none; display: flex; gap: 4px; padding: 0; margin: 0 0 6px; flex-wrap: wrap; }
+.cap-t { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border: 1px solid var(--border);
+  border-radius: var(--r-pill); color: var(--text-2); font-weight: 600; background: var(--surface); white-space: nowrap; }
+.cap-t:hover { color: var(--text); background: var(--hover); text-decoration: none; }
+.cap-t.on { color: var(--text); border-color: var(--proj, var(--accent)); background: var(--proj-soft, var(--accent-subtle)); }
+.cap-t.pin { border-style: dashed; font-weight: 500; }
+.cap-t .count { margin-left: 2px; }
+.caps-sub { list-style: none; display: flex; flex-wrap: wrap; gap: 2px; padding: 0; margin: 0; border-bottom: 1px solid var(--border); overflow: visible; }
+.caps-sub li { display: flex; align-items: center; }
+.caps-sub li.is-hidden a { opacity: 0.55; text-decoration: line-through; }
+.caps-sub a.on::after { background: var(--proj, var(--accent)); }
+.caps-sub .tabs-hidden { padding: 0 8px; align-self: center; }
+.tab-cz { display: inline-flex; gap: 2px; margin: 0 6px 0 -4px; }
+
+/* -- the Inbox: what a card wants ------------------------------------------------------------------------ */
+
+.decide-t { font-size: var(--fs-base); line-height: 1.4; }
+.dl-k { color: var(--accent-text); font-weight: 700; }
+.decide2 { display: grid; gap: var(--s2); }
+.dc-h { font-size: var(--fs-sm); color: var(--text-3); font-weight: 600; margin: 0; }
+.dc-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.dc-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 48px; padding: 10px 12px; text-align: left;
+  border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.dc-opt:hover { background: var(--hover); }
+.dc-opt[aria-checked="true"] { border-color: var(--accent); background: var(--accent-subtle); box-shadow: 0 0 0 1px var(--accent); }
+.dc-opt b { font-weight: 600; }
+.dc-m { color: var(--text-2); font-size: var(--fs-sm); line-height: 1.35; }
+.why-box { display: grid; gap: var(--s2); padding: var(--s3); border-radius: var(--r-md); background: var(--sunken); border: 1px solid var(--border); }
+.why-box[hidden] { display: none; }
+.why-box textarea { width: 100%; }
+.card-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: var(--s3); padding-top: var(--s2); border-top: 1px dashed var(--border); }
+.card-details { margin-top: var(--s2); font-size: var(--fs-sm); }
+.card-details > summary { cursor: pointer; color: var(--text-2); min-height: 32px; display: flex; align-items: center; }
+.card-details .kv.tight { gap: 4px; margin-top: var(--s2); }
+.suggests { margin: 0 0 var(--s2); color: var(--text-2); }
+.ib-ph { gap: 10px; padding: 8px 0; border-bottom: 2px solid var(--border); }
+.ib-ph a { color: var(--text); font-size: var(--fs-lg); font-weight: 700; }
+.ib-dot { width: 12px; height: 12px; border-radius: 50%; background: hsl(var(--proj-h, 200) 70% 48%); flex: none; }
+.ib-proj { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+
+/* -- the Delivery square: its lanes and scope ------------------------------------------------------------ */
+
+.sq-scope { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-2); }
+.sq-scope select { min-height: 36px; max-width: 220px; }
+.sq-lanes { list-style: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; padding: 0; margin: 0 0 var(--gap); counter-reset: lane; }
+.sq-lane { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sq-lane > a { display: flex; flex-direction: column; gap: 2px; min-height: 64px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: var(--text); text-decoration: none; }
+.sq-lane > a:hover { background: var(--hover); }
+.sq-lane-n { font-size: var(--fs-2xl); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.sq-lane-l { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-weight: 600; font-size: var(--fs-sm); }
+.sq-lane.zero .sq-lane-n { color: var(--text-3); }
+.sq-lane-none { margin: 0; line-height: 1.35; }
+
+/* -- Ask Rihma: the scope line, the steps -------------------------------------------------------------- */
+
+.as-scope { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--sunken); font-size: var(--fs-sm); }
+.as-scope-t { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.as-scope-t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-scope select { min-height: 32px; font-size: var(--fs-sm); }
+.as-about { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--text-3); font-size: var(--fs-xs); }
+.as-about.switched { color: var(--accent-text); font-weight: 600; }
+.as-steps { margin: var(--s2) 0; padding-left: 1.4em; display: grid; gap: 8px; }
+.as-steps li { line-height: 1.4; }
+.as-cmd { display: flex; align-items: center; gap: 6px; margin-top: 4px; min-width: 0; }
+.as-cmd code { flex: 1 1 auto; min-width: 0; padding: 6px 8px; border-radius: var(--r-sm); background: var(--sunken); overflow-wrap: anywhere; font-size: var(--fs-xs); }
+.prop-on { margin-left: auto; }
+
+/* -- Customize any view ------------------------------------------------------------------------------- */
+
+.vcz-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin-bottom: var(--gap); border: 1px solid var(--accent-border);
+  border-radius: var(--r-md); background: var(--accent-subtle); }
+.vcz-bar p { flex: 1 1 260px; margin: 0; }
+.vcz-bar .btns { display: flex; gap: 6px; }
+.cz-off { display: none !important; }
+html.vcz .cz-off { display: block !important; opacity: 0.45; }
+.cz-compact { max-height: 14rem; overflow: hidden; position: relative; }
+.cz-compact::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3rem; background: linear-gradient(transparent, var(--bg)); pointer-events: none; }
+.cz-wide { grid-column: 1 / -1; }
+.vcz-sec { outline: 1px dashed var(--accent-border); outline-offset: 4px; }
+.vcz-tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; padding: 4px 6px; border-radius: var(--r-sm); background: var(--accent-subtle); font-size: var(--fs-sm); }
+.vcz-tools .vcz-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.vcz-tools .up .ic { transform: rotate(90deg); }
+.vcz-tools .down .ic { transform: rotate(90deg); }
+.vcz-hidden-note { display: flex; align-items: center; gap: 6px; margin-top: var(--gap); }
+
+/* -- the phone: one row of capsules, chips that scroll, stacked tables, sheets, 40 px targets ----------- */
+
+@media (max-width: 760px) {
+  .scopebar { padding: var(--s2) var(--s4) 0; }
+  .scope-sw { max-width: none; flex: 1 1 auto; height: 40px; }
+  .scopebar .scope-cap, .scopebar .crumb-sep, .scope-back .lbl { display: none; }
+  html[data-scope="project"] .scopebar .scope-v { display: none; }   /* the capsule chips below say the view */
+  /* a project's header is compact on a phone, except on its Overview: the capsules come into the first screen */
+  main:has(.view-body:not([data-view="overview"])) .proj-head :is(.chips, .stepper, .ph-id > .mono) { display: none; }
+  main:has(.view-body:not([data-view="overview"])) .proj-head h1 { font-size: var(--fs-lg); }
+  .scope-back { min-width: 40px; min-height: 40px; justify-content: center; }
+  .tb-customize { display: inline-flex; width: 40px; padding: 0; justify-content: center; }
+  .caps-top { flex-wrap: nowrap; gap: 2px; }
+  .caps-top li { flex: 1 1 0; min-width: 0; }
+  .cap-t { width: 100%; justify-content: center; flex-direction: column; gap: 0; min-height: 48px; padding: 4px 2px; border-radius: var(--r-md); font-size: var(--fs-xs); }
+  .cap-t .count { position: absolute; top: 2px; right: 4px; }
+  .cap-t.pin { display: none; }
+  .caps-sub { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 6px; padding-bottom: 8px; border-bottom: 0; }
+  .caps-sub::-webkit-scrollbar { display: none; }
+  .caps-sub a { height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--r-pill); }
+  .caps-sub a.on { border-color: var(--proj, var(--accent)); background: var(--proj-soft, var(--accent-subtle)); }
+  .caps-sub a.on::after { display: none; }
+  .dc-opts { grid-template-columns: minmax(0, 1fr); }
+  .btn, .icon-btn, .seg-b, .nav-i, select, .card-details > summary { min-height: 40px; }
+  .btn.tiny, .btn.small { min-height: 40px; }
+  .icon-btn { min-width: 40px; }
+  .sq-lanes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sq-lanes .sq-lane:last-child { grid-column: 1 / -1; }
+  .page-head .ph-actions { flex-wrap: wrap; }
+  /* a dialog is a sheet from the bottom */
+  .modal, .modal:has(.modal-in.wide) { box-sizing: border-box; width: 100%; max-width: 100%; margin: auto 0 0; border-width: 1px 0 0;
+    border-radius: var(--r-xl) var(--r-xl) 0 0; max-height: 92vh; }
+  .modal .modal-in, .modal .modal-in.wide { width: 100%; }
+  .modal-body { max-height: 70vh; }
+  /* a table is stacked rows: each cell names its column */
+  .tbl table, .tbl tbody, .tbl tr, .tbl th, .tbl td { display: block; width: 100%; }
+  .tbl thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .tbl tr { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .tbl th[scope="row"] { font-weight: 600; padding: 2px 0; text-align: left; }
+  .tbl td { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; text-align: right; }
+  .tbl td::before { content: attr(data-label); color: var(--text-3); text-align: left; font-weight: 500; }
+  .vcz-tools .vcz-name { flex-basis: 100%; }
+}

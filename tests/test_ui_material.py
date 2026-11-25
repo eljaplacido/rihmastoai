@@ -186,7 +186,7 @@ class UiMaterialTest(unittest.TestCase):
         self.open_dialog(existing=True)
         b.click('label[for="np-confidential"]', what="Confidential: keep on local models")
         self.scan('[data-control="adopt_project"]', self.lobby)
-        self.assertIn("Confidential: a role's model is hosted.",
+        self.assertIn("Adopting works (it calls no model). These roles would be refused until they use a local model",
                       b.eval("document.querySelector('.scan-step').innerText"))
         b.click('label[for="np-confidential"]', what="Confidential, off again")
         b.click('.scan-step input[data-path="slides/pilot-deck.pptx"]', what="the deck's checkbox")
@@ -214,7 +214,8 @@ class UiMaterialTest(unittest.TestCase):
         light = b.eval("getComputedStyle(document.querySelector('.scan-step')).backgroundColor")
         self.assertNotEqual(light, dark)
         self.assertTrue(b.eval("document.querySelector('form.np-form button[type=submit]').disabled"))
-        b.click('[data-control="scan_as_material"]', text="Start a new project from it", what="Start a new project")
+        b.click('[data-control="scan_as_material"]', text="Build something from these documents",
+                what="Build something from these documents")
         b.wait("document.querySelector('[data-key=\"np-start:need\"]').getAttribute('aria-checked') === 'true'"
                " && document.querySelector('form.np-form button[type=submit]').textContent.trim()"
                " === 'Create and start the intake' && !!document.querySelector('.scan-read')", "the need path, scanned")

@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from kernel import graph_view_cli
 from kernel.graph import Graph, build
 
 CITABLE = ("question", "assumption", "card", "decision", "signal")
@@ -202,7 +203,10 @@ def eval_baseline(project: Any, model: Any, *, persona: str = "product_owner",
         return graph.answer(query, "not_found", missing=[],
                             why="no requirement rests on a record the assistant could cite")
     known = {i for n in graph.nodes.values() for i in _record_id(n)}
-    rows = [_ask(project, model, persona, case, known) for case in cases]
+    from kernel.model_usage import quiet
+
+    with quiet():        # an evaluation keeps nothing: its runs are not the project's usage
+        rows = [_ask(project, model, persona, case, known) for case in cases]
     measured = [r for r in rows if r["measured"]]
     if not measured:
         return graph.not_measured(query, sorted({r["why"] for r in rows}))
@@ -255,6 +259,7 @@ def add_parsers(sub: Any) -> None:
     p.add_argument("pid")
     p.add_argument("--with-model", action="store_true", help="ask the assistant's model through Gnomon")
     p.add_argument("--persona", default="product_owner")
+    graph_view_cli.add_parser(cmds)                     # the view with filters (kernel/graph_view_cli.py, FR-GRV1)
 
 
 def _graph(factory: Any, args: Any) -> Graph:
@@ -269,7 +274,7 @@ def _trace(factory: Any, args: Any) -> Any:
     return answers[0] if len(answers) == 1 else answers
 
 
-def handlers(emit: Callable[[Any], None], model: Callable[[], Any]) -> dict[str, Callable[[Any, Any], None]]:
+def handlers(emit: Callable[[Any], None], model: Callable[[], Any]) -> dict[str, Callable[[Any, Any], int | None]]:
     """The `rihmasto graph` handlers. ``emit`` prints an answer; ``model`` makes the assistant's model."""
     return {
         "graph trace": lambda f, a: emit(_trace(f, a)),
@@ -283,4 +288,5 @@ def handlers(emit: Callable[[Any], None], model: Callable[[], Any]) -> dict[str,
         "graph parity": lambda f, a: emit(parity(f.project(a.pid), a.ids)),
         "graph eval": lambda f, a: emit(eval_baseline(f.project(a.pid), model() if a.with_model else None,
                                                       persona=a.persona)),
+        "graph view": graph_view_cli.run,
     }

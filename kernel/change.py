@@ -412,8 +412,9 @@ def _add(spec: dict[str, Any], items: list[Any], card_id: str, person: str | Non
 
 
 def _amend(spec: dict[str, Any], answer: dict[str, Any], card_id: str, person: str | None) -> set[str]:
-    """Apply the analyst's amendment to ``spec``: modified, added and withdrawn requirements. A
-    withdrawn requirement stays in the spec, marked withdrawn; the compiler gives it no task."""
+    """Apply the analyst's amendment: modified, added and withdrawn requirements (kept, marked; no task)."""
+    if not isinstance(answer, dict):     # another shape: said, and the card stays open (run again)
+        raise ValueError(f"the analyst's answer for {card_id} was not an amendment: {type(answer).__name__}")
     by_id = {r["id"]: r for r in spec["requirements"]}  # what the spec held before: an addition is not withdrawn
     changed = _modify(spec, answer.get("modify") or [], card_id, person)
     changed |= _add(spec, answer.get("add") or [], card_id, person)

@@ -38,6 +38,13 @@ def add_parsers(sub: Any) -> None:
     p.add_argument("folder")
     p.add_argument("--exclude", action="append", default=[], metavar="GLOB", help="drop files; repeatable")
     p.add_argument("--json", action="store_true", help="the material map as JSON")
+    b = sub.add_parser("baseline", help="an adopted project: run a test command its instructions state as its "
+                                        "baseline (it runs the project's own code: --yes says you agree)")
+    b.add_argument("pid")
+    b.add_argument("--command", required=True, help="the stated command, exactly as the instructions state it")
+    b.add_argument("--person", required=True)
+    b.add_argument("--persona", required=True)
+    b.add_argument("--yes", action="store_true", help="yes: run the project's own code on this machine")
     for name in ("new", "intake", "adopt"):
         q = sub.choices[name]
         q.add_argument("--exclude", action="append", default=[], metavar="GLOB",
@@ -50,6 +57,12 @@ def add_parsers(sub: Any) -> None:
         if name != "intake":
             q.add_argument("--confidential", action="store_true",
                            help="confidential: keep on local models (refused while a role's endpoint is hosted)")
+        if name == "adopt":
+            q.add_argument("--working-copy", action="store_true",
+                           help="a git repository: adopt its working copy as it is now (a snapshot), not its "
+                                "last commit")
+            q.add_argument("--documents", action="store_true",
+                           help="a folder of documents only: adopt it to track and evaluate the work")
 
 
 def _size(n: int) -> str:
@@ -176,6 +189,13 @@ def _intake(factory: Any, args: argparse.Namespace, emit: Emit, model: Callable[
     return None
 
 
+def _progress(step: str) -> None:
+    """An adoption's step as it starts, on stderr: a terminal shows it, and the cockpit's job log carries it to
+    the walkthrough that waits on the job (kernel/walkthrough_flows.py progress_of)."""
+    sys.stderr.write(f"adopt: {step}\n")
+    sys.stderr.flush()
+
+
 def _adopt(factory: Any, args: argparse.Namespace, emit: Emit) -> int | None:
     from kernel.adopt import adopt
     from kernel.posture import for_new_project
@@ -186,7 +206,9 @@ def _adopt(factory: Any, args: argparse.Namespace, emit: Emit) -> int | None:
         (args.maturity or "production", args.mode or "mixed", None)
     p = adopt(factory, args.title, source=args.source, intent=args.intent, person=args.person, persona=args.persona,
               base_url=args.base_url, maturity=maturity, mode=mode, posture=posture, exclude=tuple(args.exclude),
-              profile=None if args.profile == "auto" else args.profile, confidential=args.confidential)
+              profile=None if args.profile == "auto" else args.profile, confidential=args.confidential,
+              progress=_progress, working_copy=bool(getattr(args, "working_copy", False)),
+              documents=bool(getattr(args, "documents", False)))
     meta, adopted = p.meta, p.read("adopted.json") or {}
     mp = p.read("material.json") or {}
     emit({"project": p.pid, "stage": meta["stage"], "intent": meta.get("intent"), "profile": meta.get("profile"),
@@ -210,6 +232,19 @@ def _kind_said(p: Any, adopted: dict[str, Any]) -> dict[str, Any]:
             **({"kind_asked": asked[0]} if asked else {})}
 
 
+def _baseline(factory: Any, args: argparse.Namespace, emit: Emit) -> int | None:
+    """`rihmasto baseline <pid> --command "..." --yes`: a stated test command as the baseline (FR-RPJ1)."""
+    from kernel.adopt_stated import StatedRefused, run
+
+    try:
+        got = run(factory.project(args.pid), args.command, person=args.person, persona=args.persona,
+                  confirmed=bool(args.yes))
+    except StatedRefused as exc:
+        return _refused("baseline", exc)
+    emit({"project": args.pid, **{k: got[k] for k in ("verdict", "reason", "command", "revision")}})
+    return None
+
+
 def _scan(args: argparse.Namespace, emit: Emit) -> int | None:
     try:
         mp = material.preview(args.folder, args.exclude)
@@ -225,5 +260,6 @@ def _scan(args: argparse.Namespace, emit: Emit) -> int | None:
 def handlers(emit: Emit, model: Callable[[], Any]) -> dict[str, Callable[[Any, argparse.Namespace], int | None]]:
     """The `scan`, `new`, `intake` and `adopt` handlers. ``emit`` prints JSON, ``model`` makes the analyst's model
     (asked only once the person confirmed what is sent)."""
-    return {"scan": lambda f, a: _scan(a, emit), "new": lambda f, a: _new(f, a, emit, model),
+    return {"scan": lambda f, a: _scan(a, emit), "baseline": lambda f, a: _baseline(f, a, emit),
+            "new": lambda f, a: _new(f, a, emit, model),
             "intake": lambda f, a: _intake(f, a, emit, model), "adopt": lambda f, a: _adopt(f, a, emit)}

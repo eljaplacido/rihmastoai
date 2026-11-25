@@ -48,6 +48,8 @@ drops the firing and records nothing; the automation's page says why it last ski
 | `command` | runs the project's own test suite, found by rule, in a temporary clone | developer, IT, operations |
 | `ask` | asks a model (the assistant role) with the project's context, and posts the answer as a comment | any |
 | `probe` | runs the probe check (`/health` and every probe scenario) where the release runs: the environment the event names, or the one given, else production; on production it is an operations round, so a failing probe opens the incident card. With `every` (15m to 1d) it keeps probing production from then on: the probe check is enabled on the project (`probe_check_enabled`) | business owner, product owner, developer, IT, operations |
+| `run_check` | runs one check enabled on the project's Health tab (`check`, such as `dependencies` or `custom:smoke`) through the checks' own path; its result is a `check_ran` like any other run. A check not enabled there does nothing and says so ([console and checks](console-and-checks.md)) | business owner, product owner, developer, IT, operations |
+| `align_scan` | reads the project's repository again for alignment (an attached or adopted project), signed by the owner; `alignment_scanned` records the drift since the scan before, shown on the Alignment tab to accept or reject ([alignment](alignment.md)) | business owner, product owner, developer, IT |
 
 `decide`, `approve`, `accept`, `deploy`, `merge`, `grant`, `trust`, `delegate` and the like are refused
 whatever an action is called, and so are `go`, `skip` and `go_ahead` (the look at the spec before the
@@ -132,6 +134,9 @@ The builder starts from these (`rihmasto automations templates`):
 | When promoted to production, enable the probe check and notify | `promoted` | probe production now and every hour, notify of every run | every project | the subscription |
 | When a concept is validated, notify the product owner | `concept_validated` | notify the product owner's channel | every project | the subscription |
 | When the gate fails twice, open a change proposal | `gate_failed`, guard: twice in 24 h | open a change proposal | one project | the project |
+| Notify when a check fails | `check_ran`, guard: verdict = failed | notify a channel with the project | every project | the subscription |
+| Morning review digest | daily 07:30 | `review_digest`: the owner's [Review](review.md) to a channel, held back when nothing happened | the factory | the subscription |
+| Re-read the repository for alignment when it changes | a new commit on the repository | `align_scan`: the drift shows on the Alignment tab | one project | the project |
 
 ## The life-cycle steps and their transitions
 

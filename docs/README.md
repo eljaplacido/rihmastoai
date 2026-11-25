@@ -1,126 +1,206 @@
 # Rihmasto documentation
 
-Every guide and reference page that ships with Rihmasto, grouped by who reads it. A page can sit
-in more than one group. Pages marked *design* describe something planned; they say inside what is
-built and what is not.
+Every guide and reference page that ships with Rihmasto, grouped by capability area, with the
+paths for each scenario first. A page can sit in more than one group. Pages marked *design*
+describe something planned; they say inside what is built and what is not.
 
 ## Start here
 
-- [The README](../README.md): what Rihmasto is, the quick start, and the project's status.
+- [The README](../README.md): what Rihmasto is, which path to pick, the quick start, the scenarios
+  step by step, the capability breakdown and the project's status (what is built, what is tested only
+  against stand-ins, and what is landing next).
 - [Getting started](getting-started.md): install, the demo, models and Gnomon, a first real
   project, the cockpit, where things are kept.
-- [The demo](demo.md): what the demo factory holds, and what each persona sees in it.
+- [The demo](demo.md): what the demo home holds, and what each persona sees in it.
 - [How it works](how-it-works.md): the chain step by step, the delivery square, personas and
   lenses, and what Gnomon does beside the kernel.
-- [The acceptance matrix](acceptance.md): every use case and mode, measured, and the live acid test.
+- [Walkthroughs in Ask Rihma](guides/walkthroughs.md): Rihma walks you through plugging in an existing
+  project, starting from an idea or documents, setting up a model, or a tour, step by step in the chat.
+- [Guided journeys](guides/guided-journeys.md): the larger paths through Rihmasto, measured from the records,
+  with a next step, its real action and command, and a guide that stays with you.
 - [Use only what you need](guides/use-only-what-you-need.md): the modules and the presets (spec only,
-  gate my code, assess, security or evidence only, a capability, the full factory), and changing them.
+  gate my code, assess, security or evidence only, a capability, the full chain), and changing them.
+- [The acceptance matrix](acceptance.md): every use case and mode, measured, and the live acid test.
 
-## Business owners and product owners
+## By scenario
 
-- [Signals, concepts and updates](guides/signals-and-concepts.md): how needs and outside events
-  arrive, and how a person decides what becomes work.
+**Before any scenario.** [Getting started](getting-started.md) to install and pick a model
+([models setup](guides/models-setup.md), or [your coding agent as the model](guides/harness-models.md)),
+then start the cockpit on your own home, not the demo.
+
+**Start fresh from an idea.** [Shape it in chat](guides/shape-in-chat.md), then
+[inputs](guides/inputs.md) and [how it works](how-it-works.md) for the questions, spec, contract,
+build and gate, at explore maturity on the local preview; [postures](guides/postures.md) to choose how
+strict; [deploying on paved roads](guides/deploying.md) for demo, pilot and production once IT has
+configured a road (only the local preview has run for real; see [paved roads](paved-roads.md)).
+
+**Integrate into an existing project.** [Existing solutions](brownfield.md) to scan, adopt and
+assess; [alignment](guides/alignment.md); [your IDE and Rihmasto](guides/ide-and-rihmasto.md);
+[checks](guides/console-and-checks.md) and [automations](guides/automations.md) to watch it. No paved
+road delivers an adopted repository yet.
+
+**Conceptualise.** [Shape it in chat](guides/shape-in-chat.md) or a folder of documents through
+[inputs](guides/inputs.md); then either socratic mode to think it through
+([how it works](how-it-works.md#1-intake)) or the prototype posture at explore for a quick mock-up
+([postures](guides/postures.md)); [signals and concepts](guides/signals-and-concepts.md) for validating
+a concept on the delivery square; [change anything](guides/change-anything.md) to firm it up later.
+
+**Keep something running.** [Checks](guides/console-and-checks.md), probes and incidents in
+[how it works](how-it-works.md#8-operation), [automations](guides/automations.md),
+[Review](guides/review.md) each morning, and [Insights](guides/insights.md).
+
+**Work from your IDE or terminal.** [Your IDE and Rihmasto](guides/ide-and-rihmasto.md),
+[MCP](mcp.md), [hand-offs and the agent channel](guides/agentic-help.md),
+[the console and a terminal](guides/console-and-checks.md),
+[your coding agent as the model](guides/harness-models.md).
+
+## Intake and shaping
+
 - [Shape it in chat](guides/shape-in-chat.md): work out a need with Rihma in conversation, from
   nothing, a sentence or a file, with a draft brief you edit, then create the project from it.
 - [Inputs: any input, from any author](guides/inputs.md): how a need, a specification, a plan or a
-  folder is read, what is never asked again, how the gaps are asked, and the intake summary.
-- [The autonomy ladder](guides/autonomy.md): how far the factory may go on its own, and who sets
-  the cap.
-- [Autopilot, delegation and staying on track](guides/autopilot-and-tracking.md): let Rihmasto run
-  on its own in a sandbox, or keep a tight hold with checkpoints, and see whether a project stays on
-  track against its approved plan.
-- [Automations](guides/automations.md): a trigger, a guard, an action and a scope, per project or
-  across them, run with their owner's rights; the templates, and the lines that run them from cron or
-  Windows Task Scheduler.
+  folder is read, what is never asked again, how the gaps are asked, confidential material on local
+  models, and the intake summary.
+- [Signals, concepts and updates](guides/signals-and-concepts.md): how needs and outside events
+  arrive, and how a person decides what becomes work.
+- [Work profiles](guides/profiles.md): the thirteen kinds of work (three ready, ten preview), and what
+  each one asks.
 - [Postures and priority weights](guides/postures.md): prototype, balanced, production or
   regulated, tuned by weights; what each does, previewed before you choose, and changing it during
   the run.
-- [Work profiles](guides/profiles.md): the kinds of work, and what each one asks.
 - [Change anything, go back a step, never get stuck](guides/change-anything.md): change a project's
   kind of work, mode, maturity or title with a preview of what it means, send it back to its material,
   questions, spec or plan, add material later, and see what it waits for.
-- [Outputs](guides/outputs.md): what each audience receives (a web app with sign-in, a container,
-  an API description, a delivery report, an evidence pack, the source), chosen by a person and built
-  from the records.
-- [The capability layer](capability-layer.md): what Rihmasto delivers, besides software, and who
-  sees what.
-- [The whole delivery](factory-overview.md) (*design*): the seven stages, the delivery square and
-  the canon, from a business need to measured benefit.
 
-## Developers
+## Existing projects
 
-- [Existing solutions, your own terminal, security findings](brownfield.md): adopting a
-  repository, workspaces for your own agent, and SARIF findings.
-- [Security: Rihmasto checks what it builds](guides/security.md): its own static scan, dynamic
-  probes and agentic red team, the scope a person authorises, and what they do not catch.
+- [Existing solutions, your own terminal, security findings](brownfield.md): adopting a folder or a git
+  address, the assessment, workspaces for your own agent, SARIF findings, and what is not built yet
+  (no paved road delivers an adopted repository).
+- [Assessing an existing system, and watching it run](guides/assessment.md): the assessment's rules and
+  panel, and the live progress every long job shows (each area as it runs, its findings as they land, an
+  honest estimate, Cancel, and "how is the assessment going?" in Ask Rihma).
+- [Alignment: your repository's own specs and tests](guides/alignment.md): the specs, criteria, tests,
+  tasks, ADRs and API contracts a team keeps in its repository (spec-kit, Kiro, BMAD, Gherkin, OpenAPI and
+  more), proposed for the project's contract and accepted, edited or rejected, the gaps, suggested changes
+  for the repository, the drift after it changes, and continuing in your IDE.
 - [Your IDE and Rihmasto](guides/ide-and-rihmasto.md): where the line is between the IDE and
   terminal (the inner loop) and Rihmasto (the outer loop); how Rihmasto reads a project's CLAUDE.md,
   AGENTS.md, Cursor rules, skills and MCP servers and follows them; MCP configuration for Claude Code,
   Cursor and Codex, and `rihmasto ide`.
-- [MCP](mcp.md): the MCP server for your own coding agent, with its tools, resources and safety
-  boundary.
-- [Small capabilities](guides/small-capabilities.md): an automation, a single workflow or one agentic
-  capability, from a two-sentence need to a running capability reached over MCP, an OpenAI-compatible
-  endpoint, a website chat or HTTP, behind its pack guard.
-- [The cockpit](cockpit.md): every view, the lenses, the assistant and the JSON API.
-- [Running fully local](guides/local-models.md): every role on your own hardware.
-- [Recipes, sandbox trials, measured fit and offline bundles](guides/recipes-and-fit.md): reuse of
-  proven capabilities, from Python.
+
+## Build and verify
+
+- [How it works](how-it-works.md): the panel, the spec, the hashed contract, the builder cells, the
+  gate and the holdouts.
 - [Spec to verify](spec-to-verify.md) (*design*): how a requirement becomes something Gnomon
   enforces.
 - [The v1 chain](v1-design.md) (*design*): the end-to-end chain as it was designed for v1.
+- [Harnesses](guides/harnesses.md): who runs the cells. Gnomon by default (in-run policy enforced), or
+  Claude Code, Codex, OpenCode or a command you name, approved by IT with its version pinned and
+  checked after every run; the docker sandbox; adding a command runner.
+- [Models setup](guides/models-setup.md): which model answers for each role (a local server or a
+  hosted OpenAI-compatible provider), its key, and a Test, from the cockpit or `rihmasto models`.
+- [Run Rihmasto with the coding agent you already have](guides/harness-models.md): no API key? Claude
+  Code (your login), Codex or OpenCode answers the text roles (`rihmasto models use claude-code`), run
+  headless with no tools, each call recorded as run by it.
+- [Running fully local](guides/local-models.md): every role on your own hardware.
+- [A harness provider for Gnomon](upstream/gnomon-harness-provider.md) (*proposal*): how Gnomon itself
+  could spawn a coding agent for a role and keep it in its own audit trail.
+- [Security: Rihmasto checks what it builds](guides/security.md): its own static scan, dynamic
+  probes and agentic red team, the scope a person authorises, and what they do not catch.
 - [Code quality](code-quality.md): the quality gate, its numbers, and what to fix.
 - [Rihmasto against Gnomon v0.6.6](gnomon-0.6.6-audit.md): what changed in Gnomon 0.6.6 and how
   Rihmasto follows it.
-- [Contributing](../CONTRIBUTING.md): set up, run the checks, and the spec-first way of working.
 
-## IT and operations
+## Run and deliver
 
-- [Models setup](guides/models-setup.md): which model answers for each role (a local server or a
-  hosted OpenAI-compatible provider), its key, and a Test, from the cockpit or `rihmasto models`.
-- [Harnesses](guides/harnesses.md): who runs the factory's cells. Gnomon by default (in-run policy
-  enforced), or Claude Code, Codex, OpenCode or a command you name, approved by IT with its version
-  pinned and checked after every run; the docker sandbox; adding a command runner.
-- [Access](guides/access.md): who may decide as which persona. Single-operator and enforced modes,
-  the access file, and setting up an identity-aware proxy (oauth2-proxy with Entra ID, Okta, Google
-  or Keycloak; Google IAP; an AWS load balancer) whose signed token the cockpit verifies, and the
-  isolation runner untrusted code runs through.
-- [Deploying on paved roads](guides/deploying.md): the short version of how a product lands.
+- [Deploying on paved roads](guides/deploying.md): the short version of how a product lands, by
+  maturity.
 - [Paved roads](paved-roads.md): the full reference: configuring a road, what each maturity does,
   and what is real and what is not.
+- [Google Cloud and Google Drive](guides/gcp.md): a Cloud Run service or a scheduled Cloud Run job on
+  IT's Google Cloud road, and a capability that reads new recordings from a Drive folder and writes
+  transcripts back, with where the audio goes.
+- [Outputs](guides/outputs.md): what each audience receives (a web app with sign-in, a container,
+  an API description, a delivery report, an evidence pack, the source), chosen by a person and built
+  from the records.
+- [Small capabilities](guides/small-capabilities.md): an automation, a single workflow or one agentic
+  capability, from a two-sentence need to a running capability reached over MCP, an OpenAI-compatible
+  endpoint, a website chat or HTTP, behind its pack guard.
 - [The capability gateway](guides/gateway.md): one OpenAI-compatible endpoint for a site's
   workloads, with fallbacks, quotas and an audit.
+- [Data integrations](guides/data-integrations.md): how a capability reaches a database, a data
+  warehouse, cloud storage or an ERP, who approves each binding, and where credentials live (connectors
+  tested against local fakes; no road calls them yet).
+- [Events, doorbells and connectors](guides/integrations.md): signed events and Teams, Slack and email
+  notices out (tested against local receivers), verified webhooks in, and the connector model, as far
+  as they are built.
 - [Embeds](guides/embeds.md): a website chat that files feedback or a need, and how it is
   protected.
 - [Integrations](integrations.md) (*design*): connecting other systems through Gnomon as governed
   tool calls.
-- [Events, doorbells and connectors](guides/integrations.md): signed events and notices out,
-  verified webhooks in, and the connector model, as far as they are built.
-- [Data integrations](guides/data-integrations.md): how a capability reaches a database, a data
-  warehouse, cloud storage or an ERP, who approves each binding, and where credentials live.
 - [Portability](portability.md) (*design, phase 1 built*): running a release anywhere, with its pins
   and evidence.
-- [Security](../SECURITY.md): how to report a vulnerability, and the threat model in short.
+- [Recipes, sandbox trials, measured fit and offline bundles](guides/recipes-and-fit.md): reuse of
+  proven capabilities, from Python.
 
-## Compliance
+## Automate and keep healthy
 
-- [Capability packs and evidence packs](guides/packs-and-evidence.md): what a release is, and the
-  bundle a reviewer checks.
-- [The autonomy ladder](guides/autonomy.md): the cap, who may set it, and how it is recorded.
-- [Access](guides/access.md): how a decision is bound to a verified identity, and how each change
-  to who may decide is recorded.
+- [Automations](guides/automations.md): a trigger, a guard, an action and a scope, per project or
+  across them, run with their owner's rights; the templates, and the lines that run them from cron or
+  Windows Task Scheduler.
+- [The console, a terminal, and checks](guides/console-and-checks.md): where the line is between your
+  IDE, Rihmasto's console and a real terminal; running a project's commands or Gnomon in its workspace,
+  recorded; opening a terminal there; and checks with a Health view for keeping a project healthy.
+- [Autopilot, delegation and staying on track](guides/autopilot-and-tracking.md): let Rihmasto run
+  on its own in a sandbox, or keep a tight hold with checkpoints, and see whether a project stays on
+  track against its approved plan.
+- [The autonomy ladder](guides/autonomy.md): how far Rihmasto may go on its own, and who sets the cap.
+
+## Agents
+
+- [The cockpit](cockpit.md): every view, the lenses, Ask Rihma and the JSON API.
+- [Walkthroughs in Ask Rihma](guides/walkthroughs.md): step-by-step help in the chat for each move.
+- [Agentic help: goals, hand-offs and the agent channel](guides/agentic-help.md): ask Rihma for a goal
+  ("hook this to Google Drive") and get a plan you take one click at a time; hand a project off to
+  Claude Code, Codex, OpenCode or Cursor; what agents read and write back; and the agent channel where
+  people, Rihma's agents and coding agents talk, traced and watched.
+- [MCP](mcp.md): the MCP server for your own coding agent, with its tools, resources and safety
+  boundary.
+
+## See and govern
+
+- [Review what agents shipped](guides/review.md): since you last looked, grouped by what needs you
+  (waiting on you, went wrong, decided for you, shipped, from your IDE, cost), acted on in place, marked
+  reviewed, and sent to you every morning.
+- [Insights](guides/insights.md): health, compliance, governance, security, context drift, QA and
+  token, skill and memory usage, per project and across them, counted from the records; what is not
+  measured and how to measure it; exporting to your own observability stack (JSON, CSV, OpenTelemetry).
+- [Knowledge graphs and ontologies](knowledge-graph.md) (*phase 1 built*): the read model over
+  Rihmasto's own records, and the read-only `rihmasto graph` command.
+- [Capability packs and evidence packs](guides/packs-and-evidence.md): what a release is, what a pack
+  says it lacks (no SBOM, not signed), and the bundle a reviewer checks, whose verdict is *attestable*,
+  *chain broken* or *insufficient evidence*, never "compliant".
+- [The capability layer](capability-layer.md): what Rihmasto delivers besides software, and who sees
+  what.
+- [Access](guides/access.md): who may decide as which persona. Single-operator and enforced modes,
+  IT's access file, setting up an identity-aware proxy that IT runs (oauth2-proxy with Entra ID, Okta,
+  Google or Keycloak; Google IAP; an AWS load balancer) whose signed token the cockpit verifies (tested
+  with test keys, not yet a real identity provider), and the isolation runner untrusted code runs
+  through.
 - [Security findings from any scanner](brownfield.md#security-findings-from-any-scanner): the
   security gate and accepted risks.
+- [The whole delivery](factory-overview.md) (*design*): the seven stages, the delivery square and
+  the canon, from a business need to measured benefit.
 - [Decisions](../decisions/): every decision, who made it and why.
 
 ## Background and research
 
-- [Knowledge graphs and ontologies](knowledge-graph.md) (*phase 1 built*): a read model over Rihmasto's
-  own records, and the read-only `rihmasto graph` command.
 - [Ideas for the road ahead](roadmap-ideas.md): ideas from research, and which are done.
 - [Gnomon upstream issues](../upstream/gnomon-issues.md): what Rihmasto asked of Gnomon.
-- [The first working spec](../specs/001-initial/spec.md): an early draft of the factory's own
-  spec, kept as history; the contract is the current one.
+- [The first working spec](../specs/001-initial/spec.md): an early draft of Rihmasto's own spec,
+  kept as history; the contract is the current one.
 
 ## The project
 

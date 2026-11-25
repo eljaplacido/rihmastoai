@@ -1,5 +1,4 @@
-"""The cockpit assistant: ask where something is, what it means, how a run is going. It can propose
-actions, but never takes one.
+"""The cockpit assistant: where something is, what it means, how a run goes. It proposes actions, never takes one.
 
 - **Navigation** comes from `cockpit/ui_map.json`, the cockpit's own map of views and controls, with
   the page each control is on. A "where is…" question is answered from the map even without a model,
@@ -28,6 +27,8 @@ from pathlib import Path
 from typing import Any
 
 from kernel import assistant_status as status_q
+from kernel import assistant_work as work_q
+from kernel import journey_chat, model_usage
 from kernel.assistant_rules import (
     ACTIONS,
     CONTROL_PAGES,
@@ -58,8 +59,8 @@ from kernel.assistant_snapshot import (
     relevant_first,
     snapshot,
 )
+from kernel.confidential import assistant_kept_local, require_local
 from kernel.confidential import confidential as is_confidential
-from kernel.confidential import refusal, require_local
 from kernel.filelock import LockHeld
 from kernel.model import Model, ModelError, extract_json, run_gnomon_task
 
@@ -309,8 +310,9 @@ def from_map(question: str, project: Any, *, hidden: Collection[str] = ()) -> di
     to act or to reshape the cockpit is told plainly that the map cannot, and where to do it oneself. What
     a module that is not enabled shows (``hidden``) is never pointed to; asked for, it is named."""
     act = asks_for_action(question)
-    if project is not None and not act and status_q.asks_status(question):   # how this project is doing
-        return status_q.status_answer(project)
+    early = work_q.before_map(question, project, act, hidden)
+    if early is not None:
+        return early
     views, controls = _by_id()
     hits, off = _map_hits(question, act, controls, hidden)
     if off is not None:
@@ -319,7 +321,8 @@ def from_map(question: str, project: Any, *, hidden: Collection[str] = ()) -> di
     if hits:
         top = hits[0]
         route, note = _target(top, project, views)
-        answer = (f"{top['label']} shows {top['purpose']}." if top["kind"] == "view" else _control_answer(top)) + note
+        answer = status_q.with_pid((f"{top['label']} shows {top['purpose']}." if top["kind"] == "view"
+                                    else _control_answer(top)) + note, project, FACTORY_PID)
         control = top["id"] if top["kind"] == "control" and not note else None   # not on the page it opens
         nav = {"route": route, "control": control} if route or control else None
         if act:
@@ -328,8 +331,8 @@ def from_map(question: str, project: Any, *, hidden: Collection[str] = ()) -> di
         answer = _status_line(project)
     else:
         answer = "I could not match that to a view or a control. Try the palette (Ctrl+K) or name the view."
-    return {"answer": answer, "navigate": nav, "propose": [], "dropped": [], "sources": [], "by": "map",
-            "matches": [h["id"] for h in hits]}
+    return {"answer": work_q.for_project(answer, project), "navigate": nav, "propose": [], "dropped": [], "sources": [],
+            "by": "map", "matches": [h["id"] for h in hits]}
 
 
 # -- the model ---------------------------------------------------------------------------------------
@@ -442,14 +445,6 @@ def _offered(factory: Any, project: Any, persona: str, question: str, raw: Any, 
     return proposals, dropped, unasked
 
 
-def _local_only(project: Any, model: Model | None) -> tuple[Model | None, dict]:
-    """No model, and a note, for a confidential project whose assistant model is hosted (kernel/confidential.py):
-    it is answered from the cockpit map, and nothing about it is sent."""
-    if model is None or project is None or not is_confidential(project) or not refusal(["assistant"]):
-        return model, {}
-    return None, {"note": "this project is confidential and the assistant's model is hosted: answered from the map"}
-
-
 def _fallback(question: str, project: Any, exc: Exception, hidden: Collection[str] = ()) -> dict:
     out = from_map(question, project, hidden=hidden)
     out["note"] = (f"the assistant's model was busy for {LANE_WAIT:.0f} seconds with another question; this answer "
@@ -459,7 +454,7 @@ def _fallback(question: str, project: Any, exc: Exception, hidden: Collection[st
 
 
 def ask(factory: Any, question: str, *, persona: str, project_id: str | None = None, view: str | None = None,
-        ui: dict | None = None, model: Model | None = None) -> dict:
+        ui: dict | None = None, model: Model | None = None, person: str | None = None) -> dict:
     """The assistant's answer: from the map without a model; with one, from the snapshot, with its
     proposals checked, its sources checked against the records, and its wording kept to proposing."""
     if not question.strip():
@@ -467,10 +462,12 @@ def ask(factory: Any, question: str, *, persona: str, project_id: str | None = N
     from kernel.modules import hidden_ids
 
     project, about = status_q.resolve(factory, question, project_id)   # a pasted link names the project
+    hidden = hidden_ids(project if project is not None else factory)   # the map of what is enabled there
+    about = work_q.by_rule(factory, project, question, about, person=person, hidden=hidden)   # model or not
+    about = journey_chat.routed(factory, project, question, about, persona=persona, model=model, person=person)
     if about is not None:
         return about
-    hidden = hidden_ids(project if project is not None else factory)   # the map of what is enabled there
-    model, kept_local = _local_only(project, model)
+    model, kept_local = assistant_kept_local(project, model)
     if model is None:
         return from_map(question, project, hidden=hidden) | kept_local
     secret = project is not None and is_confidential(project)
@@ -478,9 +475,10 @@ def ask(factory: Any, question: str, *, persona: str, project_id: str | None = N
         require_local(project, ("assistant",), where="assistant")
     snap = snapshot(factory, project=project, persona=persona)
     try:
-        raw = extract_json(_own_lane(model, secret).ask(prompt(question, snap, persona=persona, view=view, ui=ui,
-                                                       hints=find_in_map(question, hidden=hidden), hidden=hidden),
-                                                role="assistant"))
+        with model_usage.for_project(project, task="assistant", factory=factory):   # its run, as model_run
+            raw = extract_json(_own_lane(model, secret).ask(prompt(question, snap, persona=persona, view=view, ui=ui,
+                                                           hints=find_in_map(question, hidden=hidden), hidden=hidden),
+                                                    role="assistant"))
         if not isinstance(raw, dict):
             raise ModelError("the answer is not a JSON object")
     except (ModelError, OSError, RuntimeError, ValueError) as exc:   # LockHeld is a RuntimeError

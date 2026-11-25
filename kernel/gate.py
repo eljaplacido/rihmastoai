@@ -31,6 +31,7 @@ from typing import Any
 
 from kernel import access_isolation as isolation
 from kernel import integration_standins as standins
+from kernel.gate_own import tests_or_own
 from kernel.lanes import protected_paths
 from kernel.model import ModelError, extract_json, run_gnomon_task
 from kernel.verdicts import combine_verdicts
@@ -486,14 +487,13 @@ An empty list means you found nothing.
 
 
 def judge_change(repo_dir: Path, contract: dict, base: str, head: str, *, label: str, author: str,
-                 task_id: str | None = None, verifier_runner=None) -> GateResult:
-    """The gate for commits a person made in a workspace. With a contract task named, it is the
-    very same `judge` a builder cell meets. Without one, the suite and the independent verifier
-    still run, and trace and fail-first are not applicable: no criterion is claimed."""
+                 task_id: str | None = None, verifier_runner=None, own_suites: list | None = None) -> GateResult:
+    """The gate for a person's workspace commits: with a contract task, the very `judge` a builder cell meets;
+    without, the suite (or an adopted project's ``own_suites``: gate_own) and the verifier, no criterion claimed."""
     if task_id is not None:
         return judge(repo_dir, contract, task_id, base, head, verifier_runner=verifier_runner)
     prompt, run = change_verifier_prompt(contract, base, author), run_suite(repo_dir)
-    signals = [*standins.signal(contract, run), signal_tests(repo_dir, run=run),
+    signals = [*standins.signal(contract, run), tests_or_own(repo_dir, signal_tests(repo_dir, run=run), own_suites),
                Signal("trace", "not applicable", {"criteria": []}, "the change names no criterion"),
                Signal("fail_first", "not applicable", {}, "the change names no criterion"),
                signal_protected(repo_dir, base, head) or _verifier_signal(repo_dir, prompt, runner=verifier_runner)]

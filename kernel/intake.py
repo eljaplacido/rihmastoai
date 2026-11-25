@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from kernel import input_intake as inputs
+from kernel import model_usage
 from kernel.canon import PERSPECTIVES, Canon
 from kernel.model import ModelError, extract_json
 
@@ -246,6 +247,7 @@ def conventions(project: Any, mp: dict[str, Any] | None) -> str:
     return ""
 
 
+@model_usage.recorded("intake")      # the analyst's runs in the project's ledger (model_run)
 def intake(project, source: str, *, model, requested_by: str | None = None,
            perspectives=PERSPECTIVES, literal: bool = False, kind: str | None = None) -> dict:
     """Run the panel on ``source`` and settle each question by the project's mode. With ``literal``

@@ -1120,8 +1120,10 @@ class RedesignTestCase(CockpitTestCase):
     """Helpers for the redesigned cockpit's routes (FR-T1-AC-11 to AC-15, FR-V1-AC-5)."""
 
     def ledgers(self):
-        """Every project's ledger length, the factory's own canon included."""
-        return {p.pid: len(p.ledger().records()) for p in self.factory.projects()}
+        """Every project's ledger length, the factory's own canon included, less the usage metadata of a model's
+        run (model_run, FR-INS1-AC-9): that says a model answered, never what; it is no write of the route's."""
+        return {p.pid: len([r for r in p.ledger().records() if r["event"]["kind"] != "model_run"])
+                for p in self.factory.projects()}
 
     def assert_no_ledger_writes(self, before):
         """No ledger that existed got a record; one created meanwhile (the factory's own canon, made on
@@ -1152,7 +1154,8 @@ WIDGET_MODEL = {"kpi_strip": "kpis", "square": "square", "pipeline": "pipeline",
                 "catalogue": "catalogue", "live": "projects", "timeline": "timelines", "gate_trend": "gate_trend",
                 "coverage": "coverage", "activity": "activity", "models": "models", "health": "projects",
                 "updates": "updates", "autonomy": "autonomy", "evidence_packs": "evidence_packs", "spend": "spend",
-                "feed_health": "feed_health", "eval_trend": "eval_trend", "try_it": "try_it", "track": "track"}
+                "feed_health": "feed_health", "eval_trend": "eval_trend", "try_it": "try_it", "track": "track",
+                "insight": "insights"}
 
 
 class DashboardLayoutTest(RedesignTestCase):
@@ -1231,6 +1234,42 @@ class DashboardLayoutTest(RedesignTestCase):
         self.assertEqual(self.call("GET", q)[1]["layout"], layout)                # nothing refused was kept
         self.assert_no_ledger_writes(before)                                  # never in a project ledger
         self.assertEqual(self.call("DELETE", q)[0], 405)
+
+    def test_FR_UXO1_AC_11_view_layouts_are_kept_per_person_on_the_server_within_bounds(self):
+        before = self.ledgers()
+        q = "/api/view-layouts"
+        status, out, _ = self.call("GET", q + "?person=Dev")
+        self.assertEqual((status, out["saved"], out["views"], out["tabs"]), (200, False, {}, {"hidden": [], "pinned": []}))
+        lay = {"order": ["brief", "health"], "hidden": ["brief", "brief"], "size": {"health": "wide", "brief": "normal"}}
+        status, out, _ = self.put(q, {"person": "Dev", "persona": "developer", "views": {"p:overview": lay, "g:projects": {"hidden": ["x"]}},
+                                      "tabs": {"hidden": ["review"], "pinned": ["questions"]}})
+        self.assertEqual(status, 200, out)
+        self.assertEqual(out["views"]["p:overview"], {"order": ["brief", "health"], "hidden": ["brief"], "size": {"health": "wide"}})
+        # another view's save merges; null removes one view; the tabs stay unless sent
+        self.put(q, {"person": "Dev", "persona": "developer", "views": {"p:tasks": {"size": {"board": "compact"}}, "g:projects": None}})
+        status, out, _ = self.call("GET", q + "?person=Dev")
+        self.assertTrue(out["saved"])
+        self.assertEqual(sorted(out["views"]), ["p:overview", "p:tasks"])
+        self.assertEqual(out["tabs"], {"hidden": ["review"], "pinned": ["questions"]})
+        self.assertEqual(self.call("GET", q + "?person=Olli")[1]["views"], {})          # per person
+        # refused: a bad view key, a size outside its set, too many sections, a bad tab id, a non-person
+        bad = [{"views": {"overview": lay}}, {"views": {"p:../x": lay}}, {"views": {"p:overview": {"size": {"a": "huge"}}}},
+               {"views": {"p:overview": {"hidden": [f"s{i}" for i in range(81)]}}}, {"tabs": {"hidden": ["Review!"]}},
+               {"views": {"p:overview": {"hidden": ["\x00"]}}}, {"views": ["p:overview"]}]
+        for b in bad:
+            status, err, _ = self.put(q, dict(b, person="Dev", persona="developer"))
+            self.assertEqual(status, 400, (b, err))
+        for who in ("assistant", "", "factory"):
+            self.assertEqual(self.put(q, {"person": who, "persona": "developer", "views": {"p:overview": lay}})[0], 403, who)
+        self.assertEqual(self.put(q, {"person": "Dev", "persona": "developer"}, origin="http://evil.example")[0], 403)
+        self.assertEqual(self.put(q, {"person": "Dev", "persona": "developer"}, token=None)[0], 401)
+        # reset: every view and the tabs
+        status, out, _ = self.put(q, {"person": "Dev", "persona": "developer", "reset": "*"})
+        self.assertEqual((out["views"], out["tabs"]), ({}, {"hidden": [], "pinned": []}))
+        files = list((self.factory.home / "_cockpit" / "view-layouts").glob("*.json"))
+        self.assertEqual(len(files), 1)
+        self.assertEqual(json.loads(files[0].read_text(encoding="utf-8"))["person"], "Dev")
+        self.assert_no_ledger_writes(before)                                  # never in a project ledger
 
 
 class ContextTest(RedesignTestCase):

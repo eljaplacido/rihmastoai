@@ -218,7 +218,11 @@ def _rescan(factory: Factory, a: dict[str, Any], f: dict[str, Any], tools: Any) 
     from kernel.source_guard import check_folder
 
     project = _project(factory, f)
-    folder = check_folder(a["action"]["folder"], a["owner"]["persona"])
+    if project.meta.get("source_kind") in ("adopted", "attached"):   # its repository is its material
+        return {"outcome": "nothing", "detail": f"{project.pid} is {project.meta['source_kind']}: its repository is "
+                "its material, so a folder re-scan adds nothing. 'Re-read the repository for alignment when it "
+                "changes' follows its new commits instead."}
+    folder = check_folder(a["action"]["folder"], a["owner"]["persona"], factory.home)  # its allowed roots too
     body = read_material(path=str(folder))[1]
     digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
     added = (project.read("material.json") or {}).get("added") or []
@@ -399,4 +403,10 @@ def _probe(factory: Factory, a: dict[str, Any], f: dict[str, Any], tools: Any) -
 
 HANDLERS: dict[str, Callable[[Factory, dict[str, Any], dict[str, Any], Any], dict[str, Any]]] = {
     "advance": _advance, "gate": _gate, "rescan": _rescan, "notify": _notify, "change": _change, "signal": _signal,
-    "output": _output, "command": _command, "ask": _ask, "probe": _probe}
+    "output": _output, "command": _command, "ask": _ask, "probe": _probe,
+    "watch": lambda factory, a, f, tools: __import__("kernel.adopt_watch", fromlist=["fire"]).fire(
+        _project(factory, f), str(a["action"].get("what") or "commits"))}
+# run_check, align_scan and review_digest (kernel/automations_more.py), whichever module loads first.
+from kernel.automations_more import handlers as _more  # noqa: E402
+
+HANDLERS.update(_more())

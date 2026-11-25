@@ -131,8 +131,8 @@ def _halted(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _no_material(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
-    if project.path("source.json").exists():
-        return None
+    if project.path("source.json").exists() or project.meta.get("source_kind") in ("adopted", "attached"):
+        return None                    # an adopted or attached project's material is its repository
     pid = project.pid
     if project.read("need.json"):
         return _situation("ready", "its intake, from the need a person validated", [_advance(pid, "Run the intake")])
@@ -163,14 +163,22 @@ def _model_down(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
                       _model_setup(project.pid))
 
 
+def _clip(text: str, limit: int = 90) -> str:
+    """``text`` cut on a word boundary with an ellipsis, so a cut never leaves another real word ("again")."""
+    text = str(text or "")
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0].rstrip(" ,.;:") + "…"
+
+
 def _question_actions(pid: str, qs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     for q in qs[:SHOWN]:
-        out.append(_act("answer", f"Answer {q['id']}: {q['text'][:90]}", CARD_DECIDERS["question"], control="answer",
+        out.append(_act("answer", f"Answer {q['id']}: {_clip(q['text'])}", CARD_DECIDERS["question"], control="answer",
                         view="questions", question=q["id"], card=q.get("card"),
                         command=f"rihmasto answer {pid} {q['id']} \"...\" --person ... --persona ..."))
         if str((q.get("opinions") or {}).get(q["perspective"]) or "").strip():
-            out.append(_act("assume", f"Let the factory assume {q['id']}", CARD_DECIDERS["question"],
+            out.append(_act("assume", f"Let Rihma assume an answer to {q['id']}", CARD_DECIDERS["question"],
                             control="assume", view="questions", question=q["id"], card=q.get("card"),
                             command=f"rihmasto assume {pid} {q['id']} --person ... --persona ..."))
     return out
@@ -190,9 +198,10 @@ def _questions(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
 def _card_actions(canon: Canon, pid: str) -> list[dict[str, Any]]:
     cards = [c for c in canon.cards() if c["kind"] != "question"
              and (c["kind"] != "change" or (c["payload"].get("triage") or {}).get("needs_decision", True))]
-    return [_act("decide", f"Decide {c['id']}: {c['title'][:90]}", CARD_DECIDERS[c["kind"]], control="decide",
+    return [_act("decide", f"Decide {c['id']}: {_clip(c['title'])}", CARD_DECIDERS[c["kind"]], control="decide",
                  view="inbox", card=c["id"], kind=c["kind"],
-                 command=f"rihmasto decide {pid} {c['id']} <verdict> --person ... --persona ...") for c in cards[:SHOWN]]
+                 command=f"rihmasto decide {pid} {c['id']} <verdict> --person ... --persona ...")
+            for c in cards[:SHOWN]]
 
 
 def _go_ahead(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
@@ -220,7 +229,8 @@ def _cards(project: Project, ctx: dict[str, Any]) -> dict[str, Any] | None:
         return None
     if (ctx["last"] or {}).get("material_read"):     # a plan written before the material: going back is a choice too
         acts.append(_rewind(project.pid, "spec"))
-    return _situation("decisions", f"{len(acts)} decision card(s) decided by the people who may", acts)
+    n = len(acts)
+    return _situation("decisions", f"{n} decision{'s' if n != 1 else ''}, made by you or another approver", acts)
 
 
 # -- from the last run's result --------------------------------------------------------------------------
@@ -340,7 +350,7 @@ def _runner_waiting(project: Project) -> list[dict[str, Any]]:
     if fp is None or fp.pid == project.pid:
         return []
     cards = [c for c in Canon(fp).cards(kind="runner") if (c.get("refs") or {}).get("project") in (None, project.pid)]
-    return [_act("runner_waiting", f"IT decides {c['id']}: {c['title'][:90]}", CARD_DECIDERS["runner"],
+    return [_act("runner_waiting", f"IT decides {c['id']}: {_clip(c['title'])}", CARD_DECIDERS["runner"],
                  control="runners_decide", page=f"runners/{project.pid}", card=c["id"], kind="runner",
                  command=f"rihmasto decide {fp.pid} {c['id']} approve|decline --person ... --persona it")
             for c in cards[:SHOWN]]

@@ -53,6 +53,7 @@ NAMES = {AINO: "Aino Example", IDA: "Ida Example", MALLORY: "Mallory Example", D
          "local:it-admin": "Ilkka Example"}
 ELSEWHERE = "elsewhere-project"         # a project id no test creates: a scope that covers nothing here
 FUTURE = "2099-12-31"
+CALL_TIMEOUT = 30                       # a hosted runner with two cores, busy, is slower than a desk
 
 
 def access_doc(project_scope=None, **changes) -> dict:
@@ -273,11 +274,13 @@ class EnforcedCockpitCase(CockpitTestCase):
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(self.origin + path, data=data, headers=headers, method=method)
         try:
-            with test_cockpit._DIRECT.open(req, timeout=10) as res:
+            with test_cockpit._DIRECT.open(req, timeout=CALL_TIMEOUT) as res:
                 payload, status = res.read(), res.status
         except urllib.error.HTTPError as exc:
             with exc:
                 payload, status = exc.read(), exc.code
+        except TimeoutError:     # say which route did not answer: the table walks a hundred and more of them
+            raise AssertionError(f"{method} {path} did not answer in {CALL_TIMEOUT}s") from None
         return status, (json.loads(payload) if payload else None)
 
     def sign_in(self, who, **proxy) -> str:
@@ -431,8 +434,12 @@ class EveryWriteRouteTest(EnforcedCockpitCase):
         patcher = mock.patch.dict(os.environ, {ROOTS_ENV: str(self.tmp)})
         patcher.start()
         self.addCleanup(patcher.stop)
+        # ln.FactoryApiTest.writes ends with the Alignment tab's writes (FR-ALN1, ln.alignment_writes): a scan of a
+        # repository attached for them and a decision on an item it proposed, each refused for Mallory here.
         return [*ln.FactoryApiTest.writes(self, w),
                 ("post_advance", "POST", f"/api/projects/{b}/advance",
+                 lambda who, got: {"person": who, "persona": "developer"}),
+                ("post_assessment_cancel", "POST", f"/api/projects/{b}/assessment/cancel",
                  lambda who, got: {"person": who, "persona": "developer"}),
                 ("post_assistant", "POST", "/api/assistant",
                  lambda who, got: {"question": "What waits on me?", "persona": "developer", "person": who}),
@@ -450,7 +457,20 @@ class EveryWriteRouteTest(EnforcedCockpitCase):
                                    "person": who, "persona": "product_owner"}),
                 ("post_automation_dry_run", "POST",                                       # records nothing
                  lambda got: f"/api/automations/{got['post_automation']['automation']['id']}/dry-run",
-                 lambda who, got: {"person": who, "persona": "product_owner"})]
+                 lambda who, got: {"person": who, "persona": "product_owner"}),
+                *self.scan_writes(src)]
+
+    def scan_writes(self, src: Path) -> list:
+        """FR-RPJ1's scan in the background and its Cancel (they record nothing; test_brief_ln's writes hold the
+        rest: the folders the cockpit may read, the local model, an adopted project's areas, watch and baseline)."""
+        dev = lambda who, got: {"person": who, "persona": "developer"}          # noqa: E731
+        return [("post_source_scan", "POST", "/api/source/scan", lambda who, got: {"source": str(src),
+                                                                                   **dev(who, got)}),
+                ("post_source_scan_cancel", "POST",
+                 lambda got: f"/api/source/scan/{got['post_source_scan']['scan']['id']}/cancel", dev),
+                # FR-PICK1: the computer's own dialog never opens under enforced access (409, after the persona check)
+                ("post_pick_native", "POST", "/api/pick/native", lambda who, got: {"kind": "folder", **dev(who, got)}),
+                ("post_pick_cancel", "POST", "/api/pick/native/cancel", dev)]
 
     def test_FR_M8_AC_3_every_write_route_refuses_a_persona_not_granted_on_its_project(self):
         w = ln.FactoryApiTest.world(self)
@@ -470,15 +490,31 @@ class EveryWriteRouteTest(EnforcedCockpitCase):
             self.assertEqual(status, 403, (name, out))
             self.assertIn("is not granted the", out["error"], name)
             self.assertEqual(tree(home), before, name)
+            if name == "post_assessment_cancel":
+                from kernel import progress
+
+                rep = progress.Reporter("assessment")          # Mallory's refusal above did not cancel it
+                progress.register(progress.key_for(w["built"], "assessment"), rep)
             ledgers = self.ledgers()
             status, out = self.pcall(method, path, body("Ida Example", got), who=IDA)
+            if name == "post_console_terminal":   # FR-CON1-AC-7: through IT's proxy the person is elsewhere
+                self.assertEqual((status, tree(home)), (403, before), out)
+                self.assertIn("from its own address", out["error"])
+                continue
+            if name == "post_pick_native":        # FR-PICK1: under enforced access, the folder browser instead
+                self.assertEqual((status, tree(home)), (409, before), out)
+                self.assertIn("use the folder browser", out["error"])
+                continue
+            if name == "post_advance" and status == 409 and "still running" in str(out.get("error")):
+                continue                     # the run an accepted change started is still going: Advance says so
             self.assertIn(status, (200, 201, 202), (name, out))
             got[name] = out
             added = [r["event"]["payload"] for pid, recs in self.ledgers().items()
                      for r in recs[len(ledgers.get(pid, [])):]]
-            if name in ("put_layout", "post_advance", "post_assistant", "post_source_preview",
+            if name in ("put_layout", "put_view_layouts", "post_advance", "post_assistant", "post_source_preview",
                         "post_settings_preview", "post_model_test", "post_automation_preview",
-                        "post_automation_dry_run"):
+                        "post_automation_dry_run", "post_source_scan", "post_source_scan_cancel",
+                        "post_pick_recent", "post_pick_cancel"):
                 continue                     # kept outside every ledger: a preview or a Test records nothing
             self.assertTrue(any(e.get("identity") == IDA for e in added), (name, added))
         for p in self.factory.projects():
@@ -576,7 +612,35 @@ def cli_writes(pid: str, tmp: Path) -> dict:
                        "--persona", "it"],
         "models remove": ["models", "remove", "analyst", *who, "--persona", "it"],
         "runners set": ["runners", "set", "builder", "gnomon", *who, "--persona", "it"],      # D-0019
+        # -- walkthroughs in a terminal (kernel/walkthrough_cli.py, FR-WLK1)
+        "walkthrough": ["walkthrough", "tour", *who, "--persona", "developer"],
+        # the console, a shell and the checks (kernel/console_cli.py; FR-CON1, FR-CHK1)
+        "console": ["console", pid, *who, "--persona", "developer", "--", "git", "status"],
+        "shell": ["shell", pid, *who, "--persona", "developer"],
+        "checks enable": ["checks", "enable", pid, "secrets", *who, "--persona", "developer"],
+        "checks disable": ["checks", "disable", pid, "secrets", *who, "--persona", "developer"],
+        "checks run": ["checks", "run", pid, "secrets", *who, "--persona", "developer"],
+        # alignment with a repository's own specs and tests (FR-ALN1): a decision is signed; reading is not
+        "align": ["align", pid, "accept", "req-0000000000", *who, "--persona", "developer"],
+        # since you last looked (FR-REV1): `review` signs mark, done and digest; reading it takes no signer
+        "review": ["review", "done", *who, "--persona", "developer"],
+        # the paved roads (kernel/road_settings.py, FR-GCP1): IT configures a road, chooses a project's, rolls back
+        "road configure": ["road", "configure", "company-gcp", "--file", str(tmp / "road.json"), *who, "--persona", "it"],
+        "road choose": ["road", "choose", pid, "company-gcp", *who, "--persona", "it"],
+        "road rollback": ["road", "rollback", pid, "--reason", "r", *who, "--persona", "it"],
+        **bridge_cli_writes(pid),
+        # the coding agent you already have answers the text roles (kernel/harness_setup.py, FR-HMD1)
+        "models use": ["models", "use", "claude-code", "--roles", "assistant", *who, "--persona", "it"],
+        # FR-RPJ1: a stated test command run as an adopted project's baseline
+        "baseline": ["baseline", pid, "--command", "python tools/check.py test", *who, "--persona", "developer",
+                     "--yes"],
     }
+
+
+def bridge_cli_writes(pid: str) -> dict:
+    """The agent channel's signed command (kernel/bridge_cli.py, FR-CHN1): an agent posts for its operator."""
+    return {"channel post": ["channel", pid, "post", "--as", "claude-code", "--text", "added the form",
+                             "--person", "Mallory Example", "--persona", "developer"]}
 
 
 class CommandLineAndMcpTest(FactoryTestCase):

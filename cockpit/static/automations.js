@@ -4,8 +4,10 @@
    the kernel writes from the parts ("Every night at 02:00 UTC, for every attached project, run the gate ...").
    Nothing here decides anything: an automation never decides a card. */
 
+import { pick, emptyState, technical } from "./words.js";
 import { S, $, h, fill, icon, chip, api, act, say, signed, needPerson, enc, button, card, pageHead, skeleton, empty,
   openModal, closeModal, segmented, ago, nav, personaLabel } from "./core.js";
+import { pathField } from "./picker.js";
 
 const STATE = { active: ["good", "play", "Active"], paused: ["warning", "pause", "Paused"] };
 const OUTCOME = { done: ["good", "check-circle"], nothing: ["neutral", "dashed"], would: ["info", "eye"],
@@ -47,6 +49,7 @@ function row(a, again) {
   btn("Run now", "play", { "data-control": "automations_run" }, () => post(a, "/run", {}, (out) => {
     say(a.id + (out.scheduler ? " runs now." : " runs on the next tick (the scheduler runs while the cockpit runs, or `rihmasto automations tick`)."), "good");
     setTimeout(again, 1500);
+    setTimeout(again, 6000);      // a run that takes longer shows under What ran here without a reload
   }));
   btn("Dry run", "eye", { "data-control": "automations_dry_run" }, () => post(a, "/dry-run", {}, (out) => {
     const d = out.dry_run;
@@ -78,6 +81,11 @@ function sel(id, options, value, label) {
 function inp(id, value, label, extra) {
   return h("div", { class: "field" }, h("label", { for: id }, label), h("input", Object.assign({ id, value: value == null ? "" : String(value),
     autocomplete: "off", spellcheck: "false" }, extra || {})));
+}
+// A folder on the cockpit's machine: typed, or chosen by browsing (picker.js, FR-PICK1).
+function folderInp(id, value, label) {
+  const input = h("input", { id, value: value == null ? "" : String(value), autocomplete: "off", spellcheck: "false" });
+  return h("div", { class: "field" }, h("label", { for: id }, label), pathField(input, { kind: "folder", name: "the folder to scan again", title: "Choose the folder to scan again" }));
 }
 const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
 const num = (id) => parseInt(val(id), 10);
@@ -115,7 +123,7 @@ function builderForm(a) {
     h("fieldset", { class: "amn-part" }, h("legend", null, "Do"),
       sel("amn-action", o.actions.map((y) => [y.id, y.label]), x.kind || "notify", "Action"),
       h("div", { "data-show": "action:change action:signal action:ask action:notify" }, inp("amn-a-text", x.text || "", "Words ({project}, {event}, {ref} are filled in)")),
-      h("div", { "data-show": "action:rescan" }, inp("amn-a-folder", x.folder || "", "Folder on this machine")),
+      h("div", { "data-show": "action:rescan" }, folderInp("amn-a-folder", x.folder || "", "Folder on this machine")),
       h("div", { "data-show": "action:notify" }, sel("amn-a-sub", subs.slice(1), x.subscription || "", "Relay subscription (IT sets these up)")),
       h("div", { "data-show": "action:change" }, sel("amn-a-target", [["", "The project it reacts to"]].concat(projects), x.project || "", "On project")),
       h("div", { "data-show": "action:output" }, inp("amn-a-targets", (x.targets || []).join(", "), "Outputs (empty: the chosen ones)")),
@@ -204,10 +212,18 @@ function openBuilder(a, again) {
   preview();
 }
 
+// The templates a business reader knows by what they do for them; a developer keeps the kernel's own names.
+const TPL_PLAIN = { nightly_regate: "Re-check all work every night", gate_twice: "Ask me when a task fails twice",
+  production_probe: "Start watching a service once it is live", align_on_change: "Check the code against the plan when it changes" };
+// An adopted project's material is its repository: re-scanning a folder into it is refused, so it is not offered.
+const NOT_FOR_ADOPTED = new Set(["weekly_rescan"]);
 function templates(again, preset) {
+  const meta = (preset && S.project && S.project.meta) || {};
+  const offered = OFFERS.templates.filter((t) => !(meta.source_kind === "adopted" && NOT_FOR_ADOPTED.has(t.id)));
   return card({ title: "Start from a template", icon: "sparkles", id: "amn-tpl" },
-    h("div", { class: "btns amn-tpls" }, OFFERS.templates.map((t) => {
-      const b = button(t.label, { icon: "plus", kind: "small", "data-control": "automations_template", key: "amn-tpl:" + t.id, tip: t.about });
+    h("div", { class: "btns amn-tpls" }, offered.map((t) => {
+      const b = button((!technical() && TPL_PLAIN[t.id]) || t.label, { icon: "plus", kind: "small", "data-control": "automations_template", key: "amn-tpl:" + t.id, tip: t.about });
+      b.setAttribute("data-ud", "");   // the template's own name, as the kernel offers it (kernel/automations_text.py)
       b.addEventListener("click", () => openBuilder(Object.assign(JSON.parse(JSON.stringify(t.draft)), preset ? { scope: preset } : {}), again));
       return b;
     })));
@@ -232,23 +248,28 @@ export async function renderAutomations(seq) {
   const list = h("ul", { class: "emb-list amn-list", id: "amn-list" });
   const draw = () => {
     const rows = shownRows(data.automations);
-    fill(list, rows.length ? rows.map((a) => row(a, again)) : h("li", null, empty("clock", data.automations.length ? "None matches these filters." : "No automation yet: start from a template, or set one up.")));
+    fill(list, rows.length ? rows.map((a) => row(a, again)) : h("li", null, data.automations.length ? empty("clock", "None matches these filters.")
+      : emptyState("automations", null, { icon: "clock" })));
   };
   const filters = h("div", { class: "btns amn-filters" },
     segmented("amn-f-state", [["all", "All"], ["active", "Active"], ["paused", "Paused"]], F.state, (v) => { F.state = v; draw(); }, { label: "State" }),
     h("label", { class: "vh", for: "amn-f-scope" }, "Scope"),
     h("select", { id: "amn-f-scope", "aria-label": "Scope", onchange: (e) => { F.scope = e.target.value; draw(); } },
-      [["all", "Every scope"], ["project", "One project"], ["projects", "Some projects"], ["tag", "A tag"], ["profile", "A profile"], ["source", "A source"], ["factory", "Every project"]]
+      // what each automation is set to cover: "all automations" first, never two options that read alike
+      [["all", "Show: all automations"], ["factory", "Set for all projects"], ["project", "Set for one project"], ["projects", "Set for several projects"],
+        ["tag", "Set for a tag"], ["profile", "Set for a type of project"], ["source", "Set for a source"]]
         .map(([v, l]) => h("option", { value: v, selected: v === F.scope ? true : null }, l))),
-    h("select", { id: "amn-f-project", "aria-label": "Reaches project", onchange: (e) => { F.project = e.target.value; draw(); } },
-      [["", "Any project"]].concat(data.projects.map((p) => [p.id, p.title])).map(([v, l]) => h("option", { value: v, selected: v === F.project ? true : null }, l))));
+    h("select", { id: "amn-f-project", "aria-label": "Runs for project", onchange: (e) => { F.project = e.target.value; draw(); } },
+      [["", "For whichever project"]].concat(data.projects.map((p) => [p.id, p.title])).map(([v, l]) => h("option", { value: v, selected: v === F.project ? true : null }, l))));
   const sched = data.scheduler || {};
   fill(main,
-    pageHead("Automations", "A trigger, an optional guard, an action and a scope, run with your rights. An automation never decides a card.", {
+    pageHead("Automations", pick("Rules that run by themselves, like “tell me when a release is ready”. They never decide for you.",
+      "A trigger, an optional guard, an action and a scope, run with your rights. An automation never decides a card."), {
       icon: "clock", actions: [button("New automation", { icon: "plus", kind: "primary", "data-control": "automations_new", key: "amn-new",
         onclick: () => openBuilder({ scope: { kind: "factory" } }, again) })] }),
     h("p", { class: "note" + (sched.running ? "" : " warning") }, icon(sched.running ? "check-circle" : "info"), h("span", null, sched.running
-      ? "The cockpit runs them every minute" + (sched.last ? "; last tick " + ago(sched.last.at) : "") + "."
+      ? pick("The cockpit checks them every minute" + (sched.last ? "; last checked " + ago(sched.last.at) : "") + ".",
+        "The cockpit runs them every minute" + (sched.last ? "; last tick " + ago(sched.last.at) : "") + ".")
       : "The cockpit's scheduler is not running here. Without it, run `rihmasto automations tick` every minute: `rihmasto automations install-help` prints the line for cron or Windows Task Scheduler.")),
     templates(again, null), filters, card({ title: "Automations", icon: "clock", id: "amn-all" }, list));
   draw();
@@ -269,7 +290,7 @@ async function drawTab(box, pid) {
   if (!box.isConnected) return;
   OFFERS = all;
   const again = () => drawTab(box, pid);
-  const tags = h("input", { id: "amn-tags", value: mine.tags.join(", "), autocomplete: "off", spellcheck: "false", "aria-label": "Tags, comma between" });
+  const tags = h("input", { id: "amn-tags", value: mine.tags.join(", "), autocomplete: "off", spellcheck: "false", "aria-label": "Tags (separate with commas)" });
   const saveTags = button("Save tags", { icon: "check", kind: "small", "data-control": "automations_tags", key: "amn-tags-save" });
   saveTags.addEventListener("click", () => act(saveTags.parentNode, async () => {
     if (!needPerson()) return;
@@ -282,10 +303,12 @@ async function drawTab(box, pid) {
   h("div", { class: "btns" }, button("New automation", { icon: "plus", kind: "primary", "data-control": "automations_new", key: "amn-new:" + pid,
     onclick: () => openBuilder({ scope: preset }, again) }), h("a", { class: "btn quiet", href: "#/automations", "data-control": "automations_open", "data-key": "amn-all:" + pid }, icon("clock"), h("span", { class: "lbl" }, "Every automation"))),
   card({ title: "Tags", icon: "flag", id: "amn-tags-card", info: "An automation scoped to a tag reaches every project that carries it." },
-    h("div", { class: "field" }, h("label", { for: "amn-tags" }, "Tags, comma between"), tags), h("div", { class: "btns" }, saveTags)),
+    h("div", { class: "field" }, h("label", { for: "amn-tags" }, "Tags (separate with commas)"), tags), h("div", { class: "btns" }, saveTags)),
   templates(again, preset),
   card({ title: "On this project", icon: "clock", id: "amn-mine" }, h("ul", { class: "emb-list amn-list" },
-    mine.automations.length ? mine.automations.map((a) => row(a, again)) : h("li", null, empty("clock", "No automation reaches this project yet.")))),
+    mine.automations.length ? mine.automations.map((a) => row(a, again)) : h("li", null, emptyState("automations", null, { icon: "clock",
+      what: "No automation runs for this project yet.", how: pick("Start from a template above, or ask Rihma to set one up; it appears here with when it runs.",
+        "Start from a template above or create one with New automation; it appears here with its trigger and last run.") })))),
   card({ title: "What ran here", icon: "layers", id: "amn-ran" }, mine.history.length ? h("ul", { class: "plain small amn-hist" },
     mine.history.slice().reverse().slice(0, 15).map((r) => h("li", null, r.kind === "automation_ran" ? outcomeChip(r.outcome, r.verdict) : chip("neutral", "info", r.kind.replace("automation_", "")),
       " " + r.id + " · " + ago(r.at) + (r.detail ? " · " + r.detail : "")))) : h("p", { class: "muted" }, "Nothing yet.")));

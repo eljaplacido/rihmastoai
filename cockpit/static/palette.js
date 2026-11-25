@@ -16,7 +16,7 @@ function cardHref(pid, c) {
   return link(pid, "inbox", c.id);
 }
 const PAGE_HREF = { home: "#/home", square: "#/square", catalogue: "#/catalogue", projects: "#/projects", inbox_all: "#/inbox",
-  floor: "#/floor", jobs: "#/jobs", settings: "#/settings" };
+  floor: "#/floor", jobs: "#/jobs", settings: "#/settings", insights_all: "#/insights" };
 
 // Every view of the open project: first the ones its stage and the lens bring forward (its tabs), then the
 // rest, so a view the tabs leave out (the ledger, the cell) is still one jump away, at every width. The plan
@@ -30,7 +30,7 @@ function items() {
   const out = Object.entries(PAGES).filter(([k]) => pageOn(k)).map(([k, v]) => ({ group: "Page", label: v.label, icon: v.icon, href: PAGE_HREF[k],
     sub: { home: "the dashboard for your lens", square: "the delivery square", catalogue: "every capability",
       projects: "every project and what it is doing", inbox_all: "what waits on you across projects",
-      floor: "how the factory performs", jobs: "background runs started here", settings: "embeds, appearance, sign-in links" }[k] }));
+      floor: "how the factory performs", insights_all: "health to token usage, from the records", jobs: "background runs started here", settings: "embeds, appearance, sign-in links" }[k] }));
   (S.projects || []).forEach((p) => out.push({ group: "Project", icon: p.factory ? "sparkles" : "folder", label: p.title,
     sub: p.factory ? "the factory's own proposals" : (p.now ? p.now.line : p.id), href: p.factory ? link(p.id, "inbox") : "#/p/" + encodeURIComponent(p.id) }));
   const cur = S.route && S.route.name === "project" ? S.project : null;

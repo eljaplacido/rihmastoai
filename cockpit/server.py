@@ -68,6 +68,7 @@ operator: personas are self-declared". With ``projects/_factory/access/access.js
 from __future__ import annotations
 
 import argparse
+import hashlib
 import hmac
 import json
 import os
@@ -83,23 +84,61 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from cockpit.adopted_routes import ROUTES as ADOPTED_ROUTES
+from cockpit.adopted_routes import AdoptedRoutes
 from cockpit.agent_routes import ROUTES as AGENT_ROUTES
 from cockpit.agent_routes import AgentContextRoutes
+from cockpit.align_routes import ROUTES as ALIGN_ROUTES
+from cockpit.align_routes import AlignRoutes
 from cockpit.automation_routes import ROUTES as AUTOMATION_ROUTES
 from cockpit.automation_routes import UNLOCKED as AUTOMATION_UNLOCKED
 from cockpit.automation_routes import AutomationRoutes, Scheduler
+from cockpit.console_routes import ROUTES as CONSOLE_ROUTES  # the console and Health (FR-CON1, FR-CHK1)
+from cockpit.console_routes import UNLOCKED as CONSOLE_UNLOCKED
+from cockpit.console_routes import ConsoleRoutes
+from cockpit.health_routes import ROUTES as HEALTH_ROUTES
+from cockpit.health_routes import UNLOCKED as HEALTH_UNLOCKED
+from cockpit.health_routes import HealthRoutes, serve_here
+from cockpit.journey_routes import ROUTES as JOURNEY_ROUTES  # guided journeys and the next step (FR-JRN1)
+from cockpit.journey_routes import UNLOCKED as JOURNEY_UNLOCKED
+from cockpit.journey_routes import JourneyRoutes
+from cockpit.insights_routes import ROUTES as INSIGHTS_ROUTES
+from cockpit.insights_routes import InsightsRoutes
 from cockpit.runner_routes import ROUTES as RUNNER_ROUTES
 from cockpit.runner_routes import RunnerRoutes
+from cockpit.review_routes import ROUTES as REVIEW_ROUTES
+from cockpit.review_routes import ReviewRoutes
 from cockpit.shape_routes import ROUTES as CHAT_ROUTES
 from cockpit.shape_routes import UNLOCKED as CHAT_UNLOCKED
 from cockpit.shape_routes import ChatRoutes
+from cockpit.walkthrough_routes import ROUTES as WALK_ROUTES
+from cockpit.walkthrough_routes import UNLOCKED as WALK_UNLOCKED
+from cockpit.walkthrough_routes import WalkRoutes
+from cockpit.road_routes import ROUTES as ROAD_ROUTES  # paved roads and integration kinds (FR-GCP1, FR-GDR1)
+from cockpit.road_routes import RoadRoutes
+from cockpit.viewlayout_routes import ROUTES as VIEW_LAYOUT_ROUTES  # Customize on every view, per person (FR-UXO1)
+from cockpit.viewlayout_routes import ViewLayoutRoutes
+from cockpit.bridge_routes import ROUTES as BRIDGE_ROUTES   # the agent bridge and channel (FR-BRG1, FR-CHN1)
+from cockpit.bridge_routes import BridgeRoutes
+from cockpit.source_routes import ROUTES as SOURCE_ROUTES
+from cockpit.source_routes import UNLOCKED as SOURCE_UNLOCKED
+from cockpit.source_routes import SourceRoutes
+from cockpit.progress_routes import ROUTES as PROGRESS_ROUTES   # live progress for long jobs (FR-PRG1)
+from cockpit.progress_routes import UNLOCKED as PROGRESS_UNLOCKED
+from cockpit.progress_routes import ASSESS_WAIT_S, ProgressRoutes, adoption_progress
+from cockpit.pick_routes import ROUTES as PICK_ROUTES   # choose a folder or a file by browsing (FR-PICK1)
+from cockpit.pick_routes import UNLOCKED as PICK_UNLOCKED
+from cockpit.pick_routes import PickRoutes
 from kernel import access as kaccess
 from kernel import access_isolation as kisolation
+from kernel import adopted_state as kadopted
 from kernel import assess as kassess
 from kernel import assess_cards as kassess_cards
 from kernel import assistant as kassistant
 from kernel import autonomy as kautonomy
 from kernel import autopilot as kautopilot
+from kernel import assistant_howto as khowto
+from kernel import card_words as kcard_words
 from kernel import confidential as kconfidential
 from kernel import dashboard as kdash
 from kernel import delegation as kdelegation
@@ -107,12 +146,13 @@ from kernel import embeds as kembeds
 from kernel import evidence_pack as kevidence
 from kernel import input_summary as kinputs
 from kernel import material as kmaterial
-from kernel import outputs as koutputs
 from kernel import modules as kmodules
 from kernel import next_step as knext
+from kernel import outputs as koutputs
 from kernel import packs as kpacks
 from kernel import plan as kplan
 from kernel import posture as kposture
+from kernel import progress as kprogress
 from kernel import profiles as kprofiles
 from kernel import project_material as kadded
 from kernel import project_settings as ksettings
@@ -120,8 +160,10 @@ from kernel import rewind as krewind
 from kernel import signals as ksignals
 from kernel import source_guard as ksource
 from kernel import track as ktrack
+from kernel import walkthrough_intent as kwalk_intent
 from kernel.canon import CARD_DECIDERS, CARD_VERDICTS, PERSPECTIVES, Canon, DecisionRefused, deciders_of
 from kernel.change import CLASSES, NEEDS_DECISION, WAY_BACK, submit, triage
+from kernel.checks import health as chealth
 from kernel.insight import alignment, change_impact, impact
 from kernel.intake import MATURITY_MEANING, render_brief
 from kernel.learn import FACTORY_PID, factory_project, immune_memory, model_reliability
@@ -221,6 +263,7 @@ WIDGETS = {
     "eval_trend": ("Eval trend", "flask", "Do the evals still hold?"),
     "try_it": ("Try it", "play", "What can people try right now?"),
     "track": ("Staying on track", "flag", "Is each project on track against its approved plan?"),
+    "insight": ("Insight", "insight", "One figure pinned from Insights: what does it say now?"),
 }
 # Read-only presets per lens; a person's first edit duplicates one into a personal layout.
 LENS_DEFAULTS = {
@@ -372,14 +415,33 @@ ROUTES = [
     ("POST", rf"/api/projects/{PID}/delegations/(?P<did>DL-\d{{1,9}})/revoke", "post_delegation_revoke"),
     ("POST", r"/api/links", "post_link"),
 ]
+ROUTES += WALK_ROUTES                                  # walkthroughs in Ask Rihma (FR-WLK1)
 ROUTES = [(m, re.compile(p + r"/?\Z"), name)    # chat, Models; AI tools, IDE (FR-AGC1); Runners; FR-AUT1
-          for m, p, name in ROUTES + CHAT_ROUTES + AGENT_ROUTES + RUNNER_ROUTES + AUTOMATION_ROUTES]
+          for m, p, name in ROUTES + CHAT_ROUTES + AGENT_ROUTES + RUNNER_ROUTES + AUTOMATION_ROUTES + SOURCE_ROUTES
+          + ADOPTED_ROUTES]        # real projects of every shape (FR-RPJ1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ALIGN_ROUTES]          # the Alignment tab (FR-ALN1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in INSIGHTS_ROUTES]       # Insights (FR-INS1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in REVIEW_ROUTES]         # since you last looked
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ROAD_ROUTES]           # paved roads (FR-GCP1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in VIEW_LAYOUT_ROUTES]    # view layouts per person
 # Writes that record nothing (the assistant only proposes; a profile proposal is a rule over text).
 # They run outside the write lock, so a slow model call never holds up a decision. An assessment
 # reads a whole repository and keeps its records under their own file locks (kernel/assess.py): it
 # runs outside the write lock too, and touches no card.
 UNLOCKED = {"post_assistant", "post_profile_propose", "post_source_preview", "post_posture_preview", "post_assessment",
-            *CHAT_UNLOCKED, *AUTOMATION_UNLOCKED}
+            *CHAT_UNLOCKED, *AUTOMATION_UNLOCKED, *SOURCE_UNLOCKED}
+UNLOCKED |= WALK_UNLOCKED                                 # a walkthrough's own steps; its confirm is locked
+
+# The console, "Open a terminal here", checks and Health (cockpit/console_routes.py, cockpit/health_routes.py)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in CONSOLE_ROUTES + HEALTH_ROUTES]
+UNLOCKED |= CONSOLE_UNLOCKED | HEALTH_UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in BRIDGE_ROUTES]   # agent bridge and channel
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in PROGRESS_ROUTES]  # live progress (FR-PRG1)
+UNLOCKED |= PROGRESS_UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in JOURNEY_ROUTES]  # guided journeys (FR-JRN1)
+UNLOCKED |= JOURNEY_UNLOCKED                              # a guide's own record; each step's route is its own
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in PICK_ROUTES]     # the folder picker (FR-PICK1)
+UNLOCKED |= PICK_UNLOCKED                      # a computer's own dialog waits on the person, never on the lock
 
 
 class FileResponse:
@@ -513,7 +575,32 @@ class CockpitServer(ThreadingHTTPServer):
                 return None
             token = secrets.token_urlsafe(32)
             self._sessions[token] = now + SESSION_TTL
-            return token
+        self._remember(token)
+        return token
+
+    # A single operator's session outlives a restart of the cockpit: only its sha256 and wall-clock expiry are kept,
+    # in the cockpit's own folder of the home (never the token itself), so a restart does not sign the person out.
+
+    def _sessions_file(self) -> Path:
+        return self.cockpit_dir / "sessions.json"
+
+    def _remember(self, token: str) -> None:
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        with self._auth_lock:
+            kept = {k: v for k, v in (read_json(self._sessions_file(), {}) or {}).items() if v > time.time()}
+            kept[digest] = time.time() + SESSION_TTL
+            self.cockpit_dir.mkdir(parents=True, exist_ok=True)
+            self._sessions_file().write_text(json.dumps(kept), encoding="utf-8")
+
+    def _remembered(self, token: str) -> bool:
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        kept = read_json(self._sessions_file(), {}) or {}
+        ends = next((v for k, v in kept.items() if hmac.compare_digest(k, digest)), None)
+        if not isinstance(ends, int | float) or ends <= time.time():
+            return False
+        with self._auth_lock:
+            self._sessions[token] = time.monotonic() + SESSION_TTL
+        return True
 
     def open_session(self, identity: str, until: float | None = None) -> str:
         """A session for a verified identity (enforced access): the proxy's sign-in replaces the bootstrap.
@@ -552,6 +639,8 @@ class CockpitServer(ThreadingHTTPServer):
         """A live session, opened for ``identity`` (None: a single operator's session, from a bootstrap)."""
         if not isinstance(token, str) or not token:
             return False
+        if identity is None and token not in self._sessions:
+            self._remembered(token)          # a single operator's session from before a restart
         now = time.monotonic()
         with self._auth_lock:
             for known in list(self._sessions):
@@ -609,7 +698,7 @@ class CockpitServer(ThreadingHTTPServer):
 
     def job_view(self, job: dict) -> dict:
         try:
-            status = dict(self.runner.status(job["id"]) or {})
+            status = dict((job.get("runner") or self.runner).status(job["id"]) or {})   # a console run: its own
         except Exception as exc:  # a runner that cannot tell is "unknown", never a crash
             status = {"state": "unknown", "error": str(exc)}
         out = {k: job[k] for k in ("id", "kind", "project", "args", "started", "by")}
@@ -628,25 +717,33 @@ class CockpitServer(ThreadingHTTPServer):
             made = (_last_result(Path(job["log"])) or {}).get("project")
             if isinstance(made, str) and Project(self.factory, made).path("project.json").exists():
                 out["made"] = made
-        return out
+        if job["kind"] == "adopt":         # its step lines on the shared progress view (FR-PRG1)
+            out["live"] = adoption_progress(out["state"], Path(job["log"]))
+        return out | _job_said(job, out["state"])
 
     def running_job(self, pid: str) -> dict | None:
         with self._jobs_lock:
             jobs = list(self.jobs)
         for job in jobs:
-            if job["project"] == pid and self.job_view(job)["state"] == "running":
+            if job["project"] == pid and job["kind"] != "console" and self.job_view(job)["state"] == "running":
                 return job
         return None
 
-    def run_assessment(self, project: Project, run: dict, model, identity: Identity | None) -> None:
+    def run_assessment(self, project: Project, run: dict, model, identity: Identity | None,
+                       progress: kprogress.Reporter | None = None) -> None:
         """One assessment (kernel/assess.py) in the background, signed by whoever asked; its end, or why it
-        failed, is written on ``run`` for the Assessment view."""
+        failed, is written on ``run`` for the Assessment view. ``progress`` hears every step (FR-PRG1); a
+        cancel asked there ends it "cancelled", with nothing recorded."""
         try:
             with kaccess.signing(identity):
                 end = {"state": "done", "id": kassess.assess(project, person=run["person"], persona=run["persona"],
-                                                             model=model)["id"]}
+                                                             model=model, progress=progress)["id"]}
+        except kprogress.Cancelled as exc:
+            end = {"state": "cancelled", "error": str(exc)[:500]}
         except Exception as exc:  # a background run's failure is shown on its view, never lost in the thread
             end = {"state": "failed", "error": f"{type(exc).__name__}: {exc}"[:500]}
+        if progress is not None and end["state"] == "failed":     # refused before its first step: it ends too
+            progress.finish("failed", end["error"])
         with self._jobs_lock:
             run.update(end, ended=self.factory.clock.stamp())
 
@@ -678,6 +775,28 @@ def _actor(kind, payload) -> dict:
             persona = payload.get("persona")
             return {"type": "person", "name": name, "persona": persona if persona in PERSONAS else None}
     return {"type": "agent", "name": "the kernel", "model": model}
+
+
+def _job_said(job: dict, state: str) -> dict:
+    """What a job worked on, and when it failed, why and what to do (kernel/job_words.py, by rule)."""
+    from kernel import job_words
+
+    out: dict = {"title": job_words.title(job)}
+    if state == "failed":
+        why = job_words.reason(Path(job["log"]))
+        out["failure"] = {"reason": why or "it printed no error line", "next": job_words.next_step(why)}
+    return out
+
+
+def _understood(project: Project) -> dict | None:
+    """What Rihmasto understood of an adopted project (kernel/understanding.py); a failure never breaks the page."""
+    from kernel import understanding
+
+    try:
+        u = understanding.take(project)
+        return None if u is None else u | {"lenses": understanding.lenses(project, u)}
+    except Exception:  # noqa: BLE001  (a record it cannot read: the card says nothing rather than the page failing)
+        return None
 
 
 def _tail(path: Path, lines: int) -> list:
@@ -938,6 +1057,8 @@ class CockpitHandler(BaseHTTPRequestHandler):
         match, name = found
         query = {k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()}
         api = Api(self.server, access, identity)
+        api.request_origin = self.headers.get("Origin") or f"http://{self.headers.get('Host', '')}"   # FR-CON1
+        api.forwarded = bool(self.headers.get("X-Forwarded-For") or self.headers.get("Forwarded"))   # FR-PICK1
         try:   # enforced access: the records name the identity; untrusted work goes through IT's runner
             with kaccess.signing(identity), kisolation.serving(self.server.factory):
                 if method != "GET":             # a write of a module not enabled there is refused (FR-MOD2)
@@ -1045,7 +1166,22 @@ def _written_pack(project: Project) -> tuple[dict | None, dict | None]:
     return (pack if isinstance(pack, dict) else None), latest
 
 
-class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
+def _signed_answer(out: dict, person: str) -> None:
+    """An answer's commands with the asking person's own name in place of ``<your name>``."""
+    if person and re.fullmatch(r"[\w .'-]+", person) and isinstance(out.get("answer"), str):
+        out["answer"] = out["answer"].replace("<your name>", person)
+
+
+def _lens_in(body: dict, persona: str) -> str:
+    lens = _text(body, "lens", limit=32) or lens_for(persona)
+    if lens not in LENSES:
+        raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
+    return lens
+
+
+class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes, WalkRoutes, ConsoleRoutes, HealthRoutes,
+          AlignRoutes, InsightsRoutes, ReviewRoutes, RoadRoutes, BridgeRoutes, SourceRoutes, AdoptedRoutes,
+          ProgressRoutes, JourneyRoutes, PickRoutes, ViewLayoutRoutes):
     def __init__(self, server: CockpitServer, access: kaccess.Access | None = None,
                  identity: Identity | None = None):
         self.server = server
@@ -1137,6 +1273,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         out["title"] = self._card_title(card)
         out["verdicts"] = list(CARD_VERDICTS[card["kind"]])
         out["deciders"] = list(deciders_of(card))   # a card may narrow them (a posture may)
+        out["plain"] = kcard_words.plain(out, canon.project)   # what it asks, in one plain line (FR-UXO1)
         if card["kind"] == "question" and (card.get("refs") or {}).get("question"):
             try:
                 out["question"] = self._question_view(canon.question(card["refs"]["question"]), canon)
@@ -1307,6 +1444,18 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         out.sort(key=lambda row: not row["factory"])  # Rihma's own proposals first; the rest keep their order
         return 200, out
 
+    def _requested_by(self, project, problems: list):
+        """Who asked for a project that does not say in project.json: a validated concept's need keeps it, and
+        an adopted project's is who adopted it (FR-RPJ1)."""
+        need = self._read(project, "need.json", None, problems)
+        if isinstance(need, dict) and need.get("requested_by"):
+            return need["requested_by"]
+        if project.meta.get("source_kind") != "adopted":
+            return None
+        adopted = self._read(project, "adopted.json", None, problems)
+        by = adopted.get("adopted_by") if isinstance(adopted, dict) else None
+        return by.get("person") if isinstance(by, dict) else None
+
     def get_project(self, pid: str, **_):
         project = self._project(pid)
         canon = Canon(project)
@@ -1315,11 +1464,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         meta["title"] = _factory_label(pid, meta.get("title", pid))
         meta["factory"] = pid == FACTORY_PID
         problems: list = []
-        if not meta.get("requested_by"):
-            # A project a validated concept made keeps who asked for it in its need, not in project.json.
-            need = self._read(project, "need.json", None, problems)
-            if isinstance(need, dict) and need.get("requested_by"):
-                meta["requested_by"] = need["requested_by"]
+        meta["requested_by"] = meta.get("requested_by") or self._requested_by(project, problems)
         overdue = {a["id"] for a in canon.overdue()}
         assumptions = [dict(a, overdue=a["id"] in overdue) for a in canon.assumptions()]
         decisions = canon.decisions()
@@ -1340,6 +1485,8 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
             "evidence": criteria or [],
             "evidence_summary": summary,
             "stage_summary": self._stage_summary(meta, canon, spec, contract, tasks, releases, summary["counts"]),
+            "adopted": self._status(kadopted.state, project, problems),   # its real state, not stages (FR-RPJ1)
+            "understood": _understood(project),          # what Rihmasto understood of it, to judge and correct
             "goal": canon.goal,
             "brief": canon.brief,
             "readings": self._read(project, "readings.json", {}, problems),
@@ -1432,7 +1579,8 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
                         "depends_on": plan.get("depends_on", []), "status": s.get("status", "pending"),
                         "revision": s.get("revision"), "card": s.get("card"), "permitted_by": s.get("permitted_by"),
                         "reopened_by": s.get("reopened_by"), "stopped_by": s.get("stopped_by"),
-                        "accepted_as_is_by": s.get("accepted_as_is_by"), "rounds": rounds})
+                        "accepted_as_is_by": s.get("accepted_as_is_by"), "rounds": rounds,
+                        "adopted": s.get("adopted") is True, "note": s.get("note")})
         return out
 
     def _releases(self, project, problems: list) -> list:
@@ -1452,7 +1600,12 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
             raise ApiError(400, f"persona must be one of {', '.join(PERSONAS)}")
         canon = Canon(project)
         cards = [self._card_view(c, canon) for c in canon.cards(state="open", persona=persona)]
-        return 200, {"persona": persona, "cards": cards}
+        mine = {c["id"] for c in cards}
+        # The open cards another persona decides: "nothing needs you" never hides a decision that waits on
+        # someone else (in single-operator mode, on the same person in another persona).
+        others = [{"id": c["id"], "kind": c["kind"], "title": c["title"], "deciders": list(c.get("deciders") or [])}
+                  for c in canon.cards(state="open") if c["id"] not in mine][:10]
+        return 200, {"persona": persona, "cards": cards, "others": others}
 
     def get_impact(self, pid: str, query: dict, **_):
         """Impact if changed, for any requirements: ``?requirements=R-1,R-2`` (FR-P5)."""
@@ -1524,7 +1677,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
                             "verdict": d.get("verdict"), "person": d.get("person"), "persona": d.get("persona"),
                             "reason": d.get("reason"), "at": d.get("at"), "redone": bool(c["refs"].get("redone")),
                             "closed": c.get("closed")})
-        from kernel.posture_rules import confirmers   # a confirming posture: the customer's side edits the plan
+        from kernel.posture_rules import confirmers  # a confirming posture: the customer's side edits the plan
 
         editors = confirmers(kposture.of(project)) or CARD_DECIDERS["approval"]
         return {"required": kplan.required(project), "card": self._card_view(card, canon) if card else None,
@@ -1596,7 +1749,22 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
                 out["project"] = made["project"]     # the page opens the new project at once
         elif card["kind"] == "update":
             out["applied"] = apply_updates(project)
-        return 200, out
+        return 200, out | self._carry_out(project, card, verdict, person, persona)
+
+    def _carry_out(self, project: Project, card: dict, verdict: str, person: str, persona: str) -> dict:
+        """A person's decision takes effect at once: a decided escalation is carried out (retry, accept as it is,
+        stop), and an accepted change goes into the spec and the contract in a run, whose progress shows in Jobs."""
+        from kernel.dispatch import resolve_escalations
+
+        if card["kind"] == "escalation":
+            return {"carried_out": resolve_escalations(project)}
+        if card["kind"] != "change" or verdict != "accept" or self.server.running_job(project.pid):
+            return {}
+        if self.access.enforced:             # the run asks Gnomon cells: isolated while enforced, or refused
+            kisolation.require(self.factory)
+        job = self.server.start_job("run", project.pid, ["-m", "kernel.cli", "run", project.pid],
+                                    {"person": person, "persona": persona})
+        return {"job": self.server.job_view(job)}
 
     def post_answer(self, pid: str, qid: str, body: dict, **_):
         project = self._project(pid)
@@ -1757,7 +1925,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
             raise ApiError(403, why)
         if body.get("folder") is not True:
             return source, None, secret
-        path = ksource.check_folder(source, persona)
+        path = ksource.check_folder(source, persona, self.factory.home)
         mp, text, _ = kmaterial.gather(path, self._excludes(body))
         if not text.strip():
             raise ApiError(400, "the scan of that folder found nothing to read: every file is listed or skipped")
@@ -1770,7 +1938,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         It reads files and records nothing."""
         person, persona = self._sign(_text(body, "person", limit=200), _text(body, "persona", limit=64), FACTORY_PID)
         _require_person(person, persona)
-        path = ksource.check_folder(_text(body, "source", required=True, limit=2000), persona)
+        path = ksource.check_folder(_text(body, "source", required=True, limit=2000), persona, self.factory.home)
         mp = kmaterial.preview(path, self._excludes(body))
         from kernel.material_adopt import is_git
 
@@ -1784,7 +1952,10 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         anything is read, by the posture's rules), or none, at production and mixed as before. Returns the
         posture, the maturity and the command line's words for them."""
         posture, mode, maturity = self._how_it_runs(body)
-        maturity = maturity if posture or _text(body, "maturity", limit=32) else "production"
+        given_maturity = _text(body, "maturity", limit=32)
+        # None stated: documents tracked are an experiment's work (explore); code adopted as is runs in production.
+        maturity = (maturity if posture or given_maturity else
+                    "explore" if body.get("documents") is True else "production")
         weights = _weights_in(body)
         if posture:
             eff = kposture.effects(posture, weights, maturity=maturity, mode=mode)
@@ -1810,14 +1981,16 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         person, persona = self._sign(_text(body, "person", limit=200), _text(body, "persona", limit=64), FACTORY_PID)
         _require_person(person, persona)
         exclude = self._excludes(body)
+        how += self._adopt_take(body)     # the working copy, documents to track (FR-RPJ1)
         try:
             kind, location = check_source(source)
             if kind != "url":          # a local folder: read only where the cockpit may read for this person
-                ksource.check_folder(location, persona)
-            if kind == "folder":
+                ksource.check_folder(location, persona, self.factory.home)
+            if kind == "folder" and "--documents" not in how:
                 check_code(location, exclude)
         except (AdoptionRefused, NoCode, OSError) as exc:
             raise ApiError(400, str(exc)) from None
+        self._adopt_again(body, kind, location)    # adopted already: only as an explicit new project
         kisolation.require(self.factory, kisolation.SUITE)   # its baseline runs the repository's own tests
         # The request is on record, signed, before the job runs (D-0017: no path skips the record).
         self._audit(self._factory_canon(), "adopt_requested", title, person, persona, source_kind=kind, intent=intent,
@@ -1936,8 +2109,9 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         runs = [self.server.job_view(j) for j in list(self.server.jobs) if j["project"] == pid and j["kind"] == "run"]
         running = any(j["state"] == "running" for j in runs) or self.server.running_job(pid) is not None
         job = next((j for j in reversed(runs) if j.get("outcome")), None)
-        return knext.next_step(project, last=job and job["outcome"], running=running,
-                               last_started=job and job["started"])
+        nxt = knext.next_step(project, last=job and job["outcome"], running=running,
+                              last_started=job and job["started"])
+        return chealth.with_failing(project, nxt)          # checks failing on it are said too (FR-CHK1)
 
     def put_settings(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
         """Change the title, kind of work, mode or maturity, signed with a reason; ``redo`` carries it into the work."""
@@ -2305,6 +2479,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
                                                       "probe writes it once the feed runs"},
             "eval_trend": {"measured": False, "why": "no eval run is recorded over time yet: a model or agent "
                                                      "release's evals appear here once they are re-measured"},
+            "insights": self.insights_pins(),     # each pinned Insight widget reads its own tile (insights_routes.py)
             "problems": problems,
         }
 
@@ -2518,8 +2693,6 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
     # layouts: per person, persona and lens, in the cockpit's own folder, never in a project ledger
 
     def _layout_path(self, person: str, persona: str, lens: str) -> Path:
-        import hashlib
-
         key = hashlib.sha256(person.strip().encode("utf-8")).hexdigest()[:20]
         return self.server.layouts_dir / key / persona / f"{lens}.json"
 
@@ -2881,13 +3054,15 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         project = self._project(pid)
         with self.server._jobs_lock:
             run = dict(self.server.assessing.get(pid) or {}) or None
-        return 200, {**kassess_cards.view(project), "run": run,
+        return 200, {**kassess_cards.view(project), "run": run, "progress": self._assess_progress(project),
                      "panel_available": self.server.assistant_model is not None}
 
     def post_assessment(self, pid: str, body: dict, **_):
-        """Assess the project's repository, signed by whoever asks. By rule it takes seconds and is recorded
-        before the answer (201). With ``panel: true`` the panel's perspectives speak through the cockpit's
-        own model, which takes minutes: it runs in the background (202) and GET shows its end."""
+        """Assess the project's repository, signed by whoever asks. By rule it usually takes seconds and is
+        recorded before the answer (201); a large repository that takes longer goes on in the background
+        (202). With ``panel: true`` the panel's perspectives speak through the cockpit's own model, which takes
+        minutes: it runs in the background (202). Either way its live progress is read at
+        GET .../assessment/progress (FR-PRG1), and GET shows its end."""
         project = self._project(pid)
         person, persona = self._who(body, pid)
         _require_person(person, persona)
@@ -2901,16 +3076,22 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         with self.server._jobs_lock:
             if (self.server.assessing.get(pid) or {}).get("state") == "running":
                 raise ApiError(409, f"an assessment of {pid} is still running")
+            # Register first: a poll that sees this run must never mistake the previous run's end for its own.
+            rep = self._assess_reporter(project)
             self.server.assessing[pid] = run
         self._audit(project, "assess", pid, person, persona, panel=run["panel"])
+        worker = threading.Thread(target=self.server.run_assessment, name=f"assess-{pid}", daemon=True,
+                                  args=(project, run, model, self.identity, rep))
+        worker.start()
         if model is None:
-            self.server.run_assessment(project, run, None, self.identity)
-            if run["state"] != "done":
-                raise ApiError(500, f"the assessment failed: {run.get('error')}")
-            return 201, {"run": dict(run), "assessment": kassess.summary(kassess.load(project, run["id"]))}
-        threading.Thread(target=self.server.run_assessment, args=(project, run, model, self.identity),
-                         name=f"assess-{pid}", daemon=True).start()
-        return 202, {"run": dict(run)}
+            worker.join(ASSESS_WAIT_S)
+        with self.server._jobs_lock:
+            now = dict(run)
+        if now["state"] == "running" or model is not None:      # the panel always answers in the background
+            return 202, {"run": now}
+        if now["state"] != "done":
+            raise ApiError(500, f"the assessment failed: {now.get('error')}")
+        return 201, {"run": now, "assessment": kassess.summary(kassess.load(project, now["id"]))}
 
     def post_assessment_changes(self, pid: str, body: dict, **_):
         """File chosen findings of an assessment as change cards, signed by the person who files them."""
@@ -2923,8 +3104,11 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         if version is not None and (isinstance(version, bool) or not isinstance(version, int | str)):
             raise ApiError(400, "version is an assessment's number or id, such as AS-2")
         try:
+            kinds = body.get("classes") or {}
+            if not isinstance(kinds, dict) or not all(isinstance(v, str) for v in kinds.values()):
+                raise ApiError(400, "classes maps a finding id to the kind it is filed as, such as defect")
             out = kassess_cards.to_changes(project, ids, person=person, persona=persona, version=version,
-                                           as_class=_text(body, "as", limit=32) or kassess.CLASS_DEFAULT)
+                                           as_class=_text(body, "as", limit=32) or kassess.CLASS_DEFAULT, classes=kinds)
         except LookupError as exc:
             raise ApiError(404, str(exc.args[0] if exc.args else exc)) from None
         self._audit(project, "assessment_changes", out["assessment"], person, persona,
@@ -3048,21 +3232,26 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         pid = _text(body, "project", limit=100) or None
         if pid is not None:
             self._project(pid)
-        lens = _text(body, "lens", limit=32) or lens_for(persona)
-        if lens not in LENSES:
-            raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
+        # The question names another project by its title: Rihma answers about that one, and says so (FR-UXO1).
+        pid, switched = khowto.scope_of(self.factory, question, pid)
+        lens = _lens_in(body, persona)
         person, persona = self._sign(_text(body, "person", limit=200), persona, pid)
         layout, _ = self._layout_for(person, persona, lens)
         where = self.factory.project(pid) if pid else self.factory      # the widgets and the model it may use
         ui = {"widgets": [w for w in WIDGETS if kmodules.shown(where, "widgets", w)], "layout": layout}
         try:
-            out = kassistant.ask(self.factory, question, persona=persona, project_id=pid,
+            out = kassistant.ask(self.factory, question, persona=persona, project_id=pid, person=person or None,
                                  view=_text(body, "view", limit=64) or None, ui=ui,
                                  model=self.server.assistant_model if kmodules.is_on(where, "assistant") else None)
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
         out["lens"] = lens
-        return 200, out
+        _signed_answer(out, _text(body, "person", limit=80).strip())   # its commands as this person runs them
+        out["walkthrough"] = kwalk_intent.offer(question, out)   # a walkthrough the words ask for: a button
+        # its steps with every known value filled in, and the scope it answered about
+        view = _text(body, "view", limit=64) or None
+        return 200, khowto.finish(out, question, factory=self.factory, pid=pid, view=view, switched=switched,
+                                  person=person, persona=persona, label=_factory_label)
 
 
 # -- entry points ---------------------------------------------------------------------------------
@@ -3108,10 +3297,12 @@ def embed_base_note(base: str | None) -> str:
 
 
 def gnomon_found() -> bool:
-    """Whether ``kernel.model.gnomon_cmd()`` names a Gnomon that exists on this machine."""
+    """Whether ``kernel.model.gnomon_cmd()`` names a Gnomon that exists on this machine, or the analyst or the
+    assistant is answered by a coding agent that is here, which needs no Gnomon (kernel/harness_setup.py)."""
+    from kernel.harness_setup import talking_by_harness
     from kernel.models_setup import gnomon_found as found
 
-    return found()
+    return found() or talking_by_harness()
 
 
 def chat_model() -> object:
@@ -3197,6 +3388,7 @@ def main(argv: list | None = None) -> int:
     server.automation_scheduler = Scheduler(factory, model=server.shape_model).start()
     server.public_origin = public
     print(f"Rihma cockpit for {factory.home}", flush=True)
+    serve_here(server, factory)     # Open a terminal here, and checks on their schedule (FR-CON1, FR-CHK1)
     print(note, flush=True)
     print(embed_base_note(embed_base), flush=True)
     print(access_note(factory), flush=True)
@@ -3213,4 +3405,8 @@ def main(argv: list | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # `python -m cockpit.server` runs this file as __main__, but every route module imports `cockpit.server`: a
+    # second copy with its own ApiError, which this copy's handler would not catch (a 4xx became a 500, and a
+    # stale team session an empty reply). Serve from that one imported copy, so what a route raises is caught.
+    from cockpit import server as _imported  # noqa: PLW0406  (the one copy route modules import)
+    sys.exit(_imported.main())

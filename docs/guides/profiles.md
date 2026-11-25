@@ -26,7 +26,7 @@ The profiles live in [kernel/profiles.py](../../kernel/profiles.py).
 
 | `game` | a game: its code, assets, levels, world and lore, builds and playtests | product | the next build or milestone; how a build is checked | preview |
 | `ml_experiment` | a training or fine-tuning experiment, or a model: datasets, runs, metrics, evaluations, a model card | report | what the experiment must show, on which metric | preview |
-| `knowledge_tooling` | notes, scripts and local services for one's own work: a second brain, a dev toolbox | product | what you rely on it for every day | preview |
+| `knowledge_tooling` | notes, scripts and local services for one's own work: a second brain, a dev toolbox | product | what you rely on it for every day | preview; [second-brain scope approved](../../decisions/D-0025-second-brains-and-agent-context.md) |
 | `library_cli` | a package other code imports, or a command-line tool | product | what counts as a breaking change | preview |
 | `data_pipeline` | ingestion, transformations and quality checks on a schedule | product | how fresh its outputs must be, and who is told of a failed run | preview |
 

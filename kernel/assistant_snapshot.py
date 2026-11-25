@@ -89,7 +89,16 @@ def _project_part(project: Any, persona: str | None) -> dict:
                             "blocking": q["blocking"]} for q in open_q],
         "assumptions": [{"id": a["id"], "text": a["text"][:160], "due": a.get("due")} for a in assumed],
         "decided_cards": [_card(c, persona) for c in reversed([c for c in cards if c["state"] != "open"][-8:])],
-        "releases": [_release(r) for r in releases(project)]}
+        "releases": [_release(r) for r in releases(project)], "agents": _agents(project)}
+
+
+def _agents(project: Any) -> dict:
+    """What coding agents and Rihma's agents did here (the Agents strip, kernel/agent_writes.py), in short."""
+    from kernel.agent_writes import activity
+
+    a = activity(project, limit=5)
+    return {k: a[k] for k in ("agents", "handoffs", "gates", "proposals_waiting")} | {
+        "paused": bool(a["paused"]), "recent": [{k: i[k] for k in ("id", "who", "kind")} for i in a["items"]]}
 
 
 def _waiting_cards(factory: Any, products: list, persona: str | None) -> list:
@@ -155,7 +164,21 @@ def snapshot(factory: Any, *, project: Any = None, persona: str | None = None) -
         "models": model_reliability(factory)}}
     if project is not None:
         snap["project"] = _project_part(project, persona)
+    _insights(factory, project, snap)
     return snap
+
+
+def _insights(factory: Any, project: Any, snap: dict) -> None:
+    """A few key figures from Insights (kernel/insights): the open project's, else the factory's. Figures only."""
+    from kernel.insights import summary
+
+    try:
+        if project is not None and not project.pid.startswith("_"):
+            snap["project"]["insights"] = summary(factory, pid=project.pid)
+        elif project is None:
+            snap["factory"]["insights"] = summary(factory)
+    except Exception:  # noqa: BLE001 - the assistant answers without them rather than not at all
+        return
 
 
 # The snapshot as the model reads it: at most this many characters of JSON (FR-Z1-AC-4).
@@ -171,7 +194,8 @@ SHED_ITEMS: tuple[tuple[str, str, str, int | None], ...] = (
     ("project", "assumptions", "open assumptions", None), ("project", "tasks", "tasks", None),
     ("project", "open_questions", "open questions", 6), ("project", "open_cards", "open cards", 10))
 # Then whole sections, if the lists were not enough.
-_SHED_SECTIONS = (("project", "live", "the project's live run"), ("factory", "capabilities", "the catalogue"),
+_SHED_SECTIONS = (("factory", "insights", "the factory's insights"), ("project", "insights", "the project's insights"),
+                  ("project", "live", "the project's live run"), ("factory", "capabilities", "the catalogue"),
                   ("factory", "gates", "the factory's gates"), ("factory", "waiting", "what waits in the factory"),
                   ("project", "health", "the project's health"))
 

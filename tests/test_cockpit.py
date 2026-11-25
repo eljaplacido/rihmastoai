@@ -1120,8 +1120,10 @@ class RedesignTestCase(CockpitTestCase):
     """Helpers for the redesigned cockpit's routes (FR-T1-AC-11 to AC-15, FR-V1-AC-5)."""
 
     def ledgers(self):
-        """Every project's ledger length, the factory's own canon included."""
-        return {p.pid: len(p.ledger().records()) for p in self.factory.projects()}
+        """Every project's ledger length, the factory's own canon included, less the usage metadata of a model's
+        run (model_run, FR-INS1-AC-9): that says a model answered, never what; it is no write of the route's."""
+        return {p.pid: len([r for r in p.ledger().records() if r["event"]["kind"] != "model_run"])
+                for p in self.factory.projects()}
 
     def assert_no_ledger_writes(self, before):
         """No ledger that existed got a record; one created meanwhile (the factory's own canon, made on
@@ -1152,7 +1154,8 @@ WIDGET_MODEL = {"kpi_strip": "kpis", "square": "square", "pipeline": "pipeline",
                 "catalogue": "catalogue", "live": "projects", "timeline": "timelines", "gate_trend": "gate_trend",
                 "coverage": "coverage", "activity": "activity", "models": "models", "health": "projects",
                 "updates": "updates", "autonomy": "autonomy", "evidence_packs": "evidence_packs", "spend": "spend",
-                "feed_health": "feed_health", "eval_trend": "eval_trend", "try_it": "try_it", "track": "track"}
+                "feed_health": "feed_health", "eval_trend": "eval_trend", "try_it": "try_it", "track": "track",
+                "insight": "insights"}
 
 
 class DashboardLayoutTest(RedesignTestCase):

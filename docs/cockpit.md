@@ -1,10 +1,13 @@
 # The Rihma cockpit
 
-Rihma is the factory: one living thread from a business need to the running service
-(D-0010). Gnomon is the engine underneath it, and keeps its name. Rihma's product is agentic
-capability: web apps, integrations, mobile prototypes, ML pipelines, agents and assistants,
-harness engineering, and ops agents that deliver a report with an evidence pack. Each release
-is a hash-pinned capability pack whose evals travel with it.
+Rihmasto takes an idea or an existing repository, turns it into a spec and a tested contract, has
+coding agents build against it behind a gate that runs the tests itself, ships it only to targets IT
+configured, and keeps it healthy, with a person signing every decision
+([D-0023](../decisions/D-0023-what-rihmasto-is-and-is-not.md)). Today the one target that has run for
+real is the local preview; the cloud roads are tested against stand-ins. Gnomon is the harness
+underneath it, and keeps its name. What it carries is agentic capability: web apps, integrations,
+mobile prototypes, ML pipelines, agents and assistants, harness engineering, and ops agents that
+deliver a report with an evidence pack. Each release is a hash-pinned capability pack whose evals travel with it.
 
 The cockpit is one web page over Rihma, seen through a lens (FR-T1, FR-M3). It shows the
 delivery square, the capability catalogue, a dashboard per lens that each person can reshape,
@@ -118,9 +121,11 @@ With an access file in mode `enforced` ([guides/access.md](guides/access.md)), t
 ## The shell
 
 - **Sidebar** (240px, collapsible to a 56px icon rail with tooltips, dimmer than the content):
-  the hypha logo, **New project**, then Home, **Square**, **Catalogue**, Projects, **Inbox** (with
+  the hypha logo, **New project**, then **Review** (since you last looked), Home, **Square**,
+  **Catalogue**, Projects, **Inbox** (with
   the count of cards this persona may decide across every project, updates and concepts
-  included), Insight (the Floor) and Jobs. A live badge on Projects counts the cells running now
+  included), **Insights** (dimensions measured from the records), Floor, Jobs, Automations and **Health**
+  (the checks across projects). A live badge on Projects counts the cells running now
   (`kernel.status.live`). With a project open, its views follow in `project_context` order, each
   with an icon. Settings sits at the bottom.
 - **Top bar** (52px): the breadcrumb; the **lens switcher**, a segmented control with an icon and a
@@ -159,6 +164,17 @@ A lens is the same work seen for a purpose (`kernel.lenses`):
 Each persona starts in its own lens and may switch; the choice is kept per persona in the tab. In
 a project, the lens and the project's stage order its views (`project_context`): the first tab is
 what that order puts first.
+
+## Review: since you last looked
+
+**Review** (`#/review`, first in the sidebar) is the morning check of what agents and automations did
+since you last looked, across your projects; each project has a **Review** tab for its own. Home's first
+card says it in one line ("Since you last looked: 3 shipped, 2 waiting on you, 1 failed") and opens it.
+Compact rows in six groups (waiting on you, went wrong, decided for you, shipped, from your IDE, cost and
+usage) say who or what did each thing and link to its record; a drawer previews the diff and the gate's
+signals. Approve, decline, overturn, report a change or mark reviewed in place, by mouse or keys (`j` `k`
+`a` `d` `r` `o`, Enter and Esc), then **Mark all reviewed**; **Morning digest** sends the same review to
+your Teams, Slack or mail receiver at the time you set. See [the review guide](guides/review.md).
 
 ## Home: the dashboard
 
@@ -233,6 +249,17 @@ the server adds `ui = {widgets: the library, layout: your current layout}`. The 
   form, filled in. A proposal the kernel dropped is shown greyed, with its reason.
 
 The assistant writes nothing itself.
+
+### Walkthroughs
+
+**Walkthroughs** (Home's header, the flag in the chat's header, and a card on Home while there is no
+project) runs a walkthrough in the chat: plug in an existing project, start from a new idea or from
+documents, set up a model, or a five-stop tour. Rihma asks one thing at a time with the answers as
+buttons, shows a folder's scan in the chat (**See the full map** opens New project's map), and each
+change waits on a Confirm button signed with your name, carried out by the cockpit's own route. An
+adoption or an intake is waited on in the chat, with its progress and then What's next. An answer
+whose words ask for a walkthrough ("I have an existing project", "uusi idea") carries a **Walk me
+through it** button. See [Walkthroughs in Ask Rihma](guides/walkthroughs.md).
 
 ## The delivery square
 
@@ -410,6 +437,13 @@ alignment panel and the stage counts beside it.
   measured and why; the panel's proposals stay apart as opinions; ticked findings are filed with
   **File the ticked findings as changes** (`data-control="assessment_changes"`). See
   [brownfield.md](brownfield.md#assessing-an-adopted-system).
+- **Alignment** (an adopted or attached project brings it forward; its Overview offers it until the first
+  scan) shows what the team's repository already holds and how the project would take it: **Read the
+  repository** (`data-control="align_scan"`) proposes requirements, criteria, a tests trace with its basis and
+  confidence, tasks, decisions, API contracts and gaps; each item has **Accept**, **Edit** and **Reject**
+  (`align_decide`), each group **Accept all open** (`align_bulk`); suggested changes for the repository are
+  copied or downloaded (`align_suggestions`), never written there. See
+  [guides/alignment.md](guides/alignment.md).
 - **Comments**: requirements, criteria, tasks, releases and cards have a **Comment** button that
   opens a small thread. A comment decides nothing; a product owner or business owner may
   **Promote to change**, which files and triages a change card.
@@ -494,7 +528,14 @@ The views as before:
 - **Cell**: every Gnomon run of the project (FR-M3): role, model, verdict with Gnomon's
   native bucket and exit code, whether the audit chain re-verified, tokens and cost. A cost
   that was not measured is shown as "not measured", never as zero.
-- **Floor** (Insight in the sidebar). Its first row is the gate's judgement of the work
+- **Insights** (FR-INS1, [guide](guides/insights.md)): health, compliance, governance, security,
+  context drift, QA and usage, for the factory or one project (and as each project's **Insights**
+  tab), over 24 hours, 7 or 30 days or all records. One filter row (dimension, window, scope), stat
+  tiles with a one-line insight computed by rule and a link to the records, charts with a table view,
+  and **Not measured here** with why and how. **Pin to Home** adds a tile as an *Insight* widget;
+  **Export** saves JSON, CSV or OpenTelemetry JSON and sends nothing anywhere. Routes:
+  `GET /api/insights`, `/api/insights/tile`, `/api/insights/export` (cockpit/insights_routes.py).
+- **Floor** (Floor in the sidebar). Its first row is the gate's judgement of the work
   (`floor.gates`, FR-M3): the first-round pass rate ("n of m tasks passed their gate on the first
   round"), tasks merged, tasks escalated and rounds judged. Below it, under **Harness outcomes
   (each Gnomon run)** and the `harness_note` verbatim, come the per-run figures: runs, the harness
@@ -584,6 +625,22 @@ list, never a shell string, started from the repository root with `GNOMONFACTORY
 log is in `<home>/jobs/`. The **Jobs** page shows each job's state and the last lines of its log;
 a run the autonomy cap stopped shows as capped, not done, with the kernel's reason.
 
+## Console, terminal and Health
+
+Each project has a **Console** tab: the workspace (an attached repository's folder, your own workspace,
+or the console's working copy), who may run, and the commands it offers (stated, detected by rule,
+`package.json` scripts, Makefile targets, CI steps), a command line, a Gnomon box (`gnomon task` under the
+workspace's own surface) and the output streaming line by line, with Stop. Each run is a job (a console
+run never holds up Advance) and `console_ran` in the ledger, for developers and IT unless IT changes it,
+through IT's isolation runner when access is enforced. **Open a terminal here** opens the operating
+system's terminal in the workspace, only from the cockpit's own loopback address; only a cockpit started
+with `python -m cockpit.server` opens one. Each project's **Health** tab lists its enabled checks (the
+test suite, CI/CD status, a dependency audit, the secret scan, licences, an SBOM, an HTTP probe, the
+repo gate, the security gate, a custom command) with the last result, the trend, the last run and Run
+now; the **Health** page shows every project's, Home and What's next say when checks fail, and the
+cockpit runs checks on their schedule once a minute while it runs. Where the line is between your IDE,
+the console and a real terminal: [the console and checks](guides/console-and-checks.md).
+
 ## API
 
 | Method and path | What it does |
@@ -618,6 +675,11 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `POST /api/projects` | `{title, source, profile, mode, maturity, requested_by}`; creates the project with its work profile and starts the intake job. An optional `outputs` list is chosen at intake by the requester (`kernel/outputs.py`); a persona that may not choose outputs is refused before the project is made |
 | `POST /api/projects/<pid>/advance` | starts `kernel.cli run` |
 | `GET /api/jobs` | jobs with their state and the last lines of their logs; a finished run carries its `outcome` (the state and reason of the result it printed last), and one the autonomy cap stopped has the state `capped` |
+| `GET /api/projects/<pid>/console` · `GET /api/projects/<pid>/console/output?job=&offset=` | the workspace, the console's settings, the offered commands, the recent runs and whether a terminal can open here; reads only · a run's output from `offset` (whole lines while it runs), its state, and the next offset ([console](guides/console-and-checks.md)) |
+| `POST /api/projects/<pid>/console/run` · `POST /api/projects/<pid>/console/runs/<job>/stop` | `{line, shell?} \| {gnomon, role?, yes?}, timeout?, person, persona`: a job (201), `console_ran` in the ledger at its end · stop it and everything it started, answered once it ended |
+| `POST /api/projects/<pid>/console/terminal` · `PUT /api/projects/<pid>/console/settings` | `{person, persona}`: the operating system's terminal in the workspace, from the loopback address only (a public origin is a 403, a cockpit not started from the command line a 409) · `{personas? (IT), commands?, person, persona}` |
+| `GET /api/checks` · `GET /api/projects/<pid>/checks` | every project's checks, what fails and the catalogue · a project's checks with each last result, trend and last run; reads only |
+| `POST /api/projects/<pid>/checks/<check>/enable` · `/disable` · `/run` · `POST /api/checks/enable` | `{config?, every?, on_fail?, person, persona}`, recorded as `check_enabled` · `check_disabled` · Run now, answered with the result (`check_ran`) · one check on several `projects`, signed on each |
 | `POST /api/links` | a new one-use sign-in link for another tab |
 | `GET /api/dashboard` | every widget's read model in one answer: `kpis` (each with provenance and denominator), `pipeline` (chips with profile), `queue`, `decisions` (queue kinds plus concepts and updates, and every open change as the Inbox lists it, with its class and `needs_decision`; with age), `gate_trend`, `gates`, `timelines` per project, `activity`, `coverage`, `catalogue`, `square`, `projects` (now, health, live and the last cell's outcome), `models`, `updates`, `autonomy`, `evidence_packs` (each attestation, read-only), `spend`, `try_it`, `feed_health`, `eval_trend`. Records nothing |
 | `GET /api/catalogue` | `kernel.dashboard.catalogue` with the states, profiles and deliverables; a proposed concept carries its work profile's `deliverable`, and a project its `releases` and `latest_release` |

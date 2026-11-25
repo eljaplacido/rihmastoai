@@ -87,7 +87,8 @@ MODULES: dict[str, dict[str, Any]] = {
         "criterion to a test, checks fail-first, asks an independent verifier; escalations and workspaces; the "
         "same gate for your own repository, and holdouts against your running service", depends=("plan",),
         outputs=("gate verdicts per change, recorded", "merged code on the product's main"),
-        pages=("floor",), views=("tasks", "cell"), widgets=("live", "timeline", "gate_trend", "models"),
+        pages=("floor", "insights_all"), views=("tasks", "cell", "insights"),     # Insights: FR-INS1
+        widgets=("live", "timeline", "gate_trend", "models", "insight"),
         commands=("build", "resurface", "workspace open", "workspace submit", "workspace list", "repo gate",
                   "repo holdouts")),
     "delivery": _module(

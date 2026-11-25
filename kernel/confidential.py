@@ -30,6 +30,7 @@ from collections.abc import Iterable, Iterator
 from contextvars import ContextVar
 from typing import Any
 
+from kernel.harness_model import for_project, hosted
 from kernel.model import GnomonModel
 
 GUIDE = "docs/guides/local-models.md"
@@ -56,7 +57,7 @@ def is_local(url: str | None, endpoint: dict[str, Any] | None = None) -> bool:
     """Whether an endpoint is on this machine or a private network: by its address (a URL or a bare host), or
     because its owner declared it private (``endpoint["private"] is True``, kernel/routing.local.json)."""
     if isinstance(endpoint, dict) and endpoint.get("private") is True:
-        return True
+        return not hosted(endpoint)        # Claude Code's and Codex's model is hosted, whatever is declared (FR-HMD1)
     text = str(url or "").strip()
     host = (urllib.parse.urlsplit(text if "://" in text else "//" + text).hostname or "").strip("[]").lower()
     if host == "localhost" or host.endswith(PRIVATE_NAMES):
@@ -81,7 +82,7 @@ def routes(roles: Iterable[str], routing: dict[str, Any] | None = None) -> list[
         for which, route in (("primary", spec), ("fallback", spec.get("fallback"))):
             if isinstance(route, dict) and route.get("endpoint"):
                 ep = endpoints.get(route["endpoint"]) or {}
-                url = ep.get("url")
+                url = ep.get("url") or (f"harness://{ep.get('harness')}" if ep.get("kind") == "harness" else None)
                 out.append({"role": role, "which": which, "endpoint": route["endpoint"], "url": url,
                             "local": is_local(url, ep)})
     return out
@@ -210,9 +211,9 @@ def local_lane(model: Any) -> Any:
 
 def guard(project: Any, model: Any, roles: Iterable[str], *, where: str) -> Any:
     """``require_local``, then the model the call may use: for a confidential project, one whose lane has no
-    hosted fallback (``local_lane``)."""
+    hosted fallback (``local_lane``). A role a harness answers records its call in the project's ledger."""
     require_local(project, roles, where=where)
-    return local_lane(model) if confidential(project) else model
+    return for_project(project, local_lane(model) if confidential(project) else model, roles)
 
 
 def local_model(project: Any, model: Any, role: str) -> Any:

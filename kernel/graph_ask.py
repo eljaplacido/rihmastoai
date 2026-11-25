@@ -202,7 +202,10 @@ def eval_baseline(project: Any, model: Any, *, persona: str = "product_owner",
         return graph.answer(query, "not_found", missing=[],
                             why="no requirement rests on a record the assistant could cite")
     known = {i for n in graph.nodes.values() for i in _record_id(n)}
-    rows = [_ask(project, model, persona, case, known) for case in cases]
+    from kernel.model_usage import quiet
+
+    with quiet():        # an evaluation keeps nothing: its runs are not the project's usage
+        rows = [_ask(project, model, persona, case, known) for case in cases]
     measured = [r for r in rows if r["measured"]]
     if not measured:
         return graph.not_measured(query, sorted({r["why"] for r in rows}))

@@ -1,0 +1,49 @@
+/* Insights (insights.js): one filter row, stat tiles, charts with their table twins, and what is not measured.
+   Colours come from tokens.css (the validated categorical slots and the status marks), in both themes. */
+
+.ins { display: grid; gap: var(--gap); min-width: 0; }
+.ins.ins-busy .ins-model { opacity: 0.6; }
+.ins-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; }
+.ins-filters { display: flex; align-items: center; gap: var(--s2) var(--s4); flex-wrap: wrap; min-width: 0; flex: 1 1 auto; }
+.ins-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--sunken); max-width: 100%; }
+.seg-b { min-height: 30px; padding: 0 10px; border: 0; border-radius: calc(var(--r-md) - 2px); background: transparent; color: var(--text-2);
+  font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer; }
+.seg-b:hover { color: var(--text); background: var(--hover); }
+.seg-b.on { background: var(--raised); color: var(--text); box-shadow: 0 0 0 1px var(--border-strong); }
+.seg-b:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 1px; }
+.ins-scope { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text-2); min-width: 0; max-width: 100%; }
+.ins-scope .w-select { max-width: min(320px, 70vw); }
+.ins-model { display: grid; gap: var(--gap); min-width: 0; }
+.ins-sum { margin: 0; }
+.ins-sum b { color: var(--text); }
+.ins-tiles { grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); }
+.ins-tile .kpi-v { font-variant-numeric: normal; overflow-wrap: anywhere; }
+.ins-line { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
+.ins-how { color: var(--text-3); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.ins-delta { font-size: var(--fs-xs); color: var(--text-2); }
+.ins-status { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-2); }
+.ins-status .ic { width: 14px; height: 14px; }
+.ins-status.good .ic { color: var(--good-mark); }
+.ins-status.warning .ic { color: var(--warning-mark); }
+.ins-status.serious .ic { color: var(--serious-mark); }
+.ins-status.critical .ic { color: var(--critical-mark); }
+.ins-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-top: auto;
+  padding-top: 6px; border-top: 1px solid var(--border); }
+.ins-rec { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-sm); font-weight: 500; }
+.ins-rec .ic { width: 14px; height: 14px; }
+.ins-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr)); gap: var(--gap); align-items: start; }
+.ins-chart { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.ins-chart .ins-line { margin-bottom: var(--s1); }
+.ins-chart-body { min-width: 0; }
+.ins-chart-body .tbl { max-width: 100%; overflow-x: auto; }
+.ins-nm p { overflow-wrap: anywhere; }
+.ins-gaps ul { list-style: none; display: grid; gap: var(--s2); margin-top: var(--s2); font-size: var(--fs-sm); color: var(--text-2); }
+.ins-gaps b { color: var(--text); font-weight: 600; }
+.ins-widget .ins-tile { border: 0; padding: 0; background: transparent; }
+.ins-widget .viz-note a { overflow-wrap: anywhere; }
+@media (max-width: 520px) {
+  .ins-bar { flex-direction: column; align-items: stretch; }
+  .ins-scope { flex-wrap: wrap; }
+  .ins-scope .w-select { max-width: 100%; width: 100%; }
+}

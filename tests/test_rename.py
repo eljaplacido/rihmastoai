@@ -64,7 +64,8 @@ class DistributionTest(unittest.TestCase):
     def test_the_python_packages_keep_their_names(self):
         packages = PYPROJECT["tool"]["setuptools"]["packages"]
         self.assertEqual([p for p in packages if "." not in p], ["kernel", "adapters", "cockpit", "embed", "mcp"])
-        self.assertEqual([p for p in packages if "." in p], ["kernel.runners"])   # the cell runners (D-0019)
+        self.assertEqual([p for p in packages if "." in p],    # kernel's own subpackages (tests/test_wiring.py)
+                         ["kernel.checks", "kernel.insights", "kernel.redteam", "kernel.runners"])
         self.assertTrue(all((REPO_ROOT / p.replace(".", "/") / "__init__.py").is_file() for p in packages))
 
 

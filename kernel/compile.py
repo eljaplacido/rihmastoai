@@ -22,7 +22,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from kernel import scaffold
+from kernel import model_usage, scaffold
 from kernel.confidential import routing_for
 from kernel.intake import _ask_json
 from kernel.lanes import GIT_ID, _git, load_routing, write_product_surface
@@ -133,6 +133,8 @@ def _contract_requirement(r: dict[str, Any], today: str) -> dict[str, Any]:
                            "then": c["then"], "check": check})
     req = {"id": r["id"], "statement": r["statement"], "provenance": r["provenance"],
            "group": r.get("priority", "must"), "acceptance": acceptance}
+    if r.get("notes"):        # a requirement imported from a repository says where from (kernel/alignment_contract.py)
+        req["notes"] = str(r["notes"])
     if r["provenance"] == OBSERVED:
         # An adopted solution's as-is requirement (kernel/adopt.py). The contract's vocabulary has
         # no observed tier: no person stood behind it, so it enters as vendor-proposed and says so.
@@ -184,6 +186,17 @@ def check_plan(contract: dict) -> dict:
     return {"contract_revision": contract["revision"], "checks": rows}
 
 
+def gdrive_client_files(contract: dict) -> dict:
+    """`app/gdrive.py`, the paved road's Drive client (kernel/connectors_gdrive.py, copied as it is), when the
+    contract declares a gdrive integration; nothing otherwise."""
+    from kernel import connectors_gdrive
+    from kernel.integration_decl import from_contract
+
+    if not any(d["kind"] == "gdrive" for d in from_contract(contract)[0]):
+        return {}
+    return {"app/gdrive.py": Path(connectors_gdrive.__file__).read_text(encoding="utf-8")}
+
+
 def init_repo(project, contract: dict, routing: dict | None = None) -> Path:
     """Create the product's bare repository with the paved-road template, the contract and
     the cell surface, as one commit on main."""
@@ -201,6 +214,7 @@ def init_repo(project, contract: dict, routing: dict | None = None) -> Path:
         template = profile_of(project).get("template", "web-service")   # a small capability's, or the web service's
         made = scaffold.files(meta["title"], project.pid, meta["maturity"], look=look, template=template,
                               sign_in=sign_in)
+        made |= gdrive_client_files(contract)   # a declared Google Drive integration's client (FR-GDR1)
         for rel, text in made.items():
             write_text(work / rel, text)
         write_json(work / "contract.json", contract)
@@ -321,6 +335,7 @@ Answer with this JSON in a ```json block:
 """
 
 
+@model_usage.recorded("holdouts")    # the run's metadata only, never the holdouts (model_run)
 def author_holdouts(project, *, model, only=None, reason: str | None = None, person: str | None = None,
                     evidence: list | None = None) -> list:
     """The holdout author writes executable scenarios for holdout and probe criteria. They are

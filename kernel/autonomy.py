@@ -96,6 +96,8 @@ def set_cap(target, level: int, *, person: str, persona: str, reason: str) -> di
 def require(project, needed: int, what: str) -> None:
     cap = cap_of(project)
     if needed > cap:
+        # recorded, so Governance counts the hit (kernel/insights/governance.py) and an automation may react
+        project.log("autonomy_capped", {"needed": needed, "cap": cap, "what": what})
         raise AutonomyCapped(needed, cap, what)
 
 

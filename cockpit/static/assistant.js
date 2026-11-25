@@ -17,6 +17,7 @@ import {
 } from "./core.js";
 import { previewProposal, previewing, keepPreview, undoPreview } from "./dashboard.js";
 import { suggestionOn } from "./modules.js";
+import { planBlock } from "./goal.js";   // a goal's plan, its steps one click each (FR-CPL1)
 
 const A = {
   convs: {}, key: null, queue: [], current: null, busy: false, tick: null, embedCheck: new WeakMap(),
@@ -202,6 +203,7 @@ export function highlight(el) {
 }
 async function takeThere(nv) {
   if (nv.control === "assistant" && assistantOpen()) { say("You are in it: ask here.", "info"); $("#as-q").focus(); return; }
+  if (nav.walk && /^walk_/.test(nv.control || "")) { nav.walk.openPicker(nv.control); return; }   // in this panel
   let el = nv.control ? visibleControl(nv.control) : null;   // already in sight: highlight it where it is
   const go = !el && nv.route && !onPage(nv.route);
   if (go) location.hash = nv.route;
@@ -453,14 +455,17 @@ function bubble(item, idx, key) {
     h("div", { class: "bub" },
       h("p", null, out.answer || "I have no answer to that."),
       out.note ? h("p", { class: "muted small" }, out.note) : null,
+      out.plan ? planBlock(out, item) : null,
       (out.sources || []).length ? h("div", { class: "srcs" }, out.sources.map((s) => sourceChip(s, !unbacked.has(s), item.project))) : null,
       go ? h("div", { class: "btns" }, button("Take me there", { icon: "arrow-right", kind: "small", key: "go:" + idx, onclick: () => takeThere(out.navigate) })) : null,
+      out.walkthrough && nav.walk ? nav.walk.offerButton(out.walkthrough) : null,
       (out.propose || []).map((p, i) => proposalCard(p, item, i, key, idx)),
       (out.dropped || []).map((p) => h("div", { class: "prop dropped" }, h("div", { class: "prop-h" }, icon("x-circle"),
         h("b", null, (ACTION_WORDS[p.action] || [p.action])[0])), h("p", { class: "small" }, "Not offered: " + (p.refused || "outside the rules")))),
       out.unasked ? h("p", { class: "muted small" }, (out.unasked === 1 ? "An action was" : out.unasked + " actions were")
         + " suggested that you did not ask for, so none is offered. Ask for it if you want it.") : null,
-      h("p", { class: "by muted small" }, out.by === "map" ? "From the cockpit map" : (S.meta && S.meta.assistant === "gnomon" ? "From Gnomon" : "From the model")
+      h("p", { class: "by muted small" }, out.by === "goal" ? "A plan from the project's records and what this Rihmasto has"
+        : out.by === "goal_model" ? "A plan from the model, each step checked against what this Rihmasto has" : out.by === "map" ? "From the cockpit map" : (S.meta && S.meta.assistant === "gnomon" ? "From Gnomon" : "From the model")
         + ", checked against the Inbox rules")));
 }
 
@@ -481,6 +486,7 @@ function render() {
   const log = load();
   const box = $("#as-log");
   if (!box) return;
+  if (nav.walk && nav.walk.shown()) { nav.walk.render(); return; }   // a walkthrough is shown (walkthrough.js)
   const active = document.activeElement;
   const lost = !!active && (box.contains(active) || $("#as-suggest").contains(active));
   const had = lost ? active.getAttribute("data-key") : null;
@@ -491,7 +497,9 @@ function render() {
       h("p", null, h("b", null, "Ask about the cockpit or your projects.")),
       h("p", { class: "muted small" }, mapMode()
         ? "I can take you to a view or a control and tell you what a button does. No model is set up here, so I cannot answer about runs or propose actions."
-        : "I can take you to a view, tell you what a button does, answer from the records, and propose actions or a new layout that you confirm.")));
+        : "I can take you to a view, tell you what a button does, answer from the records, and propose actions or a new layout that you confirm."),
+      nav.walk ? h("p", { class: "muted small" }, "Or let me walk you through it, step by step:") : null,
+      nav.walk ? nav.walk.pickerList() : null));
   } else {
     fill(box, strip, log.map((it, i) => bubble(it, i, A.key)));
   }
@@ -635,7 +643,12 @@ export function wireAssistant() {
   });
   const form = $("#as-form");
   const q = $("#as-q");
-  form.addEventListener("submit", (e) => { e.preventDefault(); if (send(q.value)) q.value = ""; q.focus(); });
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (nav.walk && nav.walk.shown() && nav.walk.send(q.value)) { q.value = ""; return; }   // an answer to the walkthrough
+    if (send(q.value)) q.value = "";
+    q.focus();
+  });
   q.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
     if (e.key === "Escape") { e.preventDefault(); closeAssistant(); }
@@ -647,3 +660,4 @@ export function wireAssistant() {
   document.addEventListener("visibilitychange", () => { if (!document.hidden) sweep(true); });   // back from another tab
 }
 export { chip };
+export { takeThere, render as rerenderAssistant };   // for the walkthroughs (walkthrough.js)

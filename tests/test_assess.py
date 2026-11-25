@@ -478,6 +478,18 @@ class ChangesTest(FactoryTestCase):
                         ([policy], {"person": "model"})):
             with self.assertRaises(assess.AssessmentRefused, msg=(ids, kw)):
                 assess_cards.to_changes(project, ids, **({"person": "Aino", "persona": "developer"} | kw))
+        # More than MAX_IDS at once (every finding of a large assessment ticked) is refused with the count,
+        # not as if an ID were wrong; the cockpit sends them in batches of that size
+        many = [f"F-{n}" for n in range(1, assess_cards.MAX_IDS + 19)]
+        with self.assertRaises(assess.AssessmentRefused) as refused:
+            assess_cards.to_changes(project, many, person="Aino", persona="developer")
+        self.assertIn(f"{len(many)} findings were named", str(refused.exception))
+        self.assertIn(f"at most {assess_cards.MAX_IDS}", str(refused.exception))
+
+    def test_the_cockpit_files_in_batches_of_the_kernel_limit(self):
+        js = (Path(__file__).resolve().parents[1] / "cockpit" / "static" / "assessment.js").read_text(encoding="utf-8")
+        self.assertIn(f"export const FILE_BATCH = {assess_cards.MAX_IDS};", js)
+        self.assertIn("ids.slice(i, i + FILE_BATCH)", js)
 
 
 # -- the command line, the MCP server, the evidence pack and the assistant's map -------------------------

@@ -1,288 +1,450 @@
 <p align="center">
-  <img src="docs/assets/rihmasto-banner.jpg" alt="Rihmasto: governed AI solution factory" width="760">
+  <img src="docs/assets/rihmasto-banner.jpg" alt="Rihmasto: from an idea or a repository to a spec, a tested contract and a gated build, with a person signing every decision" width="760">
 </p>
 
 # Rihmasto
 
-Rihmasto is a governed AI solution factory. It takes a need from a vague request to a tested,
-running service or agent, and it records who decided what at every step.
+Rihmasto takes an idea or an existing repository, turns it into a spec and a tested contract, has
+coding agents build against it behind a gate that runs the tests itself, ships it only to targets you
+configured, and keeps it healthy, with a person signing every decision.
 
-> Models propose. The kernel decides. People own intent and policy.
+It sits between where software is developed (your IDE, a terminal, Claude Code, Codex, OpenCode or
+Cursor, or Rihmasto's own builders) and where it goes, and records every step in a hash-chained
+ledger. Today the one delivery target that has run for real is the local preview on your own machine;
+the docker and Google Cloud Run roads are tested only against stand-ins ([Status](#status)). Rihmasto
+is alpha software with one maintainer.
 
-*Rihmasto* is Finnish for a mycelium, the whole network of fungal threads. One thread is a
-*rihma*: in Rihmasto, a single agent is **a Rihma agent**. The analyst, the builder, the verifier,
-the holdout author and the cockpit's chat assistant ("Ask Rihma") are Rihma agents
-([D-0013](decisions/D-0013-name-rihmasto.md)).
-
-Rihmasto runs on [Gnomon](https://github.com/eljaplacido/gnomonharness), an open agent harness, and
-depends on nothing else at runtime. Every model call goes through Gnomon, which enforces each
-agent's tools, write scope and sandbox and keeps an audit trail. Rihmasto works with any
-OpenAI-compatible model endpoint, local or hosted, set per role.
+> Models propose. The kernel (plain code, with no model in it) decides. People own intent and policy.
 
 Rihmasto is free to adopt, under the [Apache License 2.0](LICENSE).
 
+## Pick your path
+
+| You want to | Go to |
+|---|---|
+| Try it in two minutes, with no keys and no network | [Quick start](#quick-start) |
+| Start from an idea, a sentence or a written spec | [Start fresh from an idea](#1-start-fresh-from-an-idea) |
+| Bring in a repository you already have | [Integrate into an existing project](#2-integrate-into-an-existing-project) |
+| Think a concept through, or mock it up quickly | [Conceptualise](#3-conceptualise) |
+| Keep something running and know when it breaks | [Keep something running](#4-keep-something-running) |
+| Work from your own IDE or coding agent | [Work from your IDE or terminal](#5-work-from-your-ide-or-terminal) |
+| See everything it can do | [Capabilities](#capabilities) |
+
 ## Who it is for
+
+- **One developer.** Start a project from an idea, or point Rihmasto at a repository, and keep using
+  your own editor and agent. With no access file, Rihmasto runs in single-operator mode: you pick any
+  persona from the person chip, nothing to set up, and each decision records which persona you used.
+- **A team.** Personas become people. IT runs an identity-aware proxy in front of the cockpit
+  ([access](docs/guides/access.md)) and an access file says who may decide as which persona.
+- **By role:**
 
 | You are | Rihmasto gives you |
 |---|---|
-| A business owner | One Inbox for the decisions that are yours: approve the plan, accept a demo, validate a new concept, set how far the factory may go on its own. |
-| A product owner | Needs that arrive as signals and become concepts you validate, with the panel's questions and assumptions in plain view. |
-| A developer | A spec, a hashed contract and a gate that runs the tests itself. Work in your own terminal with your own agent; your changes meet the same gate. |
-| IT and operations | Delivery only on paved roads you configured, your deploy gate before production, then probes, canary and rollback. |
-| Compliance | A hash-chained ledger, evidence packs for reviewers, security findings with accepted risks that expire, and the autonomy cap. |
-
-## What Rihmasto is, and is not
-
-Rihmasto is **the middle layer** between where solutions are developed (your IDE, terminal and
-coding agents, or Rihma's own builders) and everywhere they go (backends and clouds, test
-environments, data systems, and the channels and platforms where they are published or used).
-
-Rihmasto is the platform for an agentic capability's whole life:
-
-1. an idea becomes a concept and a first mock-up;
-2. the concept is productionised;
-3. its integrations are worked out;
-4. it reaches a first test deployment, then production;
-5. it is maintained.
-
-People decide at every step, and automations can hook onto each step and its transitions.
-
-It is **not** another IDE: write code in the editor and agent you prefer, and Rihmasto captures that
-work's specs, tests and conventions, aligns them with its contract, and hands context back. It does
-not replace your CI, monitoring or ticketing either. It reads them, runs its own gate and checks, and
-keeps the decisions and the evidence. See [D-0023](decisions/D-0023-what-rihmasto-is-and-is-not.md).
+| A business owner | One Inbox for your decisions: approve the plan, accept a demo, validate a concept, set how far it may go alone. |
+| A product owner | Needs that arrive as signals and become concepts, with the panel's questions and assumptions in plain view. |
+| A developer | Your own IDE and agent, a spec and a hashed contract, and a gate that runs the tests itself. |
+| IT and operations | Delivery only on roads you configured, your deploy gate, checks, probes and incidents. |
+| Compliance | A hash-chained ledger, evidence packs that say *insufficient evidence* rather than "compliant", expiring accepted risks, and the autonomy cap. |
 
 ## Quick start
 
 You need Python 3.11 or later and git. The demo needs no Gnomon, no model keys and no network.
 
 ```bash
-git clone <repository URL> rihmasto && cd rihmasto
+git clone https://github.com/eljaplacido/rihmastoai rihmasto && cd rihmasto
+python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e .
 rihmasto demo && rihmasto-cockpit --home var/demo
 ```
 
-- Install into a virtual environment of its own (`python -m venv .venv`, then activate it).
-  Rihmasto's `mcp` package would shadow the MCP Python SDK of the same name.
-- `rihmasto demo` builds a demo factory home in `var/demo` in well under a minute.
-- `rihmasto-cockpit` prints a one-use sign-in link on 127.0.0.1. Open it once and pick a persona.
-- The command is `rihmasto`; `rihma` stays as an alias. Without installing, run
-  `python -m kernel.cli demo` and `python -m cockpit.server --home var/demo` from the checkout.
-- `rihmasto doctor` shows what this machine has: Python, Gnomon, git, docker, the lanes and the
-  model keys. It exits 1 until Gnomon is installed; the demo does not need Gnomon.
+- Use a virtual environment of its own: Rihmasto's `mcp` package would shadow the MCP Python SDK.
+- `rihmasto demo` builds a demo home in `var/demo` in well under a minute: the real kernel, with a
+  scripted model and builder standing in for Gnomon, and fake people named `demo-*`
+  ([what it holds](docs/demo.md)).
+- `rihmasto-cockpit` prints a one-use sign-in link on 127.0.0.1. Open it once.
+- `rihmasto doctor` shows what this machine has: Python, Gnomon, git, docker and the model keys.
+- Without installing, run `python -m kernel.cli demo` and `python -m cockpit.server --home var/demo`.
 
-For a first real project, read [docs/getting-started.md](docs/getting-started.md).
+The demo is a sandbox with a scripted model. Real work starts on your own home, with a real model:
+see [Before any scenario](#before-any-scenario).
 
-## Use only what you need
+## Scenarios
 
-Rihmasto is a set of modules. Use one small part, such as *spec only* (a need becomes a confirmed spec
-and a hashed contract, nothing is built) or *gate my code* (the gate judges changes in your own
-repository, and you merge), or the whole factory, and change it later with `rihmasto modules set` or in
-the cockpit's Settings. Every way records the same trail in the ledger.
-[docs/guides/use-only-what-you-need.md](docs/guides/use-only-what-you-need.md) walks through each preset.
+Each step names the click in the cockpit (the web UI) and the command that does the same.
 
-## What you see in the demo
+### Before any scenario
 
-The demo is the real kernel with a scripted model and a scripted builder standing in for Gnomon.
-Every decision in it is made by a fake person named `demo-*`. It holds:
+1. **Install** as in the [Quick start](#quick-start).
+2. **Choose a model.** Intake, Shape it in chat, alignment and Ask Rihma need one. Either:
+   - an OpenAI-compatible endpoint, local or hosted: the cockpit's **Models setup**, or
+     `rihmasto models set analyst --base-url <url> --model <name> --key-env <VARIABLE> --person "Ada Example" --persona it`
+     ([models setup](docs/guides/models-setup.md)). Endpoints are called through Gnomon, so
+     [install Gnomon](docs/getting-started.md#5-install-gnomon-and-configure-models) first;
+   - or the coding agent you already have, with no API key:
+     `rihmasto models use claude-code --person "Ada Example" --persona it` (or `codex`, `opencode`;
+     [guide](docs/guides/harness-models.md)). It runs on that person's own account and its terms.
 
-- **Equipment loans**, waiting on the panel's blocking questions;
-- **Shipment webhook to the stock system**, built through the gate, escalated once, retried and
-  released on the local preview road with a capability pack;
-- **Access review check**, an ops agent whose escalation waits for a person, with the gate's
-  objections;
-- a **concept** that waits for a business owner.
+   `rihmasto models test analyst` sends a tiny prompt to check it. Building (step 4 below) also needs
+   Gnomon, or another harness IT approved ([harnesses](docs/guides/harnesses.md)).
+3. **Start the cockpit on your own home:** `rihmasto-cockpit`, with no `--home`. It uses
+   `$RIHMASTO_HOME`, else `var/` in the checkout, the same home as the command line; the demo in
+   `var/demo` stays separate. Open the sign-in link it prints.
+4. **Sign as yourself.** In the cockpit, pick a persona from the person chip, top right. On the
+   command line, every command that records a decision takes `--person "Your Name" --persona <id>`.
+   The persona ids are `business_owner`, `product_owner`, `concept_evaluator`, `end_user`, `it`,
+   `developer`, `operations`, `stakeholder` and `compliance`. Single-operator mode still needs both.
+5. **Find the project id** (`<pid>` below, such as `equipment-loans-3f9a1c`). `rihmasto new` and
+   `rihmasto adopt` print it, `rihmasto status` lists every project, and the cockpit shows it in the
+   address bar (`#/p/<pid>/overview`).
 
-[docs/demo.md](docs/demo.md) walks through it screen by screen.
+In the commands, `<...>` is a value you fill in, and "Ada Example" stands for your name.
+
+### Words used here
+
+- **Kernel**: Rihmasto's rule engine, standard-library Python with no model in it. It decides what is
+  accepted and writes the ledger.
+- **Harness**: the program that runs an agent with its tools and limits. Gnomon is the default.
+- **Contract**: the requirements and their given / when / then criteria, compiled with no model and
+  pinned by a hash.
+- **Gate**: the kernel runs the tests itself, checks each criterion has a test, and asks a verifier
+  from another model family. Nothing passes on a model's word.
+- **Cell**: one builder run for one task, in a sandbox with its own write scope.
+- **Holdouts**: test scenarios the builder never sees, run against the delivered service.
+- **Decision**: a card in the Inbox that waits for a person: approve a plan, accept a demo, pass a
+  deploy gate. Every decision names a person and a persona.
+- **Persona**: the role you decide as (business owner, developer, IT and so on).
+- **Maturity**: how far a project goes: explore < demo < pilot < production. Explore lands on a local
+  preview; the others need a paved road.
+- **Paved road**: a delivery target IT configured, with its own deploy gate.
+- **Posture**: how strict the chain is: prototype, balanced, production or regulated.
+- **Delivery square**: where needs (signals) become concepts a business owner validates.
+
+### 1. Start fresh from an idea
+
+This path stays at explore maturity, which lands on a local preview and needs nothing configured.
+
+1. **Shape it.** Home > **Shape it in chat**: say the idea, answer Rihma's questions, edit the draft
+   brief beside the chat and press **Create the project from this**. Or **New project > A need or a
+   spec** and **Create and start the intake**. The command:
+   `rihmasto new "Equipment loans" --source "Our team keeps losing track of who borrowed the drills." --maturity explore --mode mixed --requested-by "Ada Example"`
+2. **Answer the questions.** The intake panel's questions wait in the project's **Questions** tab.
+   Answer each, or press **Let Rihma assume** to make it an assumption with a due date.
+   `rihmasto answer <pid> Q-001 "the team lead approves" --person "Ada Example" --persona business_owner`
+   or `rihmasto assume <pid> Q-002 --person "Ada Example" --persona business_owner`.
+3. **Read the spec.** **Spec & contract** shows the requirements, their criteria and who confirmed
+   what.
+4. **Build.** **Advance** (or `rihmasto run <pid>`) compiles the contract, writes the holdouts, builds
+   each task in a cell and judges it at the gate. It stops at each decision a person must make:
+   decide it in the **Inbox**, or `rihmasto status <pid>` lists them and
+   `rihmasto decide <pid> <decision id> <verdict> --person "Ada Example" --persona developer` decides
+   one (the persona must be one that may make that decision).
+5. **Try it.** The release lands on the local preview. Open **Try it**. **Report a change**, or
+   `rihmasto change <pid> "An empty name crashes" --person "Ada Example" --persona end_user`, sends
+   feedback back through the same chain.
+
+**Going further: demo, pilot, production.** These need a paved road, and today no road to a target
+outside this machine has run for real: docker and Google Cloud Run are tested only against stand-ins,
+and Azure Container Apps is rendered but never deployed ([Status](#status)).
+
+1. IT configures a road first: **Settings > Paved roads** ([deploying](docs/guides/deploying.md)).
+2. Raise the maturity in **Project settings**, which previews what changes, or
+   `rihmasto settings <pid> --maturity pilot --preview` and then without `--preview`.
+3. At pilot and production a person approves the plan before anything is built. At demo the business
+   owner accepts the demo; at production IT's deploy gate decides, with shadow, canary and rollback.
+   `rihmasto deliver <pid>` delivers on the road for the project's maturity.
+
+### 2. Integrate into an existing project
+
+Rihmasto adopts, aligns, gates and watches a repository you already have. It does not deploy it: no
+paved road delivers an adopted repository yet.
+
+1. **Point at it.** **New project > An existing project**: a folder on this machine or a git address.
+2. **Scan.** **Scan the folder** shows what would be read, listed and skipped, the AI-tool setup it
+   found (CLAUDE.md, AGENTS.md, Cursor rules, MCP servers), and the files it never reads because they
+   look secret. Untick what to leave out. `rihmasto scan <folder>`
+3. **Confidential?** Tick it (`--confidential`), and every model call for the project stays on local
+   models.
+4. **Adopt.** Choose Monitor, Maintain or Improve. Adoption reads the project and runs its tests once
+   for a baseline; a folder that is not a git repository is snapshotted, and your folder is never
+   changed.
+   `rihmasto adopt "Billing service" --source <folder or git URL> --intent maintain --person "Ada Example" --persona developer`
+5. **Assess** (optional). **Assessment > Assess now**, or
+   `rihmasto assess <pid> --person "Ada Example" --persona developer`, gives findings you can file as
+   changes.
+6. **Align.** **Alignment > Read the repository** proposes the repository's own specs, criteria and
+   tests for the contract; accept, edit or reject each. `rihmasto align <pid> --scan`, then
+   `rihmasto align <pid> accept <item ids> --person "Ada Example" --persona developer`.
+7. **Keep working in your IDE.** **Work on it from your IDE** on the Overview, or `rihmasto ide <pid>`,
+   gives the MCP configuration and a conventions section for AGENTS.md or CLAUDE.md.
+8. **Watch it.** **Health > Enable a check** runs tests, CI status, dependency audit, secrets and more
+   on a schedule:
+   `rihmasto checks enable <pid> tests --every 1d --person "Ada Example" --persona developer`.
+   `rihmasto sync <pid>` fetches upstream and records the drift, and an automation can run on new
+   commits. The gate itself runs only a Python unittest suite; other suites are characterised at
+   adoption.
+
+### 3. Conceptualise
+
+1. **Start loose.** Home > **Shape it in chat**, starting with a sentence or nothing, or attach a
+   folder of documents. From the command line, `rihmasto new "Title" --source <folder> --requested-by "Ada Example"`
+   shows the scan of the folder first and asks for `--yes`.
+2. **Choose how to work it out:**
+   - **Think it through.** Socratic mode sends every question to a person and assumes nothing:
+     choose it as the project's **Mode**, or `--mode socratic`.
+   - **Get a quick mock-up.** The prototype posture assumes answers and builds fast; at explore it
+     lands on the local preview. `--posture prototype --maturity explore`, then open **Try it**.
+3. **Validate it as a concept** (when the need came from the business). The **Delivery square** is
+   where needs arrive as signals and become concepts. **Log a signal**, then a business owner or
+   product owner validates, parks or rejects the concept there.
+   `rihmasto signal log --text "Drivers want a picking list" --channel chat --source "team chat" --person "Ada Example" --persona product_owner`,
+   `rihmasto signal triage S-001`, then
+   `rihmasto decide _factory C-0001 validate --person "Ada Example" --persona business_owner`.
+   `_factory` is the factory-level project that holds signals and concepts. `rihmasto tick` turns a
+   validated concept into a project.
+4. **Firm it up.** When it holds, change the posture, mode or maturity in **Project settings**
+   (`rihmasto posture preview balanced` shows what a posture would do) and it carries on through the same
+   chain.
+
+### 4. Keep something running
+
+1. **Check it.** **Health**: tests, CI status, dependencies, secrets, licences, an SBOM and an HTTP
+   probe, each on a schedule. `rihmasto checks list <pid>`
+2. **Probe it.** `rihmasto operate <pid>` runs one operations round: it checks `/health` and the probe
+   scenarios where the release runs, and a failing probe opens an incident decision in the Inbox. On a
+   road with a canary, a canary worse than the current release is rolled back and opens an incident.
+3. **Automate it.** **Automations**: start from a template ("Notify when a check fails") or build
+   one: a trigger, a guard and an allow-listed action. Without the cockpit running,
+   `rihmasto automations install-help` prints the cron or Task Scheduler line.
+4. **Review each morning.** **Review** lists what shipped, what went wrong, what was decided in your
+   name and what waits on you. Mark it reviewed, or have it sent each morning. `rihmasto review`
+5. **Read the trends.** **Insights**: health, security, QA and usage, counted from the records, and
+   "not measured" when they are not. `rihmasto insights`
+
+### 5. Work from your IDE or terminal
+
+1. **Connect your agent.** `rihmasto ide <pid>` prints the MCP configuration for Claude Code, Cursor
+   or Codex. The server (`rihmasto-mcp`) gives your agent reads and proposals, never decisions.
+2. **Hand off.** **Hand off to an agent** in the project's header, or
+   `rihmasto handoff <pid> --to claude-code`, gives a brief with the goal or change, the contract's
+   criteria, the project's conventions and how to report back.
+3. **Talk in the agent channel.** Your agent posts progress and Rihma's agents answer:
+   `rihmasto channel <pid> post --as claude-code --kind progress --text "AC-1 passes" --person "Ada Example" --persona developer`.
+   Watch it in **Agent channel**, or `rihmasto channel <pid> --follow`.
+4. **Bring work back.**
+   `rihmasto workspace open <pid> --agent claude --person "Ada Example" --persona developer` gives a
+   workspace;
+   `rihmasto workspace submit <pid> <path> --person "Ada Example" --persona developer` sends the
+   change to the same gate.
+5. **Use the console.** **Console** runs the project's commands on record:
+   `rihmasto console <pid> --person "Ada Example" --persona developer -- python -m unittest`.
+   **Open a terminal here**, or `rihmasto shell <pid>`, for anything interactive.
+
+## Capabilities
+
+Each capability works from the cockpit, and most from Ask Rihma and the command line too. Items marked
+*(preview)* are partly built; *(stand-ins)* means tested only against fakes, never a real system.
+
+| Area | What you can do | Guides |
+|---|---|---|
+| **Intake and shaping** | Shape a need in chat or from a spec, plan or folder; a panel asks the questions that change what gets built; pick one of 13 kinds of work (3 ready, 10 *preview*) and a posture; change any of it later. | [shape it in chat](docs/guides/shape-in-chat.md), [inputs](docs/guides/inputs.md), [profiles](docs/guides/profiles.md), [postures](docs/guides/postures.md), [change anything](docs/guides/change-anything.md) |
+| **Existing projects** | Adopt a folder or git address with a test baseline, assess it, align its own specs and tests with the contract, follow its AI-tool setup, record upstream drift. Not delivered by a road yet. | [existing solutions](docs/brownfield.md), [alignment](docs/guides/alignment.md), [your IDE and Rihmasto](docs/guides/ide-and-rihmasto.md) |
+| **Build and verify** | A hashed contract, builder cells in Gnomon (or another harness, checked after the run), a gate that runs the tests itself, holdouts, a security gate with Rihmasto's own scans and SARIF from any scanner. | [how it works](docs/how-it-works.md), [harnesses](docs/guides/harnesses.md), [models](docs/guides/models-setup.md), [security](docs/guides/security.md) |
+| **Run and deliver** | The local preview road (real); docker and Google Cloud Run roads *(stand-ins)*; Azure Container Apps *(preview)*; outputs per audience; small capabilities over MCP, an OpenAI-compatible endpoint, a website chat or HTTP. | [deploying](docs/guides/deploying.md), [outputs](docs/guides/outputs.md), [small capabilities](docs/guides/small-capabilities.md) |
+| **Integrations** | Website chats that file feedback or needs; signed events out and verified webhooks in; Teams, Slack and email notices *(stand-ins)*; data bindings and a Google Drive connector *(stand-ins)*. | [embeds](docs/guides/embeds.md), [events](docs/guides/integrations.md), [data](docs/guides/data-integrations.md), [Google Cloud](docs/guides/gcp.md) |
+| **Keep it healthy** | Scheduled checks with a Health view, probes that open incidents, automations with guards and a circuit breaker, a recorded console, an autopilot capped by the autonomy ladder. | [checks](docs/guides/console-and-checks.md), [automations](docs/guides/automations.md), [autopilot](docs/guides/autopilot-and-tracking.md), [autonomy](docs/guides/autonomy.md) |
+| **Agents and help** | Ask Rihma in every view (proposals you confirm, never writes on its own), walkthroughs, goal help, hand-offs, the agent channel, an MCP server for your IDE agent. | [cockpit](docs/cockpit.md), [walkthroughs](docs/guides/walkthroughs.md), [agentic help](docs/guides/agentic-help.md), [MCP](docs/mcp.md) |
+| **See and govern** | Review since you last looked, Insights, a read-only graph of the records, capability and evidence packs, single-operator or enforced access. | [review](docs/guides/review.md), [insights](docs/guides/insights.md), [graph](docs/knowledge-graph.md), [packs](docs/guides/packs-and-evidence.md), [access](docs/guides/access.md) |
+
+<details>
+<summary>More detail per area</summary>
+
+- **Intake.** A material map shows what of a folder is read, summarised or skipped before anything is
+  sent. The panel (business, end user, IT and security, operations, delivery) works in socratic,
+  assume or mixed mode. Ready kinds of work: `web_service`, `integration`, `automation`. The other ten
+  build on the web-service template.
+- **Existing projects.** A folder of documents only is offered as material for a new project instead.
+  Alignment reads spec-kit, Kiro, BMAD, Gherkin, OpenAPI and more, and shows the gaps and the drift.
+- **Build.** Requirements carry given / when / then criteria; the kernel sets ids and records who
+  confirmed what. The gate checks that tests fail first. Models: any OpenAI-compatible endpoint per
+  role, fully local if you like, or your coding agent answering the text roles.
+  [Use only what you need](docs/guides/use-only-what-you-need.md): spec only, gate my code, a small
+  capability, or the whole chain.
+- **Delivery.** Outputs: a web app with sign-in, a container, an OpenAPI description, a delivery
+  report, an evidence pack, the source. The [capability gateway](docs/guides/gateway.md) *(preview)*
+  gives one OpenAI-compatible endpoint for a site's workloads.
+- **Packs.** A capability pack pins a release by hash and says what it lacks (no SBOM, not signed).
+  An evidence pack's verdict is *attestable*, *chain broken* or *insufficient evidence*, never
+  "compliant".
+- **Access.** Delegation gives chosen kinds of decision to an agent until a date you set
+  (`rihmasto delegation`). Some kinds are never delegated.
+
+</details>
+
+## What it is, and what it is not
+
+**It is** the platform around your IDE for a capability's whole life
+([D-0023](decisions/D-0023-what-rihmasto-is-and-is-not.md)): it takes in what development produced,
+holds the intent, the contract and the decisions, verifies and packages the result, sends it to the
+targets IT configured with people deciding, watches it, and brings feedback back to development.
+
+**It is not:**
+
+- **an IDE or a code editor.** Write code in the editor and agent you prefer. Rihmasto reads that
+  work's specs, tests and conventions, aligns them with its contract through proposals a person
+  accepts, and hands context back;
+- **a replacement for your CI, monitoring or ticketing.** It reads CI status, runs its own gate and
+  checks, and exports to your observability tools. It is the system of record for decisions and
+  evidence, not for telemetry or tickets;
+- **tied to one harness or one model.** Gnomon is the default; other harnesses run cells opt-in, with
+  the rules checked after the run ([D-0019](decisions/D-0019-other-harnesses-as-opt-in-cell-runners.md));
+- **an autopilot without people.** Autonomy is capped, delegated, sandboxed and recorded. No
+  automation makes a decision that waits for a person;
+- **a framework for writing agents in code.** It builds, verifies and governs services, agents,
+  workflows and automations. Agent code written by hand comes in through adoption;
+- **a place where a step can skip the record.** A light posture asks less and gates less. It never
+  drops provenance ([D-0017](decisions/D-0017-governance-everywhere.md)).
 
 ## How it works
 
 ```text
-a need: an idea, a written spec, a folder, or a signal
+a need or an existing project: an idea, a spec, a folder, a signal, a repository
   |
   v
-material map ........ any folder is scanned by rule: each file read, summarised, listed or skipped
-  |                   with why (secrets never read); you see it before anything is sent, and a
-  |                   confidential project stays on local models (docs/guides/inputs.md)
-  v
-intake panel ........ business, end user, IT and security, operations and delivery each ask
-  |                   the questions that change what gets built; disagreements stay side by side
-  v
-spec ................ requirements with given / when / then criteria; the kernel sets ids and
-  |                   provenance (who confirmed what)
-  v
-hashed contract ..... compiled from the spec with no model; its hash is its revision; every
-  |                   criterion needs a test named by its id
-  v
-Gnomon builder cells  each task runs as a Rihma agent in a Gnomon cell, in a clean lane, inside
-  |                   its write scope
-  v
-gate ................ the kernel runs the tests itself, traces each criterion to a test, checks
-  |                   that the tests fail first, and asks an independent verifier from another
-  |                   model family; holdout scenarios the builder never sees run against the
-  |                   delivered service
-  v
-delivery ............ only on paved roads IT configured; production waits on IT's deploy gate,
-  |                   then shadow, canary and rollback
-  v
-change loop ......... triage sends each change back to its stage; approvals that rest on a
-                      changed requirement go stale; recurring lessons become checks a person
-                      accepts
+material map ..... each file read, summarised, listed or skipped, with why; secrets never read
+intake panel ..... the questions that change what gets built; people answer or let Rihma assume
+spec ............. given / when / then criteria; the kernel sets ids and who confirmed what
+hashed contract .. compiled with no model; every criterion needs a test named by its id
+builder cells .... each task in a Gnomon cell (or another harness, checked after), in its write scope
+gate ............. tests run by the kernel, fail-first, an independent verifier, holdouts
+delivery ......... paved roads only; IT's deploy gate; shadow, canary, rollback
+keep healthy ..... checks, probes, incidents, automations, the change loop
 ```
 
-People decide in the cockpit's **Inbox**, and every decision names a person and a persona. Models
-propose. The kernel, standard-library Python with no model in it, decides whether work is accepted,
-and appends every transition to a hash-chained ledger.
-[docs/how-it-works.md](docs/how-it-works.md) explains each step.
+The kernel is standard-library Python with no model in it. It decides by rule whether work is
+accepted and appends every transition to a hash-chained ledger. People decide in the Inbox, and each
+decision names a person and a persona. [docs/how-it-works.md](docs/how-it-works.md) explains each
+step.
 
-## The capability layer
+Rihmasto runs on [Gnomon](https://github.com/eljaplacido/gnomonharness), an open agent harness, and
+depends on nothing else at runtime. By default every model call goes through Gnomon, which enforces
+each agent's tools, write scope and sandbox during the run and keeps an audit trail. Two exceptions:
+when your coding agent answers the text roles, each call is recorded in Rihmasto's ledger as run by
+that agent, not through Gnomon, with no Gnomon audit trail; and when another harness runs the cells,
+the rules are checked after the run, not enforced during it.
 
-Rihmasto's product is agentic capability: apps and services, integrations, agents and assistants,
-model pipelines, tuned harnesses, and ops agents that do a job and prove it.
-
-- **Capability packs.** One manifest per release, pinned by hash: the contract and product
-  revisions, the artifacts, the models that built and judged it, and every criterion with its
-  evidence. A changed hash means a new version. A pack is valid only while its acceptance holds,
-  and it says what it lacks (no SBOM, not signed). Command: `rihmasto pack`.
-- **Evidence packs.** A zip for a reviewer: the pack, contract, decisions, gates, holdout scores,
-  Gnomon runs and the ledger with its chain check. Its verdict is *attestable*, *chain broken* or
-  *insufficient evidence*, never "compliant". Command: `rihmasto evidence`.
-- **The autonomy ladder.** 1 answer, 2 suggest, 3 prepare, 4 deliver. A business owner, IT or
-  compliance sets the cap, with a reason; the kernel refuses any step above it. Command:
-  `rihmasto autonomy set`.
-
-Guides: [packs and evidence](docs/guides/packs-and-evidence.md), [autonomy](docs/guides/autonomy.md),
-[the capability layer](docs/capability-layer.md).
-
-## Work profiles
-
-A work profile shapes the panel's questions, the spec guidance and the cockpit around the same
-governance core ([docs/guides/profiles.md](docs/guides/profiles.md)).
-
-| Profile | For | Status |
-|---|---|---|
-| `web_service` | a web app or HTTP service | ready |
-| `integration` | moving data or events between systems | ready |
-| `mobile_prototype` | a phone-first prototype | preview |
-| `ml_pipeline` | training, evaluating or serving a model | preview |
-| `agentic_workflow` | an agent, assistant or tool-using workflow | preview |
-| `harness_engineering` | building or tuning an agent harness | preview |
-| `ops_agent` | a job done and proven, such as an access review | preview |
-| `automation` | a scheduled or triggered job with no screens, one workflow or one agentic capability | ready |
-
-Every profile but `automation` builds on the one paved-road template today, a standard-library Python HTTP
-service; `automation` has its own, one image with several faces ([small capabilities](docs/guides/small-capabilities.md)).
-*Preview* means the intake, spec and checks are shaped for the work, and its own template is still
-to come.
-
-## Integrations
-
-Rihmasto reaches outside systems through Gnomon, as governed tool calls
-([D-0015](decisions/D-0015-integrations-through-gnomon.md)). Gnomon runs a system's MCP server or
-API tools in an integration lane, checks each call against policy, asks before a write, and records
-the call in its audit trail. Decisions stay in Rihmasto's Inbox. That design is in
-[docs/integrations.md](docs/integrations.md); the connectors are not built yet.
-
-What connects today:
-
-- **Security scanners:** SARIF 2.1.0 from any scanner feeds the security gate
-  (`rihmasto security ingest`). A person accepts a risk, with a reason and an expiry date.
-- **Website chats:** an embed files end-user feedback as a change, or a need as a signal
-  ([docs/guides/embeds.md](docs/guides/embeds.md)).
-- **Your own coding agent:** an MCP server over stdio, with reads and proposals, never decisions
-  ([docs/mcp.md](docs/mcp.md)).
-- **Signals:** from the command line, the cockpit's JSON API or the MCP server.
-- **Models:** any OpenAI-compatible endpoint, per role, in [kernel/routing.json](kernel/routing.json)
-  or in your own `kernel/routing.local.json`, which is merged over it.
-
-## Portability
-
-Each release can carry a capability pack that pins it by hash. Today a release can be exported as
-an offline bundle with `SHA256SUMS` and, when cosign is installed, a signature (from Python; no
-command yet). The docker road builds an image, and the Azure Container Apps package is rendered
-and validated.
-The plan to run a release on any OCI runtime and expose its agents over open protocols is in
-[docs/portability.md](docs/portability.md); it is a design, not built yet.
-
-The factory's own cells are harness agnostic: Gnomon runs them by default and enforces the rules
-during a run, and a team can run them with Claude Code, Codex, OpenCode or a command it names
-instead, approved by IT with the version pinned. Every rule is then checked after the run, and the
-evidence says which assurance applied (`rihmasto runners`,
-[docs/guides/harnesses.md](docs/guides/harnesses.md)).
+*Rihmasto* is Finnish for a mycelium, the whole network of fungal threads. One thread is a *rihma*:
+a single agent in Rihmasto is **a Rihma agent**. The analyst, the builder, the verifier, the holdout
+author and the chat assistant ("Ask Rihma") are Rihma agents
+([D-0013](decisions/D-0013-name-rihmasto.md)).
 
 ## Status
 
-Version **1.0.0.dev0**, a development release. Commands, file formats and the cockpit's API may
-still change before 1.0.0.
+Version **1.0.0.dev0**, alpha, with one maintainer ([governance](GOVERNANCE.md)). There has been no
+independent security review or penetration test; it is installed from source, with no release on a
+package registry. It is not yet recommended for production company use. Commands, file formats and
+the cockpit's API may still change before 1.0.0. [SECURITY.md](SECURITY.md) has the threat model.
 
-**Works today, covered by the test suite:**
-- the chain from intake to delivery on the local preview road: the panel, the spec rules, the
-  compiled contract, the gate, holdouts in custody, the change loop and the ledger;
+**Built and covered by the offline test suite (scripted models, no network):**
+
+- the chain from intake to delivery on the local preview road: panel, spec rules, contract, gate,
+  holdouts in custody, change loop and ledger;
 - the command line, the demo, the cockpit and the MCP server;
-- the `web_service`, `integration` and `automation` profiles; a small capability is reached over MCP,
-  an OpenAI-compatible endpoint, a website chat or HTTP, behind its pack guard (`rihmasto capability serve`);
-- the security gate for SARIF findings, capability packs, evidence packs, the autonomy ladder,
-  signals, concepts and embeds;
-- delegated decisions, an autopilot bound to a sandbox, and Track, which says whether a project stays
-  on track against its approved plan, with human checkpoints
-  ([docs/guides/autopilot-and-tracking.md](docs/guides/autopilot-and-tracking.md));
-- automations per project or across them: a schedule, a ledger event, an inbound webhook or new commits
-  trigger an allow-listed action with its owner's rights, with guards, limits and a circuit breaker
-  (`rihmasto automations`, the cockpit's Automations page,
-  [docs/guides/automations.md](docs/guides/automations.md));
-- outputs per audience, chosen by a person and built from the records: a web app with sign-in, a
-  container, an OpenAPI description, a delivery report, an evidence pack and the source
-  (`rihmasto output`, the cockpit's Outputs view; the MCP server output is planned,
-  [docs/guides/outputs.md](docs/guides/outputs.md));
-- access control, phase A: in enforced mode a decision is signed by the identity your organisation's
-  sign-in verified, through IT's identity-aware proxy, as a persona an IT-owned access file grants on
-  that project ([docs/guides/access.md](docs/guides/access.md)).
+- Shape it in chat, walkthroughs, goal help, hand-offs, the agent channel and Ask Rihma's proposals;
+- adoption of folders and git addresses, assessment, alignment, drift after a sync;
+- the `web_service`, `integration` and `automation` profiles, and small capabilities, which answer
+  only while their capability pack checks out;
+- automations, checks, the console, probes and incidents, Review, Insights, the read-only
+  `rihmasto graph`, capability and evidence packs, the autonomy ladder, delegation, autopilot and
+  tracking;
+- single-operator mode and enforced access through an identity-aware proxy (with test keys; see below);
+- Rihmasto's own static scan, dynamic probes and agentic red team, and SARIF from any scanner.
+
+The live end-to-end acceptance run with real models has not happened yet
+([acceptance](docs/acceptance.md)).
+
+**Built, tested only against stand-ins:**
+
+- the docker road: a fake docker CLI, never a daemon or a registry;
+- the Google Cloud Run road and the Google Drive connector: a fake gcloud and a Drive stand-in, never a
+  real Google Cloud project ([what a first real run needs](docs/guides/gcp.md));
+- proxy sign-in: tokens signed with test keys, never a real Entra ID, Okta, Google IAP or AWS load
+  balancer;
+- data bindings: the reference connectors pass against local fakes and no road calls them yet; the
+  PostgreSQL live check has not run; `os:`, `cmd:` and vault references are not resolved
+  ([data integrations](docs/guides/data-integrations.md));
+- Teams, Slack and email notices, and signed events out: local receivers only;
+- the coding agent you already have as a model, and other harnesses as cell runners: fake Claude Code,
+  Codex and OpenCode commands; a real run spends that person's own subscription.
 
 **Preview:**
-- five of the eight profiles, which run on the web-service template;
-- the docker road, which the tests run against a fake docker CLI, not a daemon;
+
+- ten of the thirteen profiles, which build on the web-service template;
 - the Azure Container Apps road, rendered and validated but never deployed;
-- recipes, sandbox trials, measured fit and offline bundles, which have no command or screen yet
-  ([docs/guides/recipes-and-fit.md](docs/guides/recipes-and-fit.md));
-- the capability gateway, run as `python -m gateway.server` ([docs/guides/gateway.md](docs/guides/gateway.md)).
+- recipes, sandbox trials, measured fit and offline bundles, with no command or screen yet
+  ([guide](docs/guides/recipes-and-fit.md));
+- the capability gateway, run as `python -m gateway.server` ([guide](docs/guides/gateway.md)).
+
+**Landing next** (on development branches, not on `main`, and not yet tested together): solo and team
+modes with personas given to agents, self-healing with remedies and Investigate with Rihma
+([D-0024](decisions/D-0024-self-healing-simple-for-one-governed-for-many.md)), a Set up this project
+checklist, a destinations map per project, projects on other machines over SSH, Gnomon audits and
+evals as checks, a knowledge graph view and a context and data view in the cockpit, an agent sessions
+view (it reads one specific observability hub, which is not public yet). They are added here when they reach `main`.
 
 **Designed, not built:**
-- integrations through Gnomon ([docs/integrations.md](docs/integrations.md));
-- Rihmasto's own security scanning and red teaming ([D-0014](decisions/D-0014-security-is-native.md));
+
+- integrations through Gnomon as governed tool calls ([docs/integrations.md](docs/integrations.md));
 - the portability exports ([docs/portability.md](docs/portability.md));
-- signed and anchored ledger heads, signed packs and SBOMs.
+- publishing to a container or package registry and submitting an MCP registry entry;
+- signed and anchored ledger heads, signed packs and SBOMs; SCIM provisioning and separation of
+  duties.
 
 **Know before you rely on it:**
-- Without an access file the cockpit is for one operator: it listens on 127.0.0.1 only, whoever
-  holds the session can pick any persona, and it says so ("single operator: personas are
-  self-declared"). For a team, IT puts an identity-aware proxy in front of it and enforces access
-  ([docs/guides/access.md](docs/guides/access.md)). Provisioning through SCIM and separation of
-  duties are not built yet.
-- Builder cells have run on Linux. On Windows the kernel, the tests, the demo and the cockpit run;
-  run cells in WSL2 or a container.
-- The gate runs a Python unittest suite. An adopted repository's other suites (pytest, npm, Go
-  and others) are characterised once at adoption when their tool is installed, but the gate does
-  not run them, and no paved road runs an adopted repository yet.
+
+- **No paved road delivers an adopted repository yet.** Rihmasto adopts, aligns, gates its Python
+  unittest suite, checks and watches it, but does not deploy it. An adopted repository's other suites
+  are characterised at adoption, and a stated test command can be its baseline, but the gate does not
+  run them.
+- **What leaves the machine.** Project material goes to whichever endpoint each role routes to. Mark a
+  project confidential to keep its calls on local or private endpoints. Your coding agent as the model
+  uses that person's own account and its terms, which may not match your company's AI policy.
+- **Secrets** are held by name in the host's environment, or in a key file outside the repository
+  ([models setup](docs/guides/models-setup.md)). There is no vault integration yet.
+- **The audit trail.** With your coding agent as the model, or another harness running cells, a call
+  is recorded in Rihmasto's ledger but not in Gnomon's audit trail, and the rules are checked after the
+  run ([harnesses](docs/guides/harnesses.md)).
+- **The ledger** shows an edit to part of its chain, but someone with file access who rewrites the
+  whole chain consistently is not detected until ledger heads are signed and anchored (designed).
+  Rihmasto makes no compliance certification; a compliance mapping is a mapping, not an attestation.
+- **Running it for a team.** Rihmasto is one process on one machine. The cockpit binds only to
+  127.0.0.1; people reach it through IT's HTTPS front or identity-aware proxy (`--public-origin`), or
+  an SSH tunnel. State is files under the factory home, with no database and no high availability:
+  back the home up yourself. There is no container image or Helm chart for Rihmasto itself
+  ([access](docs/guides/access.md)).
+- Without an access file, personas are self-declared and the cockpit says so. When code a model wrote
+  must not run as the operator, use IT's access file and its isolation runner.
+- Builder cells have run on Linux. On Windows the kernel, the tests, the demo and the cockpit run; run
+  cells in WSL2 or a container.
 - Cloud cost reads "not measured" until someone fills the per-token prices in
   [kernel/prices.json](kernel/prices.json).
-- The shipped [kernel/routing.json](kernel/routing.json) points at a local OpenAI-compatible
-  server on 127.0.0.1 and a hosted endpoint. Put your own machine's routing in
-  `kernel/routing.local.json` (gitignored, merged over the shipped file); see
-  [docs/guides/local-models.md](docs/guides/local-models.md).
+- The shipped [kernel/routing.json](kernel/routing.json) points at a local OpenAI-compatible server on
+  127.0.0.1 and a hosted endpoint. Put your own routing in `kernel/routing.local.json` (gitignored,
+  merged over it); see [docs/guides/local-models.md](docs/guides/local-models.md).
 - File-format ids such as `gnomonfactory.contract/1` keep the project's working name, so existing
   files stay valid.
 
 ## Documentation
 
-[docs/README.md](docs/README.md) lists every guide, grouped by reader. To start:
+[docs/README.md](docs/README.md) lists every guide by capability area and by scenario. To start:
 
 - [docs/getting-started.md](docs/getting-started.md): install, the demo, models, a first real project.
 - [docs/how-it-works.md](docs/how-it-works.md): the chain step by step, and who decides what.
-- [docs/cockpit.md](docs/cockpit.md): the cockpit, its lenses and its API.
-- [docs/brownfield.md](docs/brownfield.md): existing solutions, your own terminal, security findings.
-- [docs/guides/ide-and-rihmasto.md](docs/guides/ide-and-rihmasto.md): your IDE and Rihmasto, where
-  the line is; your CLAUDE.md, AGENTS.md, Cursor rules and skills read and followed; MCP for Cursor
-  and Claude Code.
+- [docs/cockpit.md](docs/cockpit.md): the cockpit, its views, lenses and API.
+- [docs/brownfield.md](docs/brownfield.md): existing projects, your own terminal, security findings.
+- [docs/guides/ide-and-rihmasto.md](docs/guides/ide-and-rihmasto.md): where the line is between your
+  IDE and Rihmasto.
+- [CHANGELOG.md](CHANGELOG.md): what changed in each release.
 - [decisions/](decisions/): every decision, who made it and why.
 
 ## Contributing, security and licence

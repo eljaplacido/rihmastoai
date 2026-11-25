@@ -151,6 +151,9 @@ function proposalsCard(pid, a, picked) {
     + ": " + e.error).join("; "))) : null);
 }
 
+/** Findings per call to /assessment/changes: the kernel's MAX_IDS (kernel/assess_cards.py). */
+export const FILE_BATCH = 50;
+
 function fileForm(pid, a, picked, kit) {
   const sel = h("select", { id: "as-class", name: "as" }, CLASSES.map(([v, t]) => h("option", { value: v }, t)));
   const send = button("File the ticked findings as changes", { icon: "send", kind: "primary", key: "as-file", type: "submit",
@@ -166,8 +169,15 @@ function fileForm(pid, a, picked, kit) {
     if (!picked.size) { say("Tick at least one finding first.", "warn"); return; }
     if (!needPerson()) return;
     kit.run(send, form, async () => {
-      const out = await api("POST", "/api/projects/" + enc(pid) + "/assessment/changes",
-        Object.assign({ findings: Array.from(picked), version: a.latest.id, as: sel.value }, signed()));
+      // The kernel files at most FILE_BATCH findings per call (kernel/assess_cards.py MAX_IDS); ticking
+      // every finding of a large assessment is normal, so the ticks go in batches and the results add up
+      const ids = Array.from(picked), out = { opened: [], skipped: [] };
+      for (let i = 0; i < ids.length; i += FILE_BATCH) {
+        const part = await api("POST", "/api/projects/" + enc(pid) + "/assessment/changes",
+          Object.assign({ findings: ids.slice(i, i + FILE_BATCH), version: a.latest.id, as: sel.value }, signed()));
+        out.opened.push(...part.opened);
+        out.skipped.push(...part.skipped);
+      }
       const opened = out.opened.map((c) => c.card + " (" + c.finding + ")").join(", ");
       say((opened ? "Filed " + opened + "." : "Nothing new filed.")
         + (out.skipped.length ? " Skipped " + out.skipped.map((s) => s.finding + ": " + s.why).join("; ") + "." : ""), "good");

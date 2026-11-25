@@ -88,8 +88,13 @@ def _open_card(project: Any, record: dict[str, Any], f: dict[str, Any], *, perso
 
 def _wanted(ids: Iterable[str]) -> list[str]:
     wanted = list(dict.fromkeys(str(i).strip().upper() for i in ids if str(i).strip()))
-    if not 1 <= len(wanted) <= MAX_IDS:
+    if not wanted:
         raise AssessmentRefused(f"name between 1 and {MAX_IDS} findings (F-1, P-2 and so on)")
+    if len(wanted) > MAX_IDS:
+        # Ticking every finding of a large assessment is normal; say the count, so it does not read
+        # as a bad finding ID (the cockpit files in batches of MAX_IDS)
+        raise AssessmentRefused(f"{len(wanted)} findings were named, and at most {MAX_IDS} are filed at a time: "
+                                f"file them in batches of {MAX_IDS} or fewer")
     return wanted
 
 

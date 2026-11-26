@@ -1,0 +1,49 @@
+/* Destinations (destinations.js, FR-DST1): the map of where a capability goes, and the overview's "Where this
+   goes". Every colour is a token (tokens.css), so dark and light follow the theme; the cards wrap to one column
+   on a phone. */
+
+.dst-view { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
+.dst-head h2 { margin-bottom: 4px; }
+.dst-sum { font-weight: 600; margin: var(--s2) 0; overflow-wrap: anywhere; }
+.dst-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
+.dst-bar-r { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.dst-counts { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+
+.dst-map { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
+.dst-group { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--s3) var(--s4);
+  min-width: 0; }
+.dst-gh { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-lg); margin: 0; }
+.dst-gh .ic { width: 18px; height: 18px; color: var(--text-2); }
+.dst-gh .count { font-size: var(--fs-sm); padding: 0 8px; border-radius: var(--r-pill); background: var(--accent-subtle);
+  color: var(--accent-text); border: 1px solid var(--accent-border); }
+.dst-gh .count.zero { background: transparent; color: var(--text-3); border-color: var(--border); }
+.dst-what { margin: 4px 0 var(--s3); }
+
+.dst-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.dst-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: var(--s3); border: 1px solid var(--border);
+  border-radius: var(--r-md); background: var(--raised, var(--surface)); }
+.dst-card[data-state="failing"] { border-color: var(--critical-border); box-shadow: inset 3px 0 0 var(--critical); }
+.dst-card[data-state="healthy"] { box-shadow: inset 3px 0 0 var(--good, var(--accent)); }
+.dst-card[data-state="planned"] { border-style: dashed; }
+.dst-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s2); min-width: 0; }
+.dst-label { overflow-wrap: anywhere; min-width: 0; line-height: 1.35; }
+.dst-chips { display: flex; flex-wrap: wrap; gap: 4px 6px; min-width: 0; }
+.dst-chips .chip { max-width: 100%; }
+.dst-line { display: flex; gap: 6px; align-items: flex-start; margin: 0; font-size: var(--fs-sm); color: var(--text-2); min-width: 0; }
+.dst-line .ic { flex: none; width: 14px; height: 14px; margin-top: 2px; }
+.dst-line span { min-width: 0; overflow-wrap: anywhere; }
+.dst-line.bad { color: var(--critical); }
+.dst-url { word-break: break-all; }
+.dst-missing { margin: 0; padding-left: 18px; font-size: var(--fs-sm); color: var(--text-2); }
+.dst-missing li { overflow-wrap: anywhere; }
+.dst-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.dst-acts .btn { max-width: 100%; }
+
+.dst-where-l { margin: var(--s2) 0 0; display: flex; flex-direction: column; gap: 4px; }
+.dst-where-l li { min-width: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+  .dst-group { padding: var(--s3); }
+  .dst-bar-r { margin-left: 0; }
+}

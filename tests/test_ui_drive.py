@@ -68,6 +68,18 @@ def find_chrome() -> str | None:
     return None
 
 
+
+# A shared CI runner is several times slower than a workstation: every wait gets that much longer there
+# (GitHub sets CI=true), never shorter here. RIHMA_UI_SLOW overrides it.
+SLOW = float(os.environ.get("RIHMA_UI_SLOW") or (3 if os.environ.get("CI") else 1))
+# The machine running out of sockets (Windows' ERR_NO_BUFFER_SPACE under load) is the test bench's trouble,
+# not the page's: a request the page retries on its next poll.
+TRANSIENT = ("ERR_NO_BUFFER_SPACE", "ERR_NETWORK_IO_SUSPENDED")
+
+
+def _transient(text: object) -> bool:
+    return any(k in str(text or "") for k in TRANSIENT)
+
 class WebSocket:
     """A minimal WebSocket client (RFC 6455) for the DevTools protocol on loopback: text frames out,
     masked; text frames in, possibly fragmented; pings answered."""
@@ -205,7 +217,7 @@ class Browser:
             self.problems.append((self.step, "console." + params["type"], text))
         elif method == "Log.entryAdded":
             e = params.get("entry") or {}
-            if e.get("level") == "error" or e.get("source") == "security":
+            if (e.get("level") == "error" or e.get("source") == "security") and not _transient(e.get("text")):
                 self.problems.append((self.step, f"log:{e.get('source')}:{e.get('level')}", e.get("text")))
 
     def cmd(self, method: str, params: dict | None = None) -> dict:
@@ -227,7 +239,7 @@ class Browser:
         return (out.get("result") or {}).get("value")
 
     def wait(self, expression: str, what: str, timeout: float = 20.0):
-        end = time.monotonic() + timeout
+        end = time.monotonic() + timeout * SLOW
         while True:
             try:
                 value = self.eval(expression)
@@ -455,12 +467,14 @@ class UiDriveTest(unittest.TestCase):
         b.click('#sb-nav a[href="#/projects"]', what="Projects in the sidebar")
         b.click(".proj-card", text="Shipment webhook", what="the webhook project")
         b.wait(f"location.hash.startsWith('#/p/{webhook.pid}')", "the webhook project")
-        b.click(f'.tabs a[href="#/p/{webhook.pid}/inbox"]', what="the project's Inbox tab")
+        b.click(f'.tabs a[href="#/p/{webhook.pid}/inbox"]', what="the project's Inbox tab")   # in the Now capsule
         key = b.wait("(document.querySelector('.card.decision [data-key$=\":defer\"]') || {dataset: {}}).dataset.key",
                      "a card to defer")
         cid = key.split(":")[0]
-        b.type(f"#reason-{cid}", "Not before the stock system's own release")
+        # FR-UXO1: the choice first, then Why (optional, saved with the decision), then Confirm
         b.click(f'[data-key="{key}"]', what=f"Defer on {cid}")
+        b.type(f"#reason-{cid}", "Not before the stock system's own release")
+        b.click(f'[data-key="{cid}:confirm"]', what=f"Confirm on {cid}")
         b.wait(f"!document.querySelector('[data-key=\"{key}\"]')", f"{cid} decided")
         card = Canon(webhook).get_card(cid)
         self.assertEqual((card["state"], card["decision"]["verdict"], card["decision"]["person"]),
@@ -504,7 +518,7 @@ class UiDriveTest(unittest.TestCase):
         b.wait("!document.querySelector('#cz-bar').hidden && !!document.querySelector('#grid .widget.cz')", "Customize")
         wid, before = b.eval("(() => { const w = document.querySelector('#grid .widget.cz');"
                              " return [w.dataset.wid, w.className.match(/size-(\\w+)/)[1]]; })()")
-        b.click(f'#grid .widget[data-wid="{wid}"] button[aria-label^="Size "]', what="the size button")
+        b.click(f'#grid .widget[data-wid="{wid}"] button[data-fk="size"]', what="the size button")
         after = b.wait(f"(() => {{ const w = document.querySelector('#grid .widget[data-wid=\"{wid}\"]');"
                        " const s = w && w.className.match(/size-(\\w+)/)[1];"
                        f" return s !== {json.dumps(before)} && s; }})()", "the widget resized")
@@ -529,7 +543,7 @@ class UiDriveTest(unittest.TestCase):
                        "the Evidence packs widget")
         row = next(line for line in b.eval("[...document.querySelectorAll('#grid .ev-row')].map((r) => r.textContent)")
                    if "Shipment webhook" in line)
-        for said in ("Attestable", "pack v1.0.0", "valid", "ledger intact"):
+        for said in ("Attestable", "release 1.0 ready to hand over", "decision record intact"):   # in a business owner's words
             self.assertIn(said, row)
         self.assertIn("Access review check", packs)
         autonomy = b.wait("(document.querySelector('#grid .widget[data-type=\"autonomy\"] .autonomy') || {}).textContent",
@@ -550,7 +564,8 @@ class UiDriveTest(unittest.TestCase):
         b.click("#as-log .msg.bot button", text="Take me there", what="Take me there")
         b.wait(f"location.hash === '#/p/{webhook.pid}/releases' && !!document.querySelector('.card.pack')",
                "the Releases view with its capability pack")
-        self.assertIn("Capability pack v1.0.0", b.eval("document.querySelector('.card.pack').textContent"))
+        # the capability pack, in a business owner's words (cockpit/static/words.js)
+        self.assertIn("Release package v1.0.0", b.eval("document.querySelector('.card.pack').textContent"))
         self.assertEqual((len(webhook.ledger().records()), webhook.read("packs.json")), (records, packs))
 
 

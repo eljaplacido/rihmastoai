@@ -85,6 +85,7 @@ _PATHS = tuple((re.compile(r"(^|/)" + rule + r"$"), sub) for rule, sub in (
     (r"\.claude/settings\.local\.json", "personal"),
     (r"\.claude/skills/[^/]+/skill\.md", "skill"),
     (r"\.claude/skills/[^/]+/.+", "skill_file"),
+    (r"skills/[^/]+/skill\.md", "skill"),                     # a plugin's or the repository's own skills/<name>/
     (r"\.claude/agents/.+\.md", "agent"),
     (r"\.claude/rules/.+\.md", "instructions"),
     (r"\.claude/commands/.+\.md", "command")))

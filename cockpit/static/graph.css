@@ -1,0 +1,126 @@
+/* The Knowledge graph (graph.js, graph_draw.js, graph_panel.js; FR-GRV1). Colour carries a node's family only,
+   from the first three categorical slots (validated for every pair, light and dark, against the surface they are
+   drawn on); its kind is its shape and its label. Issues wear the reserved status marks as a ring, with a word. */
+
+.gv { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+.gv.gv-busy .gv-main, .gv.gv-busy .gv-sum { opacity: .55; }
+.gv-bar { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.gv-search { flex: 1 1 200px; min-width: 0; max-width: 360px; height: 32px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; }
+.gv-sheet-btn { display: none; }
+.gv-sum { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.gv-sum p { margin: 0; }
+.gv-iss { cursor: pointer; border: 1px solid transparent; font: inherit; font-size: var(--fs-sm); text-align: left; max-width: 100%;
+  height: auto; min-height: 24px; line-height: 1.35; padding-top: 3px; padding-bottom: 3px; align-items: flex-start;
+  border-radius: var(--r-sm); }
+.gv-iss span { white-space: normal; }
+.gv-iss .ic { flex: none; margin-top: 2px; }
+.gv-body { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: var(--s3); align-items: start; }
+.gv.gv-has-details .gv-body { grid-template-columns: 230px minmax(0, 1fr) 300px; }
+.gv-panel { padding: var(--s3); min-width: 0; }
+.gv-main { min-width: 0; display: flex; flex-direction: column; gap: var(--s2); }
+.gv-side:empty { display: none; }
+.gv-filters { display: flex; flex-direction: column; gap: var(--s3); font-size: var(--fs-sm); }
+.gv-fs { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.gv-fs legend { font-weight: 600; color: var(--text); padding: 0; margin-bottom: 4px; }
+.gv-fs p { margin: 2px 0 0; }
+.gv-fam { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.gv-fam-h { display: flex; gap: 6px; align-items: center; margin: 4px 0 2px; color: var(--text-2); font-weight: 600; }
+.gv-check { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px; align-items: center; min-height: 26px; cursor: pointer; }
+.gv-check input { margin: 0; width: 16px; height: 16px; }
+.gv-rels summary { cursor: pointer; font-weight: 600; min-height: 26px; }
+.gv-rels .gv-check { padding-left: 4px; }
+.gv-win { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+.gv-sheet .gv-filters { font-size: var(--fs-md); }
+
+/* the drawing */
+.gv-canvas { position: relative; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); overflow: hidden; }
+.gv-svg { display: block; width: 100%; height: 560px; touch-action: none; cursor: grab; }
+.gv-svg.dragging { cursor: grabbing; }
+.gv-svg:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.gv-zoom { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 1; background: var(--surface); border-radius: var(--r-sm); }
+.gv-minus { display: inline-block; width: 16px; text-align: center; font-weight: 700; line-height: 1; }
+.gv-e { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
+.gv-e.proposed { stroke-dasharray: 4 3; }
+.gv-e.ended { opacity: .45; }
+.gv-arrow { fill: var(--border-strong); }
+.gv-n { cursor: pointer; outline: none; }
+.gv-hit { fill: transparent; }
+.gv-mark { stroke: var(--surface); stroke-width: 2; }
+.fam-asked .gv-mark { fill: var(--series-1); }
+.fam-decided .gv-mark { fill: var(--series-2); }
+.fam-built .gv-mark { fill: var(--series-3); }
+.fam-other .gv-mark { fill: var(--neutral-mark); }
+.gv-ring { fill: none; stroke-width: 2.5; }
+.gv-ring.warning { stroke: var(--warning-mark); }
+.gv-ring.critical { stroke: var(--critical-mark); }
+.gv-t { fill: var(--text-2); font-size: 12px; font-family: inherit; pointer-events: none;
+  paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.gv-n:focus-visible .gv-hit, .gv-n.on .gv-hit { stroke: var(--accent); stroke-width: 2; }
+.gv-n.on .gv-t { fill: var(--text); font-weight: 600; }
+.gv-svg.has-sel .gv-n:not(.on):not(.near) { opacity: .28; }
+.gv-svg.has-sel .gv-e:not(.on) { opacity: .15; }
+.gv-svg.has-sel .gv-e.on { stroke: var(--text-2); stroke-width: 2; }
+.gv-more { margin: 0; }
+
+/* swatches: the same shape and colour as the marks, for the legend, the table and the details */
+.gv-sw { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; flex: none; background: var(--neutral-mark); }
+.gv-sw.circle { border-radius: 50%; }
+.gv-sw.square { border-radius: 2px; }
+.gv-sw.diamond { transform: rotate(45deg) scale(.85); }
+.gv-sw.fam-asked { background: var(--series-1); }
+.gv-sw.fam-decided { background: var(--series-2); }
+.gv-sw.fam-built { background: var(--series-3); }
+.gv-ring-sw { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2.5px solid var(--warning-mark); flex: none; }
+.gv-ring-sw.critical { border-color: var(--critical-mark); }
+.gv-dash-sw { display: inline-block; width: 22px; height: 0; border-top: 2px dashed var(--border-strong); flex: none; }
+.gv-legend { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.gv-legend .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; list-style: none; font-size: var(--fs-sm); color: var(--text-2); }
+.gv-legend .legend li { display: flex; gap: 6px; align-items: center; }
+.gv-legend .legend b { color: var(--text); font-weight: 600; }
+
+/* the table mode */
+.gv-tables { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+.gv-tbl { max-height: 70vh; }
+.gv-tbl caption { text-align: left; font-weight: 600; padding: 8px 12px; color: var(--text); }
+.gv-tbl tr.on > * { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.gv-tbl .gv-lbl { min-width: 200px; }
+.linkish { background: none; border: 0; padding: 0; color: var(--accent-text, var(--text)); text-decoration: underline; cursor: pointer; font: inherit; text-align: left; }
+
+/* the details */
+.gv-details { padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); position: sticky; top: 72px; max-height: calc(100vh - 96px); overflow: auto; }
+.gv-details .card-head { display: flex; gap: 8px; align-items: center; }
+.gv-details .card-t { margin: 0; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gv-details p { margin: 0; }
+.gv-d-kind { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--text-2); }
+.gv-d-iss { display: flex; gap: 6px; align-items: flex-start; font-size: var(--fs-sm); }
+.gv-d-iss.warning .ic { color: var(--warning); }
+.gv-d-iss.critical .ic { color: var(--critical); }
+.gv-d-label { overflow-wrap: anywhere; }
+.gv-d-sub { margin: var(--s2) 0 0; font-size: var(--fs-sm); color: var(--text-2); }
+.gv-links { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.gv-details .btns { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.gv-details .kv { margin: 0; }
+.gv-details dd.mono { overflow-wrap: anywhere; }
+.gv-save { display: flex; flex-direction: column; gap: var(--s2); }
+.gv-save label { display: flex; flex-direction: column; gap: 4px; }
+
+/* the widget on Home */
+.gv-widget { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gv-widget p { margin: 0; }
+.gv-w-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); }
+.gv-w-list li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 1100px) {
+  .gv.gv-has-details .gv-body { grid-template-columns: 200px minmax(0, 1fr); }
+  .gv-body { grid-template-columns: 200px minmax(0, 1fr); }
+  .gv-side { grid-column: 1 / -1; }
+  .gv-details { position: static; max-height: none; }
+}
+@media (max-width: 720px) {
+  .gv-body, .gv.gv-has-details .gv-body { grid-template-columns: minmax(0, 1fr); }
+  .gv-panel { display: none; }
+  .gv-sheet-btn { display: inline-flex; }
+  .gv-svg { height: 440px; }
+  .gv-search { max-width: none; flex-basis: 100%; order: 3; }
+}

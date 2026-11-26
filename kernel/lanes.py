@@ -19,6 +19,8 @@ from pathlib import Path
 
 from kernel import git_guard
 from kernel.filelock import LockHeld, locked
+from kernel.git_clone import clone_options  # LFS files stay pointers, long paths check out (FR-RPJ1)
+from kernel.harness_model import check_harness_routes, gnomon_endpoint  # a role a harness answers (FR-HMD1)
 from kernel.store import REPO_ROOT, read_json, write_json, write_text
 
 LANES_ENV = "GF_LANES"
@@ -114,6 +116,7 @@ def model_family(routing: dict, role: str) -> str:
 def check_routing(routing: dict) -> None:
     """The verifier must come from another model family than the builder (FR-G6)."""
     roles = routing.get("roles", {})
+    check_harness_routes(routing)
     for needed in ("analyst", "builder", "verifier"):
         if needed not in roles:
             raise ValueError(f"routing has no role {needed!r}")
@@ -170,7 +173,7 @@ def config_toml(routing: dict, roles_used) -> str:
              "[defaults]", f"max_context_tokens = {routing.get('max_context_tokens', 98304)}", "",
              "[resilience]", "request_timeout_ms = 300000", ""]
     for name in endpoints:
-        ep = routing["endpoints"][name]
+        ep = gnomon_endpoint(routing["endpoints"][name])
         lines += [f"[endpoints.{name}]", f"kind = {_toml_str(ep['kind'])}", f"url = {_toml_str(ep['url'])}"]
         if ep.get("api_key_env"):
             lines.append(f"api_key_env = {_toml_str(ep['api_key_env'])}")
@@ -327,8 +330,8 @@ def ensure_analyst_lane(routing: dict, root: Path | None = None) -> Path:
 def _git(cwd: Path, *args, check: bool = True) -> str:
     """Run the kernel's git. It names itself (KERNEL_GIT_ENV), which a guarded product repository
     asks of anyone who moves main (``guard_repo``), and runs no hook, fsmonitor or signing program
-    the folder names (``kernel.git_guard``)."""
-    env = {**os.environ, **git_guard.env(), KERNEL_GIT_ENV: "1"}      # no replace ref, no graft
+    the folder names (``kernel.git_guard``). It downloads no Git LFS content (``clone_options``)."""
+    env = {**os.environ, **git_guard.env(), KERNEL_GIT_ENV: "1", "GIT_LFS_SKIP_SMUDGE": "1"}  # no replace ref, no graft
     proc = subprocess.run(["git", *git_guard.flags(), *args], cwd=cwd, capture_output=True, text=True,
                           encoding="utf-8", env=env, stdin=subprocess.DEVNULL)
     if check and proc.returncode != 0:
@@ -411,7 +414,7 @@ class Lane:
                 git_guard.remove(self.path)
         if not (self.path / ".git").exists():
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            _git(self.path.parent, "clone", "-q", str(repo), self.path.name)
+            _git(self.path.parent, "clone", "-q", *clone_options(), str(repo), self.path.name)
         else:
             self.git("remote", "set-url", "origin", str(repo))
         self.git("fetch", "-q", "origin")

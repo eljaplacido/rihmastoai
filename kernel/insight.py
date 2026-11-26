@@ -27,6 +27,26 @@ def _main_test_names(project) -> list:
     repo = project.path("repo.git")
     if not repo.exists():
         return []
+    # read once per commit of main (FR-AOP2)
+    from kernel.git_memo import on_main
+
+    return on_main(repo, "test_names", lambda: _read_test_names(repo))
+
+
+def _read_test_names(repo) -> list:
+    """One ``git grep`` over main's tests (one process, not one per file); the file-by-file read if it fails."""
+    try:
+        got = subprocess.run(["git", "grep", "-h", "-E", r"^[[:space:]]*def test", "main", "--", "tests/*.py"],
+                             cwd=repo, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             stdin=subprocess.DEVNULL)
+    except OSError:
+        return []
+    if got.returncode in (0, 1):
+        return _TEST_DEF.findall(got.stdout)
+    return _read_file_by_file(repo)
+
+
+def _read_file_by_file(repo) -> list:
     try:
         files = subprocess.run(["git", "ls-tree", "-r", "--name-only", "main", "tests"], cwd=repo,
                                capture_output=True, text=True, check=True).stdout.split()

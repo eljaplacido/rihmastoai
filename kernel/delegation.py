@@ -57,6 +57,7 @@ RULES: dict[str, dict[str, str]] = {
 DEFAULT_RULE = {kind: next(iter(rules)) for kind, rules in RULES.items()}
 NEVER = {
     "deploy_gate": "the deploy gate opens production: IT decides it, every time",
+    "enforcement": "an enforcement level asks for a person's check: the named reviewer decides it (FR-ENF1)",
     "trust": "trust grants a Gnomon surface: it stays the owner's own act (D-0007)",
     "holdout_ruling": "a failed holdout means the product or its scenario is wrong, and only a person can tell "
                       "which; the scenario stays in its custody",
@@ -211,7 +212,8 @@ def delegations(project: Project) -> list[dict[str, Any]]:
 def active(project: Project, kind: str) -> dict[str, Any] | None:
     """The newest delegation in force on this project that covers ``kind``, or None."""
     now = project.factory.clock.now()
-    live = [d for d in project.read(FILE, []) or [] if kind in d["kinds"] and state_of(d, now) == "active"]
+    live = [d for d in project.read(FILE, []) or [] if kind in d["kinds"] and state_of(d, now) == "active"
+            and (d.get("agent") or {}).get("kind") != "bridge"]    # a named agent decides itself (agent_personas)
     return live[-1] if live else None
 
 
@@ -354,7 +356,8 @@ def _decide(project: Project, card: dict[str, Any], d: dict[str, Any]) -> dict[s
         return None
     out = {"card": card["id"], "kind": card["kind"], "verdict": verdict, "delegation": d["id"], "rule": rule,
            "decision": dec.get("id"), "person": d["person"], "persona": d["persona"], "why": why,
-           **({"task": basis["task"]} if basis.get("task") else {})}
+           **({"task": basis["task"]} if basis.get("task") else {}),
+           **({"agent": d["agent"]["name"]} if d.get("agent") else {})}     # a persona given to an agent
     project.log("delegated_decision", out | {"basis": basis})
     return out
 

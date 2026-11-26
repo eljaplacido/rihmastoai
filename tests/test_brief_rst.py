@@ -400,8 +400,8 @@ class ItInboxTest(CockpitTestCase):
         cards = self.all_kinds(p)
         status, body, _ = self.call("GET", f"/api/projects/{p.pid}/inbox?persona=it")
         self.assertEqual(status, 200, body)
-        self.assertEqual({c["kind"] for c in body["cards"]},
-                         {"road", "deploy_gate", "trust", "incident", "update", "connector", "runner"})
+        self.assertEqual({c["kind"] for c in body["cards"]},     # an enforcement review: its named reviewer (FR-ENF1)
+                         {"road", "deploy_gate", "trust", "incident", "update", "connector", "runner", "enforcement"})
         business = ("approval", "validation", "change", "concept", "escalation", "holdout_ruling")
         status, body, _ = self.call("GET", "/api/inbox?persona=it")
         self.assertEqual(status, 200, body)

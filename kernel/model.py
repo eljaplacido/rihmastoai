@@ -3,6 +3,10 @@
 The factory never calls a model API itself. A role names a model and an endpoint in the
 lane's surface, so which family answers is configuration, not code (D-0005). Tests use
 `FakeModel`, which answers from a script.
+
+A text role whose endpoint is a coding agent a person already has (`{"kind": "harness"}`, FR-HMD1) is answered by
+that harness instead, headless and toolless, and the record says so (kernel/harness_model.py): every call passes
+that one guard first.
 """
 
 from __future__ import annotations
@@ -90,8 +94,29 @@ class GnomonModel(Model):
 
 def run_gnomon_task(cwd: str | Path, prompt: str, *, role: str, timeout: int = 1800,
                     deadline: int | None = None, extra: tuple = ()) -> dict:
-    """Run one `gnomon task` in ``cwd`` and return its JSON record. The caller holds the lane."""
+    """Run one `gnomon task` in ``cwd`` and return its JSON record. The caller holds the lane. A role answered by a
+    harness (kernel/harness_model.py) is asked there instead, and its record comes back in the same shape. Either
+    run is recorded as ``model_run`` in the project a surrounding block names (kernel/model_usage.py)."""
+    import time
+
+    from kernel import model_usage
+
+    started, record = time.monotonic(), None
+    try:
+        record = _gnomon_task(cwd, prompt, role=role, timeout=timeout, deadline=deadline, extra=extra)
+        return record
+    finally:
+        model_usage.note(role, record, seconds=time.monotonic() - started, ok=record is not None)
+
+
+def _gnomon_task(cwd: str | Path, prompt: str, *, role: str, timeout: int, deadline: int | None,
+                 extra: tuple) -> dict:
     from kernel.access_isolation import cell, share
+    from kernel.harness_model import answer
+
+    harnessed = answer(cwd, prompt, role=role, timeout=timeout)
+    if harnessed is not None:
+        return harnessed
 
     cwd = Path(cwd)
     start = cell(gnomon_cmd(), cwd)     # access enforced: through IT's isolation runner, or refused (D-0016)
@@ -134,13 +159,22 @@ class FakeModel(Model):
         self.calls: list[tuple[str, str]] = []
 
     def ask(self, prompt: str, *, role: str) -> str:
+        from kernel import model_usage
+
         self.calls.append((role, prompt))
-        if callable(self.script):
-            return self.script(prompt, role)
-        answers = self.script.get(role)
-        if not answers:
-            raise ModelError(f"FakeModel has no answer left for role {role!r}")
-        return answers.pop(0)
+        ok = False
+        try:
+            if callable(self.script):
+                answer = self.script(prompt, role)
+            else:
+                answers = self.script.get(role)
+                if not answers:
+                    raise ModelError(f"FakeModel has no answer left for role {role!r}")
+                answer = answers.pop(0)
+            ok = True
+            return answer
+        finally:
+            model_usage.note(role, None, seconds=0.0, ok=ok)   # a scripted answer, recorded as a run
 
 
 _FENCE = re.compile(r"```(?:json)?\s*\n(.*?)```", re.DOTALL)

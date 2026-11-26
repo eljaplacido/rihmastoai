@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from kernel import model_usage
 from kernel.canon import Canon
 from kernel.intake import MATURITY_MEANING, SendBack, _ask_json, blocking_open
 from kernel.people import is_person
@@ -46,6 +47,7 @@ def road_facts() -> str:
 def spec_prompt(project, feedback: str | None = None) -> str:
     from kernel.posture_rules import extra_requirements
     from kernel.posture_rules import spec_guidance as posture_guidance
+    from kernel.prompt_rules import block
 
     meta, canon = project.meta, Canon(project)
     n = MAX_REQUIREMENTS[meta["maturity"]] + extra_requirements(project)  # one more per topic a posture requires
@@ -65,12 +67,10 @@ Write a new plan that answers the reason. Keep what the reason does not touch.
     from kernel.integration_decl import guidance as integration_guidance
     from kernel.profiles import profile_of, spec_guidance
 
+    # The instructions every spec shares come first, word for word, and this project's brief last, so an endpoint
+    # that caches prompt prefixes reads them once for every project (FR-CTX1).
     return f"""You turn a brief into a software specification for a factory that builds and verifies it.
 
-{canon.brief}
-{previous}
-Target maturity: **{meta['maturity']}**: {MATURITY_MEANING[meta['maturity']]}.
-{spec_guidance(profile_of(project))}{posture_guidance(project)}
 The stack is fixed:
 {STACK}
 
@@ -78,8 +78,7 @@ The stack is fixed:
 
 {integration_guidance()}
 
-Write at most {n} requirements: the smallest set that delivers the goal at this maturity. If the
-request names its own requirement ids (for example FR-KRIT-001), keep the id of each requirement
+If the request names its own requirement ids (for example FR-KRIT-001), keep the id of each requirement
 you take from it in "id"; otherwise leave "id" empty. Each requirement states one behaviour and
 lists its sources: "request" if the request says it, a
 question id (for example "Q-003") if an answer or assumption gave it, or "proposed" if neither
@@ -106,7 +105,15 @@ Answer with this JSON in a ```json block:
   "requirements": [{{"id": "", "statement": "...", "sources": ["request"], "priority": "must",
      "acceptance": [{{"given": "...", "when": "...", "then": "...", "kind": "test"}}]}}],
   "out_of_scope": ["..."], "integrations": []}}
-"""
+
+The brief:
+
+{canon.brief}
+{previous}
+Target maturity: **{meta['maturity']}**: {MATURITY_MEANING[meta['maturity']]}.
+{spec_guidance(profile_of(project))}{posture_guidance(project)}
+Write at most {n} requirements: the smallest set that delivers the goal at this maturity.
+""" + block(project.factory)   # the rules people approved from their feedback (FR-HEAL1)
 
 
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
@@ -329,6 +336,7 @@ def render_spec_md(spec: dict) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+@model_usage.recorded("spec")        # the analyst's runs in the project's ledger (model_run)
 def make_spec(project, *, model, feedback: str | None = None) -> dict:
     from kernel.confidential import guard
     from kernel.posture_rules import check_spec, questions_to_settle

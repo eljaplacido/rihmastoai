@@ -1,0 +1,39 @@
+/* Guided journeys (journey.js, FR-JRN1). Colours, radii and type come from tokens.css, so dark and light, the
+   accents and the density all apply. Nothing scrolls sideways at 390 px: long commands and paths wrap. */
+
+.dr-guide { padding: var(--s3) var(--s4); border-bottom: 1px solid var(--border); background: var(--accent-subtle);
+  display: flex; flex-direction: column; gap: var(--s2); max-height: 46vh; overflow-y: auto; min-width: 0; }
+.dr-guide[hidden] { display: none; }
+.jr-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.jr-head > .ic { color: var(--accent-text); flex: none; }
+.jr-title { display: flex; flex-direction: column; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.jr-now { display: flex; flex-direction: column; gap: 4px; padding: var(--s2) var(--s3); border: 1px solid var(--accent-border);
+  border-radius: var(--r-md); background: var(--surface); min-width: 0; }
+.jr-now p, .jr-next p { margin: 0; overflow-wrap: anywhere; }
+.jr-state { font-weight: 600; }
+.jr-result { display: flex; gap: 6px; align-items: flex-start; margin: 0; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.jr-result .ic { color: var(--good, var(--accent-text)); flex: none; margin-top: 2px; }
+.jr-cmd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.jr-cmd code { white-space: pre-wrap; word-break: break-all; }
+.jr-fails summary, .jr-all summary { cursor: pointer; color: var(--text-2); font-size: var(--fs-sm); }
+.jr-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.jr-row { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-sm); min-width: 0; }
+.jr-row > .ic { flex: none; margin-top: 2px; color: var(--text-2); }
+.jr-row.done > .ic { color: var(--accent-text); }
+.jr-row.current { font-weight: 600; }
+.jr-row.current > .ic { color: var(--accent-text); }
+.jr-row span { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.jr-said { color: var(--text-2); font-weight: 400; }
+.jr-block, .jr-next { display: flex; flex-direction: column; gap: 6px; margin-top: var(--s2); min-width: 0; }
+.jr-block .btn, .jr-now .btn, .jr-next .btn { max-width: 100%; white-space: normal; height: auto; min-height: var(--ctl); text-align: left; }
+.jr-block .btn .lbl, .jr-now .btn .lbl, .jr-next .btn .lbl { white-space: normal; }
+.jr-starters { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; }
+.jr-projects { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.jr-card .label-h { display: flex; align-items: center; gap: 6px; }
+.jr-card .label-h .ic { color: var(--accent-text); }
+.jr-ways { margin-top: var(--s3); text-align: left; }
+.home-walk .jr-starters, .card.intro .jr-starters { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+@media (max-width: 760px) {
+  .home-walk .jr-starters, .card.intro .jr-starters { grid-template-columns: 1fr; }
+  .dr-guide { max-height: 40vh; }
+}

@@ -9,7 +9,7 @@ and git. Real projects also need Gnomon and models from at least two model famil
 |---|---|---|
 | Python | 3.11 or later | everything (standard library only, no packages) |
 | git | any recent | the demo, lanes and product repositories |
-| Gnomon | 0.6.5 or later, 0.6.6 recommended | real projects: every model call goes through it |
+| Gnomon | 0.6.5 or later; 0.6.6 or later recommended (0.6.7 is the latest) | real projects: every model call goes through it |
 | Node | 22 or later | Gnomon |
 | docker | any | optional: only the `docker` paved road |
 
@@ -97,15 +97,70 @@ curl -fsSL https://raw.githubusercontent.com/eljaplacido/gnomonharness/master/sc
 irm https://raw.githubusercontent.com/eljaplacido/gnomonharness/master/scripts/install.ps1 | iex
 ```
 
-- To pin a version, set `GNOMON_VERSION=0.6.6` before the install line
-  (PowerShell: `$env:GNOMON_VERSION = '0.6.6'`).
-- `npm i -g gnomon-harness` also works. Until `npm view gnomon-harness version` prints 0.6.6, it
-  installs 0.6.5.
+- To pin a version, set `GNOMON_VERSION=0.6.7` before the install line
+  (PowerShell: `$env:GNOMON_VERSION = '0.6.7'`). 0.6.7 is Gnomon's latest release at the time of
+  writing; `rihmasto doctor` accepts 0.6.5 and later.
+- `npm i -g gnomon-harness` also works. Check what it would install first with
+  `npm view gnomon-harness version`.
 - `gnomon update` upgrades it later.
 - Rihmasto finds Gnomon as `$GNOMON_CMD` (split like a shell command line), or `gnomon` on your
   PATH. Run `rihmasto doctor` again: it should now exit 0.
 
+### Verify what you install
+
+Gnomon runs every model call and every builder cell, so check its bytes before you trust them.
+
+- **The installer checks for you.** It downloads the release's `SHA256SUMS` and refuses any file whose
+  SHA-256 does not match, or that has no published digest.
+- **Read the installer before you run it.** Instead of piping it into a shell, download it, read it,
+  then run it:
+
+  ```bash
+  curl -fsSLo install-gnomon.sh https://raw.githubusercontent.com/eljaplacido/gnomonharness/master/scripts/install.sh
+  less install-gnomon.sh
+  GNOMON_VERSION=0.6.7 sh install-gnomon.sh
+  ```
+
+- **Check a release by hand.** Every Gnomon release publishes `SHA256SUMS`, a `.sha256` file per
+  archive, an SPDX SBOM and signed SLSA build provenance. With the GitHub CLI:
+
+  ```bash
+  V=0.6.7
+  gh release download v$V -R eljaplacido/gnomonharness -p "gnomon-$V-linux-x64.tar.gz" -p SHA256SUMS
+  sha256sum --check --ignore-missing SHA256SUMS        # macOS: shasum -a 256 --check --ignore-missing SHA256SUMS
+  gh attestation verify gnomon-$V-linux-x64.tar.gz --repo eljaplacido/gnomonharness \
+    --cert-identity https://github.com/eljaplacido/gnomonharness/.github/workflows/build-release.yml@refs/tags/v$V
+  ```
+
+  On Windows, `Get-FileHash gnomon-0.6.7-windows-x64.tar.gz -Algorithm SHA256` prints the hash to
+  compare with its line in `SHA256SUMS`. From a checkout of Gnomon, `scripts/verify-release.sh 0.6.7`
+  checks every file of a release and its attestations at once.
+- **Trust is yours to give.** A Gnomon surface that grants more than Gnomon's defaults runs clamped
+  until its owner trusts it (`gnomon trust grant`). Rihmasto's product lanes grant nothing extra, so
+  they need no trust; never let an agent grant it for you.
+
+Rihmasto's own releases carry the same kind of evidence: source archives, a CycloneDX SBOM,
+`SHA256SUMS` and a signed build provenance attestation (`sha256sum --check SHA256SUMS`, then
+`gh attestation verify <file> -R eljaplacido/rihmastoai`).
+
 ### Choose the models
+
+**The quick way.** In the cockpit, **Settings > Models setup** sets each role and tests it. On the
+command line:
+
+```bash
+rihmasto models presets                                   # the common choices, local and hosted
+rihmasto models set analyst --base-url http://127.0.0.1:8080/v1 --model qwen3-32b \
+    --person "<your name>" --persona it                   # a local OpenAI-compatible server
+rihmasto models set verifier --base-url https://llm-provider.example/v1 --model glm-4.6 \
+    --key-env HOSTED_API_KEY --person "<your name>" --persona it   # a hosted one; the key stays in the variable
+rihmasto models use claude-code --person "<your name>" --persona it  # or: your coding agent, on your own login
+rihmasto models test analyst
+```
+
+[Models setup](guides/models-setup.md) and [your coding agent as the model](guides/harness-models.md)
+say more. The rest of this section is the routing file those commands write, for when you want every
+detail.
 
 Rihmasto is model-agnostic. Each role (each Rihma agent) uses any OpenAI-compatible endpoint, local
 or hosted, set per role. Every call goes through Gnomon, which gives it governance, an audit trail
@@ -246,7 +301,7 @@ Open this link once to sign in: http://127.0.0.1:8787/#k=<one-use code>
 ```
 
 - **Sign in.** Open the link once. The page exchanges the code for a session token and keeps it
-  in that tab. **Link for another tab**, in the person menu, makes a new one-use link.
+  in that tab. **Open in another browser tab**, in the person menu, makes a new one-use link.
 - **Pick a persona.** The persona decides which cards you may decide; the kernel checks it on every
   decision. It is not a login: the cockpit is for one operator.
 - **Questions.** Pick an option or write your own, then **Answer**. Or press **Let Rihma assume**
@@ -378,7 +433,7 @@ warranted) or **stop**.
 configures it in `paved_roads.json`, then decides the card `configured`.
 
 **The cockpit refuses the page.** Use `127.0.0.1`, not `localhost`. Through an SSH tunnel, use
-the same local port as the server's. A sign-in link works once; **Link for another tab** makes
+the same local port as the server's. A sign-in link works once; **Open in another browser tab** makes
 another.
 
 **A Gnomon cell is clamped.** An untrusted surface that grants more than Gnomon's defaults runs

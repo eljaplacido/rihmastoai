@@ -40,6 +40,12 @@ def isolated_routing(case: unittest.TestCase, tmp: Path) -> Path:
     held = mock.patch("kernel.models_setup.gnomon_keys", return_value=frozenset())   # nor the keys Gnomon holds here
     held.start()
     case.addCleanup(held.stop)
+    from kernel.runners.detect import env_name  # nor the coding agents installed here (FR-HMD1): a test's fakes only
+
+    nowhere = {env_name(k): json.dumps([str(Path(tmp) / "nowhere" / k)]) for k in ("claude-code", "codex", "opencode")}
+    agents = mock.patch.dict(os.environ, {k: v for k, v in nowhere.items() if k not in os.environ})
+    agents.start()
+    case.addCleanup(agents.stop)
     return folder
 
 PANEL = {

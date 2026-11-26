@@ -18,6 +18,10 @@ rolled_back                ``rolled_back`` (kernel/operate.py)
 check_failed               ``probe_failed`` (a probe on production) or ``release_failed`` (a release's
                            step, its smoke check or its holdouts, failed)
 gate_failed, gate_passed   ``gate`` with that verdict
+delivered                  ``release_done``: a release reached where its maturity delivers it (FR-DST1)
+published                  ``published``: a release's image pushed to a registry (kernel/publish.py)
+destination_failing        ``destination_failing``: a destination became failing in a feedback round
+                           (kernel/destinations_feedback.py); ``destination_recovered`` when it is not
 =========================  ==========================================================================
 
 Any other record kind may be named as it is (``release_done``, ``question_added``, ...).
@@ -35,13 +39,15 @@ EVENT_ALIASES: dict[str, tuple[tuple[str, str | None], ...]] = {
     "concept_validated": (("created_from_concept", None),),
     "plan_approved": (("plan_approved", None), ("go_ahead_given", "go")),
     "check_failed": (("probe_failed", None), ("release_failed", None)),
+    "delivered": (("release_done", None),),          # where the capability goes (FR-DST1)
 }
 # The life-cycle transitions, in the order a capability lives them (D-0023).
 LIFECYCLE = ("concept_validated", "plan_approved", "first_build_passed", "release_reached_test", "promoted",
              "rolled_back", "check_failed")
 COMMON_EVENTS = (*LIFECYCLE, "release_done", "release_failed", "gate_failed", "gate_passed", "question_added",
                  "card_waiting", "change_submitted", "adopted", "material_added", "upstream_synced", "hook_received",
-                 "incident_opened", "probe_failed", "decision", "signal_received", "project_created")
+                 "incident_opened", "probe_failed", "decision", "signal_received", "project_created",
+                 "delivered", "published", "destination_failing", "destination_recovered")   # FR-DST1
 
 
 def records_of(name: str) -> tuple[tuple[str, str | None], ...]:

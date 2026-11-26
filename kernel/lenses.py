@@ -52,12 +52,13 @@ LENSES: dict[str, Lens] = {
     "insight": {"label": "Insight", "icon": "sparkles",
                 "question": "How does the factory itself perform, and what has it learned?",
                 "widgets": ["gate_trend", "models", "coverage", "pipeline", "lessons"],
-                "views": ["overview", "cell", "ledger"]},
+                "views": ["agentops", "overview", "cell", "ledger"]},   # Agent operations first (FR-AOP1)
 }
 
 PERSONA_LENS = {"business_owner": "business", "stakeholder": "business", "product_owner": "concept",
                 "concept_evaluator": "concept", "end_user": "business", "developer": "delivery",
-                "it": "operations", "operations": "operations", "compliance": "compliance"}
+                "it": "operations", "operations": "operations", "compliance": "compliance",
+                "ai_architect": "insight"}   # the AI architect: how the agents perform and cost (FR-AOP1)
 
 STAGE_FOCUS = {1: ["questions", "overview"], 2: ["questions", "assumptions"], 3: ["spec", "questions"],
                4: ["plan", "spec"], 5: ["tasks", "live", "spec"], 6: ["try", "inbox", "releases"],

@@ -18,7 +18,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import agentops_fakes  # noqa: E402  (Agent operations, FR-AOP1)
+import enforcement_fakes  # noqa: E402  (enforcement levels per environment, FR-ENF1)
+import gnomon_fakes  # noqa: E402  (Gnomon's audits and the role evals, FR-EVL1)
+import heal_fakes  # noqa: E402  (incidents, remedies, fixes and feedback, FR-HEAL1)
+import neverlost_fakes  # noqa: E402  (decision triage and Gnomon's enforcement, FR-NVL1)
+import hitl_fakes  # noqa: E402  (people in the loop, FR-HITL1)
+import walkthrough_fakes  # noqa: E402  (walkthroughs, FR-WLK1)
+from console_fakes import write_routes as console_writes  # noqa: E402  (FR-CON1, FR-CHK1)
+from context_fakes import write_routes as context_writes  # noqa: E402  (FR-CTX1)
+from destinations_fixture import write_routes as destination_writes  # noqa: E402  (FR-DST1)
+from itdata_fixture import write_routes as itdata_writes  # noqa: E402  (integrations and data, FR-ITD1)
 from factory_fakes import FactoryTestCase, isolated_routing, model  # noqa: E402
+from gcp_fakes import SCHEDULE as GCP_SCHEDULE  # noqa: E402  (a Google Cloud road and a job's schedule, FR-GCP1)
+from gcp_fakes import road as gcp_road  # noqa: E402
 from test_cockpit import IDEA, CockpitTestCase  # noqa: E402
 
 from cockpit import server as cockpit  # noqa: E402
@@ -268,7 +281,12 @@ class PackHeadTest(FactoryTestCase):
 # signed, before its job runs, so it is a signed write here.
 RECORD_NOTHING = {"post_link", "post_assistant", "post_profile_propose", "post_source_preview",
                   "post_settings_preview", "post_model_test", "post_posture_preview", "post_automation_preview",
-                  "post_automation_dry_run"}
+                  "post_automation_dry_run", "post_people_test_token",   # a token's test (FR-PPL1)
+                  "post_source_scan", "post_source_scan_cancel",    # FR-RPJ1: a scan in the background reads only
+                  "post_assessment_cancel",       # with nothing running it only says so; a real cancel is tested in test_progress
+                  "post_pick_native", "post_pick_cancel"}  # FR-PICK1: the computer's own dialog and its cancellation
+RECORD_NOTHING |= {"post_automation_compose"}   # Describe it: a draft, its summary and a dry run (FR-SET1)
+RECORD_NOTHING |= {"post_enforcement_preview"}   # what a change of enforcement levels would do (FR-ENF1)
 # An automation the write routes set (kernel/automations.py): a change proposal when a release is done.
 AUTOMATION = {"name": "When a release is done", "trigger": {"kind": "event", "types": ["release_done"]},
               "action": {"kind": "change", "text": "{project} released: check the docs"}}
@@ -282,6 +300,28 @@ UNSIGNED = {"post_advance"}
 READ_THAT_WRITES = {"get_pack"}
 LAYOUT = {"v": 1, "lens": "delivery",
           "widgets": [{"id": "gt", "type": "gate_trend", "size": "M", "view": "table", "filter": {}}]}
+
+
+def alignment_writes(case) -> list:
+    """The Alignment tab's writes (FR-ALN1), on a repository of the team's own attached for them: a scan, then a
+    decision on the first item it proposed. Nothing is written to the repository."""
+    from alignment_fixture import make_repo
+
+    from kernel.attach import attach
+
+    repo = case.tmp / "aligned-repo"
+    if not (repo / ".git").exists():
+        make_repo(repo)
+    found = [p for p in case.factory.projects() if p.meta.get("title") == "Loans of the tool store"]
+    pid = (found[0] if found else attach(case.factory, "Loans of the tool store", repo=repo, person="Aino Example",
+                                         persona="developer")).pid
+    return [
+        ("post_repo_alignment_scan", "POST", f"/api/projects/{pid}/repo-alignment/scan",
+         lambda who, got: {"person": who, "persona": "developer"}),
+        ("post_repo_alignment_decide", "POST", f"/api/projects/{pid}/repo-alignment/decide",
+         lambda who, got: {"items": [got["post_repo_alignment_scan"]["groups"][0]["items"][0]["id"]],
+                           "verdict": "accept", "person": who, "persona": "product_owner"}),
+    ]
 
 
 class FactoryApiTest(CockpitTestCase):
@@ -299,8 +339,13 @@ class FactoryApiTest(CockpitTestCase):
         s = receive(self.factory, "Warehouse staff need a way to report damaged pallets from a phone",
                     channel="meeting", source="ops weekly", person="Sanna")
         concept = triage(self.factory, s["id"])["routed_to"]["card"]
+        # a coding agent's proposed answer in the asking project's channel, for a person to confirm (FR-BRG1)
+        from kernel import agent_channel
+        from kernel.agent_writes import propose_answer
+        proposal = propose_answer(asking, agent_channel.agent("claude-code", "Aino", "developer"), "Q-003",
+                                  "the team lead approves loans")["id"]
         return {"built": built, "asking": asking, "planning": planning, "change": change["id"], "concept": concept,
-                "assumption": Canon(built).assumptions("open")[0]["id"]}
+                "assumption": Canon(built).assumptions("open")[0]["id"], "proposal": proposal}
 
     def writes(self, w: dict) -> list:
         """Every signed write route, in an order where each one's target exists: (route name, method, path,
@@ -327,7 +372,15 @@ class FactoryApiTest(CockpitTestCase):
         patcher = mock.patch.dict(os.environ, {ROOTS_ENV: str(self.tmp)})
         patcher.start()
         self.addCleanup(patcher.stop)
+        # FR-HMD1: a fake Claude Code (tests/harness_fakes.py) for `post_models_use`; the real one never runs here
+        from harness_fakes import fake_agent
+        from runner_fakes import use as use_agent
+
+        use_agent(self, "claude-code", fake_agent(self.tmp / "agents", "claude-code"))
         return [
+            *console_writes(self, w),       # the console and the checks (tests/console_fakes.py; FR-CON1, FR-CHK1)
+            *destination_writes(self, w),   # destinations and publishing (tests/destinations_fixture.py; FR-DST1)
+            *itdata_writes(self, w),        # check, rotation reminder, turn off (tests/itdata_fixture.py; FR-ITD1)
             ("post_signal", "POST", "/api/signals",
              lambda who, got: {"text": "The loans page should show overdue loans first", "channel": "chat",
                                "person": who, "persona": "stakeholder"}),
@@ -413,10 +466,13 @@ class FactoryApiTest(CockpitTestCase):
              lambda who, got: {"note": "seen", "person": who, "persona": "product_owner"}),
             ("put_modules", "PUT", "/api/modules",                      # every module stays on (kernel/modules.py)
              lambda who, got: {"preset": "full", "reason": "the whole factory", "person": who, "persona": "it"}),
-            ("put_project_modules", "PUT", f"/api/projects/{b}/modules",
-             lambda who, got: {"preset": "full", "person": who, "persona": "developer"}),
+            ("put_project_modules", "PUT", f"/api/projects/{b}/modules",     # every module on, the opt-in ones too
+             lambda who, got: {"modules": list(cockpit.kmodules.MODULES), "person": who, "persona": "developer"}),
             ("put_layout", "PUT", "/api/layout?persona=developer&lens=delivery",
              lambda who, got: {"person": who, "layout": LAYOUT}),
+            ("put_view_layouts", "PUT", "/api/view-layouts",               # Customize on every view (FR-UXO1)
+             lambda who, got: {"person": who, "persona": "developer", "views": {"p:overview": {"hidden": ["brief"]}},
+                               "tabs": {"hidden": ["review"], "pinned": []}}),
             # Shape it in chat (kernel/shape.py) and Models setup (kernel/models_setup.py), in the factory's ledger
             ("post_shape", "POST", "/api/shape",
              lambda who, got: {"text": "We lose track of borrowed drills", "person": who, "persona": "business_owner"}),
@@ -431,6 +487,9 @@ class FactoryApiTest(CockpitTestCase):
              lambda who, got: {"mode": "mixed", "maturity": "demo", "person": who, "persona": "business_owner"}),
             ("put_model", "PUT", "/api/models/assistant", lambda who, got: {**MODEL, "person": who, "persona": "it"}),
             ("post_model_remove", "POST", "/api/models/assistant/remove", lambda who, got: {"person": who, "persona": "it"}),
+            # The coding agent you already have answers a text role (kernel/harness_setup.py, FR-HMD1)
+            ("post_models_use", "POST", "/api/models/use",
+             lambda who, got: {"harness": "claude-code", "roles": ["assistant"], "person": who, "persona": "it"}),
             # Settings > Runners (kernel/runners, D-0019): back to Gnomon applies at once, in the factory's ledger
             ("put_runner", "PUT", "/api/runners/builder", lambda who, got: {"runner": "gnomon", "person": who, "persona": "it"}),
             # automations (kernel/automations.py, FR-AUT1), in the factory's ledger and the project's
@@ -450,7 +509,174 @@ class FactoryApiTest(CockpitTestCase):
              lambda who, got: {"person": who, "persona": "it"}),
             ("put_project_tags", "PUT", f"/api/projects/{b}/tags",
              lambda who, got: {"tags": ["ops"], "person": who, "persona": "product_owner"}),
+            # -- walkthroughs in Ask Rihma (FR-WLK1, tests/walkthrough_fakes.py): each step in the factory's ledger,
+            # signed; Confirm is carried out by post_adopt
+            *walkthrough_fakes.write_rows(self, repo),
+            # a guided journey's own record, signed on the factory like a walkthrough (FR-JRN1)
+            ("post_journey_guide", "POST", "/api/journeys/guide",
+             lambda who, got: {"action": "start", "journey": "brownfield", "project": b, "person": who,
+                               "persona": "developer"}),
+            *alignment_writes(self),
+            # since you last looked (FR-REV1): a reviewed mark on the merged task, all reviewed, the digest turned off
+            ("post_review_mark", "POST", "/api/review/mark",
+             lambda who, got: {"items": [f"{b}/task/T-001"], "person": who, "persona": "developer"}),
+            ("post_review_done", "POST", "/api/review/done", lambda who, got: {"person": who, "persona": "developer"}),
+            ("put_review_digest", "PUT", "/api/review/digest",
+             lambda who, got: {"off": True, "person": who, "persona": "developer"}),
+            # the paved roads (kernel/road_settings.py, FR-GCP1): IT configures a Google Cloud road, then a project's
+            ("put_road", "PUT", "/api/roads/company-gcp",
+             lambda who, got: {"road": gcp_road(), "maturity": ["production"], "person": who, "persona": "it"}),
+            ("put_project_road", "PUT", f"/api/projects/{b}/road",
+             lambda who, got: {"road": "company-gcp", "workload": "job", "schedule": GCP_SCHEDULE, "person": who,
+                               "persona": "it"}),
+            *FactoryApiTest.real_project_writes(self),       # test_access calls these writes on its own case
+            *FactoryApiTest.bridge_writes(w),
+            # the data and context layer (tests/context_fakes.py, FR-CTX1): a clean-up proposed and applied, signed
+            *context_writes(self, w),
+            *FactoryApiTest.graph_writes(w),
+            *FactoryApiTest.setup_writes(self.factory, w),
+            # agent observability (kernel/agentobs, FR-OBS1): IT sets the hub (nothing listens there), a developer
+            # maps the project and records what the hub shows (here: that it did not answer)
+            ("put_agent_observability", "PUT", "/api/agent-observability",
+             lambda who, got: {"url": "http://127.0.0.1:9", "person": who, "persona": "it"}),
+            ("post_agent_sessions_map", "POST", f"/api/projects/{b}/agent-sessions/map",
+             lambda who, got: {"hub_project": "acme/checkout", "person": who, "persona": "developer"}),
+            ("post_agent_sessions_snapshot", "POST", f"/api/projects/{b}/agent-sessions/snapshot",
+             lambda who, got: {"person": who, "persona": "developer"}),
+            # a developer's look at the development briefing (kernel/devsessions.py, FR-DEV1)
+            ("post_dev_seen", "POST", f"/api/projects/{b}/dev/seen",
+             lambda who, got: {"person": who, "persona": "developer"}),
+            # a persona given to an agent by delegation (kernel/agent_personas.py, FR-PPL1)
+            ("post_agent_persona", "POST", f"/api/projects/{b}/agent-personas",
+             lambda who, got: {"persona": "operations", "agent": "ops-agent", "kinds": ["incident"], "until": "3d",
+                               "person": who}),
+            *gnomon_fakes.write_rows(self, w),     # Gnomon's audits and the role evals (FR-EVL1), as jobs
+            *heal_fakes.write_routes(self, w),   # self-healing (tests/heal_fakes.py, FR-HEAL1)
+            *neverlost_fakes.write_routes(self, w),   # decision triage and enforcement (FR-NVL1)
+            *agentops_fakes.write_rows(self, w),   # Agent operations: the audit recorded, a change filed (FR-AOP1)
+            *enforcement_fakes.write_rows(self, w),   # enforcement levels (tests/enforcement_fakes.py, FR-ENF1)
+            *hitl_fakes.write_routes(self, w),   # people in the loop (tests/hitl_fakes.py, FR-HITL1)
         ]
+
+    @staticmethod
+    def graph_writes(w: dict) -> list:
+        """The Knowledge graph's saved views (cockpit/graph_routes.py, FR-GRV1): a person's own, kept as a layout is,
+        in the cockpit's folder and never in a ledger."""
+        b = w["built"].pid
+        return [
+            ("put_graph_prefs", "PUT", "/api/graph/prefs",
+             lambda who, got: {"scope": b, "mode": "table", "presets": [{"name": "Open requirements and their tests",
+                                                                         "query": "kinds=requirement,criterion,test&states=open"}],
+                               "person": who, "persona": "developer"}),
+        ]
+
+    @staticmethod
+    def setup_writes(factory, w: dict) -> list:
+        """Set up a project, its suggested automations, archive, restore and remove (cockpit/setup_routes.py,
+        FR-SET1), each signed: the set-up's one click sets the first suggestion, then one more is set and one
+        dismissed on the built project; a spare copy is archived and removed, and one archived before is restored."""
+        from kernel.automation_suggest import scan
+
+        b = w["built"].pid
+        spare = factory.new_project("A spare copy").pid
+        shelved = factory.new_project("A shelved copy")
+        shelved.update_meta(archived={"by": "Aino Example", "persona": "product_owner", "at": "2026-11-22T12:00:00Z"})
+
+        def offered(got: dict) -> str:
+            return next(s["id"] for s in scan(factory, b)["suggestions"] if s["state"] == "offered")
+        return [
+            ("post_project_setup", "POST", f"/api/projects/{b}/setup/automations",
+             lambda who, got: {"person": who, "persona": "developer"}),
+            ("post_suggestion_accept", "POST",
+             lambda got: f"/api/projects/{b}/automation-suggestions/{offered(got)}/accept",
+             lambda who, got: {"person": who, "persona": "developer"}),
+            ("post_suggestion_dismiss", "POST",
+             lambda got: f"/api/projects/{b}/automation-suggestions/{offered(got)}/dismiss",
+             lambda who, got: {"person": who, "persona": "developer"}),
+            ("post_project_archive", "POST", f"/api/projects/{spare}/archive",
+             lambda who, got: {"reason": "a copy", "person": who, "persona": "product_owner"}),
+            ("post_project_restore", "POST", f"/api/projects/{shelved.pid}/restore",
+             lambda who, got: {"person": who, "persona": "product_owner"}),
+            ("post_project_remove", "POST", f"/api/projects/{spare}/remove",
+             lambda who, got: {"confirm": spare, "person": who, "persona": "product_owner"}),
+        ]
+
+    @staticmethod
+    def people_writes(w: dict) -> list:
+        """Settings > People and access (cockpit/people_routes.py, FR-PPL1), each signed by IT, in the factory's
+        ledger. They run last and in this order: the last one turns team mode on, after which the solo session
+        of this test signs nothing. With IT's access file in force they are refused (tests/test_people.py)."""
+        from access_fakes import Provider
+
+        b = w["built"].pid
+        idp = {"preset": "oauth2-proxy", "issuer": "https://login.example.org", "origin": "https://rihmasto.example.org",
+               "audience": "rihmasto-cockpit", "groups_claim": "groups"}
+        it = {"persona": "it"}
+        return [
+            ("post_people_solo", "POST", "/api/people/solo", lambda who, got: {"person": who, "persona": "it"}),
+            ("post_people_user", "POST", "/api/people/users",
+             lambda who, got: {"name": "Bea Example", "personas": ["developer"], "person": who, **it}),
+            ("put_people_user", "PUT", lambda got: f"/api/people/users/{got['post_people_user']['user']['id']}",
+             lambda who, got: {"personas": ["developer", "operations"], "person": who, **it}),
+            ("post_people_link", "POST", lambda got: f"/api/people/users/{got['post_people_user']['user']['id']}/link",
+             lambda who, got: {"kind": "invite", "person": who, **it}),
+            ("post_people_group", "POST", "/api/people/groups",
+             lambda who, got: {"group": "0b8e5c1a-ops", "to": "operations", "person": who, **it}),
+            ("post_people_role", "POST", "/api/people/roles",
+             lambda who, got: {"project": b, "user": got["post_people_user"]["user"]["id"], "personas": ["product_owner"],
+                               "person": who, **it}),
+            ("put_people_views", "PUT", "/api/people/views",
+             lambda who, got: {"to": "stakeholder", "hidden": ["insights_all"], "person": who, **it}),
+            ("put_people_idp", "PUT", "/api/people/idp", lambda who, got: {"idp": idp, "person": who, **it}),
+            ("post_people_keys", "POST", "/api/people/keys",
+             lambda who, got: {"jwks": json.dumps(Provider("https://login.example.org", "rihmasto-cockpit").jwks()),
+                               "person": who, **it}),
+            ("post_people_mode", "POST", "/api/people/mode", lambda who, got: {"mode": "team", "person": who, **it}),
+        ]
+
+    @staticmethod
+    def bridge_writes(w: dict) -> list:
+        """The agent bridge and the agent channel (cockpit/bridge_routes.py; FR-BRG1, FR-CHN1), each signed."""
+        b, a = w["built"].pid, w["asking"].pid
+        return [
+            ("post_handoff", "POST", f"/api/projects/{b}/handoff",
+             lambda who, got: {"to": "claude-code", "via": "copy", "person": who, "persona": "developer"}),
+            ("post_channel", "POST", f"/api/projects/{b}/channel",
+             lambda who, got: {"text": "@analyst what does R-1-AC-1 mean?", "person": who, "persona": "developer"}),
+            ("post_channel_settle", "POST", f"/api/projects/{a}/channel/{w['proposal']}/settle",
+             lambda who, got: {"verdict": "confirm", "person": who, "persona": "business_owner"}),
+            ("post_channel_pause", "POST", f"/api/projects/{b}/channel/pause",
+             lambda who, got: {"reason": "a review", "person": who, "persona": "developer"}),
+            ("post_channel_resume", "POST", f"/api/projects/{b}/channel/resume",
+             lambda who, got: {"person": who, "persona": "developer"}),
+        ]
+
+    def real_project_writes(self) -> list:
+        """FR-RPJ1's signed writes: the folders the cockpit may read, a local model for a confidential project's
+        roles, and an adopted project's areas, watch and stated baseline (a game-like repository, adopted here)."""
+        import rpj_fixture as fx
+
+        from kernel.adopt import adopt
+
+        game = next((p.pid for p in self.factory.projects() if p.meta.get("title") == "Isles"), None) or adopt(
+            self.factory, "Isles", source=str(fx.game(self.tmp / "isles")), intent="monitor", person="Ida Example",
+            persona="developer", suite_timeout=1).pid
+        allowed = self.tmp / "allowed"
+        allowed.mkdir(exist_ok=True)
+        dev = lambda who, got: {"person": who, "persona": "developer"}          # noqa: E731
+        return [("post_source_root", "POST", "/api/source/roots",
+                 lambda who, got: {"folder": str(allowed), "confirm": True, "person": who, "persona": "it"}),
+                ("post_source_root_remove", "POST", "/api/source/roots/remove",
+                 lambda who, got: {"folder": str(allowed), "person": who, "persona": "it"}),
+                ("post_pick_recent", "POST", "/api/pick/recent",            # FR-PICK1: kept outside every ledger
+                 lambda who, got: {"path": str(allowed), "person": who, "persona": "developer"}),
+                ("post_models_use_local", "POST", "/api/models/use-local",
+                 lambda who, got: {"person": who, "persona": "it"}),
+                ("post_areas", "POST", f"/api/projects/{game}/areas", dev),
+                ("post_watch", "POST", f"/api/projects/{game}/watch", dev),
+                ("post_baseline_stated", "POST", f"/api/projects/{game}/baseline/stated",
+                 lambda who, got: {"command": "python tools/pipeline/check.py test", "confirm": True,
+                                   **dev(who, got)})]
 
     def ledgers(self) -> dict:
         return {p.pid: p.ledger().records() for p in self.factory.projects()}
@@ -458,7 +684,7 @@ class FactoryApiTest(CockpitTestCase):
     def test_FR_N1_AC_2_every_write_that_records_state_is_signed_by_a_named_person(self):
         w = self.world()
         home = self.factory.home
-        routes = self.writes(w)
+        routes = [*self.writes(w), *FactoryApiTest.people_writes(w)]     # People and access last (FR-PPL1)
         every_write = {name for method, _, name in cockpit.ROUTES if method in ("POST", "PUT")}
         # every write route is accounted for: signed, recording nothing, or the one recorded gap
         self.assertEqual({r[0] for r in routes} | RECORD_NOTHING | UNSIGNED, every_write)
@@ -477,10 +703,25 @@ class FactoryApiTest(CockpitTestCase):
             status, out, _ = self.call(method, path, body(person, got))
             self.assertIn(status, (200, 201), (name, out))
             got[name] = out
-            if name == "put_layout":                                       # a layout is kept outside every ledger
+            if name in ("put_layout", "put_graph_prefs"):     # a layout and saved graph views: outside every ledger
+                folder = "layouts" if name == "put_layout" else "graph_views"
                 saved = [json.loads(f.read_text(encoding="utf-8"))
-                         for f in (home / "_cockpit" / "layouts").rglob("*.json")]
+                         for f in (home / "_cockpit" / folder).rglob("*.json")]
                 self.assertEqual([s["person"] for s in saved], [person])
+                self.assertEqual({k: len(v) for k, v in self.ledgers().items()},
+                                 {k: len(v) for k, v in ledgers.items()})
+                continue
+            if name == "post_pick_recent":                 # a person's recent folders, kept outside every ledger
+                kept = json.loads((home / "_walkthroughs" / "recent.json").read_text(encoding="utf-8"))
+                self.assertIn(person, kept)
+                self.assertEqual({k: len(v) for k, v in self.ledgers().items()},
+                                 {k: len(v) for k, v in ledgers.items()})
+                continue
+            if name == "put_view_layouts":                            # so are a person's view layouts
+                saved = [json.loads(f.read_text(encoding="utf-8"))
+                         for f in (home / "_cockpit" / "view-layouts").glob("*.json")]
+                self.assertEqual([s["person"] for s in saved], [person])
+                self.assertEqual(saved[0]["views"], {"p:overview": {"order": [], "hidden": ["brief"], "size": {}}})
                 self.assertEqual({k: len(v) for k, v in self.ledgers().items()},
                                  {k: len(v) for k, v in ledgers.items()})
                 continue
@@ -514,6 +755,15 @@ class FactoryApiTest(CockpitTestCase):
                                                                          "persona": "developer"})
         self.assertEqual((status, out["ok"]), (200, True), out)
         self.assertTrue(out["summary"].startswith("When a release is done, for project"), out)
+        from unittest import mock
+
+        from kernel.pick_native import PICK_ENV            # FR-PICK1: a stand-in for the computer's own dialog
+        with mock.patch.dict(os.environ, {PICK_ENV: json.dumps([sys.executable, "-c", "print('picked')"])}):
+            status, out, _ = self.call("POST", "/api/pick/native", {"kind": "folder", "person": "Dev",
+                                                                     "persona": "developer"})
+        self.assertEqual((status, out["picked"]["path"].endswith("picked")), (200, True), out)
+        status, out, _ = self.call("POST", "/api/pick/native/cancel", {"person": "Dev", "persona": "developer"})
+        self.assertEqual((status, out), (200, {"cancelled": False}))
         self.assertEqual(tree(home), before)
 
     def test_FR_N1_AC_1_every_read_model_answers_from_the_records_and_writes_nothing(self):
@@ -529,6 +779,8 @@ class FactoryApiTest(CockpitTestCase):
         shaped = self.call("POST", "/api/shape", {"text": "Drills go missing", "person": "Aino",
                                                   "persona": "business_owner"})[1]["shape"]["id"]
         isolated_routing(self, self.tmp)
+        walked = self.call("POST", "/api/walkthroughs", {"name": "tour", "person": "Aino",       # FR-WLK1
+                                                         "persona": "developer"})[1]["walkthrough"]["id"]
         for p in self.factory.projects():
             self.call("GET", f"/api/projects/{p.pid}")
         home = self.factory.home
@@ -547,6 +799,15 @@ class FactoryApiTest(CockpitTestCase):
                 paths = [export["download"]]
             elif name == "get_shape":
                 paths = [f"/api/shape/{shaped}"]
+            elif name == "get_walkthrough":                                  # FR-WLK1
+                paths = [f"/api/walkthroughs/{walked}"]
+            elif name == "get_source_scan":                     # a scan in the background (FR-RPJ1), as it runs
+                from kernel.material import Progress
+
+                self.server._rpj_scans = {"S-000000000000": {"id": "S-000000000000", "state": "running",
+                                                             "progress": Progress(), "folder": "x"}}
+                self.server._rpj_lock = threading.Lock()
+                paths = ["/api/source/scan/S-000000000000"]
             elif cockpit.PID in template:
                 paths = [template.replace(cockpit.PID, pid) for pid in pids]
             else:

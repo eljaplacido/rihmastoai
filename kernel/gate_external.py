@@ -30,14 +30,14 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from kernel.attach import (AttachRefused, check_signer, checkout, commit_of, git, outside_code, repository,
-                           uncommitted)
+from kernel.attach import AttachRefused, check_signer, checkout, commit_of, git, outside_code, repository, uncommitted
 from kernel.gate import GateResult, Signal, _conclude, judge, judge_change, signal_protected, signal_tests
 from kernel.store import Project, write_json
 
 # The command's exit code by verdict: passed 0, a verdict against the change 1, not measured 4.
 EXIT = {"passed": 0, "failed": 1, "regressed": 1, "violation": 1}
 NOT_MEASURED_EXIT = 4
+HELD_EXIT = 3                  # passed, but an enforce level holds it until its reviewer decides (FR-ENF2)
 HOLDOUT_KINDS = ("holdout", "probe")
 
 
@@ -108,15 +108,30 @@ def gate(project: Project, *, person: str, persona: str, head: str | None = None
     record = gate_record(label, round_no, result, repository=str(repository(project)), base=base_sha,
                          person=person, persona=persona, asked_as="gate my code", uncommitted_left_out=left_out)
     project.log("gate", record)
-    return {"project": project.pid, "repository": str(repository(project)), "task": label, "round": round_no,
+    aligned = _aligned(project, base_sha, head_sha)
+    from kernel.enforcement_guard import at_gate, gate_parts  # the levels of the stage it enters (FR-ENF2)
+
+    enforced = gate_parts(at_gate(project, result.verdict, label, head_sha))
+    return {**({"aligned": aligned} if aligned else {}), **enforced,
+            "project": project.pid, "repository": str(repository(project)), "task": label, "round": round_no,
             "base": base_sha, "head": head_sha, "verdict": result.verdict, "warranted": result.warranted,
             "signals": [{"name": s.name, "verdict": s.verdict, "detail": s.detail} for s in result.signals],
             "objections": result.objections, "uncommitted_left_out": left_out,
             "merge": "yours: Rihmasto never merges into, writes to or pushes to an attached repository"}
 
 
-def exit_code(verdict: str) -> int:
-    return EXIT.get(verdict, NOT_MEASURED_EXIT)
+def _aligned(project: Project, base: str, head: str) -> dict[str, Any] | None:
+    """What the change touches of the criteria accepted from the repository (kernel/alignment_records.py)."""
+    from kernel.alignment_records import gate_note
+
+    changed = git(repository(project), "diff", "--name-only", base, head, check=False).splitlines()
+    return gate_note(project, changed)
+
+
+def exit_code(verdict: str, held: Any = None) -> int:
+    """The verdict's exit code; a change an enforce level holds until its reviewer decides never exits 0."""
+    code = EXIT.get(verdict, NOT_MEASURED_EXIT)
+    return HELD_EXIT if held and code == 0 else code
 
 
 # -- holdouts for an attached repository ---------------------------------------------------------------

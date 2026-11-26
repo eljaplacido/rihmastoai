@@ -18,6 +18,7 @@ from test_cockpit import CockpitTestCase  # noqa: E402
 from cockpit.automation_routes import Scheduler  # noqa: E402
 from kernel import automations as au  # noqa: E402
 from kernel import relay  # noqa: E402
+from kernel.agentobs.automation_hook import TEMPLATES as AGENTOBS_TEMPLATES  # noqa: E402
 from kernel.assistant import ask, find_in_map  # noqa: E402
 from kernel.canon import Canon  # noqa: E402
 from kernel.cli import main  # noqa: E402
@@ -54,7 +55,7 @@ class CommandLineTest(FactoryTestCase):
         self.assertEqual(len(self.cli("automations", "list")["automations"]), 2)
         self.assertEqual([x["id"] for x in self.cli("automations", "list", "--project", b.pid)["automations"]],
                          ["AU-001", "AU-002"])                                  # B is the target of AU-001
-        self.assertEqual(len(self.cli("automations", "templates")["templates"]), 9)
+        self.assertEqual(len(self.cli("automations", "templates")["templates"]), 13 + len(AGENTOBS_TEMPLATES))
         edited = self.cli("automations", "edit", "AU-001", "--guard-count", "release_done:1:720", *SIGNED)
         self.assertEqual((edited["version"], edited["guard"]["kind"]), (2, "count"))
         a.log("release_done", {"release": 1})
@@ -100,7 +101,8 @@ class CockpitRoutesTest(CockpitTestCase):
         status, out, _ = self.call("GET", "/api/automations")
         self.assertEqual((status, out["automations"], out["scheduler"]["running"]), (200, [], False))
         self.assertEqual({a["id"] for a in out["actions"]}, set(au.ACTIONS))
-        self.assertEqual(len(out["templates"]), 9)
+        self.assertEqual(len(out["templates"]), 13 + len(AGENTOBS_TEMPLATES))   # with run_check's, align_scan's,
+        # review_digest's, the weekly Gnomon audit's (FR-EVL1) and agent observability's
         draft = {"name": "Every hour", "trigger": {"kind": "schedule", "every": "1h"},
                  "action": {"kind": "signal", "text": "hourly {project}"}, "scope": {"kind": "projects",
                                                                                    "projects": [p.pid, q.pid]}}

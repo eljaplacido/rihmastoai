@@ -1,7 +1,7 @@
 """The cockpit assistant's rules: what it may offer, and how it must say it (kernel/assistant.py).
 
 - **Boundaries**: the actions it may propose, the layout schema and the theme's tokens, and the
-  cockpit's map with the page each control is on (`CONTROL_PAGES`).
+  cockpit's map with the page each control is on (`CONTROL_PAGES`, kept in kernel/control_pages.py).
 - **Shapes**: `normalize` reads the reasonable shapes a model writes (flat theme settings, a layout's
   own widget ids, sizes in words) as the checks read them.
 - **Checks**: `check_proposal` applies the rules the Inbox and the routes apply, so a proposal a route
@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Any
 
 from kernel.canon import CARD_VERDICTS, Canon, deciders_of
+from kernel.control_pages import CONTROL_PAGES
 from kernel.store import REPO_ROOT
 
 UI_MAP_FILE = REPO_ROOT / "cockpit" / "ui_map.json"
@@ -35,6 +36,15 @@ ACTIONS = {
     "layout_edit": ("ops",),
     "theme": ("settings",),
     "create_embed": ("kind", "origins"),
+    # Any other cockpit write, by its operation (kernel/assistant_ops.py OPS): set up, archive, automations...
+    "act": ("op",),
+    "run_eval": ("eval",),          # run one of Gnomon's audits on the open project (FR-EVL1)
+    # Self-healing (FR-HEAL1): report what is wrong, have a Rihma agent investigate an incident, take a remedy
+    # it offers, or say an answer or a view is unclear or wrong. Each is the same signed route a click calls.
+    "report_incident": ("text",),
+    "investigate_incident": ("incident",),
+    "take_remedy": ("incident", "remedy"),
+    "give_feedback": ("kind", "text"),
 }
 LAYOUT_OPS = ("add", "remove", "resize", "move", "set_view", "set_filter")
 SIZES = ("S", "M", "L", "XL")
@@ -43,45 +53,12 @@ THEME = {"accent": ("amber", "teal", "violet", "blue", "green", "rose"), "densit
          "mode": ("dark", "light", "system"), "radius": ("soft", "crisp")}
 FONT_SCALE = (0.9, 1.25)
 FACTORY_PID, FACTORY_VIEWS = "_factory", ("overview", "inbox", "ledger")   # cockpit/static/core.js FACTORY_VIEWS
-# Where each control of the map is: the project view it is on, and the page it is on outside a project.
-# (None, None) is the shell, on every page. Take me there opens that page, then highlights the control.
-CONTROL_PAGES: dict[str, tuple[str | None, str | None]] = {
-    "persona": (None, None), "lens": (None, None), "palette": (None, None), "assistant": (None, None),
-    "theme": (None, None), "density": (None, None), "new_project": (None, "projects"),
-    "adopt_project": (None, "projects"), "scan_source": (None, "projects"), "confidential": (None, "projects"),
-    "customize": (None, "home"),
-    "pause": ("overview", None), "resume": ("overview", None), "autonomy": ("overview", None),
-    "answer": ("questions", "inbox_all"), "assume": ("questions", None), "decide": ("inbox", "inbox_all"),
-    "report": ("changes", None), "comment": ("spec", None), "log_signal": (None, "square"),
-    "validate_concept": (None, "square"), "export_evidence": ("evidence", None), "build_pack": ("releases", None),
-    "create_embed": (None, "settings"), "intake_summary": ("questions", None),
-    "track_pill": ("overview", None), "track_settings": ("track", None),
-    "checkpoint_look": ("track", None), "autopilot_start": ("track", None), "autopilot_stop": ("track", None),
-    "revoke_delegation": ("track", None),
-    "choose_outputs": ("outputs", None), "build_output": ("outputs", None),
-    "build_outputs": ("outputs", None), "download_output": ("outputs", None), "modules": (None, "settings"),
-    "revoke_embed": (None, "settings"),
-    "project_settings": ("overview", None), "rewind_project": ("overview", None), "add_material": ("overview", None),
-    "next_step": ("overview", None), "go_ahead": ("overview", None), "build_without_waiting": ("overview", "projects"),
-    "shape_open": (None, "home"), "shape_start": (None, "shape"),
-    "shape_say": (None, "shape"), "shape_attach": (None, "shape"), "shape_draft": (None, "shape"),
-    "shape_create": (None, "shape"), "models_open": (None, "settings"), "models_set": (None, "models"),
-    "models_test": (None, "models"), "models_remove": (None, "models"), "models_preset": (None, "models"),
-    "models_private": (None, "models"), "posture": ("overview", None), "run_assessment": ("assessment", None),
-    "assessment_changes": ("assessment", None), "capability_faces": ("releases", None), "access": (None, None),
-    "ai_tools": ("overview", None), "ide_setup": ("overview", None), "ide_section": ("overview", None),
-    "integrations": ("plan", None), "runners_open": (None, "settings"), "runners_check": (None, "runners"),
-    "runners_set": (None, "runners"), "runners_decide": (None, "runners"), "project_runner": ("overview", None),
-    "automations_open": (None, "home"),
-    "automations_new": ("automations", "automations_all"), "automations_template": ("automations", "automations_all"),
-    "automations_save": ("automations", "automations_all"), "automations_run": ("automations", "automations_all"),
-    "automations_dry_run": ("automations", "automations_all"), "automations_pause": ("automations", "automations_all"),
-    "automations_resume": ("automations", "automations_all"), "automations_edit": ("automations", "automations_all"),
-    "automations_remove": ("automations", "automations_all"), "automations_tags": ("automations", None)}
+CATALOGUE_PURPOSE = 150   # a view's purpose in every prompt's catalogue; a view that matches is given whole
 # As the cockpit names them (cockpit/server.py PERSONA_INFO), for the reasons a proposal is not offered.
 PERSONA_LABEL = {"business_owner": "Business owner", "product_owner": "Product owner", "it": "IT / partner",
                  "concept_evaluator": "Concept evaluator", "end_user": "End-user tester", "developer": "Developer",
-                 "operations": "Operations", "stakeholder": "Stakeholder", "compliance": "Compliance"}
+                 "operations": "Operations", "stakeholder": "Stakeholder", "compliance": "Compliance",
+                 "ai_architect": "AI architect"}
 _WORD = re.compile(r"[a-z0-9]+")
 _STOP = {"the", "a", "an", "is", "are", "where", "can", "i", "find", "how", "do", "to", "of", "what", "does",
          "this", "my", "me", "for", "in", "on", "it", "and", "or", "which", "see", "show", "go", "get", "there",
@@ -95,6 +72,39 @@ def ui_map() -> dict:
     for c in m["controls"]:
         c["view"], c["page"] = CONTROL_PAGES.get(c["id"], (None, None))
     return m
+
+
+def _brief(text: str, limit: int) -> str:
+    """``text`` cut at a word to about ``limit`` characters, with an ellipsis when it was cut."""
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0].rstrip(",;:( ") + " …"
+
+
+def catalogue_lists(hidden: Collection[str] = ()) -> tuple[str, str, str]:
+    """The catalogue every assistant prompt starts with: each view by id, route and purpose (a long purpose cut
+    to CATALOGUE_PURPOSE characters), each control by id and label, each action with its args. The detail is
+    said once, whole, for the entries that match the question (``hint``, FR-CTX1). What a module that is not
+    enabled shows (``hidden``) is left out."""
+    m = ui_map()
+    # a project's view at its usual route, #/p/{pid}/<its id>, is marked "(p)" instead of repeating the route
+    views = "\n".join(f"- {v['id']} ({'p' if v['route'] == '#/p/{pid}/' + v['id'] else v['route']}): "
+                      f"{_brief(v['purpose'], CATALOGUE_PURPOSE)}" for v in m["views"] if v["id"] not in hidden)
+    # a control that only shows something is left out: the views and the matched hints cover it
+    from kernel.parity import READS
+
+    controls = "\n".join(f"- {c['id']}: {c['label']}" for c in m["controls"]
+                         if c["id"] not in hidden and c["id"] not in READS)
+    actions = "\n".join(f"- {a}({', '.join(args)})" for a, args in ACTIONS.items())
+    return views, controls, actions
+
+
+def hint(item: dict) -> dict:
+    """A map entry that matches the question, as the assistant's prompt carries it: a view's route and purpose, a
+    control's label, where it is and what it does. The catalogue names every control by id and label only, so
+    the detail is said once, for the entries the question is about (FR-CTX1)."""
+    keys = ("id", "route", "purpose") if item.get("route") else ("id", "label", "where", "does")
+    return {k: item[k] for k in keys if item.get(k)}
 
 
 def words(text: str) -> set:
@@ -252,10 +262,14 @@ def normalize(p: dict, ui: dict | None = None) -> dict:
 # -- the checks ------------------------------------------------------------------------------------
 
 def route_ok(route: Any, factory: Any) -> bool:
-    """A cockpit route, for a project that exists, and a view that project has."""
+    """A cockpit route, for a project that exists, and a view that project has. Only the Knowledge graph's routes
+    carry a query: its filters (kernel/graph_view.py, FR-GRV1)."""
+    path, _, query = str(route).partition("?")
     for v in ui_map()["views"]:
         pattern = re.escape(v["route"]).replace(re.escape("{pid}"), "(?P<pid>[a-z0-9_-]+)")
-        if (m := re.fullmatch(pattern, str(route))):
+        if (m := re.fullmatch(pattern, path)):
+            if query and (v["id"] not in ("graph", "graph_all") or not re.fullmatch(r"[A-Za-z0-9_=&,.%@:/+-]+", query)):
+                return False
             pid = m.groupdict().get("pid")
             return pid is None or ((factory.projects_dir / pid / "project.json").exists()
                                    and (pid != FACTORY_PID or v["id"] in FACTORY_VIEWS))
@@ -324,7 +338,36 @@ def _check_comment(project: Any, persona: str, args: dict) -> str | None:
 _ON_PROJECT: dict[str, Callable[[Any, str, dict], str | None]] = {
     "decide": _check_decide, "answer_question": _check_question, "let_rihma_assume": _check_question,
     "pause": _check_pause, "resume": lambda pr, who, a: _check_pause(pr, who, a, pause=False),
-    "comment": _check_comment}
+    "comment": _check_comment, "run_eval": lambda pr, who, a: _gnomon_goal().check_proposal(pr, who, a)}
+
+
+def _gnomon_goal() -> Any:
+    from kernel import gnomon_evals_goal  # Gnomon's audits (FR-EVL1)
+
+    return gnomon_evals_goal
+
+
+_HEALING = ("report_incident", "investigate_incident", "take_remedy", "give_feedback")
+
+
+def _check_healing(factory: Any, action: str, args: dict) -> str | None:
+    """The self-healing proposals (FR-HEAL1): the incident exists and is not closed; the remedy is offered for it."""
+    if action in ("report_incident", "give_feedback"):
+        bad = action == "give_feedback" and args.get("kind") not in ("unclear", "wrong")
+        return "feedback is unclear or wrong" if bad else (None if str(args.get("text") or "").strip()
+                                                            else "the text is empty")
+    from kernel import immune, incidents
+
+    try:
+        doc = incidents.get(factory, str(args.get("incident") or "").upper())
+    except KeyError:
+        return f"there is no incident {args.get('incident')}"
+    if doc["state"] in incidents.DONE:
+        return f"{doc['id']} is already {doc['state']}"
+    if action == "take_remedy" and not any(r["id"] == args.get("remedy") for r in immune.offered(factory, doc)
+                                           ["remedies"]):
+        return f"{args.get('remedy')} is not a remedy offered for {doc['id']}"
+    return None
 
 
 def _check_ui(factory: Any, project: Any, persona: str, action: str, args: dict, ui: dict | None) -> str | None:
@@ -346,10 +389,16 @@ def check_proposal(factory: Any, project: Any, persona: str, p: dict, ui: dict |
     missing = [a for a in ACTIONS[action] if a not in args and a != "reason"]
     if missing:
         return f"missing {', '.join(missing)}"
+    if action == "act":   # it fills args["call"], the request Confirm sends (kernel/assistant_ops.py)
+        from kernel import assistant_ops
+
+        return assistant_ops.check(factory, project, persona, args)
     if action in ("layout_edit", "theme", "create_embed", "open"):
         return _check_ui(factory, project, persona, str(action), args, ui)
     if action in ("answer_question", "report_change", "comment") and not str(args.get("text") or "").strip():
         return "the text is empty"
+    if action in _HEALING:
+        return _check_healing(factory, str(action), args)
     if project is None:
         return "no project is open: open the project first"
     check = _ON_PROJECT.get(str(action))
@@ -367,7 +416,7 @@ _ACT = re.compile(r"^(?:decid|rule|approv|reject|accept|refus|retr|defer|park|va
                   r"continu|answer|assum|repl|report|file|comment|note|make|creat|chang|set|use|switch|show|resiz|"
                   r"add|remov|delet|move|put|filter|enlarg|shrink|let|mark|record|log|turn|apply|keep|undo|build|"
                   r"export|acknowledg|roll|trial|bigger|smaller|wider|wide|larger|compact|dark|light|theme|table|"
-                  r"chart|defect|hyväksy|hylkää|päätä|tauot|pysäytä|jatka|vastaa|oleta|raportoi|kommentoi|tee|"
+                  r"chart|defect|run|audit|benchmark|evaluat|hyväksy|hylkää|päätä|tauot|pysäytä|jatka|vastaa|oleta|raportoi|kommentoi|tee|"
                   r"luo|muuta|vaihda|näytä|lisää|poista|siirrä|merkitse|kirjaa)")
 
 

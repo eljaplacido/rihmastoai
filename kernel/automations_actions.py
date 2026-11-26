@@ -39,6 +39,7 @@ from kernel import access as kaccess
 from kernel import automations as au
 from kernel import automations_text as words
 from kernel.canon import Canon, DecisionRefused
+from kernel.enforcement_guard import at_automation
 from kernel.people import Identity
 from kernel.store import Factory, Project
 
@@ -82,7 +83,8 @@ def run(factory: Factory, a: dict[str, Any], f: dict[str, Any], tools: Any) -> d
         if off:
             return {"outcome": "refused", "detail": f"the {modules.MODULES[off]['label']} module is not enabled"}
         with kaccess.signing(idents[0]), kisolation.serving(factory):
-            return HANDLERS[kind](factory, a, f, tools)
+            held = at_automation(factory, a, f)      # the owner's enforcement level there (FR-ENF1)
+            return held if held is not None else HANDLERS[kind](factory, a, f, tools)
     except (DecisionRefused, PermissionError) as exc:      # the owner's rights, the cap, access, isolation
         return {"outcome": "refused", "detail": str(exc)[:300]}
     except (ValueError, LookupError, OSError, RuntimeError, subprocess.SubprocessError) as exc:
@@ -171,7 +173,8 @@ def _gate(factory: Factory, a: dict[str, Any], f: dict[str, Any], tools: Any) ->
     out = gate_external.gate(project, **_who(a), head=head, base=base, verifier=a["action"].get("verifier", True),
                              verifier_runner=tools.verifier_runner)
     return {"outcome": "done", "verdict": out["verdict"], "refs": {"head": head, "base": base, "round": out["round"]},
-            "detail": f"the gate judged {base[:12]}..{head[:12]} on {branch}: {out['verdict']}"}
+            "detail": f"the gate judged {base[:12]}..{head[:12]} on {branch}: {out['verdict']}"
+                      + (f"; {out['held']['says']}" if out.get("held") else "")}
 
 
 @contextlib.contextmanager
@@ -218,7 +221,11 @@ def _rescan(factory: Factory, a: dict[str, Any], f: dict[str, Any], tools: Any) 
     from kernel.source_guard import check_folder
 
     project = _project(factory, f)
-    folder = check_folder(a["action"]["folder"], a["owner"]["persona"])
+    if project.meta.get("source_kind") in ("adopted", "attached"):   # its repository is its material
+        return {"outcome": "nothing", "detail": f"{project.pid} is {project.meta['source_kind']}: its repository is "
+                "its material, so a folder re-scan adds nothing. 'Re-read the repository for alignment when it "
+                "changes' follows its new commits instead."}
+    folder = check_folder(a["action"]["folder"], a["owner"]["persona"], factory.home)  # its allowed roots too
     body = read_material(path=str(folder))[1]
     digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
     added = (project.read("material.json") or {}).get("added") or []
@@ -399,4 +406,14 @@ def _probe(factory: Factory, a: dict[str, Any], f: dict[str, Any], tools: Any) -
 
 HANDLERS: dict[str, Callable[[Factory, dict[str, Any], dict[str, Any], Any], dict[str, Any]]] = {
     "advance": _advance, "gate": _gate, "rescan": _rescan, "notify": _notify, "change": _change, "signal": _signal,
-    "output": _output, "command": _command, "ask": _ask, "probe": _probe}
+    "output": _output, "command": _command, "ask": _ask, "probe": _probe,
+    "watch": lambda factory, a, f, tools: __import__("kernel.adopt_watch", fromlist=["fire"]).fire(
+        _project(factory, f), str(a["action"].get("what") or "commits"))}
+# run_check, align_scan and review_digest (kernel/automations_more.py), whichever module loads first.
+from kernel.automations_more import handlers as _more  # noqa: E402
+
+HANDLERS.update(_more())
+with contextlib.suppress(ImportError):   # agent observability's snapshot (kernel/agentobs/automation_hook.py)
+    from kernel.agentobs.automation_hook import register_handler
+
+    register_handler(HANDLERS, MODULE)

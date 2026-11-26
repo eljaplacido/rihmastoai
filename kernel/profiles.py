@@ -23,6 +23,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from kernel.profiles_shapes import SHAPES
+
 # Each profile is a JSON-like record the cockpit serves as is (`public`); `note` is optional.
 PROFILES: dict[str, dict[str, Any]] = {
     "web_service": {
@@ -234,6 +236,8 @@ PROFILES: dict[str, dict[str, Any]] = {
                 "embed and HTTP, each checked by the pack guard (docs/guides/small-capabilities.md).",
     },
 }
+
+PROFILES.update(SHAPES)       # a game, an ML experiment, knowledge or tooling, a library or CLI, a data pipeline
 
 DELIVERABLES = {
     "product": "a deployable product: an app, a service or an integration",

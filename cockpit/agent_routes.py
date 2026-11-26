@@ -32,4 +32,9 @@ class AgentContextRoutes:
         project = self._project(pid)
         persona = query.get("persona") if query.get("persona") in PERSONAS else "developer"
         name = self.identity.name if self.identity is not None else (query.get("person") or "").strip()[:200]
-        return 200, kide.view(project, name=name if name and is_person(name) else None, persona=persona)
+        out = kide.view(project, name=name if name and is_person(name) else None, persona=persona)
+        if out.get("applies"):      # the agent observability hub's hooks, by file names (kernel/agentobs, FR-OBS1)
+            from kernel.agentobs.feeds import catalogue_entry
+
+            out["agent_observability"] = catalogue_entry(self.factory, project)
+        return 200, out

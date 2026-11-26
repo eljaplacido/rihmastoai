@@ -48,6 +48,8 @@ drops the firing and records nothing; the automation's page says why it last ski
 | `command` | runs the project's own test suite, found by rule, in a temporary clone | developer, IT, operations |
 | `ask` | asks a model (the assistant role) with the project's context, and posts the answer as a comment | any |
 | `probe` | runs the probe check (`/health` and every probe scenario) where the release runs: the environment the event names, or the one given, else production; on production it is an operations round, so a failing probe opens the incident card. With `every` (15m to 1d) it keeps probing production from then on: the probe check is enabled on the project (`probe_check_enabled`) | business owner, product owner, developer, IT, operations |
+| `run_check` | runs one check enabled on the project's Health tab (`check`, such as `dependencies` or `custom:smoke`) through the checks' own path; its result is a `check_ran` like any other run. A check not enabled there does nothing and says so ([console and checks](console-and-checks.md)) | business owner, product owner, developer, IT, operations |
+| `align_scan` | reads the project's repository again for alignment (an attached or adopted project), signed by the owner; `alignment_scanned` records the drift since the scan before, shown on the Alignment tab to accept or reject ([alignment](alignment.md)) | business owner, product owner, developer, IT |
 
 `decide`, `approve`, `accept`, `deploy`, `merge`, `grant`, `trust`, `delegate` and the like are refused
 whatever an action is called, and so are `go`, `skip` and `go_ahead` (the look at the spec before the
@@ -132,6 +134,61 @@ The builder starts from these (`rihmasto automations templates`):
 | When promoted to production, enable the probe check and notify | `promoted` | probe production now and every hour, notify of every run | every project | the subscription |
 | When a concept is validated, notify the product owner | `concept_validated` | notify the product owner's channel | every project | the subscription |
 | When the gate fails twice, open a change proposal | `gate_failed`, guard: twice in 24 h | open a change proposal | one project | the project |
+| Notify when a check fails | `check_ran`, guard: verdict = failed | notify a channel with the project | every project | the subscription |
+| Morning review digest | daily 07:30 | `review_digest`: the owner's [Review](review.md) to a channel, held back when nothing happened | the factory | the subscription |
+| Re-read the repository for alignment when it changes | a new commit on the repository | `align_scan`: the drift shows on the Alignment tab | one project | the project |
+
+## Suggested for a project
+
+The owner (2026-11-24): "for automations you should be able to scan a project for suggestions of them."
+A scan reads what a project is and how it stands (`kernel/automation_suggest.py`) and suggests the
+automations it asks for, each with a one-line reason. Scanning writes nothing.
+
+| Suggestion | When it is offered | What it sets up |
+|---|---|---|
+| Nightly gate on new commits; notify if it fails | an attached repository | daily 02:00, the gate; a notice when it fails (if a channel is set up) |
+| Run its tests on every new commit | a repository with a stated or found test command | new commits, the project's own tests in a sandbox |
+| Probe production every 5 minutes | a release runs in production | every 5 minutes, the probe check on production |
+| Tell me when a check fails | checks are enabled on it | `check_ran` with verdict failed, a notice |
+| Alert if a role would leave the local model | it is confidential | `confidential_fallback_skipped` or `confidential_refused`, a notice |
+| Re-read its specs and tests when the repository changes | it aligns with a repository of its own | new commits, `align_scan` |
+| When a release reaches test, probe it there | it has releases on a paved road | `release_reached_test`, the probe |
+| When the gate fails twice in a day, open a change proposal | agents work on it from an IDE, or people push to it | `gate_failed` twice in 24 h, a change proposal |
+| Build and test it every night; run its evaluations every week; re-scan its folder every week | a game; an ML pipeline; a knowledge base with its folder | the project's own tests; its folder re-scanned |
+| Weekly activity summary by area into Review | it has history | Mondays 07:00, a summary asked of the assistant model (a local one when confidential) |
+| Tell me when the first build passes the gate | Rihmasto builds it | `first_build_passed`, a notice |
+
+A notice goes to the project's own relay subscription, else one for every project; with none set up it is a
+signal on the delivery square, which needs no channel. **Set it up** sets the automation in your name, signed
+and checked as any automation (`automation_set`, and `automation_suggestion_accepted` in the project's
+ledger); **Not now** dismisses it, remembered and recorded (`automation_suggestion_dismissed`). One already
+set up (an automation of the same action and trigger reaches the project) shows as set up.
+
+## Describe it
+
+The owner: "ask an agent to generate an automation based on your description." Write what should happen,
+in English or Finnish, and Rihmasto drafts it (`kernel/automation_compose.py`):
+
+> every night run the tests and tell me on Teams if they fail
+> öisin aja testit ja ilmoita Teamsiin jos ne epäonnistuvat
+
+Both read as: every night at 02:00 UTC, for this project, run the project's own tests in a sandbox; notify
+the Teams subscription if it fails. The draft comes with its plain-language summary and a dry run (the
+projects it reaches, what one firing would do on each, when it would first run). Nothing is set until you
+press **Set it up**, or **Open in the builder** to change a part first.
+
+- **The rules** read the common phrasings without a model: a schedule ("every night", "every 5 minutes", "on
+  Mondays at 9", "öisin", "joka aamu"), an event ("when a release is done", "when the gate fails", "when a
+  check fails", "on new commits", "kun julkaisu valmistuu"), an action ("run the tests", "run the gate",
+  "probe production", "summarise", "re-read the repository", "aja testit") and whom to tell ("tell me on
+  Teams if they fail", "ilmoita Slackiin"). What they cannot read is said plainly.
+- **A model for the rest**: when you name an automation the rules cannot read, the assistant model drafts it
+  from the allow-list and the schema; its draft is checked as any automation is, so an action off the
+  allow-list, or one an automation may never take (decide, approve, deploy, merge...), is refused with the
+  reason. A confidential project whose assistant model is hosted is read by the rules only, and told so.
+
+Ask Rihma does the same: "suggest automations for this project" lists the suggestions, each a proposal to
+set up; "probe production every 5 minutes" is a draft to confirm.
 
 ## The life-cycle steps and their transitions
 
@@ -176,6 +233,10 @@ rihmasto automations dry-run AU-001
 rihmasto automations tick
 rihmasto automations install-help
 rihmasto automations tag PID --tag ops --person ... --persona ...
+rihmasto automations suggest PID
+rihmasto automations accept|dismiss PID nightly_gate --person ... --persona ...
+rihmasto automations describe "every night run the tests and tell me on Teams if they fail" --project PID \
+                              [--save --person ... --persona ...] [--with-model]
 ```
 
 ## Hooks per project

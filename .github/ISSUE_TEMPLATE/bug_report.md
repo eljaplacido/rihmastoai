@@ -28,7 +28,7 @@ never to a public issue.
 
 ## Versions
 
-- Rihmasto version or commit:
+- Rihmasto version (`rihmasto --version`, or Settings > About and help) or commit:
 - Operating system:
 - `rihmasto doctor` output (it never prints a key's value; remove host names you do not want public):
 

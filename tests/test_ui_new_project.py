@@ -198,7 +198,7 @@ class UiNewProjectTest(unittest.TestCase):
         b.click('[data-control="project_settings"]', what="Project settings")
         b.wait("!!document.querySelector('#modal [data-slot=\"posture\"] .pst-chip')", "the posture's chip in settings")
         self.assertEqual(b.eval("document.querySelector('#modal [data-slot=\"posture\"] .pst-chip').textContent"),
-                         "Posture: Balanced")
+                         "Working rules: Balanced")   # the posture, in a business owner's words (words.js)
         b.eval("document.querySelector('#ps-maturity').value = 'pilot';"
                " document.querySelector('#ps-maturity').dispatchEvent(new Event('change')); true")
         b.click('[data-key="ps-preview"]', what="Preview the impact")

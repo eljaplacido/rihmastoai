@@ -157,7 +157,7 @@ def _ask(project: Project, text: str, model: Any, note: str) -> list[tuple[str, 
     for perspective in PERSPECTIVES:
         try:
             answer = _ask_json(model, _perspective_prompt(perspective, text, "added material", maturity, profile,
-                                                          note, given))
+                                                          note, given, project.factory))
         except ModelError as exc:
             Canon(project).note("intake", f"perspective {perspective} gave no usable answer on added material: {exc}")
             continue

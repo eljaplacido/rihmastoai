@@ -67,9 +67,10 @@ def _tidy(text: str) -> str:
 # -- markup ----------------------------------------------------------------------------------------------
 
 class _Html(HTMLParser):
-    SKIP = {"script", "style", "noscript", "template", "svg", "head"}
+    SKIP = {"script", "style", "noscript", "template", "head"}
     BLOCK = {"p", "div", "li", "br", "tr", "section", "article", "header", "footer", "table", "ul", "ol",
              "blockquote", "pre", "dd", "dt", "title", "main", "nav", "aside", "form"}
+    SVG_TEXT = {"text", "title", "desc"}     # a diagram's labels: its shapes and paths are not text
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -77,8 +78,25 @@ class _Html(HTMLParser):
         self.skip = 0
         self.title = ""
         self.in_title = False
+        self.svg = 0
+        self.svg_text = 0
+
+    def _svg_tag(self, tag: str, start: bool) -> bool:
+        """Inside an inline SVG only its text, titles and descriptions are read, one label to a line."""
+        if tag == "svg":
+            self.svg = self.svg + 1 if start else max(0, self.svg - 1)
+            return True
+        if not self.svg:
+            return False
+        if tag in self.SVG_TEXT:
+            self.svg_text = self.svg_text + 1 if start else max(0, self.svg_text - 1)
+            if not start:
+                self.out.append("\n")
+        return True
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self._svg_tag(tag, True):
+            return
         if tag == "title":
             self.in_title = True
         elif tag in self.SKIP:
@@ -91,6 +109,8 @@ class _Html(HTMLParser):
             self.out.append(" | ")
 
     def handle_endtag(self, tag: str) -> None:
+        if self._svg_tag(tag, False):
+            return
         if tag == "title":
             self.in_title = False
         elif tag in self.SKIP:
@@ -99,7 +119,10 @@ class _Html(HTMLParser):
             self.out.append("\n")
 
     def handle_data(self, data: str) -> None:
-        if self.in_title:
+        if self.svg:
+            if self.svg_text and not self.skip:
+                self.out.append(data)
+        elif self.in_title:
             self.title += data
         elif not self.skip:
             self.out.append(data)

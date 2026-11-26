@@ -198,10 +198,12 @@ def _assessment_line(project: Any) -> str:
 GUARANTEES = ("pinning", "evals", "revocation", "evidence", "telemetry")
 GOVERNANCE_STATES = ("held", "partial", "lost")
 # Where the factory runs the release itself, by road kind; anything else is an export a site runs.
-FACTORY_RUN = ("local-process", "docker", "azure-containerapps")
+FACTORY_RUN = ("local-process", "docker", "azure-containerapps", "gcp-cloudrun")
 # A target resting on a platform feature nobody has verified: no guarantee there is ever "held".
 UNVERIFIED = {"azure-containerapps": "it rests on Azure Container Apps, rendered and validated but never deployed "
-                                     "(UNVERIFIED)"}
+                                     "(UNVERIFIED)",
+              "gcp-cloudrun": "it rests on Google Cloud Run, rendered, validated and tested against a fake gcloud, "
+                              "not yet run against a real Google Cloud project (UNVERIFIED)"}
 
 
 def _pinning(target: Any, artifacts: dict, guarded: bool) -> tuple[str, str]:

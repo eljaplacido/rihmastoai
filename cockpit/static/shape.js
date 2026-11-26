@@ -6,6 +6,7 @@ import {
   S, $, $$, h, fill, icon, chip, api, act, say, signed, needPerson, enc, button, card, empty, pageHead, skeleton,
   openModal, closeModal, segmented, cap, ago, profileOf,
 } from "./core.js";
+import { pathField } from "./picker.js";
 
 const POLL_MS = 900;
 const MAX_UPLOAD = 900 * 1024;   // a file sent from the browser; a larger one is attached by its path
@@ -40,7 +41,8 @@ function attachFields(prefix) {
     placeholder: "for example ~/notes/need.md, or a folder", "aria-label": "Or a file or folder path on the cockpit's machine" });
   return { file, path, el: h("div", { class: "shp-attach" },
     h("div", { class: "field" }, h("label", { for: prefix + "-file" }, "A file (text, Markdown or Word)"), file),
-    h("div", { class: "field" }, h("label", { for: prefix + "-path" }, "Or a file or folder on the cockpit's machine"), path)) };
+    h("div", { class: "field" }, h("label", { for: prefix + "-path" }, "Or a file or folder on the cockpit's machine"),
+      pathField(path, { kind: "either", title: "Choose a file or a folder to attach" }))) };
 }
 
 // -- the list and a new conversation -----------------------------------------------------------------------

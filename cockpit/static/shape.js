@@ -6,10 +6,18 @@ import {
   S, $, $$, h, fill, icon, chip, api, act, say, signed, needPerson, enc, button, card, empty, pageHead, skeleton,
   openModal, closeModal, segmented, cap, ago, profileOf,
 } from "./core.js";
+import { pathField } from "./picker.js";
 
 const POLL_MS = 900;
 const MAX_UPLOAD = 900 * 1024;   // a file sent from the browser; a larger one is attached by its path
 const SH = { dirty: {} };        // the draft fields the person changed and has not saved, per field key
+
+// Enter sends, as in Ask Rihma and the agent channel; Shift+Enter and IME composition stay ordinary editing.
+function enterSends(field, send) {
+  field.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send.click(); }
+  });
+}
 
 function modelNote(hasModel) {
   if (hasModel) return null;
@@ -40,7 +48,8 @@ function attachFields(prefix) {
     placeholder: "for example ~/notes/need.md, or a folder", "aria-label": "Or a file or folder path on the cockpit's machine" });
   return { file, path, el: h("div", { class: "shp-attach" },
     h("div", { class: "field" }, h("label", { for: prefix + "-file" }, "A file (text, Markdown or Word)"), file),
-    h("div", { class: "field" }, h("label", { for: prefix + "-path" }, "Or a file or folder on the cockpit's machine"), path)) };
+    h("div", { class: "field" }, h("label", { for: prefix + "-path" }, "Or a file or folder on the cockpit's machine"),
+      pathField(path, { kind: "either", title: "Choose a file or a folder to attach" }))) };
 }
 
 // -- the list and a new conversation -----------------------------------------------------------------------
@@ -56,7 +65,7 @@ async function renderList(seq) {
   const start = h("button", { type: "submit", class: "btn primary", "data-control": "shape_start", "data-key": "shape:start" }, icon("message-square"), "Start the conversation");
   const form = h("form", { class: "np-form", novalidate: true },
     h("div", { class: "field" }, h("label", { for: "shp-first" }, "Start with a sentence, a file, or nothing at all"), text),
-    att.el, h("div", { class: "btns" }, start, h("span", { class: "muted small" }, "Signed with your name. You choose the profile, mode and maturity when you create the project.")));
+    att.el, h("div", { class: "btns" }, start, h("span", { class: "muted small" }, "Enter sends · Shift+Enter is a new line. Signed with your name. You choose the profile, mode and maturity when you create the project.")));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     if (!needPerson()) return;
@@ -66,6 +75,7 @@ async function renderList(seq) {
       location.hash = "#/shape/" + enc(out.shape.id);
     });
   });
+  enterSends(text, start);
   const rows = data.conversations.map((c) => h("li", { class: "shp-row", "data-key": "shape:" + c.id },
     h("span", { class: "cat-ic" }, icon(c.state === "created" ? "check-circle" : "message-square")),
     h("div", { class: "sig-b" }, h("a", { href: "#/shape/" + enc(c.id) }, c.title), " ", h("span", { class: "mono muted small" }, c.id),
@@ -195,7 +205,7 @@ function chatCard(id, seq) {
     if (out.shape.pending) S.timer = setTimeout(() => poll(id, seq), POLL_MS);
   };
   const form = h("form", { class: "shp-form", novalidate: true }, h("label", { class: "vh", for: "shp-input" }, "Your message"), input,
-    h("div", { class: "btns" }, send, toggle), att.el);
+    h("div", { class: "btns" }, send, toggle, h("span", { class: "muted small" }, "Enter sends · Shift+Enter is a new line")), att.el);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     if (!input.value.trim() || !needPerson()) { if (!input.value.trim()) input.focus(); return; }
@@ -206,6 +216,7 @@ function chatCard(id, seq) {
       input.focus();
     });
   });
+  enterSends(input, send);
   doAttach.addEventListener("click", () => {
     if (!needPerson()) return;
     act(form, async () => {

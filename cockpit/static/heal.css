@@ -1,0 +1,35 @@
+/* Self-healing (heal.js, FR-HEAL1): the panel shown in place of an error, the Incidents page and tab, and the foot
+   of every view. */
+
+.heal-panel { display: grid; gap: var(--s3); padding: var(--s4); border: 1px solid var(--warning-border);
+  border-radius: var(--r-lg); background: var(--warning-bg); min-width: 0; overflow-wrap: anywhere; }
+.heal-head { display: flex; gap: var(--s3); align-items: flex-start; min-width: 0; }
+.heal-head h2 { margin: 0 0 var(--s1); font-size: 1.15rem; }
+.heal-ic .ic { width: 22px; height: 22px; color: var(--warning); }
+.heal-said { margin: 0; }
+.heal-seen { display: flex; gap: 6px; align-items: center; margin: var(--s1) 0 0; color: var(--text); }
+.heal-seen .ic { width: 14px; height: 14px; flex: none; }
+.heal-panel .btns, .heal-remedies { display: flex; flex-wrap: wrap; gap: var(--s2); }
+
+.heal-page { display: grid; gap: var(--s4); min-width: 0; }
+.heal-page .seg { flex-wrap: wrap; max-width: 100%; }
+.heal-list { display: grid; gap: var(--s3); margin: 0; padding: 0; }
+.heal-card { display: grid; gap: var(--s2); padding: var(--s3); min-width: 0; overflow-wrap: anywhere; }
+.heal-top { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; min-width: 0; }
+.heal-sum { flex: 1 1 240px; min-width: 0; }
+.heal-at { margin-left: auto; }
+.heal-ctx summary, .heal-trace summary { cursor: pointer; color: var(--text-2); }
+.heal-log { max-height: 220px; overflow: auto; padding: var(--s2); border-radius: var(--r-md); background: var(--sunken);
+  white-space: pre-wrap; overflow-wrap: anywhere; }
+.heal-found { display: grid; gap: var(--s2); min-width: 0; }
+.heal-fix { padding: var(--s3); }
+.heal-learned, .heal-learned li { margin: 0; padding: 0; }
+.heal-rm { padding: var(--s2) 0; border-top: 1px solid var(--border); min-width: 0; overflow-wrap: anywhere; }
+.heal-rm:first-child { border-top: 0; }
+.heal-explain pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: var(--s2); background: var(--sunken);
+  border-radius: var(--r-md); }
+.heal-notrun { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s2) 0; }
+.heal-toast .btn { margin-left: var(--s2); }
+
+.heal-foot { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: flex-end; margin-top: var(--s6);
+  padding-top: var(--s3); border-top: 1px solid var(--border); }

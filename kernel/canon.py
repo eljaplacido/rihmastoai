@@ -29,32 +29,30 @@ PERSPECTIVES = ("business", "end_user", "it_security", "operations", "delivery")
 
 # What a person may say on each kind of card.
 CARD_VERDICTS = {
-    "question": ("answer", "assume"),
-    "approval": ("approve", "reject"),
+    "question": ("answer", "assume"), "approval": ("approve", "reject"),
     "validation": ("accept", "fix", "change", "keep"),          # FR-R3
     "deploy_gate": ("approve", "refuse"),                        # FR-Q5
     "incident": ("acknowledge", "rollback", "open_defect"),
-    "change": ("accept", "reject", "defer"),
-    "escalation": ("retry", "accept_as_is", "stop"),
+    "change": ("accept", "reject", "defer"), "escalation": ("retry", "accept_as_is", "stop"),
     "road": ("configured", "declined"), "trust": ("granted", "declined"), "runner": ("approve", "decline"),
     "holdout_ruling": ("product_defect", "scenario_defect"),
     "concept": ("validate", "park", "reject"),                   # the delivery square's concept check
     "update": ("trial", "decline", "defer"),                     # the updates inbox: a model, a CVE, drift
     "connector": ("enable", "decline"), "go_ahead": ("go", "skip"),   # Gnomon (D-0015); a look at the spec first
+    "enforcement": ("approve", "refuse"),                        # a level's review (kernel/enforcement_guard.py)
 }
 
 # Who may decide each kind of card. Questions are open to everyone.
 CARD_DECIDERS = {
     "question": PERSONAS, "go_ahead": ("business_owner", "product_owner", "developer"),
     "approval": ("business_owner", "product_owner", "developer"),
-    "validation": ("business_owner", "product_owner"),
+    "validation": ("business_owner", "product_owner"), "change": ("business_owner", "product_owner"),
     "deploy_gate": ("it",), "incident": ("operations", "it", "developer"),
-    "change": ("business_owner", "product_owner"),
     "escalation": ("developer", "business_owner", "product_owner"),
     "road": ("it",), "trust": ("it", "developer"), "runner": ("it",),  # a cell runner (D-0019)
-    "holdout_ruling": ("developer", "product_owner", "business_owner"),
-    "concept": ("business_owner", "product_owner"),
+    "holdout_ruling": ("developer", "product_owner", "business_owner"), "concept": ("business_owner", "product_owner"),
     "update": ("product_owner", "business_owner", "it", "developer", "compliance"), "connector": ("it",),
+    "enforcement": ("business_owner", "product_owner", "developer", "it", "operations", "compliance"),  # FR-ENF1
 }
 APPROVING = {("approval", "approve"), ("validation", "accept"), ("deploy_gate", "approve"),
              ("change", "accept"), ("escalation", "accept_as_is")}
@@ -408,6 +406,8 @@ class Canon:
             if c["state"] != "open":
                 raise DecisionRefused(f"{card_id} is {c['state']}")
             self._check_decider(c["kind"], verdict, person, persona, c.get("deciders"))  # a card may narrow them
+            if (c["kind"], verdict) == ("enforcement", "approve") and c.get("blocking") and not str(reason).strip():
+                raise DecisionRefused(f"approving {card_id} is an override: say why, it is recorded with it (FR-ENF2)")
             reason, held = self._custody(c, reason)
             d = self._record_decision(card_id, c["kind"], verdict, person, persona, reason, c["refs"], held)
             write_json(self.dir / "inbox" / f"{card_id}.json", self._as_recorded(c, {card_id: d}))

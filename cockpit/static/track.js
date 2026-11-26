@@ -6,8 +6,9 @@
 
 import {
   S, $, h, icon, chip, api, act, say, signed, needPerson, nav, enc, link, personaLabel, orList, plural, pct, fmtAge,
-  fmtAt, fmtMoney, card, empty, stageName,
+  fmtAt, fmtMoney, card, empty, stageName, KIND_LABEL, mayAct,
 } from "./core.js";
+import { pick, technical, viewWord } from "./words.js";
 
 export const TRACK = {
   on_track: { tone: "good", icon: "check-circle", word: "On track" },
@@ -19,12 +20,16 @@ const RUN_STATE = { running: ["info", "bot", "Autopilot running"], expired: ["wa
   stopped: ["neutral", "stop", "Autopilot stopped"] };
 const DLG_STATE = { active: ["info", "bot", "Active"], expired: ["neutral", "clock", "Expired"], revoked: ["neutral", "x", "Revoked"] };
 const UNTIL = [["2h", "2 hours"], ["8h", "8 hours"], ["1d", "1 day"], ["3d", "3 days"], ["7d", "7 days"]];
-const FIGURES = [["baseline", "Approved plan"], ["tasks", "Tasks"], ["gate_first_round", "Gate, first round"],
+const FIGURES_TECH = [["baseline", "Approved plan"], ["tasks", "Tasks"], ["gate_first_round", "Gate, first round"],
   ["assumption_debt", "Assumption debt"], ["scope", "Scope changes"], ["blocking", "Holding the run"],
   ["time", "Time against the budget"], ["cost", "Cost against the budget"], ["posture", "Posture kept"]];
+const FIGURES_PLAIN = { gate_first_round: "Passed the quality check first time", assumption_debt: "Assumptions past due",
+  blocking: "Decisions holding the work", posture: "Working rules kept" };
+// The figures with their labels in the reader's words (words.js).
+const figures = () => FIGURES_TECH.map(([k, l]) => [k, technical() ? l : FIGURES_PLAIN[k] || l]);
 
 const ap = () => (S.meta && S.meta.autopilot) || {};
-const mayRun = () => (ap().may_run || []).includes(S.persona);
+const mayRun = () => mayAct(ap().may_run || []);
 
 // The answer as a chip: on track, at risk, off track or not measured, with its first reasons as the tip.
 export function trackState(t) {
@@ -56,7 +61,7 @@ export function reasonLine(r) {
 
 function value(key, f) {
   if (!f.measured) return null;
-  if (key === "baseline") return f.by ? "approved by " + f.by : "the first compiled contract";
+  if (key === "baseline") return f.by ? "approved by " + f.by : pick("the first agreed plan", "the first compiled contract");
   if (key === "tasks") return f.done + " of " + f.total + " done";
   if (key === "gate_first_round") return pct(f.value) + (f.trend ? ", " + f.trend : "");
   if (key === "assumption_debt") return plural(f.value, "past due", "past due") + " of " + f.open + " open";
@@ -71,12 +76,12 @@ function value(key, f) {
 function figureTile(key, label, f, pid) {
   const v = value(key, f);
   const more = key === "blocking" && (f.cards || []).length ? h("ul", { class: "plain small" }, f.cards.slice(0, 3).map((c) =>
-    h("li", null, h("a", { href: link(pid, "inbox", c.card), class: "mono" }, c.card), " " + c.kind + ", " + fmtAge(c.age_hours))))
-    : key === "gate_first_round" && f.measured ? h("p", { class: "kpi-sub" }, f.trend_basis) : null;
+    h("li", null, h("a", { href: link(pid, "inbox", c.card), class: "mono" }, c.card), " " + (KIND_LABEL[c.kind] || c.kind).toLowerCase() + ", " + fmtAge(c.age_hours))))
+    : key === "gate_first_round" && f.measured ? h("p", { class: "kpi-sub", "data-ud": "" }, f.trend_basis) : null;
   return h("div", { class: "kpi" + (f.measured ? "" : " nm"), "data-figure": key },
     h("div", { class: "kpi-h" }, h("span", null, label)),
     v === null ? h("div", { class: "kpi-v nm-text" }, "— Not measured") : h("div", { class: "kpi-v tr-v" }, v),
-    h("p", { class: "kpi-sub" }, f.basis), more);
+    h("p", { class: "kpi-sub", "data-ud": "" }, f.basis), more);   // the kernel's own basis for the figure (kernel/track.py)
 }
 
 function verdictCard(t) {
@@ -86,7 +91,7 @@ function verdictCard(t) {
     + "Each reason names the figure it rests on; the thresholds are kernel/track.py's." },
   h("div", { class: "att-v" }, chip(st.tone, st.icon, st.word)),
   reasons.length ? h("ul", { class: "plain tr-reasons" }, reasons.map((r) => h("li", null,
-    chip(TRACK[r.level].tone, TRACK[r.level].icon, TRACK[r.level].word), " ", h("span", null, r.why),
+    chip(TRACK[r.level].tone, TRACK[r.level].icon, TRACK[r.level].word), " ", h("span", { "data-ud": "" }, r.why),
     h("span", { class: "muted small" }, " · " + r.figure.replace(/_/g, " ")))))
     : h("p", null, t.basis));
 }
@@ -122,13 +127,13 @@ function checkpointsCard(pid, t, settings) {
         : chip("neutral", "clock", "Not reached")),
     r.looked ? h("p", { class: "muted small" }, "by " + r.looked.by + " (" + personaLabel(r.looked.persona) + "), " + fmtAt(r.looked.at)
       + (r.looked.note ? ": " + r.looked.note : "")) : null,
-    r.due && lookers.includes(S.persona) ? lookForm(pid, r) : null));
+    r.due && mayAct(lookers) ? lookForm(pid, r) : null));
   return card({ title: "Human checkpoints", icon: "eye", id: "tr-cp", info: "Stage boundaries a person must look at. With hold "
     + "on, the pipeline stops at a due checkpoint until a person records a look." },
   cp.stages.length ? h("p", { class: "muted small" }, cp.hold ? "A due checkpoint holds the run until a person looks."
     : "Checkpoints are shown; they do not hold the run.") : h("p", null, "No checkpoint is set on this project."),
   cp.stages.length ? h("ul", { class: "plain" }, rows) : null,
-  (ap().track_setters || []).includes(S.persona) ? settingsForm(pid, cp, settings) : h("p", { class: "muted small" },
+  mayAct(ap().track_setters || []) ? settingsForm(pid, cp, settings) : h("p", { class: "muted small" },
     "A " + orList(ap().track_setters || []) + " sets checkpoints and a budget."));
 }
 
@@ -253,7 +258,7 @@ function autopilotCard(pid, a) {
 
 function mayRevoke(d) {
   const kinds = (S.meta.card_kinds || {});
-  return d.person === S.person.trim() || d.kinds.some((k) => ((kinds[k] || {}).deciders || []).includes(S.persona));
+  return d.person === S.person.trim() || d.kinds.some((k) => mayAct((kinds[k] || {}).deciders || []));
 }
 
 function revokeButton(pid, d) {
@@ -276,7 +281,8 @@ function delegationsCard(pid, list) {
   list.length ? h("ul", { class: "plain" }, list.slice().reverse().map((d) => {
     const st = DLG_STATE[d.state] || DLG_STATE.expired;
     return h("li", { class: "tr-dl" }, h("div", null, h("b", { class: "mono" }, d.id), " ", chip(st[0], st[1], st[2]), " ",
-      d.kinds.map((k) => k + " (" + d.rules[k] + ")").join(", ")),
+      d.kinds.map((k) => k + (d.rules[k] ? " (" + d.rules[k] + ")" : "")).join(", "),
+      d.agent ? " " : null, d.agent ? chip("info", "bot", personaLabel(d.persona) + ": delegated to " + d.agent.name) : null),   // FR-PPL1
     h("p", { class: "muted small" }, "by " + d.person + " (" + personaLabel(d.persona) + "), " + (d.state === "active" ? "until " : "ended ")
       + fmtAt(d.revoked ? d.revoked.at : d.until) + (d.revoked ? ", revoked by " + d.revoked.by : "") + (d.run ? ", for " + d.run : "")),
     d.state === "active" && mayRevoke(d) ? h("div", { class: "btns" }, revokeButton(pid, d)) : null);
@@ -293,7 +299,7 @@ async function rerenderTo(sel) {
 
 export function viewTrack(p, inbox, ctx) {
   const pid = p.meta.id;
-  const head = h("div", { class: "q" }, h("h2", { id: "view-title", tabindex: "-1" }, "Track"),
+  const head = h("div", { class: "q" }, h("h2", { id: "view-title", tabindex: "-1" }, viewWord("track", "Track")),
     h("p", null, "Is this project on track against its approved plan, and who keeps hold of it?"));
   const data = ctx.track;
   if (!data) return h("div", null, head, empty("flag", "The track could not be read."));
@@ -301,6 +307,6 @@ export function viewTrack(p, inbox, ctx) {
   return h("div", { class: "tr-view" }, head,
     h("div", { class: "ev-grid" }, verdictCard(t), checkpointsCard(pid, t, data.settings)),
     h("section", { class: "section", "aria-labelledby": "tr-fig-h" }, h("h3", { id: "tr-fig-h" }, "Every figure, with its basis"),
-      h("div", { class: "kpi-strip" }, FIGURES.map(([k, label]) => figureTile(k, label, t.figures[k] || { measured: false, basis: "not read" }, pid)))),
+      h("div", { class: "kpi-strip" }, figures().map(([k, label]) => figureTile(k, label, t.figures[k] || { measured: false, basis: "not read" }, pid)))),
     h("div", { class: "ev-grid section" }, autopilotCard(pid, data.autopilot), delegationsCard(pid, data.autopilot.delegations || [])));
 }

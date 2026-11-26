@@ -134,17 +134,30 @@ def _missing(factory: Factory, path: Path) -> Access:
     """No access file: a single operator's factory, unless access was enforced here before."""
     again = "IT restores it, or writes one with mode single_operator"
     last = last_change(factory)
-    if last is not None:
-        if last.get("mode") == ENFORCED:
-            return _closed(f"the access file was removed after access was enforced; {again}")
-        return Access(SINGLE)
-    if path.parent.is_dir():
+    if last is not None and last.get("mode") == ENFORCED:
+        return _closed(f"the access file was removed after access was enforced; {again}")
+    if last is None and path.parent.is_dir():
         return _closed(f"its folder {ACCESS_DIR}/ is there without access.json; {again}")
+    from kernel.team_access import access_of  # Rihmasto's own team mode (kernel/team.py, FR-PPL1)
+
+    team = access_of(factory)
+    if team is not None and (team.enforced or _team_recorded(factory)):
+        return team
+    if last is not None:
+        return Access(SINGLE)
     signed = _signed_ledger(factory)
     if signed is not None:
         return _closed(f"the access file and the factory ledger's record of it are gone, while {signed}'s ledger "
                        f"holds writes signed by verified identities; {again}")
     return Access(SINGLE)
+
+
+def _team_recorded(factory: Factory) -> bool:
+    """A solo team file stands over verified writes only while the factory ledger records team mode's changes."""
+    from kernel.team import RECORD
+
+    ledger = factory.projects_dir / FACTORY_SCOPE / "ledger.jsonl"
+    return ledger.exists() and bool(LedgerStore(ledger).of_kind(RECORD))
 
 
 def _signed_ledger(factory: Factory) -> str | None:
@@ -204,7 +217,7 @@ def note_change(factory: Factory, access: Access, by: str, ident: Identity | Non
         return last.get("sha256") == access.sha256 and last.get("mode") == access.mode and \
             last.get("keys_sha256") == access.keys_sha256
 
-    if unchanged():
+    if access.source == "team" or unchanged():     # team mode records its own changes (kernel/team.py)
         return
     from kernel.learn import factory_project
 
@@ -347,14 +360,15 @@ def view(access: Access, ident: Identity | None) -> dict:
     personas granted where, when the session ends (with the sign-in token) and where untrusted code runs."""
     if not access.enforced:
         return {"mode": SINGLE, "note": SINGLE_NOTE}
-    out: dict[str, Any] = {"mode": ENFORCED, "error": access.error}
+    out: dict[str, Any] = {"mode": ENFORCED, "error": access.error, "source": access.source}
     if ident is not None:
         from kernel.access_isolation import describe as isolation
 
         ends, where = _utc(ident.expires), isolation(access)
-        through = f" through {access.proxy.preset}" if access.proxy else ""
+        through = f" through {access.proxy.preset}" if access.proxy and not ident.id.startswith("rihmasto:") else ""
         at = f"; the session ends with the sign-in token, at {ends[11:16]} UTC on {ends[:10]}" if ends else ""
-        out.update(identity=ident.id, name=ident.name, note=f"enforced: signed in as {ident.name}",
+        word = "team" if access.source == "team" else "enforced"
+        out.update(identity=ident.id, name=ident.name, note=f"{word}: signed in as {ident.name}",
                    grants=[{"persona": b.persona, "scope": ALL if ALL in b.scope else list(b.scope)}
                            for b in grants(access, ident)], session_ends=ends,
                    detail=f"Signed in as {ident.name} ({ident.id}){through}{at}. {where[:1].upper()}{where[1:]}.")
@@ -376,6 +390,9 @@ def describe(access: Access) -> str:
     from kernel.access_isolation import describe as isolation
 
     proxy = access.proxy
+    if access.source == "team":
+        return f"team mode: decisions are signed by team members ({len(set(access.people.values()))} people, " \
+               f"{len(access.bindings)} grants); {isolation(access)}"
     sign_in = f"{proxy.preset} tokens ({proxy.algorithm}), " if proxy else ""
     sign_in += f"but {access.keys_error}" if access.keys_error else f"{len(access.keys)} provider keys"
     return f"enforced: decisions are signed by verified identities ({len(access.people)} people, " \

@@ -23,6 +23,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from kernel import model_usage
 from kernel.canon import Canon
 from kernel.gate import judge, visible_criteria
 from kernel.lanes import GIT_ID, Lane, Lanes, _git, protected_paths
@@ -249,8 +250,10 @@ def build_task(project, task_id: str, *, lanes: Lanes | None = None, max_rounds:
                 objections = [f"the harness failed {attempts} times (an apparatus failure, not the work): "
                               f"{record.get('stop_reason')}"]
                 break
-            result = other.judge(lane.path, base, head, verifier_runner) if other else \
-                judge(lane.path, contract, task_id, base, head, verifier_runner=verifier_runner)
+            with model_usage.for_project(project, task=task_id):   # the verifier's run, as model_run
+                review = model_usage.timed(verifier_runner, "verifier")
+                result = other.judge(lane.path, base, head, review) if other else \
+                    judge(lane.path, contract, task_id, base, head, verifier_runner=review)
             project.log("gate", gate_record(task_id, round_no, result))
             rounds.append({"round": round_no, "cell": cell, "gate": result.to_dict()})
             if result.warranted:

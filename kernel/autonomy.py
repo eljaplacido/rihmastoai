@@ -96,6 +96,8 @@ def set_cap(target, level: int, *, person: str, persona: str, reason: str) -> di
 def require(project, needed: int, what: str) -> None:
     cap = cap_of(project)
     if needed > cap:
+        # recorded, so Governance counts the hit (kernel/insights/governance.py) and an automation may react
+        project.log("autonomy_capped", {"needed": needed, "cap": cap, "what": what})
         raise AutonomyCapped(needed, cap, what)
 
 
@@ -125,6 +127,9 @@ def cleared_to_deliver(project: Project) -> Project:
     landing = LANDING[project.meta["maturity"]]
     require(project, LANDING_LEVEL.get(landing, 4), f"delivering to {landing}")
     clear(project, "deliver", landing)    # a posture's go-ahead and landing gate (nothing without a posture)
+    from kernel.hitl import require_answered
+
+    require_answered(project, f"delivering to {landing}")   # a required check family's open asks (FR-HITL1)
     return project
 
 

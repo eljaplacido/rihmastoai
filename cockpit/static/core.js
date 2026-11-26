@@ -11,29 +11,57 @@ export const PAGE_ROUTES = {
   "home": "#/home", "square": "#/square", "catalogue": "#/catalogue", "projects": "#/projects",
   "inbox_all": "#/inbox", "floor": "#/floor", "jobs": "#/jobs", "settings": "#/settings",
   "shape": "#/shape", "models": "#/models", "runners": "#/runners", "automations_all": "#/automations",
+  "insights_all": "#/insights", "insights": "#/p/{pid}/insights",
   "overview": "#/p/{pid}/overview", "inbox": "#/p/{pid}/inbox", "questions": "#/p/{pid}/questions",
   "assumptions": "#/p/{pid}/assumptions", "plan": "#/p/{pid}/plan", "spec": "#/p/{pid}/spec",
   "tasks": "#/p/{pid}/tasks", "cell": "#/p/{pid}/cell", "releases": "#/p/{pid}/releases",
   "try": "#/p/{pid}/try", "changes": "#/p/{pid}/changes", "ledger": "#/p/{pid}/ledger",
   "evidence": "#/p/{pid}/evidence", "track": "#/p/{pid}/track", "outputs": "#/p/{pid}/outputs",
-  "assessment": "#/p/{pid}/assessment", "automations": "#/p/{pid}/automations"
+  "assessment": "#/p/{pid}/assessment", "automations": "#/p/{pid}/automations",
+  "console": "#/p/{pid}/console", "checks": "#/p/{pid}/checks", "health_all": "#/health", "align": "#/p/{pid}/align",
+  "review_all": "#/review", "review": "#/p/{pid}/review", "agents": "#/p/{pid}/agents", "agents_all": "#/agents",
+  "aitools": "#/p/{pid}/aitools",
+  "context": "#/p/{pid}/context", "data_all": "#/data",
+  "graph_all": "#/graph", "graph": "#/p/{pid}/graph",
+  "destinations": "#/p/{pid}/destinations",
+  "itdata": "#/p/{pid}/itdata", "connections": "#/connections",
+  "agent_sessions": "#/p/{pid}/agent_sessions",
+  "incidents_all": "#/incidents", "incidents": "#/p/{pid}/incidents",
+  "triage": "#/p/{pid}/triage", "who": "#/p/{pid}/who",
+  "decide": "#/decide",
+  "agentops_all": "#/agentops", "agentops": "#/p/{pid}/agentops",
+  "board": "#/p/{pid}/board", "trace": "#/p/{pid}/trace",
+  "enforcement": "#/p/{pid}/enforcement",
+  "loop": "#/p/{pid}/loop",
+  "itops": "#/p/{pid}/itops"
 };
 export const TOP_PAGES = Object.keys(PAGE_ROUTES).filter((k) => !PAGE_ROUTES[k].includes("{pid}"));
 export const PROJECT_VIEWS = Object.keys(PAGE_ROUTES).filter((k) => PAGE_ROUTES[k].includes("{pid}"));
 
 export const PAGES = {
   home: { label: "Home", icon: "home" },
-  square: { label: "Square", icon: "square" },
-  catalogue: { label: "Catalogue", icon: "catalogue" },
+  // a page whose own name is a metaphor (Square, Floor) is called by what it shows to a business reader (words.js)
+  square: { get label() { return pageLabel("square", "Square"); }, icon: "square" },
+  catalogue: { get label() { return pageLabel("catalogue", "Catalogue"); }, icon: "catalogue" },
   projects: { label: "Projects", icon: "folder" },
   inbox_all: { label: "Inbox", icon: "inbox" },
-  floor: { label: "Insight", icon: "insight" },
-  jobs: { label: "Jobs", icon: "terminal" },
+  floor: { get label() { return pageLabel("floor", "Floor"); }, icon: "factory" },
+  insights_all: { label: "Insights", icon: "insight" },
+  jobs: { get label() { return pageLabel("jobs", "Jobs"); }, icon: "terminal" },
   settings: { label: "Settings", icon: "settings" },
-  shape: { label: "Shape it in chat", icon: "message-square" },
+  shape: { label: "Describe a new idea in chat", icon: "message-square" },
   models: { label: "Models", icon: "cpu" },
   runners: { label: "Runners", icon: "layers" },
   automations_all: { label: "Automations", icon: "clock" },
+  health_all: { label: "Health", icon: "pulse" },      // checks across every project (health.js, FR-CHK1)
+  review_all: { label: "Review", icon: "eye" },   // since you last looked (review.js)
+  agents_all: { label: "Agent activity", icon: "bot" },   // every project's agent channel (agents.js, FR-CHN1)
+  data_all: { label: "Data and context", icon: "server" },   // stores, ledgers, Context health (context.js, FR-CTX1)
+  graph_all: { label: "Knowledge graph", icon: "graph" },  // every project's records as linked (graph.js, FR-GRV1)
+  connections: { label: "Integrations and data", icon: "plug" },   // every connection, for IT (itdata.js, FR-ITD1)
+  incidents_all: { label: "Incidents", icon: "alert" },   // what went wrong and what Rihmasto learned (heal.js, FR-HEAL1)
+  decide: { label: "Decide what matters", icon: "list" },   // what blocks work across projects (triage.js, FR-NVL2)
+  agentops_all: { label: "Agent operations", icon: "gauge" },   // the AI architect's view (agentops.js, FR-AOP1)
 };
 export const VIEWS = {
   overview: { label: "Overview", icon: "home" },
@@ -53,26 +81,43 @@ export const VIEWS = {
   outputs: { label: "Outputs", icon: "send" },
   assessment: { label: "Assessment", icon: "gauge" },
   automations: { label: "Automations", icon: "clock" },
+  console: { label: "Console", icon: "terminal" },     // run commands in the workspace (console.js, FR-CON1)
+  checks: { label: "Health", icon: "pulse" },          // the project's checks (health.js, FR-CHK1)
+  align: { label: "Alignment", icon: "merge" },
+  insights: { label: "Insights", icon: "insight" },
+  review: { label: "Review", icon: "eye" },
+  agents: { label: "Channel", icon: "bot" },     // agents and people on this project (agents.js, FR-CHN1)
+  aitools: { label: "AI tools", icon: "sparkles" },   // the repository's AI tools, in the Agents capsule (aitools.js)
+  context: { label: "Context", icon: "layers" },   // what Rihmasto knows and what each agent is given (FR-CTX1)
+  graph: { label: "Knowledge graph", icon: "graph" },   // the project's records as linked (graph.js, FR-GRV1)
+  destinations: { label: "Destinations", icon: "globe" },   // where it goes; the "Run" capsule's (destinations.js, FR-DST1)
+  itdata: { label: "Integrations and data", icon: "plug" },   // what it connects to, for IT (itdata.js, FR-ITD1)
+  agent_sessions: { label: "Agent sessions", icon: "bot" },   // opt-in: Agent observability (agentobs.js)
+  incidents: { label: "Incidents", icon: "alert" },   // this project's incidents (heal.js, FR-HEAL1)
+  agentops: { label: "Agent operations", icon: "gauge" },   // the project's agents: cost, speed, context (agentops.js)
+  enforcement: { label: "Enforcement", icon: "shield" },   // how strict each stage is (enforcement.js, FR-ENF1)
 };
 export const FACTORY_VIEWS = ["overview", "inbox", "ledger"];
 export const STAGE_ICON = { 1: "briefcase", 2: "lightbulb", 3: "code", 4: "file-check", 5: "hammer", 6: "users", 7: "server" };
 export const STAGE_VIEW = { 1: "questions", 2: "questions", 3: "spec", 4: "spec", 5: "tasks", 6: "try", 7: "releases" };
-export const KIND_LABEL = {
+const KIND_TECH = {
   question: "Question", approval: "Approval", validation: "Validation", deploy_gate: "Deploy gate",
   incident: "Incident", change: "Change", escalation: "Escalation", road: "Paved road", trust: "Trust",
   holdout_ruling: "Holdout ruling", concept: "Concept", update: "Update", go_ahead: "Go-ahead",
-  runner: "Cell runner",
+  runner: "Cell runner", enforcement: "Enforcement review",
 };
+// A card kind in the reader's words (words.js sets wordHooks.kind): "Stuck task" to a business owner, "Escalation" to a developer.
+export const KIND_LABEL = new Proxy(KIND_TECH, { get: (t, k) => (wordHooks.kind && wordHooks.kind(k)) || t[k] });
 export const KIND_ICON = {
   question: "comment", approval: "check-circle", validation: "users", deploy_gate: "server", incident: "alert",
   change: "refresh", escalation: "flag", road: "arrow-right", trust: "key", holdout_ruling: "shield",
-  concept: "lightbulb", update: "bell", go_ahead: "eye", runner: "layers",
+  concept: "lightbulb", update: "bell", go_ahead: "eye", runner: "layers", enforcement: "shield",
 };
 export const VERDICT_LABEL = {
   answer: "Answer", assume: "Let Rihma assume", approve: "Approve", reject: "Reject", accept: "Accept",
   fix: "Fix", change: "Change", keep: "Keep", refuse: "Refuse", acknowledge: "Acknowledge",
   rollback: "Roll back", open_defect: "Open a defect", defer: "Defer", retry: "Retry",
-  accept_as_is: "Accept as is", stop: "Stop", configured: "Configured", declined: "Declined", granted: "Granted",
+  get accept_as_is() { return (wordHooks.verdict && wordHooks.verdict("accept_as_is")) || "Accept as is"; }, stop: "Stop", configured: "Configured", declined: "Declined", granted: "Granted",
   validate: "Validate", park: "Park", trial: "Start a trial", decline: "Decline", product_defect: "Product defect",
   scenario_defect: "Scenario defect", go: "Go: build it", skip: "Skip: build without my look",
 };
@@ -87,7 +132,8 @@ export const PERSPECTIVE_LABEL = {
 // A state always carries an icon and a word, never colour alone.
 export const NOW_STATE = {
   working: { tone: "info", icon: "refresh", word: "Working" },
-  waiting_on_you: { tone: "warning", icon: "user", word: "Waiting on you" },
+  // the project waits on a person, not always the reader: the Inbox says which cards are theirs
+  waiting_on_you: { tone: "warning", icon: "user", word: "Waiting on a person" },
   done: { tone: "good", icon: "check-circle", word: "Done" },
   failed: { tone: "critical", icon: "x-circle", word: "Failed" },
   paused: { tone: "neutral", icon: "pause", word: "Paused" },
@@ -123,7 +169,7 @@ export const S = {
   allViews: false, showSettled: false, onlyMine: false, onlyWaiting: false, oneAtATime: false,
   alignOpen: {}, skipped: {}, focusNext: null, jumped: false, timer: null, seq: 0, dashboard: null,
   layout: null, layoutPreset: true, theme: null, customizing: false, uiMap: null, running: [],
-  enforcedSignIn: false,
+  enforcedSignIn: false, viewAll: false, teamSignIn: false,
 };
 
 // The router and the shell register themselves here, so modules can call them without import cycles.
@@ -301,11 +347,32 @@ export function ago(at) {
 // -- people -------------------------------------------------------------------------------------
 
 export function personaLabel(id) { const p = S.personas.find((x) => x.id === id); return p ? p.label : (id || ""); }
+/* Solo and team mode (kernel/solo.py, FR-PPL1): "Viewing as: everything" lets a person act in every persona they
+   hold without switching. A write then asks for the persona it needs ("as_needed") and the server signs it so;
+   IT's own access file keeps explicit personas. */
+export function mayChoose() {
+  const a = (S.meta && S.meta.access) || {};
+  return a.mode !== "enforced" || a.source === "team";
+}
+export function everything() { return !!S.viewAll && mayChoose(); }
+export function heldPersonas() {
+  const a = (S.meta && S.meta.access) || {};
+  if (a.mode !== "enforced") return S.personas.map((p) => p.id);
+  return [...new Set((a.grants || []).map((g) => g.persona))];
+}
+// Whether the person may act where ``list`` names who may: as their persona, or through any they hold.
+export function mayAct(list) {
+  const who = list || [];
+  return who.includes(S.persona) || (everything() && heldPersonas().some((p) => who.includes(p)));
+}
+export function inboxPersona() { return everything() ? "*" : S.persona; }
 // ``who``: a card's own deciders, when it names fewer than its kind's (a posture may narrow them).
 export function decides(kind, who) {
-  const p = S.personas.find((x) => x.id === S.persona);
-  return !!p && p.decides.includes(kind) && (!who || !who.length || who.includes(S.persona));
+  const mine = everything() ? S.personas.filter((x) => heldPersonas().includes(x.id)) : S.personas.filter((x) => x.id === S.persona);
+  return mine.some((p) => p.decides.includes(kind) && (!who || !who.length || who.includes(p.id)));
 }
+// Proposals Ask Rihma makes for other modules (people.js): action -> { words, describe(args), call(args, pid) }.
+export const PROPOSALS = {};
 export function orList(ids) {
   const words = ids.map(personaLabel);
   return words.length > 1 ? words.slice(0, -1).join(", ") + " or " + words[words.length - 1] : words.join("");
@@ -318,7 +385,16 @@ export function bandOf(n) {
 export function profileOf(id) {
   return ((S.meta && S.meta.profiles) || []).find((p) => p.id === id) || { id, label: id || "Web app or service", icon: "globe" };
 }
-export function signed() { return { person: S.person.trim(), persona: S.persona }; }
+export function signed() {
+  return Object.assign({ person: S.person.trim(), persona: S.persona }, everything() ? { as_needed: true } : {});
+}
+// A command the cockpit gives, with the person's own name in place of its placeholder, ready to paste.
+export function withName(text) {
+  const who = S.person.trim();
+  if (!who || typeof text !== "string") return text;
+  const q = JSON.stringify(who);
+  return text.split('"<your name>"').join(q).split("<your name>").join(q).replace(/--person \.\.\.(?=\s|$)/g, "--person " + q);
+}
 export function needPerson() {
   if (S.person.trim()) return true;
   say("Set your name first: every decision is signed with a person and a persona.", "warning");
@@ -330,10 +406,14 @@ export function personBadge(name, persona) {
     avatar(name), h("span", { class: "vh" }, "person: "), h("span", { class: "who-n" }, name || "?"),
     persona ? h("span", { class: "who-r" }, personaLabel(persona)) : null);
 }
+// Words per persona set from words.js (which imports this module): the kernel is "an automatic rule" to a business reader.
+export const wordHooks = { kernel: () => "the kernel" };
+function pageLabel(id, fallback) { return (wordHooks.page && wordHooks.page(id)) || fallback; }
 export function agentBadge(name, model) {
-  const kernel = name === "the kernel";
-  return h("span", { class: "who agent", tip: kernel ? "An agent: the kernel's deterministic rule" : "An agent: a model in a role" },
-    avatar(name, kernel ? "kernel" : "agent"), h("span", { class: "vh" }, "agent: "), h("span", { class: "who-n" }, name),
+  const kernel = name === "the kernel" || name === "kernel";
+  // the legend says a rule is never a model: a kernel row is labelled a rule, not an agent
+  return h("span", { class: "who agent", tip: kernel ? "An automatic rule (the kernel): it decides by fixed rules, never by a model" : "An agent: a model in a role" },
+    avatar(name, kernel ? "kernel" : "agent"), h("span", { class: "vh" }, kernel ? "rule: " : "agent: "), h("span", { class: "who-n", "data-ud": kernel ? null : "" }, kernel ? wordHooks.kernel() : name),   // an agent's role as recorded
     model ? h("span", { class: "who-r mono" }, model) : null);
 }
 export function actorBadge(a) {
@@ -394,6 +474,7 @@ export async function api(method, path, body, again = true) {
   if (!res.ok) {
     const err = new Error((data && data.error) || res.status + " " + res.statusText);
     err.status = res.status;
+    if (data && data.incident) err.incident = data.incident;   // the server opened an incident for it (FR-HEAL1)
     throw err;
   }
   return data;
@@ -424,8 +505,8 @@ export async function act(container, fn) {
   buttons.forEach((b) => { b.disabled = true; });
   try {
     return await fn();
-  } catch (e) {
-    if (!(e instanceof AuthError)) say(e.message, "critical");
+  } catch (e) {   // a failed action says what happened and the way on (heal.js actionError, FR-HEAL1)
+    if (!(e instanceof AuthError)) { if (nav.actionError) nav.actionError(e); else say(e.message, "critical"); }
     return undefined;
   } finally {
     buttons.forEach((b, i) => { if (b.isConnected) b.disabled = before[i]; });
@@ -681,11 +762,16 @@ export function segmented(name, options, value, onChange, opts) {
   });
   return wrapEl;
 }
+// The pages that exist per project too: outside a project they are about every project, and their title says so.
+export const ALL_SCOPE_PAGES = ["inbox_all", "insights_all", "automations_all", "health_all", "review_all", "agents_all",
+  "agentops_all"];
 export function pageHead(title, sub, opts) {
   const o = opts || {};
+  const all = !!S.route && ALL_SCOPE_PAGES.includes(S.route.name) && !o.noScope;
   return h("div", { class: "page-head" },
     h("div", { class: "ph-main" }, o.icon ? h("span", { class: "ph-ic" }, icon(o.icon)) : null,
-      h("div", null, h("h1", { id: "view-title", tabindex: "-1" }, title), sub ? h("p", { class: "lede" }, sub) : null),
+      h("div", null, h("h1", { id: "view-title", tabindex: "-1" }, title, all ? h("span", { class: "h-scope" }, " · all projects") : null),
+        sub ? h("p", { class: "lede" }, sub) : null),
       o.info ? infoButton(title, o.info) : null),
     o.actions ? h("div", { class: "ph-actions" }, o.actions) : null);
 }

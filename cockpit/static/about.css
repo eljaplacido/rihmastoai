@@ -1,0 +1,18 @@
+/* About and help, a card in Settings (about.js, FR-PUB2). */
+
+.abt-holder { min-width: 0; }
+.abt-ver { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin: 0 0 var(--s3); }
+.abt-ver b { font-size: 1.1rem; }
+.abt-row { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.abt-machine { margin: var(--s2) 0 var(--s3); min-width: 0; overflow-wrap: anywhere; }
+.abt-tools, .abt-issues, .abt-cmds, .abt-docs { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.abt-tools { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: var(--s2); }
+.abt-issues li { padding-left: var(--s3); border-left: 3px solid var(--warning-border); }
+.abt-issues.critical li { border-left-color: var(--critical-mark, var(--warning-border)); }
+.abt-h { margin: var(--s4) 0 var(--s2); font-size: var(--fs-sm, .9rem); }
+.abt-cmd { display: grid; gap: 2px; min-width: 0; }
+.abt-cmd code { overflow-wrap: anywhere; white-space: normal; }
+.abt-doc { min-width: 0; overflow-wrap: anywhere; }
+.abt-doc a { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; }
+.abt-doc a .ic { width: 14px; height: 14px; flex: none; }
+.abt-path { margin-top: 2px; }

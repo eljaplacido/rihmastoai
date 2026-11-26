@@ -27,6 +27,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from kernel.version import is_prerelease, rihmasto_version
+
 MIN_GNOMON = "0.6.5"
 RECOMMENDED_GNOMON = "0.6.6"
 MIN_PYTHON = (3, 11)
@@ -108,9 +110,10 @@ def _writable(root: Path) -> dict:
             **({} if exists else {"created_under": str(probe)})}
 
 
-def doctor(home, *, gnomon=None, routing: dict | None = None, lanes_root=None, environ=None) -> dict:
-    """The report. ``gnomon`` (a command list), ``routing``, ``lanes_root`` and ``environ`` replace
-    what the machine would give, for tests."""
+def doctor(home, *, gnomon=None, routing: dict | None = None, lanes_root=None, environ=None,
+           harnesses: list | None = None) -> dict:
+    """The report. ``gnomon`` (a command list), ``routing``, ``lanes_root``, ``environ`` and ``harnesses`` (the
+    coding agents found, kernel/harness_setup.py) replace what the machine would give, for tests."""
     from kernel.lanes import ROUTING_LOCAL_FILE, read_routing
     from kernel.lanes import lanes_root as default_lanes_root
     from kernel.store import REPO_ROOT
@@ -173,11 +176,16 @@ def doctor(home, *, gnomon=None, routing: dict | None = None, lanes_root=None, e
         if not e["set"]:
             warnings.append(f"{e['api_key_env']} is not set: endpoint {e['name']} cannot be reached from here")
 
+    from kernel.harness_setup import doctor_part  # "No API key? Claude Code found: use it" (FR-HMD1)
+
+    found = harnesses if harnesses is not None else None if environ is None else []
     home = Path(home)
+    own = rihmasto_version()   # which Rihmasto this is (FR-PUB2)
     report = {
-        "schema": SCHEMA, "python": python, "gnomon": g, "git": git, "docker": docker, "lanes": lanes,
+        "schema": SCHEMA, "rihmasto": {"version": own, "prerelease": is_prerelease(own)},
+        "python": python, "gnomon": g, "git": git, "docker": docker, "lanes": lanes,
         "endpoints": endpoints, "home": {"path": str(home), "exists": home.exists()},
-        **({"routing_overlay": overlay} if overlay else {}),
+        **({"routing_overlay": overlay} if overlay else {}), **doctor_part(routing, endpoints, g["found"], found),
         "problems": problems, "warnings": warnings, "exit": 1 if problems else 0,
     }
     return report

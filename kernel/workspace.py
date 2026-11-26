@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from kernel.canon import Canon
+from kernel.git_clone import clone_options
 from kernel.lanes import GIT_ID, IGNORED, PROTECTED, Lane, Lanes, _git, guard_repo, lanes_root, protected_paths
 from kernel.people import PERSONAS, is_person
 from kernel.store import REPO_ROOT, Project, slugify, write_json, write_text
@@ -202,7 +203,7 @@ def open_workspace(project, *, person: str, persona: str, agent: str, root=None)
     branch, path = f"work/{slug}/{n}", folder / f"{slug}-{n}"
     folder.mkdir(parents=True, exist_ok=True)
     guard_repo(repo)
-    _git(folder, "clone", "-q", str(repo), path.name)
+    _git(folder, "clone", "-q", *clone_options(), str(repo), path.name)
     _git(path, "checkout", "-q", "--no-track", "-b", branch, "origin/main")  # its upstream is not main
     _seal(path)
     base = _git(path, "rev-parse", "HEAD")
@@ -211,13 +212,34 @@ def open_workspace(project, *, person: str, persona: str, agent: str, root=None)
     write_text(exclude, text + "".join(f"{i}\n" for i in [CONTEXT_FILE, MCP_FILE, *IGNORED] if i not in text))
     write_text(path / CONTEXT_FILE, context_md(project, person=person, persona=persona, branch=branch, base=base,
                                                path=path))
-    write_json(path / MCP_FILE, mcp_config(project.factory, person=person, persona=persona, lanes=root))
+    _merge_mcp(path, mcp_config(project.factory, person=person, persona=persona, lanes=root))
     command = terminal_command(path, agent)
     items.append({"n": n, "slug": slug, "path": str(path), "branch": branch, "agent": agent, "person": person,
                   "persona": persona, "base": base, "opened": project.factory.clock.stamp(), "submissions": []})
     project.write("workspaces.json", items)
     project.log("workspace_opened", {"person": person, "persona": persona, "agent": agent, "branch": branch})
     return {"path": str(path), "branch": branch, "agent": agent, "command": command}
+
+
+def _merge_mcp(path: Path, ours: dict) -> None:
+    """Rihma's MCP server put into the workspace's `.mcp.json`. A project that commits its own (other servers
+    of its own, a game engine's, say) keeps them: Rihma's entry is merged in, and git is told to leave the
+    file out of the person's commits, so `git commit -a` never sends the merge through the gate."""
+    import json
+
+    file = path / MCP_FILE
+    tracked = bool(_git(path, "ls-files", MCP_FILE, check=False).strip())
+    try:
+        theirs = json.loads(file.read_text(encoding="utf-8")) if file.is_file() else {}
+    except (OSError, ValueError):
+        theirs = {}
+    if not isinstance(theirs, dict) or not isinstance(theirs.get("mcpServers", {}), dict):
+        theirs = {}
+    merged = {**theirs, **{k: v for k, v in ours.items() if k != "mcpServers"},
+              "mcpServers": {**(theirs.get("mcpServers") or {}), **(ours.get("mcpServers") or {})}}
+    write_json(file, merged)
+    if tracked:
+        _git(path, "update-index", "--skip-worktree", MCP_FILE, check=False)
 
 
 def launch(workspace: dict, *, project=None, popen=None) -> dict:
@@ -280,6 +302,14 @@ def _save_submission(project: Project, branch: str, entry: dict) -> None:
     project.write("workspaces.json", items)
 
 
+def own_suites(project) -> list[dict]:
+    """The test commands an adopted project's baseline ran (baseline.json): the gate runs them when unittest's
+    discovery finds no test, so a pytest or npm project's submission is judged by its own suite."""
+    base = project.read("baseline.json", {}) or {}
+    return [r for r in base.get("runs") or [] if isinstance(r, dict) and r.get("command")
+            and r.get("verdict") in ("passed", "failed")]
+
+
 def submit_workspace(project, workspace_path, *, person: str, persona: str, task: str | None = None,
                      lanes: Lanes | None = None, verifier_runner=None, lane_wait: float = 3600) -> dict:
     """Judge the workspace branch's commits with the gate a builder cell meets; merge them when
@@ -308,7 +338,7 @@ def submit_workspace(project, workspace_path, *, person: str, persona: str, task
         main, head = _judged_head(project, lane, branch, submitted, refuse)
         _refuse_protected(lane.path, main, head, refuse)
         result = judge_change(lane.path, contract, main, head, label=label, author=f"{person} ({persona})",
-                              task_id=task, verifier_runner=verifier_runner)
+                              task_id=task, verifier_runner=verifier_runner, own_suites=own_suites(project))
         project.log("gate", gate_record(label, round_no, result, author=author, workspace=branch))
         entry = {"round": round_no, "head": head, "verdict": result.verdict, "task": task,
                  "at": project.factory.clock.stamp(), "uncommitted_left_out": uncommitted}

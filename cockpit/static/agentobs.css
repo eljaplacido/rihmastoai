@@ -1,0 +1,28 @@
+/* Agent sessions (cockpit/static/agentobs.js, FR-OBS1): tokens only, no colour of its own. */
+.obs-view { min-width: 0; }
+.obs-bar { flex-wrap: wrap; align-items: center; gap: var(--s2); margin: var(--s2) 0 var(--s3); }
+.obs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--s3); min-width: 0; }
+.obs-card { min-width: 0; }
+.obs-lead { margin: 0 0 var(--s2); overflow-wrap: anywhere; }
+.obs-big { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 0 0 var(--s2); }
+.obs-big > b { font-size: var(--fs-xl, 1.6rem); font-variant-numeric: tabular-nums; }
+.obs-nm p { margin: 0 0 var(--s2); overflow-wrap: anywhere; }
+.obs-figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: var(--s2); list-style: none; padding: 0; margin: 0 0 var(--s2); }
+.obs-figs li { display: flex; flex-direction: column; padding: 8px 10px; border-radius: var(--r-md); background: var(--sunken); border: 1px solid var(--border); }
+.obs-figs b { font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+.obs-figs span { font-size: var(--fs-xs); color: var(--text-2); }
+.obs-strips { display: flex; flex-direction: column; gap: 6px; margin: var(--s2) 0; }
+.obs-strip-row { display: grid; grid-template-columns: minmax(84px, 120px) minmax(0, 1fr); align-items: center; gap: var(--s2); min-width: 0; }
+.obs-strip-l { display: flex; flex-direction: column; font-size: var(--fs-sm); min-width: 0; overflow-wrap: anywhere; }
+.obs-strip-l small { color: var(--text-3); font-family: var(--font-mono); }
+.obs-strip { display: flex; flex-wrap: wrap; gap: 2px; min-width: 0; }
+.obs-step { width: 8px; height: 14px; border-radius: 2px; }
+.obs-stuck { display: flex; flex-direction: column; gap: 6px; margin: var(--s2) 0; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.obs-map-row { flex-wrap: wrap; gap: var(--s2); }
+.obs-map-row select { min-width: 0; max-width: 100%; }
+.obs-cmds { display: flex; flex-direction: column; gap: var(--s2); margin: var(--s2) 0 0; }
+.obs-cmd { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.obs-cmd-row { display: flex; align-items: flex-start; gap: var(--s2); min-width: 0; }
+.obs-cmd-t { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); font-size: var(--fs-sm); padding: 6px 8px; border-radius: var(--r-sm, 4px);
+  background: var(--sunken); border: 1px solid var(--border); overflow-wrap: anywhere; word-break: break-word; }
+.obs-settings-holder:empty { display: none; }

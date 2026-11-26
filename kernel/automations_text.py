@@ -193,3 +193,13 @@ TEMPLATES: list[dict[str, Any]] = [
                                                     "and decide what to change"},
                "scope": {"kind": "project", "projects": []}}},
 ]
+# The checks', alignment's and the Review's templates (kernel/automations_more.py), whichever module loads first.
+from kernel.automations_more import templates as _more  # noqa: E402
+
+TEMPLATES += [t for t in _more() if t["id"] not in {x["id"] for x in TEMPLATES}]
+try:   # agent observability's snapshot action and its templates (kernel/agentobs/automation_hook.py, FR-OBS1)
+    from kernel.agentobs.automation_hook import register as _agentobs_register
+
+    _agentobs_register(au.ACTIONS, TEMPLATES)
+except ImportError:   # pragma: no cover - a build without it
+    pass

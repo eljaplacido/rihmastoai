@@ -2,11 +2,330 @@
 
 Every notable change to Rihmasto is recorded here, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[PEP 440](https://peps.python.org/pep-0440/): `1.0.0.dev0` is a development release before 1.0.0.
+[PEP 440](https://peps.python.org/pep-0440/): `1.0.0.dev0` is a development release before 1.0.0,
+`1.0.0a1` the first alpha.
+
+| Version | Date | In short | Tag |
+|---|---|---|---|
+| [Unreleased](#unreleased) | | what has merged since the last version | |
+| [1.0.0a1](#100a1---2026-11-25) | 2026-11-25 | the first alpha: working on existing projects day to day, solo and team, self-healing, the knowledge graph and context views, audits and evals, automations, checks, Review, Insights, models setup, your coding agent as the model, and the docs rewritten | `v1.0.0a1` |
+| [1.0.0.dev0](#100dev0---2026-11-23) | 2026-11-23 | the first public snapshot: the chain from a need to a running service, the cockpit, the capability layer and Rihmasto's own red team | none: published before releases were tagged |
+
+A version's tag and its GitHub Release (source archives, SBOM, `SHA256SUMS`, build provenance) are made
+from the commit whose `pyproject.toml` declares it ([maintainers](docs/maintainers.md)).
 
 ## [Unreleased]
 
+<!-- A change merged from now on goes under one of these headings, never under a dated version below. -->
+
 ### Added
+
+- **Proactive coding-agent hand-offs.** A ready project's **What's next** now offers **Hand off to Claude Code (or
+  another coding agent)**, and actionable audit findings offer the same hand-off beside **Make it a change**. The
+  hand-off dialog opens with Claude Code preselected, while Codex, OpenCode, Cursor and a generic agent remain
+  available. Ask Rihma's suggested questions also include **Give this to Claude Code**.
+
+### Changed
+
+### Fixed
+
+- **Eval results say what needs action.** IT checks now shows each Gnomon eval's latest verdict, summary and findings
+  beside its trend, not only the trend squares. On both IT checks and Health, findings are labelled **Action needed**
+  or **For review**, suggested fixes are shown as actions rather than buried in evidence, and required findings can
+  be made change proposals in place. A passing data-flow register therefore shows its destination summary and marks
+  hosted-destination information as review, while compliance gaps name the fix and offer **Make it a change**.
+
+## [1.0.0a1] - 2026-11-25
+
+The first alpha. Everything since the first public snapshot: Rihmasto now works on existing projects day to
+day, beside your own IDE and agents; one person holds every persona by default and a team can come later;
+failures become incidents with remedies; the knowledge graph, the context and data layer, Gnomon's audits and
+evals, automations, checks, Review and Insights are views of their own; and the documentation is rewritten
+around scenarios. Still alpha: the delivery roads beyond the local preview, proxy sign-in, notices and data
+connectors are tested only against stand-ins, and the live acceptance run with real models has not happened
+yet.
+
+### Added
+
+- **Never lost answers right** (FR-NVL2): Rihma checks the premise (a view with data is *not empty here*, with
+  what it shows), reads a typed question's subject (*why is cost not measured?* is about cost, *the page* is the page
+  you are on), answers *why did it fail?* from the last failure on the page, names a not-measured value by its label
+  and follows its own hint; every run keeps the enforcement in force when it ran; a triage's proposal holds only what
+  your persona may decide (a refusal says who may and records nothing); **Decide what matters across projects**
+  (`#/decide`, `GET /api/triage`, and from Home in Ask Rihma) ranks what blocks work in every project with one
+  proposal for the rest; Ask Rihma's triage, assumption, enforcement and who-acted rules take only their own
+  questions (`kernel/neverlost_ask.py`, `kernel/triage_all.py`).
+- **Never lost, who acted and decision triage** (FR-NVL1; the owner, 2026-11-25: "If I get some null results on
+  any views ... the agents of Rihmasto will always get me back on track"; "I got 50 decisions. Can you prioritize
+  those that block work? And assume me the answers."): **Why? Ask Rihma** on every empty state, not-measured value,
+  error box and failed action opens Ask Rihma with the context and answers by rule why, with the step that fills
+  it as a button (`kernel/neverlost.py`, `cockpit/static/neverlost.js`); **who acted** under every Ask Rihma
+  answer and on every run in a project's Who acted view (agent and role, harness and model, local or hosted,
+  whether Gnomon's contract, criteria and gate applied; `kernel/who_acted.py`); **Harness and enforcement** in
+  Settings and per project, Gnomon's enforcement on by default with an explicit, recorded opt-out that never skips
+  the gate (`kernel/harness_enforcement.py`); **Decide what matters**: the blocking few ranked with why and one proposal
+  that assumes the rest, each recorded as the person's delegated choice (`kernel/triage.py`), with assumption
+  weights that grow as work touches them (`kernel/assumption_weight.py`). The same by chat. A browser test walks
+  every view as every persona on a sparse and a full project and fails on a raw null, undefined, NaN or an
+  unexplained empty region. Guide: [never lost](docs/guides/never-lost.md).
+- **Live progress for long jobs** (FR-PRG1; the owner, 2026-11-25: "'Assessing' should show some nice
+  visualization of progress in different areas, since it seems to take minutes."): a job reports a plan (its
+  groups and steps) and then each step as it starts, ends with its counts, fails (why) or is skipped (why),
+  with its findings so far (`kernel/progress.py`). An assessment reports it (reading the code; one rule check
+  per area and the security scan; each perspective of the panel with its model; the record) without changing
+  its result, and can be cancelled between two steps, recording nothing. The Assessment tab shows it as rows of
+  tiles that fill as each area runs and ends, with each area's findings as they land, the time taken, an
+  estimate from the earlier runs of the same project ("first run: no estimate" when there are none), the step
+  running now in words, Cancel, and a hand-over to the result (`cockpit/static/progress.js`); the same view,
+  small, is on the Overview, in Ask Rihma ("how is the assessment going?" is answered from the progress), on an
+  adoption's job and walkthrough, and on a folder scan; gate rounds, deliveries and audits that print their
+  steps use the same adapter (`kernel/progress_jobs.py`). Routes: `GET .../assessment/progress?since=<cursor>`,
+  `POST .../assessment/cancel`. An assessment by rule that takes longer than 20 seconds now goes on in the
+  background (202) instead of holding the request. Guide: [assessing, and watching it run](docs/guides/assessment.md).
+- **Choose a folder or a file by browsing** (FR-PICK1): every field that takes a path on the cockpit's machine
+  (New project's existing project and a folder as the need, Add material, Shape it in chat's attach, Settings >
+  Folders the cockpit may read, an automation's rescan folder, a Google Cloud road's workload identity file and a
+  walkthrough's folder step) has **Browse…**, the computer's own folder dialog when you sit at the cockpit's
+  machine, and **Browse here**, a folder browser in the page from any computer or phone: recent folders, the
+  roots, home and the drives; git and project badges and whether the cockpit may read each folder; a filter and
+  the keyboard; Allow it for a folder outside. Choosing a project's folder starts its scan at once. Browsing
+  reads under source_guard's rules, never through a link out of the allowed folders, and records nothing
+  (`kernel/pick.py`, `kernel/pick_native.py`, `cockpit/pick_routes.py`, `cockpit/static/picker.js`). Ask Rihma's
+  "adopt the project in C:\dev\x" or "open the folder picker" offers Plug in an existing project from that folder.
+- **Every view in the reader's words, and layouts that follow the person** (FR-UXO1 AC-8 to AC-11): every
+  page and project view, the dashboard widgets, toasts and dialogs say each concept with one word from a glossary
+  in `cockpit/static/words.js` (business word, technical word, explanation): a business owner reads "decision
+  record", "acceptance check", "quality check", "attempt", "Done", "Stuck task" and "Design and checks" where a
+  developer reads "ledger", "criterion", "gate", "round", "Merged", "Escalation" and "Spec and architecture"; a
+  technical term a business owner still meets is a glossary term whose tooltip explains it. Filler wording is
+  gone and listed in `SLOP`. Every empty view says what would appear and how it gets there. Customize's
+  per-view layouts and capsule tabs are kept on the server per person (`GET`/`PUT /api/view-layouts`,
+  `cockpit/viewlayout_routes.py`, `_cockpit/view-layouts/`, outside every ledger), so they follow the person to
+  another computer; layouts an earlier version kept in a browser move there on first load, Reset clears them
+  everywhere, and Ask Rihma's layout change is saved only when kept. `tests/test_ui_words.py` reads every view
+  as a business owner and as a developer.
+
+- **A cockpit that says what it is about and asks plainly** (FR-UXO1, the owner's feedback of 2026-11-24/25):
+  a scope bar names all projects or the one project, whose accent the frame then takes, with a switcher (recent
+  first, "← All projects"); inside a project the sidebar is the project's, never a second copy of its views, and
+  every page title states its scope ("Inbox · all projects"). A project's views are five **capsules** (Now,
+  Build, Run, Govern, Agents), each with its own short row, opened per persona and counting what waits there;
+  views join by `registerView` (`cockpit/static/capsules.js`), the horizontal tab row and "Show all views" are
+  gone, and `#/p/<pid>/<view>` links still work. An **Inbox card** leads with one plain "Decide:" line
+  (`kernel/card_words.py`), offers its choices with a meaning each and none chosen, asks "Why? (optional, saved
+  with your decision)" only after a choice, keeps **Add a comment** apart and folds its ids under Details; the
+  Inbox across projects groups by project. The **Delivery square** explains itself in one line, switches
+  between all projects and one, and opens with five lanes whose counts link to their items. **Ask Rihma** says
+  what it talks about (this view, this project, the whole platform), says when a question named another
+  project and it switched, names each proposal's target, and answers how-to questions with numbered steps for
+  this project, its commands filled in with a Copy button and the action that opens the place
+  (`kernel/assistant_howto.py`). **Customize** works on every view (sections shown, hidden, moved, resized)
+  and on a capsule's tabs (hide, pin), never hiding a decision that waits, with Reset and Ask Rihma's previewed
+  changes. Wording differs per persona where it should (`cockpit/static/words.js`), and every view works at
+  390 px: one row of capsules, chips, sheets, stacked tables and 40 px targets.
+- **Working on an adopted project, day to day** (FR-RPJ1-AC-17 to AC-22, found by feeding in a notes-and-scripts
+  folder): the hand-off brief says the project's adopted state and its goal with what its README says, each
+  finding and insight as a sentence, and its own test command (or that none was found), never the paved road's
+  suite; Ask Rihma answers "how do I work on this in my terminal?" with the project's id and the commands to
+  copy, and Take me there to Open a terminal here; a change to the project itself ("make the script do this and
+  add a smoke test") gets goal help; Plug in an existing project says a folder is adopted already, with Open it
+  and Adopt it again; How it is held says why a baseline is not measured and how to check the tests; Alignment
+  says what would appear when it found nothing; an SVG diagram page is read by its labels; service units
+  with no package manifest point to the Knowledge or tooling kind; and an adopted project's page names who
+  adopted it as requested by (FR-RPJ1-AC-23).
+- **Working on an existing project, dogfooded on a large real game repository**: the Console offers the commands
+  the project's own AGENTS.md and CLAUDE.md state, with their file and line; Ask Rihma answers "how do I work on
+  this in my terminal?" with the project's real id, the workspace open and submit commands and Take me there to
+  Open a terminal here; goal help for a change to the work itself (make it faster, fix a bug, add a level) offers
+  a branch of your own and its own commands; the hand-off brief tells the agent to follow the project's own
+  instructions (FR-RPJ1-AC-17). For large repositories: a monorepo's dominant folder is split into areas
+  (`apps/game/assets`), the lore index puts lore and world folders first and leaves out AI tools' dot-folders,
+  folders set aside (`archive/`, `attic/`) give nothing to the structure map, a bookkeeping line ("Priority:
+  High") is never a requirement's statement, the kernel's own commits never write the tree out (accepting an
+  alignment item takes a second, not minutes), and every clone keeps Git LFS files as pointers and checks out
+  long paths, so the console, a workspace and a lane open (FR-RPJ1-AC-18, `kernel/git_clone.py`). Plug in an
+  existing project reads folders allowed in Settings and says when a folder is adopted already, with Open it
+  (FR-RPJ1-AC-4, AC-8).
+- **The data and context layer, visible** (FR-CTX1, D-0024 item 2): a project's **Context** view shows what
+  Rihmasto knows and where it came from (sources, the canon, the ledger and its integrity, the graph, the spec and
+  contract, model runs, what is stale, what is kept on disk) and what each Rihma agent is given right now: the
+  context pack of the intake panel, the spec, the holdout author, the builder, the verifier, Ask Rihma, goal help,
+  an agent channel answer, the hand-off brief and the MCP tools, part by part, with sizes, budgets, what was
+  compressed and what was left out and why (content by persona; holdout content never). A compression audit
+  (`rihmasto context audit`) flags packs over budget, lines said twice, stable-prefix violations and oversized
+  outputs; the **Data and context** page shows the Context health per role, every store of the factory home,
+  every ledger's chain, retention, and a signed clean-up (`rihmasto data cleanup`, `rihmasto data apply`). Ask
+  Rihma answers "what does the verifier get for T-003?" and "why didn't Rihma know about X?"
+  ([docs/guides/context-and-data.md](docs/guides/context-and-data.md)).
+
+- **The Knowledge graph view** (FR-GRV1, [guide](docs/guides/knowledge-graph.md)): look at and filter each project,
+  or every project at once, as a knowledge graph of its records as the ontology links them (requirements,
+  criteria, tests, tasks, questions, assumptions, decisions and cards, comments, signals, releases and packs, agent
+  runs, models and revisions, people), each node with its kind, label, state, time and record. Filters by kind,
+  relation, state, time window, words and "only issues", and focus on a node within one to four links; the issues
+  found are highlighted (a requirement no test checks, a test without a requirement, a decision overturned, a
+  requirement on a refuted assumption, a broken link); a large graph shows at most 300 nodes and says how many
+  more are not shown, by kind. In the cockpit: a project's **Knowledge graph** view and the page across projects,
+  drawn by hand in SVG with pan, zoom and keyboard navigation, a table twin that is the default on a phone with
+  the filters in a sheet, **Saved views** per person (kept outside every ledger), the mode it opens in, **Pin to
+  Home** and **Reset to default**. Ask Rihma answers "show me how requirements trace to tests in ..." with Take me
+  there to the view with those filters in the route, and explains a node. `rihmasto graph view <pid>` (or
+  `--all`) with the same filters, as text or `--json`. Never holdout content or a credential-looking label; with
+  access enforced, only the projects a person holds a persona on.
+
+- **Destinations** (FR-DST1, D-0023): a project's Destinations tab, `rihmasto destinations <pid>` and the
+  overview's **Where this goes** show every place its capability goes, read from what exists: each
+  environment on its paved road with the release, URL and health; the data integrations it reads or
+  writes; the website chats, relay subscriptions and MCP, HTTP and OpenAI faces it is used through; and
+  the registries and outputs it is published to. Each is planned, configured, delivered, healthy, failing
+  or not measured, with what is missing said exactly, and Deliver to test, Promote to production (IT's
+  deploy gate decides), Publish, Open and Investigate. `rihmasto publish <pid> --to <registry>` pushes a
+  release's image with the docker CLI to a registry IT names in `registries.json` (GHCR, Artifact Registry,
+  ACR, Docker Hub), credentials by name only, test first and production only through IT's deploy gate,
+  and writes an MCP registry entry as a file a person submits. A feedback round (Check now, `--check`, or
+  the new **Destinations** check in Health) probes where it runs; a destination that becomes failing opens
+  an incident, posts in the agent channel, is listed in the Review and fires the `destination_failing`
+  automation event, with `published` and `delivered` beside it. Ask Rihma answers "where is this running?"
+  ([docs/guides/destinations.md](docs/guides/destinations.md)).
+
+- **Set up every project, suggested and described automations, archive and remove, UI and chat parity**
+  (FR-SET1): a project's Overview opens with **Set up this project**, each feature that applies set up,
+  offered with one signed click, or not applicable with why (`rihmasto setup`); a project is scanned for
+  **suggested automations** from its shape and state, each with a one-line reason, set up with one click or
+  dismissed and remembered (`rihmasto automations suggest|accept|dismiss`); **Describe it** turns words in
+  English or Finnish into a draft automation with its summary and a dry run, by rules without a model and by
+  the assistant model, checked against the allow-list, for the rest (`rihmasto automations describe`); a
+  project is **archived** (hidden from every list, read-only, restorable) and an archived one **removed**
+  after a confirmation naming it, its records exported first (`rihmasto project archive|restore|remove`,
+  Projects, Archived and duplicates); Ask Rihma proposes each of these, and any other cockpit write, as a
+  checked `act` whose request comes from the kernel's table of operations; and `tests/test_parity.py` keeps
+  every cockpit control, assistant action and signed command with its other half
+  ([guide](docs/guides/project-setup.md)).
+
+- **Round three wired together** (FR-HEAL1-AC-10 to 13, FR-PPL1-AC-9): an IDE agent's failure the observability
+  hub saw it not recover from opens an incident with the hub project and session ids; a failed Gnomon audit opens
+  one with its findings, and a role eval where a model answered wrongly one with each wrong case
+  (`kernel/heal_evals.py`). In solo mode the solo person approves learned remedies, feedback proposals and pull
+  requests, Rihmasto's own included ("IT, or the solo person", `kernel/heal_approval.py`); in team mode approvals
+  follow the team's roles. Approved prompt rules (`heal/prompt_rules.json`) are read by every agent prompt through
+  one hook (`kernel/prompt_rules.py`): the intake panel, the spec, Ask Rihma, goal help and the agent channel's
+  answers. Solo mode's table of the persona each write needs covers every write route
+  (`cockpit/solo_routes.py`), the four streams' and the assume, settle, delegation revoke and automation routes.
+- **Simple for one, governed for many** (FR-PPL1, D-0024 item 4). **Solo mode**, the default for a new home: one
+  person, named once on the first visit, acts in every persona. "Viewing as: everything" shows every card they
+  may decide; each decision is signed with the persona it needs and the record names it ("decided by Aino as
+  IT"); the persona picker stays in the person menu as a lens. **A persona given to an agent** by delegation
+  (kinds of card, verdicts, a count, an expiry): a Rihma agent decides by the factory's rules, a named agent
+  through the bridge with `rihmasto access agent-decide`, never beyond what the delegation covers, shown as
+  "operations: delegated to ops-agent until <date>". **Team mode** (Settings, People and access, or
+  `rihmasto access team`): the platform's own users (added, invited with a one-use link of which only the
+  sha256 is kept, deactivated; no password), an identity provider's groups mapped to personas (Entra ID, AWS
+  ALB, Google IAP or any OIDC; its keys fetched once or pasted; Test with a token), project roles, the projects
+  each person sees and the pages each persona sees. Moving from solo to team keeps every record, and the solo
+  person keeps this machine's account so the command line signs as before. The first visit asks **Just me** or
+  **A team**; Ask Rihma proposes switching the mode, adding a user, mapping a group and giving a persona to an
+  agent, and says who may decide a card. New commands: `rihmasto access mode|who|test-token|team|solo|user-add|
+  user-set|link|group|role|idp|keys-fetch|agent|agent-decide`. IT's own access file still governs whenever it
+  is there (docs/guides/access.md).
+- **Audits and evals (FR-EVL1)**: Rihmasto runs Gnomon's own capability-based audits, benchmarks and evals on a
+  project's repository, headless: the security posture, the guard attack corpus, the compliance mapping, the data
+  flow register, the agent metrics, audit trail integrity, a change judged by the surface, the eval on the
+  project's own tasks, chaos, doctor, and from a Gnomon source checkout the claim check, the context cost and the
+  degradation contract (`kernel/gnomon_evals*.py`). Each says what it measures, needs, costs and whether it calls
+  models. Whether it runs here is read from the machine's own `gnomon --help`. A run from the cockpit is a job
+  with its log streamed, recorded as `eval_ran` (scores and findings, never a prompt or source), kept with its
+  history and trend. Each audit is a check kind (a weekly Gnomon audit is `every: 7d`) and an automation action
+  (`run_eval`, template **Weekly Gnomon audit of this repository**). Insights has a tile per audit in QA,
+  Governance or Context drift. Review says "an audit found N new issue(s)". A finding becomes a change proposal in
+  one click, and goal help and Ask Rihma can propose running one. A model-calling eval on a confidential project
+  is refused while its role is hosted. **Rihma's own evals per role** (intake questions, spec testability, Ask
+  Rihma answers, goal plans) compare the configured model with others, and Models setup shows them under **On our
+  evals**. `rihmasto evals list|run|history|findings|change|roles`; Audits & evals on the Health tab and page;
+  docs/guides/audits-and-evals.md.
+- **Self-healing by default** (FR-HEAL1, D-0024): every server error, failed or lost job, failed action, broken
+  or empty view, refused step, failed check, automation or runner, degraded scan and "Something's wrong here" is
+  an incident with a stable, secret-free fingerprint, its masked context and a ledger record
+  (`kernel/incidents.py`). The cockpit never shows a bare error: what happened in plain words, Try again, the
+  remedies Rihmasto knows (`kernel/immune.py`: built-in ones, and learned ones a person approves once, offered
+  first and applied on their own only when safe) and **Investigate with Rihma**, whose diagnosis, classification
+  and trace go to the incident's channel thread (`kernel/heal_investigate.py`). A proposed fix goes through the
+  gate on a branch of its own and its pull request opens with `gh` only on a person's approval
+  (`kernel/heal_fix.py`); a Rihmasto bug is prepared against the development repository for the owner. "This is
+  unclear / this is wrong" feedback becomes wording, assistant rule and prompt changes a person approves
+  (`kernel/feedback.py`); a scan that fails or runs long degrades to a partial map (`kernel/heal_feed.py`). The
+  Incidents page and tab, What Rihmasto learned, What's next, Home, Review, Insights and Ask Rihma show them
+  ([docs/guides/self-healing.md](docs/guides/self-healing.md)).
+- **The round-two features wired together**: an automation can run a check (`run_check`, registered when the
+  automations load) and re-read a repository for alignment (`align_scan`), with the templates **Notify when a
+  check fails** (FR-CHK1-AC-10) and **Re-read the repository for alignment when it changes** (FR-ALN1-AC-10);
+  the section for the IDE agent carries the accepted alignment and its open gaps (FR-ALN1-AC-9); Insights
+  measures the checks from their `check_ran` results and the repository drift from `alignment_scanned`,
+  `alignment_accepted` and `alignment_rejected` (FR-INS1-AC-8); every role's model run (analyst, holdout author,
+  verifier, assistant) is recorded in the project's ledger as `model_run` with its role, model, endpoint,
+  tokens, priced cost and duration, never the prompt (`kernel/model_usage.py`), and a refused step above the
+  autonomy cap as `autonomy_capped`, which Governance counts (FR-INS1-AC-9); Health and Insights sit in the
+  sidebar once each and Home says a failing check once (FR-INS1-AC-10); Plug in an existing project offers Open
+  Alignment and the AI tools card once adopted (FR-WLK1-AC-10); the distribution lists every package directory
+  (FR-REL1-AC-5).
+- **The Review, the Google Cloud road and the agent bridge wired into the merged streams**: the Review reads the
+  record kinds the streams really write (failed automation runs, checks and console commands, refused runners,
+  paused automations; FR-REV1-AC-8) and fills **From agents** from the agent channel (FR-REV1-AC-9); its
+  **Morning review digest** runs as an automation too (FR-REV1-AC-10); a Cloud Run job fires the life-cycle
+  events like any road, has a **Scheduled job executions** check, and its failed execution shows in the Review
+  and in Insights' health (FR-GCP1-AC-8); goal help plans a Google Drive goal with the Drive integration and the
+  Google Cloud road (FR-CPL1-AC-6); Insights counts agents' proposals and Rihma's channel answers
+  (FR-INS1-AC-11); the hand-off's "Run it with" names the project's builder runner.
+- **The coding agent you already have, wired in** (FR-HMD1-AC-9): the agent channel's Rihma answers and goal help
+  go through the same guard as every model call, so a harness-backed role answers there too, each run recorded
+  once as `model_run` in the project's ledger with its harness and task; Insights' usage shows the harness as the
+  runner; goal help offers "Use the coding agent you already have" when no model answers.
+- **Run Rihmasto with the coding agent you already have** (FR-HMD1): with no API key, Claude Code (your
+  login), Codex or OpenCode can answer the text roles: the analyst (intake, the spec, Shape it in chat),
+  the holdout author, the verifier and the assistant. Each one runs headless as a text completion with no
+  tools, in an empty folder, never given the repository, the contract or the holdouts. The verifier is
+  given the change's diff in its task. `rihmasto models use claude-code [--roles ...]` (signed and
+  recorded), **Use Claude Code / Use Codex / Use OpenCode** in Models setup, and Home's "No API key?
+  Claude Code found: use it" set it up. Models setup lists the harnesses on this machine with their
+  versions, Test sends its tiny prompt through the harness, and `rihmasto doctor` suggests the one it
+  finds. Each call is a `model_run` in the ledger with the harness, its version, the model, tokens and
+  cost, and the honest assurance "not through Gnomon's lane: no Gnomon audit trail for this call". The
+  verifier stays another model family than the builder, and a confidential project refuses a hosted
+  harness (an OpenCode on a local model can be declared private). It is slower than an API endpoint and
+  spends your subscription: the pages say so. The builder's harness stays a cell runner. A proposal for
+  Gnomon to run and record such calls itself is in `docs/upstream/gnomon-harness-provider.md`.
+- **Real projects of every shape** (FR-RPJ1), after the owner's five real projects were fed in through New
+  project: housekeeping files (ignore lists, editor settings, checksums, `.env.example`, lockfiles) are
+  listed, never read, and the root README is read first and in full; a `.zip` is read inside, never
+  extracted, size-capped, zip bombs refused; a copy's text is read once; a git repository is scanned as its
+  last commit, with "N uncommitted changes (and M untracked files) are not in the last commit" and **Adopt
+  the working copy as it is now** (`--working-copy`); a folder adopted already says so, with **Open** and
+  **Adopt it again as a new project**; a workspace of several repositories lists them, **Adopt each as its
+  own project** or **the folder as one**; a long scan shows its progress with **Cancel**, and a refusal says
+  what to do (**Allow C:\dev**, or "Ask IT to allow it"); **Settings > Folders the cockpit may read**
+  allows a folder without a restart; a confidential adoption says "Adopting works (it calls no model)" with
+  **Use my local model for these roles**; a folder of documents only offers **Track and evaluate this
+  work** (`--documents`). Five new work profiles (game, ML experiment or model, knowledge or tooling,
+  library or CLI, data pipeline), with their gates and recognised from files too; **Kind: not chosen yet**
+  in the header. An adopted project shows its real state instead of the seven stages, its maturity is
+  asked ("How is it used today"), a failed baseline is a health item, a stated test command runs as the
+  baseline after a yes (`rihmasto baseline`), **Set up the watch** watches it through the automations, and
+  its **Areas** (inventory and activity by area, design and lore documents) are a card, served to Insights
+  and answered by Ask Rihma.
+- **Agent observability** (FR-OBS1, docs/guides/agent-observability.md): an opt-in module (off by default,
+  in no preset) and a per-project **Agent sessions** view for developers and IT, read from the team's own
+  agent observability hub over its read-only HTTP API: sessions by harness over time, rework hotspots,
+  failures and whether they were recovered, contract read before edit, session trajectories and the hub's
+  hash-chain verdict with what it attests, each "not measured" with why and how when the hub has nothing,
+  and each linked into the hub. IT sets the hub's address (loopback or private at once; a hosted one only
+  with explicit consent, over https; a token only by its environment variable's name). A developer or IT
+  maps the project to the hub's project (suggested from the repository's catalog annotation, git remote or
+  folder name), recorded. Adopting or attaching notes the hub's hooks by file name only, and the AI tools
+  card offers the module. A snapshot records counts and ids in the ledger, and `agent_rework_heavy` or
+  `agent_failure_unrecovered` when something is new; an automation action and three templates use them.
+  Hooks for Insights, Review, the agent channel, the copilot's catalogue and the checks
+  (`kernel/agentobs/feeds.py`); Ask Rihma explains the view and proposes turning it on and mapping;
+  `rihmasto agentobs status|settings|show|map|snapshot`. Rihmasto installs nothing and writes nothing
+  into the repository.
 
 - **The owner's decisions of 2026-11-24** ("1. Yes 2. Skip 3. Agreed 4. Ask"), after a journey test walked
   their real flows:
@@ -87,6 +406,125 @@ Every notable change to Rihmasto is recorded here, newest first. The format foll
   production. Four templates: when a release reaches test, run its checks and notify; when promoted to
   production, enable the probe check and notify; when a concept is validated, notify the product owner;
   when the gate fails twice, open a change proposal.
+- **Walkthroughs in Ask Rihma** (FR-WLK1): Rihma walks a person through **Plug in an existing project**
+  (the folder or git address checked and scanned in the chat, with the counts, the AI-tool setup found,
+  the languages and what was skipped as secret-looking; confidential, with a hosted role named and Set
+  up a model as a detour; the intent and the posture; then Adopt, with the chat waiting on the job's
+  progress and showing the baseline, the kind of work and What's next), **Start from a new idea**
+  (handed to Shape it in chat, or a quick start), **Start from documents**, **Set up a model** (with
+  Test) and a five-stop **Get started** tour. Without a model by rule (replies read as paths, yes or no
+  in English and Finnish, or the options offered as buttons); with one, a free-text reply is read into
+  an option and the chat says so. Each change waits on a Confirm signed with the person's name and is
+  carried out by the cockpit's own route. Kept per person under `_walkthroughs/`, resumable, one at a
+  time, cancel any time; the factory's ledger records `walkthrough_started`, `walkthrough_step` and
+  `walkthrough_done` with ids and step names only. Started from Home's header, the chat's header, a
+  first-run card on Home, or plain words ("I have an existing project", "uusi idea"); `rihmasto
+  walkthrough <name>` in a terminal; the API under `/api/walkthroughs` ([guide](docs/guides/walkthroughs.md)).
+  An adoption now prints its steps as it goes (`adopt: ...` on stderr).
+- **The console and Open a terminal here** (FR-CON1): each project's Console tab, and `rihmasto console
+  <pid> -- <command>`, run a command in the project's workspace (an attached repository's folder, your own
+  workspace, or the console's working copy, which cannot push) with the output streaming line by line, a
+  time limit and Stop that end every process it started; the commands it knows are offered as buttons
+  (stated ones, the test command found by rule, `package.json` scripts, Makefile targets, CI steps). The
+  Gnomon box runs `gnomon task` in the workspace under its own surface. Every run is a job and
+  `console_ran` in the ledger (who, persona, command line, exit, duration; never an environment value or
+  the output), for developers and IT unless IT changes it, through IT's isolation runner when access is
+  enforced. **Open a terminal here** and `rihmasto shell <pid>` open the operating system's terminal in
+  the workspace with the routing environment, refused through a public origin
+  ([guide](docs/guides/console-and-checks.md), with where the line is between your IDE, the console and a
+  real terminal).
+- **Checks and Health** (FR-CHK1): checks a person enables per project or across projects (the test
+  suite, CI/CD status through the GitHub API or `gh`, a dependency audit with pip-audit, npm audit, cargo
+  audit or osv-scanner, the secret scan, a licence check against a copyleft policy list, a CycloneDX SBOM,
+  an HTTP probe with TLS expiry, the repo gate, the security gate, a custom command), each giving passed,
+  failed or not measured with evidence, never not measured shown as passed; run on demand, on a schedule
+  with the rights of the person who enabled it, or from an automation (`run_check`,
+  `kernel/checks/automation_hook.py`); a failure logs a signal or opens a change once per change of
+  verdict. The Health tab and page show each check's last result, trend and last run; What's next and
+  Home say what fails. `rihmasto checks list|enable|disable|run|history|tick`.
+- **Alignment with your repository's own structure** (FR-ALN1): an adopted or attached project reads the
+  development structure its team keeps in the repository, by rule and running nothing: specs and user
+  stories (spec-kit, Kiro, BMAD, agent-os, PRDs, RFCs), acceptance criteria (given / when / then, EARS,
+  Gherkin), ADRs, API contracts (OpenAPI, AsyncAPI, GraphQL, protobuf, JSON Schema), test suites and their
+  test names, task lists, CI/CD jobs, quality tools and AI tool files (`rihmasto structure <folder>`). It
+  proposes requirements (keeping the repository's ids as their source), criteria, a trace from the existing
+  tests with its basis and confidence, tasks, decisions, API contract references and the gaps (requirements
+  with no test, tests with no requirement, untestable criteria, specs older than the code, CI that runs no
+  test). A person accepts, edits or rejects each, or a group at once: accepted requirements and criteria go
+  into the project's contract, customer-endorsed and noted as imported from the repository
+  (`alignment_accepted`, `alignment_rejected` in the ledger). Suggested changes for the repository (criterion
+  ids in test names as a patch, task list entries, a CI job that runs the tests) are copied or downloaded,
+  never written there; a re-scan shows the drift; the accepted contract and the open gaps go to the IDE.
+  `rihmasto align <pid>`, the cockpit's Alignment tab ([guide](docs/guides/alignment.md)).
+- **Insights** (FR-INS1): health, compliance, governance, security, context drift, QA and token, skill
+  and memory usage of the projects and their agentic work, per project and factory-wide, over 24 hours,
+  7 days, 30 days or all records. Every figure is counted from the records (the ledgers, the canons and
+  Gnomon's own audit trails in the lanes) and none is estimated; a figure with no record says "not
+  measured", why and how to measure it, never zero. Tokens and cost per project, task, role, model,
+  endpoint, runner and local or hosted; tool calls by tool; skills used and compactions; gate pass rate,
+  rounds per task, fail-first and verifier disagreements; decisions by person, delegation or automation,
+  time to decide and verified ledgers; findings, secrets and the red team; spec age, untested
+  requirements, contradictions and context trims. Each tile and chart has a one-line insight computed by
+  rule. The cockpit's **Insights** page (sidebar) and each project's Insights tab, with a table view of
+  every chart; any tile can be pinned to Home as an *Insight* widget. `rihmasto insights` and
+  `rihmasto insights export --format json|csv|otlp-json` (OpenTelemetry GenAI conventions for model
+  runs), which writes a file or prints and sends nothing anywhere (D-0017)
+  ([guide](docs/guides/insights.md)). The sidebar's former "Insight" page is now named Floor.
+- **Review what agents shipped: since you last looked** (FR-REV1): one place to review what agents and
+  automations did while you were away, across your projects or one project, from the records alone:
+  waiting on you (cards your persona may decide, with their age), went wrong (gate failures, escalations,
+  failed releases, jobs and checks, refusals, automations paused by their breaker), decided for you
+  (decisions a delegation or an autopilot made in your name, and the factory's assumptions with due
+  dates), shipped (merged tasks with the gate's verdict, rounds and diff stats; releases to test and
+  production; outputs), from your IDE (commits gated on attached repositories) and the period's cost by
+  project and role. Every item links to its record and says who or what did it. Approve, decline,
+  overturn, stop a delegation or report a change in place through the existing signed routes; mark a
+  change reviewed (`review_marked`) and the whole review done (`review_done`, your next review starts
+  there). The cockpit's **Review** page (first in the sidebar, Home's first card, a tab per project) is
+  keyboard first and works on a phone; a **morning digest** goes to your Teams, Slack or mail receiver at
+  the time you set, held back when nothing happened; `rihmasto review`, `review mark`, `review done` and
+  `review digest` ([guide](docs/guides/review.md)).
+
+- **A Google Cloud road and a Google Drive connector** (FR-GCP1, FR-GDR1): IT configures a `gcp-cloudrun`
+  paved road (projects per environment, a region, an Artifact Registry repository, the identity Rihmasto
+  deploys as and the one the product runs as, VPC egress, Secret Manager secrets by name), checked whole
+  before it is written, in Settings > Paved roads or with `rihmasto road configure`. A product runs there as
+  a Cloud Run service or as a Cloud Run job that Cloud Scheduler runs on a cron schedule with retries; the
+  road renders and validates the exact YAML, scheduler job and gcloud commands (`rihmasto road render`),
+  builds with Cloud Build, runs a job once in the test project as its smoke check, stops at IT's deploy gate,
+  then promotes a service's candidate revision by traffic or gives a job its image and schedule, and rolls
+  back to the previous revision or image (`rihmasto road rollback`, IT or operations). A job's last
+  executions feed its probe, and a failed one opens an incident card. gcloud runs only when it is on PATH
+  and signed in and the road is configured; otherwise the road card says exactly what is missing. A
+  capability declares a Drive folder as a `gdrive` integration and imports the paved road's client
+  (`app/gdrive.py`): the files that arrived since its cursor across every page, downloads, uploads, its
+  scopes stated and its credentials by name (a token or key file for a local run, the runtime service
+  account on Google Cloud), never logging a token or content; the gate runs its tests against a Drive v3
+  stand-in. A project's Releases view shows where each environment deploys and lets IT choose the road and
+  schedule; Settings lists the integration kinds with the Drive connector. Tested end to end against a fake
+  gcloud on PATH and a Drive stand-in on loopback; **not yet run against a real Google Cloud project**
+  ([guide](docs/guides/gcp.md): a scheduled agent that reads recordings from Drive and writes transcripts
+  back, and where the audio goes).
+- **Goal help, the agent bridge and the agent channel** (FR-CPL1, FR-BRG1, FR-CHN1): ask Rihma a goal
+  in a project in your own words, in English or Finnish ("hook this to Google Drive", "run it every night
+  in our cloud", "deploy to test", "add sign-in", "monitor it", "give this to my coding agent") and get a
+  plan from the project's records and what this Rihmasto can do, read from its code (roads, connectors,
+  integration kinds, outputs, and checks, automations, runners and walkthroughs when present), with gaps
+  said plainly and each step one click: a drafted change you edit and file, the right settings, a
+  walkthrough, a command, or a hand-off; a model's plan is checked step by step, and a confidential
+  project never asks a hosted model. **Hand off to an agent** gives a coding agent its brief (the goal or a
+  change, criteria, open questions, the plan, findings, failed gates and checks, conventions, tests, how
+  to report back) and the way Claude Code, Codex, OpenCode or Cursor takes it. New MCP tools read what
+  Rihmasto holds (`rihma_next`, `rihma_plan`, `rihma_questions`, `rihma_handoff`, `rihma_feedback`,
+  `rihma_insights`, `rihma_alignment`, `rihma_health`, `rihma_channel_read`) and write back, signed as the
+  agent for its operator and never deciding (`rihma_progress`, `rihma_propose_answer`,
+  `rihma_request_gate`, `rihma_channel_post`, `rihma_ask_rihma`). Each project has an **agent channel**
+  where people, Rihma's agents and coding agents talk: Rihma answers from the records by rule, else
+  through Gnomon with a trace, within per-thread limits; a person confirms or rejects an agent's proposed
+  answer, pauses the channel, and watches it live, as a tab or beside any view; **Agent activity** lists
+  every live channel. The overview's **Agents working on this** strip shows what agents did. Commands
+  `rihmasto goal`, `rihmasto handoff` and `rihmasto channel` ([guide](docs/guides/agentic-help.md)).
+
 - **Change anything, go back a step, never get stuck** (FR-CHG1): a project's kind of work, mode,
   maturity and title change after it was made, with a preview of what the change means for the
   questions, spec and plan already done (`project_changed` in the ledger, before and after); a project
@@ -212,6 +650,24 @@ Every notable change to Rihmasto is recorded here, newest first. The format foll
 
 ### Changed
 
+- **The public repository explains itself** (FR-PUB1; the owner, 2026-11-25: "README has to have a clear
+  breakdown: what is it, capabilities, how to get started, the picture of architecture ..."): the README is
+  rewritten around what Rihmasto is and is not, its capabilities, getting started, an architecture picture
+  drawn as SVG for light and dark ([docs/assets/architecture.svg](docs/assets/architecture.svg)) with a
+  Mermaid twin and the code behind each layer ([docs/architecture.md](docs/architecture.md)), the tech stack,
+  the data and knowledge layers, the agentic capabilities, Gnomon and the kernel, the use scenarios and an
+  honest status. New guides: [configure with your agents](docs/guides/configure-your-agents.md) (Claude Code,
+  Cursor, Codex and OpenCode through MCP, the conventions file and hooks) and one guide per scenario with what
+  happens under the hood ([docs/scenarios/](docs/scenarios/README.md): a blank page, an existing project and
+  how much structure to enforce, improving and maintaining, fixing a project that lacks governance, workflows
+  and automations). Getting started says how to verify Gnomon's checksums and build provenance before
+  installing it; CONTRIBUTING maps the repository and says how versions and the changelog are kept; this
+  changelog has a section per version.
+- **Prompts compressed** (FR-CTX1): Ask Rihma's prompt from 43,008 to 18,652 characters (its catalogue names
+  controls by id and label, the entries that match the question in full); MCP answers and resources are JSON
+  without indentation and the hand-off tool says its brief once (all read answers 25,798 to 15,569 characters);
+  the spec, holdout author, verifier and goal prompts put the instructions every call shares first, so a prompt
+  cache reuses 62 to 92% of each call; goal help fits its rule-based steps by whole steps instead of slicing.
 - Questions go to GitHub Discussions; security reports go to private vulnerability reporting, at
   the repository's security advisories ([SECURITY.md](SECURITY.md)).
 - The release export's exclude list matches paths in any case, so a left-out folder spelled
@@ -234,6 +690,23 @@ Found by walking the owner's journeys in a real cockpit with a local model:
 - The Jobs page opens the project an adoption made; the first-run name shows at once in the person menu;
   Ask Rihma no longer flags a cockpit view or control it cites as "not found"; a confidential refusal and
   Models setup say how to drop a hosted fallback; `rihmasto settings` and `rewind` previews need no signer.
+
+Found by an independent check of the release before its tag (FR-PUB2; the owner, 2026-11-25: "make sure that
+when you know how it happens I can also do it on a UIX level or by agent request on chat"):
+
+- **Which version is this?** `rihmasto --version` prints it, `rihmasto doctor` reports it, **Settings > About
+  and help** shows it with a check of the machine and the guides, Ask Rihma says it, and the MCP server tells
+  an IDE agent `pyproject.toml`'s version instead of claiming `1.0.0` (`kernel/version.py`, `kernel/about.py`).
+- **Ask Rihma answers questions about Rihmasto itself** by rule, model or not, with Take me there: which
+  version this is, how to verify what you install, how to check this machine, how to fix a project that has no
+  governance, how much structure to take on (the five levels), how to contribute and where the documentation
+  is. They used to land on the Cell, Runners or Outputs view, or on "could not match"
+  (`kernel/assistant_help.py`).
+- **The repository's settings can be checked:** [tools/repo_settings.py](tools/repo_settings.py) reads them
+  with `gh api` (GET only) and lists each one that differs from [docs/maintainers.md](docs/maintainers.md),
+  with the owner's command that sets it. The page now names Dependabot alerts and security updates.
+- Unreleased has its Added, Changed and Fixed headings again, so a change merged after this version's
+  section was cut is not filed under it.
 
 ## [1.0.0.dev0] - 2026-11-23
 

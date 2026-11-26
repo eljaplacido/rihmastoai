@@ -7,8 +7,10 @@
 
 import {
   S, $, $$, h, fill, icon, chip, api, say, button, card, openModal, closeModal, nav, personaLabel, store, AuthError,
-  pageHead, FACTORY_PID, PAGES,
+  pageHead, FACTORY_PID, PAGES, mayAct,
 } from "./core.js";
+import { technical, pick } from "./words.js";
+import { whoWorksHere } from "./people.js";
 
 // -- reading the set -----------------------------------------------------------------------------------
 
@@ -45,7 +47,10 @@ export function moduleShows(kind, id, pid) {
   const found = ownersOf(kind, id);
   return !found.length || found.some((x) => on.includes(x));
 }
-export function pageOn(id) { return moduleShows("pages", id); }
+// A page the signed-in person's personas do not see in team mode (Settings, People and access; FR-PPL1) is off too.
+export function pageOn(id) {
+  return moduleShows("pages", id) && !(((S.meta && S.meta.people) || {}).hidden_pages || []).includes(id);
+}
 export function viewOn(id, pid) { return moduleShows("views", id, pid); }
 export function widgetOn(type) { return moduleShows("widgets", type); }
 // The key figures that belong to a module: shown only while it is on.
@@ -115,7 +120,7 @@ function setLabel(ids) {
   const p = S.modules.presets.find((x) => x.id === presetFor(ids));
   return p ? p.label : "a set of its own";
 }
-function maySet() { return ((S.modules && S.modules.setters) || []).includes(S.persona); }
+function maySet() { return mayAct((S.modules && S.modules.setters) || []); }
 
 async function save(pid, body) {
   const path = pid ? "/api/projects/" + encodeURIComponent(pid) + "/modules" : "/api/modules";
@@ -161,9 +166,10 @@ function drawChooser(box, pid) {
   let inherit = !!pid && !own;
   const status = h("p", { class: "mod-status", role: "status", "aria-live": "polite" });
   const who = !pid && m.factory.chosen ? " Chosen by " + m.factory.set_by + " (" + personaLabel(m.factory.persona) + ")"
-    + (m.factory.reason ? ": " + m.factory.reason : "") + "." : !pid ? " Nobody has chosen yet, so the whole factory is on." : "";
-  const lead = h("p", { class: "mod-now" }, (pid ? (own ? "This project has its own set: " : "This project follows the factory: ")
-    : "This factory uses: ") + setLabel(current) + "." + who);
+    + (m.factory.reason ? ": " + m.factory.reason : "") + "." : !pid ? pick(" Everything is switched on (no one has chosen yet).",
+    " Nobody has chosen yet, so the whole factory is on.") : "";
+  const lead = h("p", { class: "mod-now" }, (pid ? (own ? "This project has its own set: " : pick("This project follows the platform-wide set: ", "This project follows the factory: "))
+    : pick("In use here: ", "This factory uses: ")) + setLabel(current) + "." + who);
   const preset = h("select", { "data-key": "mod:preset", id: "mod-preset", "aria-describedby": "mod-preset-d" },
     m.presets.map((p) => h("option", { value: p.id }, p.label)), h("option", { value: "" }, "A set of my own"));
   const gets = h("p", { class: "small muted mod-gets", id: "mod-preset-d" });
@@ -207,12 +213,28 @@ function drawChooser(box, pid) {
   fill(box, lead,
     pid ? h("div", { class: "set-row" }, h("label", { class: "chk-l", for: "mod-inherit" }, inheritBox, " Use the factory's set")) : null,
     h("div", { class: "set-row" }, h("label", { for: "mod-preset" }, "Preset"), preset), gets, rows,
-    h("div", { class: "field" }, h("label", { for: "mod-reason" }, "Reason"), reason),
+    h("div", { class: "field" }, h("label", { for: "mod-reason" }, "Why are you changing this? (saved with your name)"), reason),
     h("div", { class: "btns" }, saveB, maySet() ? null : h("span", { class: "muted small" }, icon("user"),
       " A " + m.setters.map(personaLabel).join(", ") + " chooses the modules.")), status);
   sync();
 }
 
+// What each module does, in one plain line for a business reader; a technical reader keeps the kernel's own line.
+const MODULE_PLAIN = {
+  intake: "Questions and requirements: Rihma asks what it needs to know and writes down what will be built.",
+  plan: "Plan and agreed checks: you approve the plan before anything is built.",
+  build: "Building and checking: the AI builds each piece, and an automatic quality check reviews it.",
+  delivery: "Delivery: releases you can try, and your approval before anything goes live.",
+  operations: "Running it: live services are watched, problems open incidents, and updates are offered.",
+  change: "Changes: feedback and change requests go back to the right step.",
+  square: "Incoming requests: requests from chats and other places become changes or new ideas you approve.",
+  capabilities: "What we have built: every product and agent, and a release package for each release.",
+  security: "Security: scans of the code, and risks a person accepts for a limited time.",
+  compliance: "Compliance: a proof package for auditors, with every decision and check.",
+  assessment: "Existing systems: bring in a system you already have and see how it stands.",
+  integrations: "Connections: website chats, notices and links to other tools.",
+  assistant: "Ask Rihma: answers about your projects from an AI model. Without it, Ask Rihma only shows the way around the cockpit.",
+};
 function moduleRow(mod, on, locked, onToggle) {
   const id = "mod-m-" + mod.id;
   const box = h("input", { type: "checkbox", id, checked: on, disabled: locked || null, "data-key": "mod:m:" + mod.id,
@@ -220,9 +242,11 @@ function moduleRow(mod, on, locked, onToggle) {
   box.addEventListener("change", () => onToggle(box.checked));
   const needs = mod.depends.length ? "Needs " + mod.depends.map((d) => (moduleOf(d) || { label: d }).label).join(", ") + ". " : "";
   return h("li", { class: "mod-row" + (on ? " on" : "") }, box,
-    h("div", { class: "mod-b" }, h("label", { for: id }, mod.label), " ",
+    // the module's name and what it adds are the kernel's own words (kernel/modules.py), shown as written
+    h("div", { class: "mod-b" }, h("label", { for: id, "data-ud": "" }, mod.label), " ",
       on ? chip("good", "check", "On") : chip("nm", "dashed", "Off"),
-      h("p", { class: "small muted", id: id + "-d" }, (on ? "Adds " : "Off. Turning it on adds ") + mod.adds + ". " + needs
+      h("p", { class: "small muted", id: id + "-d", "data-ud": "" }, !technical() && MODULE_PLAIN[mod.id] ? (on ? "" : "Off. ") + MODULE_PLAIN[mod.id] + " " + needs
+        : (on ? "Adds " : "Off. Turning it on adds ") + mod.adds + ". " + needs
         + (mod.planned.length ? "Planned: " + mod.planned.join("; ") + "." : ""))));
 }
 
@@ -262,6 +286,9 @@ export function firstRun() {
   const name = h("input", { id: "fr-name", maxlength: "200", value: S.person, autocomplete: "name" });
   const persona = h("select", { id: "fr-persona" }, m.setters.map((p) => h("option", { value: p, selected: p === S.persona || null }, personaLabel(p))));
   const status = h("p", { class: "mod-status", role: "status", "aria-live": "polite" });
+  const as = h("div", { class: "field" }, h("label", { for: "fr-persona" }, "As"), persona);
+  const who = whoWorksHere((mode) => { as.hidden = mode === "solo"; });   // Just me, or a team (FR-PPL1)
+  as.hidden = true;
   const use = button("Start with this", { icon: "check", kind: "primary", key: "fr:use", "data-control": "modules", onclick: async () => {
     if (!name.value.trim()) { fill(status, icon("alert"), " Write your name: the choice is signed and recorded."); name.focus(); return; }
     S.person = name.value;
@@ -272,9 +299,10 @@ export function firstRun() {
     use.disabled = true;
     try {
       const out = await save(null, { preset: chosen, reason: "the first-run choice" });
+      const team = await who.apply(S.person.trim());
       store.set("gf.firstrun", "chosen");
       closeModal();
-      say(changeLine(out) + " Settings, Modules changes it.", "good");
+      say(changeLine(out) + " Settings, Modules changes it. " + team, "good");
       if (nav.route) nav.route(true);
     } catch (e) {
       use.disabled = false;
@@ -289,7 +317,6 @@ export function firstRun() {
     h("p", null, "Rihmasto is a set of modules. Use one small part, or the whole factory, and change it later in Settings. "
       + "Whatever you choose, every decision names a person and everything is recorded in the ledger."),
     grid,
-    h("div", { class: "fr-who" }, h("div", { class: "field" }, h("label", { for: "fr-name" }, "Your name"), name),
-      h("div", { class: "field" }, h("label", { for: "fr-persona" }, "As"), persona)),
-    status, h("div", { class: "btns" }, use, later)), { wide: true, icon: "layers" });
+    h("div", { class: "fr-who" }, h("div", { class: "field" }, h("label", { for: "fr-name" }, "Your name"), name), as),
+    who.el, status, h("div", { class: "btns" }, use, later)), { wide: true, icon: "layers" });
 }

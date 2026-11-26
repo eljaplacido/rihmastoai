@@ -645,7 +645,7 @@ class ProfileWordsTest(FactoryTestCase):
             self.assertEqual(bool(keyword_pattern(keyword).search(text)), found, (keyword, text))
         self.assertEqual(propose_profile("Run an agent workflow that orchestrates tools")["basis"],
                          ["agent", "orchestrat", "workflow"])                 # a stem reads without its mark
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        readme = (ROOT / "tests" / "fixtures" / "readme_many_kinds.txt").read_text(encoding="utf-8")   # mixed signals
         own = propose_profile(readme)
         self.assertEqual(own["confidence"], "uncertain", own)
         self.assertNotEqual(own["profile"], "ml_pipeline", own)               # the dogfood misfire

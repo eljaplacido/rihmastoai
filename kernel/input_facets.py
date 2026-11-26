@@ -75,6 +75,7 @@ FACETS: dict[str, dict[str, Any]] = {
                  r"|integraati\w*|rajapin\w*|järjestelm\w*|liittym\w*",
         "cues": r"integrat\w*|apis?|webhooks?|graphql|sftp|import\w* from|sync\w* (?:with|to|from)"
                 r"|connects? (?:to|with)|through the existing|from the [\w'-]+ system|to the [\w'-]+ system"
+                r"|google drive|drive folders?|shared drives?"
                 r"|integraati\w*|rajapin\w*",
         "question": "Which existing systems must it read from or write to?",
         "options": ["none: it stands alone", "one system, read only", "several systems, reading and writing"]},
@@ -132,6 +133,7 @@ FACETS: dict[str, dict[str, Any]] = {
         "words": r"deploy\w*|hosting|hosted|environments?|infrastructure|platform|cloud|on[- ]prem\w*|runtime"
                  r"|käyttöön\w*|ympäristö\w*|infrastruktuur\w*|alusta\w*|pilv\w*",
         "cues": r"deploy\w*|hosted (?:on|in|at)|hosting|on[- ]prem\w*|azure|aws|gcp|google cloud|kubernetes|k8s"
+                r"|cloud run"
                 r"|docker|containers?|staging|production environment|test environment|environments|paved road"
                 r"|runs? on (?:the |our |an? |its )?(?:[\w'-]+ ){0,3}(?:servers?|cloud|tenant|platform|cluster"
                 r"|premises)|ympäristö\w*|pilvipalvel\w*|konesali\w*",

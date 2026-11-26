@@ -29,6 +29,7 @@ ROUTES = [
     ("PUT", rf"/api/models/{ROLE}", "put_model"),
     ("POST", rf"/api/models/{ROLE}/test", "post_model_test"),
     ("POST", rf"/api/models/{ROLE}/remove", "post_model_remove"),
+    ("POST", r"/api/models/use", "post_models_use"),          # a coding agent you already have (FR-HMD1)
 ]
 # Testing an endpoint records nothing and may wait on the network: it runs outside the write lock.
 UNLOCKED = {"post_model_test"}
@@ -177,6 +178,21 @@ class ChatRoutes:
     def post_model_test(self, role: str, body: dict[str, Any], **_: object) -> Reply:
         self._chat_signer(body)
         return 200, {"test": kmodels.probe_role(role)}
+
+    def post_models_use(self, body: dict[str, Any], **_: object) -> Reply:
+        """Answer the text roles (or those named) with Claude Code, Codex or OpenCode (kernel/harness_setup.py)."""
+        from kernel.harness_setup import use
+
+        person, persona = self._chat_signer(body)
+        roles = body.get("roles") if isinstance(body.get("roles"), list) else _text(body, "roles", limit=200) or "all"
+        out = use(self.factory, _text(body, "harness", required=True, limit=32), roles=roles,
+                  model=_text(body, "model", limit=200), family=_text(body, "family", limit=64) or None,
+                  private=body.get("private") is True, command=_text(body, "command", limit=2000) or None,
+                  person=person, persona=persona)
+        if getattr(self.server, "shape_model", None) is None:      # the chat had no model: now it has one
+            self.server.shape_model = _server().chat_model()
+        self._chat_refresh()
+        return 200, {"use": out}
 
     def post_model_remove(self, role: str, body: dict[str, Any], **_: object) -> Reply:
         person, persona = self._chat_signer(body)

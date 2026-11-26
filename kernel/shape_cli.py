@@ -93,6 +93,9 @@ def add_parsers(sub: Any) -> None:
     m.add_argument("--private", action="store_true",
                    help="the host is on your own network (a tailnet, a VPN): confidential projects may use it")
     _signer(md.add_parser("remove", help="take a role back to the shipped routing")).add_argument("role")
+    from kernel.harness_setup import add_use_parser  # `models use claude-code` (FR-HMD1)
+
+    add_use_parser(md, _signer)
 
 
 # -- shape ---------------------------------------------------------------------------------------------
@@ -218,7 +221,15 @@ def commands(model: Callable[[], Any]) -> dict[str, Callable[[Factory, Args], An
             private=a.private,
             person=a.person, persona=a.persona),
         "models remove": lambda f, a: models_setup.remove_role(f, a.role, person=a.person, persona=a.persona),
+        "models use": _use,
     }
+
+
+def _use(f: Factory, a: Args) -> dict[str, Any]:
+    from kernel.harness_setup import use
+
+    return use(f, a.harness, roles=a.roles, model=a.model or "", family=a.family, private=a.private,
+               command=a.command, person=a.person, persona=a.persona)
 
 
 def _shown(show: Show, command: Callable[[Factory, Args], Any], f: Factory, a: Args) -> None:

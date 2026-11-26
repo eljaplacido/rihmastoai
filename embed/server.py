@@ -7,6 +7,9 @@ this server answers only two things:
 - `POST /e/<id>/messages`: one turn of the chat. It needs the embed's key and an `Origin` header the
   embed allows. CORS is answered for allowed origins only.
 
+and the page a person outside the system opens from a one-use reviewer link, `/r/` (kernel/hitl_page.py,
+FR-HITL1): only the asks put to them, under its own strict policy.
+
 It never serves the canon, the ledger, the cockpit or another project. By default it listens on
 127.0.0.1; IT puts it behind their TLS reverse proxy (`--behind-proxy` allows another address).
 
@@ -35,6 +38,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
+from kernel import hitl_page  # an outside reviewer's page, /r/ (FR-HITL1)
 from kernel.access_isolation import serve
 from kernel.embeds import LOCAL_EMBED_PORT, BadTurn, EmbedRefused, RateLimit, converse, embeds
 from kernel.filelock import LockHeld
@@ -167,6 +171,8 @@ class EmbedHandler(BaseHTTPRequestHandler):
         self._send(status, json.dumps(obj).encode("utf-8"), "application/json; charset=utf-8", origin)
 
     def do_GET(self) -> None:
+        if hitl_page.ours(self.path):     # an outside reviewer's one-use link opens here (kernel/hitl_page.py)
+            return hitl_page.serve(self, self.chat.factory)
         m = _ROUTE.match(self.path.split("?")[0])
         if not m or m.group(2) != "widget.js":
             self._json(404, {"error": "not found"})
@@ -209,6 +215,8 @@ class EmbedHandler(BaseHTTPRequestHandler):
         return body
 
     def do_POST(self) -> None:
+        if hitl_page.ours(self.path):     # the reviewer page's own calls (FR-HITL1)
+            return hitl_page.serve(self, self.chat.factory)
         m = _ROUTE.match(self.path.split("?")[0])
         origin = _allowed_origin(self.chat.factory, m.group(1), self.headers.get("Origin")) if m else None
         if not m or m.group(2) != "messages":

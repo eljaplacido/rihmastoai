@@ -19,6 +19,7 @@ from typing import Any
 
 from kernel import access as kaccess
 from kernel import access_isolation as isolation
+from kernel import team_cli
 from kernel.jwt_verify import jwk_from_pem
 from kernel.store import Factory
 
@@ -43,6 +44,7 @@ def add_parsers(sub: Any) -> None:
     p.add_argument("--token-file", help="a token saved from the sign-in proxy, verified offline as the cockpit would")
     p = cmds.add_parser("keys", help="print a JWKS for the provider's public keys in PEM form")
     p.add_argument("pairs", nargs="+", metavar="KID=FILE.pem")
+    team_cli.add_parsers(cmds)          # solo and team mode (kernel/team.py, FR-PPL1)
 
 
 def check(factory: Factory, token_file: str | None = None) -> dict:
@@ -101,4 +103,4 @@ def handlers(show: Callable[[Any], None]) -> dict[str, Handler]:
         show(keys(a.pairs))
         return 0
 
-    return {"access check": run_check, "access keys": run_keys}
+    return {"access check": run_check, "access keys": run_keys, **team_cli.handlers(show)}

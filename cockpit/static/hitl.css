@@ -1,0 +1,41 @@
+/* People in the loop (hitl.js, FR-HITL1): what waits on whom, asking, people outside, and enforcement. */
+
+.hl-view { display: grid; gap: var(--s4); min-width: 0; }
+.hl-cols { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--s4); align-items: start; }
+.hl-main, .hl-side { display: grid; gap: var(--s3); min-width: 0; }
+.hl-list { display: grid; gap: var(--s3); margin: 0; padding: 0; }
+.hl-ask { display: grid; gap: var(--s2); padding: var(--s3); min-width: 0; overflow-wrap: anywhere; }
+.hl-top { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; min-width: 0; }
+.hl-at { margin-left: auto; }
+.hl-text { margin: 0; font-weight: 500; }
+.hl-ask p { margin: 0; }
+.hl-answer { display: grid; gap: var(--s1); padding-top: var(--s2); border-top: 1px solid var(--border); }
+.hl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 0 var(--s3); }
+.hl-grid input, .hl-grid select, .hl-view textarea { width: 100%; min-width: 0; }
+.hl-nudge { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; justify-content: space-between; }
+.hl-links, .hl-levels { display: grid; gap: var(--s2); margin: 0 0 var(--s3); padding: 0; }
+.hl-link, .hl-level { min-width: 0; overflow-wrap: anywhere; }
+.hl-level { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s1) var(--s3); align-items: center;
+  padding: var(--s2) 0; border-top: 1px solid var(--border); }
+.hl-level:first-child { border-top: 0; }
+.hl-lv-c { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.hl-lv-c select { width: auto; min-width: 0; max-width: 100%; }
+@media (max-width: 600px) { .hl-level { grid-template-columns: minmax(0, 1fr); } }
+.hl-once { display: grid; gap: var(--s2); padding: var(--s3); margin: 0 0 var(--s3); border: 1px solid var(--accent-border, var(--border));
+  border-radius: var(--r-md); background: var(--sunken); min-width: 0; }
+.hl-once p { margin: 0; }
+.hl-url { overflow-wrap: anywhere; user-select: all; }
+.hl-more summary { cursor: pointer; color: var(--text-2); margin: var(--s2) 0; }
+.hl-pick { display: flex; align-items: flex-start; gap: 6px; padding: 2px 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 900px) { .hl-cols { grid-template-columns: minmax(0, 1fr); } }
+/* FR-HITL2: links shown once (here and in Ask Rihma), a link base on this computer, why there is no answer form,
+   and what holds delivery for a person's answer (the Inbox and the project's Now line). */
+.hl-once-1 { display: grid; gap: var(--s1); padding-top: var(--s2); border-top: 1px solid var(--border); min-width: 0; }
+.hl-once-1 .btn { justify-self: start; }
+.hl-local { margin: 0; color: var(--warning); overflow-wrap: anywhere; }
+.hl-notyours { margin: 0; overflow-wrap: anywhere; }
+.hl-held { display: grid; gap: var(--s2); padding: var(--s3); margin: 0 0 var(--s3); border: 1px solid var(--border);
+  border-left: 3px solid var(--warning-mark); border-radius: var(--r-md); background: var(--warning-bg); min-width: 0;
+  overflow-wrap: anywhere; }
+.hl-held h2, .hl-held p, .hl-held ul { margin: 0; }
+.hl-held ul { display: grid; gap: var(--s1); padding-left: var(--s4); }

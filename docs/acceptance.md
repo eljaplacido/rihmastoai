@@ -146,7 +146,7 @@ Q-005, R-4 is proposed. R-1-AC-2 is a holdout the builder never sees.
 |---|---|---|---|---|---|
 | `B.develop` | adopted to maintain, explore | Olli adopts the repository; scans it with Rihmasto's own static layer and hands the SARIF in; Pekka files the change; Aino accepts it; Olli runs `rihmasto apply` | inventory and characterisation baseline (3 of 3 passed); the as-is spec is "observed"; the security gate says "not measured" before the scan and "passed" after it; the run waits, adopted to maintain; the rules triage the change as a new requirement that needs a decision; R-2 is added; T-002 merges with tests, trace and fail-first passed | `test_FR_AM5_AC_1_an_existing_service_is_adopted_assessed_and_developed_further_through_the_gate`; live L6 | **passes** |
 | `B.deliver` | as B.develop | Olli runs the chain after the merge | the developed service lands on the preview. Today it fails: "the product has no app/server.py at this revision"; no paved road runs an adopted repository yet | `test_FR_AM5_AC_2_an_adopted_service_developed_further_is_delivered_on_a_paved_road` | **fails** |
-| `B.apply` | as B.develop, in the cockpit | Aino accepts the change card; someone presses **Advance** | the run carries out the accepted change. Today it does not: only `rihmasto apply` does, and the cockpit has no step for it. This holds for any project's accepted change, not only an adopted one | `test_FR_AM5_AC_3_the_run_carries_out_an_accepted_change_as_the_cockpits_advance_would` | **fails** |
+| `B.apply` | as B.develop, in the cockpit | Aino accepts the change card; someone presses **Advance** | the run carries out the accepted change: each step of the pipeline applies accepted change cards not yet applied (kernel/pipeline.py), for any project, not only an adopted one | `test_FR_AM5_AC_3_the_run_carries_out_an_accepted_change_as_the_cockpits_advance_would` | **passes** |
 | `B.rootsuite` | adopted to improve, explore | Olli adopts a small job scheduler whose unittest suite sits at its root, beside its one module, as the `schedule` candidate's does | no pytest marker, so the runner is unittest discovery from the root: the baseline runs the root suite and measures it (2 of 2 passed). The development gate discovers only under `tests/`, so on the same repository it says "not measured: no tests ran", and on a change it would run only the change's own tests, not the root suite (see [gaps](#what-measuring-found)) | `test_FR_AM5_AC_4_a_suite_at_the_repository_root_is_measured_at_adoption_and_the_gate_runs_only_tests` | **passes** |
 | `B.perspectives` | adopted to improve | Olli asks for an assessment | pending: the multi-perspective assessment is being built in another stream. It must give findings per perspective (CI/CD governance, maintenance, security, compliance, architecture), each citing the evidence it rests on, say "not measured" where a tool is missing, and turn each proposed fix into a change card a person accepts | live L6 | **pending** |
 
@@ -244,10 +244,9 @@ fixes belong to the streams that own the code.
    works through the gate, but delivery stops at "the product has no app/server.py at this
    revision". The README says it; the fix is a road (or a start command recorded at adoption) for an
    adopted service.
-2. **An accepted change is not carried out by the run** (`B.apply`, fails). The cockpit files,
-   triages and decides a change, but only the command line's `rihmasto apply` carries it out. In the
-   browser, a person who accepts a change waits for something that never happens. The fix belongs
-   in the pipeline: carry out accepted change cards as it does a validation's hand-off.
+2. **An accepted change is carried out by the run** (`B.apply`, passes now). It was a gap: only the
+   command line's `rihmasto apply` carried a change out. The pipeline now applies accepted change
+   cards at each step, as it does a validation's hand-off, and the cockpit starts a run on acceptance.
 3. **Who asked, and who chose the mode, are not in the ledger on the command line's path**
    (`T.asked`, fails). The cockpit records them; intake does not. One key in `intake_done`
    (`requested_by`, which the ledger then signs with the identity) and the mode's chooser would close it.

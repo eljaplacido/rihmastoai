@@ -4,10 +4,13 @@
    "Set up a model" card while no model Rihma talks with is reachable. */
 
 import { S, $, h, fill, icon, chip, api, act, say, signed, needPerson, enc, button, card, pageHead, skeleton, openModal, closeModal, segmented } from "./core.js";
+import { harnessCard, harnessChip, harnessHomeLine } from "./harness.js";
+import { pick, tw } from "./words.js";
+import { roleEvalsCard } from "./evals.js";
 
 const READY = {
   ready: ["good", "check-circle", "Answers"], configured: ["info", "key", "Key set"], no_key: ["warning", "alert", "No key"],
-  unreachable: ["critical", "x-circle", "Not answering"], unknown: ["nm", "dashed", "Not checked"],
+  unreachable: ["critical", "x-circle", "Not reachable"], unknown: ["nm", "dashed", "Not checked"],
   maybe_key: ["info", "key", "Gnomon may have a key"],
 };
 const HOME = { at: 0, view: null };
@@ -50,11 +53,12 @@ function roleRow(r) {
   }
   return h("li", { class: "mdl-row", "data-key": "model:" + r.role },
     h("div", { class: "mdl-main" },
-      h("b", null, r.label), h("span", { class: "muted small" }, " " + r.purpose),
+      h("b", { "data-ud": "" }, r.role === "holdout_author" ? pick("Hidden-test writer", r.label) : r.label),
+      h("span", { class: "muted small", "data-ud": "" }, " " + r.purpose),   // the role as the routing names it
       h("div", { class: "sig-m" }, h("span", { class: "mono" }, r.model), h("span", null, "family " + r.family),
-        h("span", { class: "mono" }, r.host || "(no host)"), r.fallback ? h("span", null, "fallback " + r.fallback.model + " at " + (r.fallback.host || "?")) : null),
+        h("span", { class: "mono" }, r.harness ? r.harness.label + " on this machine" : r.host || "(no host)"), r.fallback ? h("span", null, "fallback " + r.fallback.model + " at " + (r.fallback.host || "?")) : null),
       h("div", { class: "mdl-chips" }, chip(r.local ? "info" : "accent", r.local ? "server" : "globe", r.local ? "Local" : "Hosted"),
-        keyChip(r.key), chip(st[0], st[1], st[2], { tip: r.readiness.why }), r.set_here ? chip("accent", "edit", "Set on this machine") : chip("neutral", "package", "Shipped")),
+        harnessChip(r), r.harness ? null : keyChip(r.key), chip(st[0], st[1], st[2], { tip: r.readiness.why }), r.set_here ? chip("accent", "edit", "Set on this machine") : chip("neutral", "package", "Default", { tip: "The routing Rihmasto ships with" })),
       result),
     h("div", { class: "mdl-tools" }, test, change, back));
 }
@@ -93,7 +97,8 @@ function openSet(r) {
     key.set(p);
   });
   const form = h("form", { class: "np-form", novalidate: true },
-    h("p", { class: "note" }, icon("shield"), h("span", null, "Written to kernel/routing.local.json on this machine, never to the shipped routing.json. The ledger records who set which role to which host; never the key.")),
+    h("p", { class: "note" }, icon("shield"), h("span", null, "Written to ", h("code", null, "kernel/routing.local.json"), " on this machine, never to the shipped ",
+      h("code", null, "routing.json"), ". The " + tw("ledger") + " records who set which role to which host; never the key.")),
     h("div", { class: "field" }, h("label", { for: "mdl-preset" }, "Preset"), preset),
     h("div", { class: "field" }, h("label", { for: "mdl-base" }, "Base URL (OpenAI-compatible, for example http://127.0.0.1:8080/v1)"), base),
     h("div", { class: "row2" }, h("div", { class: "field" }, h("label", { for: "mdl-model" }, "Model name"), model),
@@ -132,11 +137,17 @@ export async function renderModels(seq) {
   fill(main,
     pageHead("Models", "Which model answers for each of Rihmasto's roles. Point a role at any OpenAI-compatible endpoint: a server on this machine or a hosted provider.", { icon: "cpu" }),
     data.gnomon ? null : h("p", { class: "note warning", "data-key": "mdl-no-gnomon" }, icon("alert"), h("span", null, h("b", null, "Gnomon was not found on this machine. "),
-      "Every model call goes through it: install it or set GNOMON_CMD, then start the cockpit again. Test still checks an endpoint directly.")),
-    h("p", { class: "note" }, icon("info"), h("span", null, "Changes go to " + data.overlay.path + (data.overlay.present ? "" : " (not written yet)")
-      + ", merged over the shipped routing. Stored keys are kept in " + data.secrets_file + ", outside the repository.")),
+      "Every model call goes through it, except a role a coding agent answers (below): install it or set GNOMON_CMD, then start the cockpit again. Test still checks an endpoint directly.")),
+    h("p", { class: "note" }, icon("info"), h("span", null, "Changes are saved in ", h("span", { class: "mono" }, data.overlay.path),
+      (data.overlay.present ? "" : " (not written yet)") + pick(", on top of the settings Rihmasto ships with. Stored keys are kept in ",
+        ", merged over the shipped routing. Stored keys are kept in "), h("span", { class: "mono" }, data.secrets_file),
+      pick(", apart from the code.", ", outside the repository."))),
     card({ title: "Roles", icon: "cpu", id: "mdl-roles", info: "The verifier must be another model family than the builder and its fallback; a change that breaks this is refused." },
-      h("ul", { class: "emb-list mdl-list" }, data.roles.map(roleRow))));
+      h("ul", { class: "emb-list mdl-list" }, data.roles.map(roleRow))),
+    card({ title: "Use the coding agent you already have", icon: "terminal", id: "mdl-harness",
+      info: "Claude Code, Codex or OpenCode answers the text roles, run headless with no tools; each call is recorded as run by it, not through Gnomon's lane." },
+    harnessCard(data, async () => { HOME.at = 0; await renderModels(S.seq); })),
+    roleEvalsCard());                                // Rihma's own evals per role, comparing models (FR-EVL1)
 }
 
 // Home's card while no model Rihma talks with (the analyst or the assistant) answers. Read at most once a minute.
@@ -147,9 +158,10 @@ export async function modelSetupCard(box) {
   } catch (e) { return; }
   if (!box.isConnected || HOME.view.ready) { fill(box); return; }
   const why = HOME.view.gnomon ? "No model Rihma talks with answers yet: the analyst and the assistant have no reachable endpoint or no key."
-    : "Gnomon was not found on this machine, and every model call goes through it.";
+    : "Gnomon was not found on this machine, and every model call but a coding agent's goes through it.";
   fill(box, card({ title: "Set up a model", icon: "cpu", id: "home-setup-card", cls: "setup-card" },
     h("p", null, why, " Point the analyst at a model on this machine or a hosted one, and test it."),
+    harnessHomeLine(HOME.view, async () => { HOME.at = 0; HOME.view = null; await modelSetupCard(box); }),
     h("div", { class: "btns" }, h("a", { href: "#/models", class: "btn primary", "data-control": "models_open", "data-key": "home:models" }, icon("cpu"),
       h("span", { class: "lbl" }, "Open Models setup")))));
 }

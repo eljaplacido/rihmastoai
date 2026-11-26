@@ -4,17 +4,20 @@
 
 import {
   S, $, h, fill, icon, chip, api, act, say, signed, needPerson, nav, enc, link, orList, cap, plural,
-  openModal, closeModal, profileOf,
+  openModal, closeModal, profileOf, withName, mayAct,
 } from "./core.js";
 import { postureChip, openPosture } from "./posture.js";
+import { pick, tw, cardTitle, plurals } from "./words.js";
 import { projectRunnerLine } from "./runners.js";
+import { pathField } from "./picker.js";
+import { archiveButton } from "./setup.js";
 
 const STEP_LABEL = { material: "the material", questions: "the questions", spec: "the spec", plan: "the plan" };
 const FIELD_LABEL = { title: "Title", kind: "Kind of work", mode: "Mode", maturity: "Maturity", build_without_waiting: "Build without waiting for me" };
 
 function changers() { return ((S.meta && S.meta.change) || {}).changers || []; }
 function adders() { return ((S.meta && S.meta.change) || {}).material_adders || []; }
-function mayChange() { return changers().includes(S.persona); }
+function mayChange() { return mayAct(changers()); }
 function base(pid) { return "/api/projects/" + enc(pid); }
 function field(id, label, control, help) {
   return h("div", { class: "field" }, h("label", { for: id }, label), control, help ? h("small", { class: "muted" }, help) : null);
@@ -48,7 +51,7 @@ export function changeButtons(p) {
 
 export function openSettings(p) {
   const pid = p.meta.id;
-  const now = ((p.change || {}).settings) || { title: p.meta.title, kind: p.meta.profile, mode: p.meta.mode, maturity: p.meta.maturity };
+  const now = ((p.change || {}).settings) || { title: p.meta.title, kind: p.meta.profile || p.meta.kind, mode: p.meta.mode, maturity: p.meta.maturity };
   const profiles = (S.meta && S.meta.profiles) || [];
   const title = h("input", { id: "ps-title", "data-key": "ps-title", maxlength: "200", value: now.title || "", autocomplete: "off" });
   const kind = select("ps-kind", profiles.map((x) => [x.id, x.label]), now.kind);
@@ -65,28 +68,30 @@ export function openSettings(p) {
   const runnerBox = h("div", { "data-slot": "runners", "aria-live": "polite" }, h("span", { class: "muted small" }, "Reading the runners…"));
   const redoRow = h("div", { class: "chg-redo", hidden: true }, redo, h("label", { for: "ps-redo" }, ""));
   const preview = h("button", { type: "button", class: "btn", "data-key": "ps-preview" }, icon("eye"), h("span", { class: "lbl" }, "Preview the impact"));
-  const save = h("button", { type: "submit", class: "btn human primary", "data-key": "ps-save", disabled: true }, "Save the settings");
+  // Save previews first when the values are not previewed yet, then saves: one press (the impact stays shown)
+  const save = h("button", { type: "submit", class: "btn human primary", "data-key": "ps-save", disabled: !mayChange() }, "Save the settings");
   const values = () => ({ title: title.value.trim(), kind: kind.value, mode: mode.value, maturity: maturity.value,
     build_without_waiting: nowait.checked });
   let shown = null;
-  const stale = () => { shown = null; save.disabled = true; };
+  const stale = () => { shown = null; };
   [title, kind, mode, maturity, nowait].forEach((el) => el.addEventListener(el.tagName === "INPUT" && el.type !== "checkbox" ? "input" : "change", stale));
-  preview.addEventListener("click", async () => {
-    if (!needPerson()) return;
+  const showImpact = async () => {
+    if (!needPerson()) return null;
     const asked = values();
     const out = await act(form, () => api("POST", base(pid) + "/settings/preview", Object.assign({}, asked, signed())));
-    if (!out) return;
+    if (!out) return null;
     shown = JSON.stringify(asked);
     drawImpact(impact, redoRow, out);
-    // the buttons are on again once the preview is in: Save only for a change a persona that may change can save
-    save.disabled = !Object.keys(out.changes).length || !mayChange();
-  });
+    return out;
+  };
+  preview.addEventListener("click", showImpact);
   const form = h("form", { class: "chg-form", novalidate: true, "aria-label": "Settings of " + p.meta.title },
-    h("p", { class: "muted small" }, "Everything set when the project was made can change. The ledger keeps what it was, who changed it and why; nothing is deleted."),
+    h("p", { class: "muted small" }, "Everything set when the project was made can change. The " + tw("ledger") + " keeps what it was, who changed it and why; nothing is deleted."),
     field("ps-title", "Title", title),
     h("div", { class: "row2" }, field("ps-kind", "Kind of work", kind, "The questions, checks and template follow it."),
-      field("ps-maturity", "Maturity", maturity, "Which stages and gates run, and how big the spec is.")),
-    field("ps-mode", "Mode", mode, "Who answers the panel's questions: people, the factory, or both."),
+      field("ps-maturity", tw("maturity", 1, { cap: true }), maturity, pick("How far it goes: which steps and checks run, and how detailed the requirements are.",
+        "Which stages and gates run, and how big the spec is."))),
+    field("ps-mode", tw("mode", 1, { cap: true }), mode, "Who answers the project's questions: people, the AI, or both."),
     h("div", { class: "field chg-nowait" }, h("div", { class: "chg-redo" }, nowait,
       h("label", { for: "ps-nowait" }, "Build without waiting for me")),
       h("small", { class: "muted" }, "Off: at explore and demo the factory waits once, before the first build, for your Go or Skip on the spec. On: it builds the spec as written.")),
@@ -107,11 +112,16 @@ export function openSettings(p) {
       h("button", { type: "button", class: "btn small", "data-control": "rewind_project", "data-key": "ps-rewind",
         onclick: () => swap(() => openRewind(p)) }, icon("undo"), h("span", { class: "lbl" }, "Go back a step")),
       h("button", { type: "button", class: "btn small", "data-control": "add_material", "data-key": "ps-material",
-        onclick: () => swap(() => openMaterial(p)) }, icon("upload"), h("span", { class: "lbl" }, "Add material"))));
-  form.addEventListener("submit", (e) => {
+        onclick: () => swap(() => openMaterial(p)) }, icon("upload"), h("span", { class: "lbl" }, "Add material")),
+      archiveButton(p, swap)));   // hide it from every list, read-only, restorable (setup.js, FR-SET1)
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (shown !== JSON.stringify(values())) { say("Preview the impact first: the values changed since.", "warning"); preview.focus(); return; }
-    if (!reason.value.trim()) { say("A settings change needs a reason: it is recorded with your name.", "warning"); reason.focus(); return; }
+    if (shown !== JSON.stringify(values())) {          // not previewed yet: preview now, then go on saving
+      const out = await showImpact();
+      if (!out) return;
+      if (!Object.keys(out.changes).length) { say("Nothing changed: choose a new value first.", "warning"); return; }
+    }
+    if (!reason.value.trim()) { say("A settings change needs a reason: it is recorded with your name. The impact is shown above.", "warning"); reason.focus(); return; }
     if (!needPerson()) return;
     act(form, async () => {
       const out = await api("PUT", base(pid) + "/settings", Object.assign(values(), { reason: reason.value.trim(), redo: redo.checked }, signed()));
@@ -178,7 +188,8 @@ export function openRewind(p, preset) {
     placeholder: "for example: the spec was written for the wrong kind of work" });
   const go = h("button", { type: "submit", class: "btn human primary", "data-key": "rw:go", disabled: !possible.length || !mayChange() }, icon("undo"), "Go back");
   const form = h("form", { class: "chg-form", novalidate: true, "aria-label": "Go back a step in " + p.meta.title },
-    h("p", { class: "muted small" }, "The step runs again at the next Advance. What it sets aside moves to the project's superseded folder: nothing is deleted, and the ledger records who went back and why. A released project changes through the change loop instead."),
+    h("p", { class: "muted small" }, "The step runs again at the next Advance. What it sets aside is kept in the project's superseded folder: nothing is deleted, and the "
+      + tw("ledger") + " records who went back and why. A released project changes through Changes instead."),
     list, field("rw-reason", "Reason (required, recorded with your name)", reason),
     h("div", { class: "btns" }, go),
     mayChange() ? null : h("p", { class: "muted small" }, "A " + orList(changers()) + " persona sends a project back a step."));
@@ -206,10 +217,11 @@ export function openMaterial(p) {
     placeholder: "or a file or folder on the cockpit's machine, for example C:\\work\\request.md" });
   const note = h("input", { id: "mt-note", "data-key": "mt-note", maxlength: "300", autocomplete: "off", placeholder: "for example: the desk booking rules" });
   const again = h("input", { type: "checkbox", id: "mt-reintake", "data-key": "mt-reintake", checked: true });
-  const submit = h("button", { type: "submit", class: "btn human primary", "data-key": "mt-add", disabled: !adders().includes(S.persona) }, icon("upload"), "Add the material");
+  const submit = h("button", { type: "submit", class: "btn human primary", "data-key": "mt-add", disabled: !mayAct(adders()) }, icon("upload"), "Add the material");
   const form = h("form", { class: "chg-form", novalidate: true, "aria-label": "Add material to " + p.meta.title },
-    h("p", { class: "muted small" }, "The original request is kept; the material is added after it under its own heading, and the ledger records it."),
-    field("mt-text", "Material (text)", text), field("mt-path", "Or a path", path, "Read the way the intake reads a file or a folder."),
+    h("p", { class: "muted small" }, "The original request is kept; the material is added after it under its own heading, and the " + tw("ledger") + " records it."),
+    field("mt-text", "Material (text)", text),
+    field("mt-path", "Or a path", pathField(path, { kind: "either", title: "Choose a file or a folder of material" }), "Read the way the intake reads a file or a folder."),
     field("mt-note", "What it is (optional)", note),
     h("div", { class: "chg-redo" }, again, h("label", { for: "mt-reintake" }, "Let the panel read it now (re-intake): new questions for what is new; every answer stays.")),
     h("div", { class: "btns" }, submit),
@@ -231,7 +243,7 @@ export function openMaterial(p) {
 
 // -- What's next ---------------------------------------------------------------------------------------------------
 
-function canAct(a) { return !a.personas || !a.personas.length || a.personas.includes(S.persona); }
+function canAct(a) { return !a.personas || !a.personas.length || mayAct(a.personas); }
 
 async function post(pid, path, body) {
   if (!needPerson()) return null;
@@ -270,6 +282,11 @@ function runAction(p, a, btn) {
   return null;
 }
 
+function nextLabel(label) {
+  const m = /^((?:Decide|IT decides) [A-Z]+-\d+: )(.*)$/.exec(String(label || ""));
+  return m ? m[1] + cardTitle(m[2]).text : plurals(label);
+}
+
 export function nextStrip(p) {
   const nx = p.next;
   if (!nx) return null;
@@ -282,7 +299,7 @@ export function nextStrip(p) {
     const b = h("button", Object.assign({ type: "button", class: "btn small" + (look ? " human" : "") + (i === 0 && ok ? " primary" : ""),
       "data-key": "next:" + a.id + (target ? ":" + target : ""),
       disabled: !ok, tip: ok ? null : "A " + orList(a.personas) + " persona can" }, look ? { "data-control": "go_ahead" } : {}),
-    h("span", { class: "lbl" }, a.label));
+    h("span", { class: "lbl", "data-ud": "" }, nextLabel(a.label)));   // the kernel's label, without machine prefixes (kernel/next_step.py)
     b.addEventListener("click", () => runAction(p, a, b));
     return b;
   });
@@ -294,5 +311,5 @@ export function nextStrip(p) {
     h("p", { class: "next-wait" }, "Waits for " + nx.waits_for + "."),
     buttons.length ? h("div", { class: "btns next-btns" }, buttons) : null,
     commands.length ? h("ul", { class: "plain small" }, commands.map((a) => h("li", null, h("b", null, a.label + ": "),
-      a.command ? h("code", null, a.command) : null, a.where ? h("span", { class: "muted" }, " · " + a.where) : null))) : null);
+      a.command ? h("code", null, withName(a.command)) : null, a.where ? h("span", { class: "muted" }, " · " + a.where) : null))) : null);
 }

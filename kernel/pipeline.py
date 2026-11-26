@@ -93,10 +93,15 @@ def _advance(project, *, model, lanes=None, cell_runner=None, verifier_runner=No
              max_steps: int = 12) -> dict:
     history: list = []
     for _ in range(max_steps):
-        held = _paused(project, history) or _checkpoint(project, history)
+        paused = _paused(project, history)
+        if paused is not None:
+            return paused
+        _carry_out_decisions(project, history)     # a person's decision never waits behind another open question
+        held = _checkpoint(project, history)
         if held is not None:
             return held
         _apply_updates(project, history)
+        _apply_accepted(project, model, history)
         idle = adopted_state(project) or attached_state(project)
         if idle is not None:
             return idle | {"history": history}
@@ -424,6 +429,34 @@ def _delivered(project, out: dict, history: list) -> dict:
         return {"state": "failed", "stage": stage, "why": out.get("reason") or out.get("why", "delivery failed"),
                 **extra}
     return {"state": "done", "stage": stage, "env": out.get("env"), **extra}
+
+
+def _carry_out_decisions(project: Project, history: list[Any]) -> None:
+    """Escalations a person decided (retry, accept as it is, stop) are carried out at once."""
+    from kernel.dispatch import resolve_escalations
+
+    if resolve_escalations(project):
+        history.append("escalations resolved")
+
+
+def _apply_accepted(project: Project, model: Any, history: list[Any]) -> None:
+    """Every change card a person accepted and nothing has carried out yet (an assessment's finding, a change filed
+    in the cockpit or by an agent) goes into the spec and the contract now: accepting it is the decision, so the
+    person never needs a further step to put it under way. One the compiler refuses stays open, with why."""
+    from kernel.change import apply_change
+
+    ledger = project.ledger()
+    done = {r["event"]["payload"].get("card") for r in ledger.of_kind("change_applied")}
+    done |= {r["event"]["payload"].get("card") for r in ledger.of_kind("handoff_opened")}   # a release's own
+    for card in Canon(project).cards(state=None, kind="change"):
+        if (card.get("decision") or {}).get("verdict") != "accept" or card["id"] in done:
+            continue
+        try:
+            applied = apply_change(project, card["id"], model=model)
+        except ValueError as exc:      # it changed nothing, or the compiler refused it: said, not dropped
+            history.append({"change_not_applied": {"card": card["id"], "why": str(exc)}})
+            continue
+        history.append({"change_applied": {"card": card["id"], "class": applied["class"], "changed": applied["changed"]}})
 
 
 # -- adopted solutions ------------------------------------------------------------------------------

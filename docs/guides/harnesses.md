@@ -10,6 +10,12 @@ evidence says how they were applied.
 This guide says what each assurance level means, how to choose a runner, and how to add one of your
 own.
 
+The cells are the builder and the verifier, working in a copy of the repository. The text roles (the
+analyst, the holdout author, the verifier when it reviews from its diff, and the assistant) can also be
+answered by a coding agent you already have. That agent runs headless with no tools in an empty folder,
+which is a model setting rather than a runner:
+[Run Rihmasto with the coding agent you already have](harness-models.md).
+
 ## The runners
 
 | Runner | How it is started | Assurance |

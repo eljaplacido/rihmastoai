@@ -103,7 +103,6 @@ class BrownfieldTest(AcceptanceCase):
         out = self.run_chain(p, StockCell())
         self.assertEqual((out["state"], out.get("env")), ("done", "preview"), out.get("why"))
 
-    @unittest.expectedFailure
     def test_FR_AM5_AC_3_the_run_carries_out_an_accepted_change_as_the_cockpits_advance_would(self):
         _, p = self.adopted()
         card = self.accepted_change(p)

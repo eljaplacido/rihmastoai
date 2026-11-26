@@ -106,6 +106,9 @@ def add_parsers(sub: Any) -> None:
     tg = _signed(g.add_parser("tag", help="set a project's tags, for a tag scope"))
     tg.add_argument("pid")
     tg.add_argument("--tag", action="append", default=[])
+    from kernel import setup_cli  # suggest, accept, dismiss and describe (FR-SET1)
+
+    setup_cli.automation_parsers(g)
 
 
 # -- from options to an automation's parts -------------------------------------------------------------------

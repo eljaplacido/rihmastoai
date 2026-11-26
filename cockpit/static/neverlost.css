@@ -1,0 +1,33 @@
+/* Never lost, who acted and decision triage (neverlost.js, triage.js, whoacted.js; FR-NVL1). */
+
+.nvl-row { display: flex; justify-content: flex-start; margin: var(--s1) 0 var(--s2); }
+.nvl-why { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--border);
+  border-radius: var(--r-md); background: var(--surface); color: var(--text-2); font: inherit; font-size: 0.8rem;
+  line-height: 1.4; cursor: pointer; vertical-align: middle; max-width: 100%; }
+.nvl-why:hover, .nvl-why:focus-visible { color: var(--text); border-color: var(--accent); }
+.nvl-why .ic { width: 13px; height: 13px; flex: none; }
+.toast .nvl-why { margin-left: var(--s2); }
+.bub.err .nvl-why { margin-left: var(--s2); }
+
+.nvl-block { display: grid; gap: var(--s2); min-width: 0; }
+.nvl-who { display: flex; gap: 4px; align-items: flex-start; margin: 0; overflow-wrap: anywhere; }
+.nvl-who .ic { width: 13px; height: 13px; flex: none; margin-top: 3px; }
+.nvl-triage { display: grid; gap: var(--s1); min-width: 0; overflow-wrap: anywhere; }
+
+.nvl-view { display: grid; gap: var(--s4); min-width: 0; overflow-wrap: anywhere; }
+.nvl-view .card { display: grid; gap: var(--s2); padding: var(--s3) var(--s4); min-width: 0; }
+.nvl-list { display: grid; gap: var(--s2); margin: 0; padding-left: 1.2em; min-width: 0; }
+.nvl-list p { margin: 2px 0 0; }
+ol.nvl-list { list-style: none; padding-left: 0; }
+.nvl-rank { display: flex; gap: var(--s2); align-items: flex-start; min-width: 0; }
+.nvl-n { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--warning-bg); border: 1px solid var(--warning-border); font-weight: 600; font-size: 0.8rem; }
+.nvl-grew .btn { margin-top: var(--s1); }
+.nvl-run { min-width: 0; }
+
+.nvl-harness { display: grid; gap: var(--s2); min-width: 0; overflow-wrap: anywhere; }
+.nvl-table td, .nvl-table th { vertical-align: top; }
+.nvl-table details summary { cursor: pointer; color: var(--text-2); }
+.nvl-enf { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: flex-end; }
+.nvl-enf .field { flex: 1 1 220px; min-width: 0; }
+.nvl-enf input { width: 100%; }

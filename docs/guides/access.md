@@ -20,9 +20,83 @@ for the gate's tests, adoption's baseline, local products and Gnomon cells, the 
 (no repository inside a lane, no link under `tests/` followed, no replace ref or graft), names from a
 token that never pass for a listed person's (lookalike letters and invisible characters included), a
 key file of public keys only,
-`rihmasto access check` and `rihmasto access keys`, and a record of every change in the factory ledger.
+`rihmasto access check` and `rihmasto access keys`, and a record of every change in the factory ledger. Also
+built: solo mode, personas given to agents and team mode ([Just you, agents, or a team](#just-you-agents-or-a-team)).
 **Planned:** SCIM provisioning, separation of duties and a test run of the separate account on Linux
 (see [Not built yet](#not-built-yet)).
+
+## Just you, agents, or a team
+
+Most of this guide is about IT's access file, the hardened way for an organisation. Before that, Rihmasto
+has three simpler ways of saying who decides, chosen on the first visit ("Just me" or "A team or an
+organisation") and changed any time in **Settings, People and access** (the decision is
+[D-0024](../../decisions/D-0024-self-healing-simple-for-one-governed-for-many.md), item 4; the code is
+`kernel/team.py`, `kernel/team_access.py`, `kernel/solo.py` and `kernel/agent_personas.py`).
+
+### Solo: one person, every persona
+
+The default for a new home. You name yourself once; that name signs every decision, in every tab. The person
+chip says **Viewing as: everything**: the Inbox shows every card you may decide in any persona, each with the
+persona you decide it as ("You decide as IT / partner"), and the decision is signed with that persona, so the
+record says "decided by Aino as IT". A write the page sends while you view everything asks for the persona it
+needs (`"as_needed": true`); the cockpit picks it from the same lists the kernel checks
+(`cockpit/solo_routes.py`, which names the personas of every write route: IT for the agent observability hub's
+address, a persona an automation's action allows, a decider of what a delegation covers to revoke it; a write any
+persona makes keeps the one sent). A persona you name yourself is never changed. As the solo person you also
+approve what self-healing proposes (a learned remedy, a feedback proposal, a pull request, Rihmasto's own
+included), whichever persona you look through; in team mode that takes a persona that may approve and the team
+grants ([self-healing.md](self-healing.md)). Pick a persona in the person menu to
+look through its lens instead; pick **Everything** to go back. Solo is the single-operator mode below: nothing
+is enforced, and the records say which persona each decision used.
+
+### A persona given to an agent
+
+A persona you act as can be given to an agent on one project, by delegation: the kinds of card it may decide,
+the verdicts it may give, how many decisions, until when (at most a week). Settings, People and access ("Agents
+acting as a persona"), `rihmasto access agent <pid> --persona operations --agent ops-agent --kinds incident
+--until 3d`, or Ask Rihma ("delegate operations to the ops agent"). It is shown as "operations: delegated to
+ops-agent until 2026-11-30 08:00 UTC (incident cards)".
+
+- A **Rihma agent** (`--agent-kind rihma`) decides by the factory's own rules, when the pipeline would wait on
+  the card; a kind no rule decides cannot be given to it.
+- A **named agent** (`--agent-kind bridge`, the default) decides through `rihmasto access agent-decide <pid>
+  <DL-n> <card> --verdict <v> --as <agent> --person <its operator> --persona <persona>`.
+
+Either decides in the delegating person's name and persona, with the agent and the delegation on the record
+(`delegated_decision`). Another kind, another verdict, another agent, a card the persona may not decide there,
+the count reached, an ended or revoked delegation, and the kinds that are never delegated (the deploy gate,
+trust, a holdout ruling, a connector, a road, a runner, a concept) are refused, and the refusal is recorded
+(`delegation_declined`). Revoke it on the project's Track view like any delegation.
+
+### Team: people and groups
+
+Turned on in Settings, People and access (**Turn on team mode**) or with `rihmasto access team --person
+<you>`. Personas become people, kept by Rihmasto in `projects/_factory/team/team.json` (`rihmasto.team/1`), and
+every change is a `people_changed` record in the factory's ledger. Only IT changes who works here (the solo
+person becomes the first user, with every persona, IT included).
+
+- **Users**: a name, personas on every project or on named ones, and an e-mail for your own reference. **Invite
+  link** makes a one-use sign-in link (a week; `rihmasto access link <user> --kind sign_in` makes a day's), shown
+  once; Rihmasto keeps only its sha256 and never a password. **Deactivate** ends a user's sessions and links at
+  their next request.
+- **Groups from your identity provider**: name the provider (the same presets as IT's file: oauth2-proxy for
+  Entra ID or Okta, Google IAP, AWS ALB, or any OIDC proxy), fetch its public keys once from its JWKS address
+  (https, or 127.0.0.1) or paste them, map a group to a persona, and **Test with a token** to see who it would
+  sign in as. A token from the proxy signs in as `<issuer>#<subject>`; bind groups by an id nobody can choose,
+  as [Groups](#groups) says.
+- **A project's own roles**: on one project a person or a group holds exactly the personas named there.
+- **Who sees what**: a member sees only the projects their personas cover (another project is not found, for
+  reads and writes alike); **Pages per persona** keeps pages such as Insights from a persona's sidebar.
+- **Who decides which card**: the card kinds' personas, as always; Ask Rihma ("who may decide C-3?") and
+  `rihmasto access who <pid> <card>` name the people and groups who hold them on that project.
+
+Moving from solo to team rewrites no record. The solo person's user carries this machine's account
+(`local:<os user>`) beside their platform identity, so the command line and the MCP server sign as before.
+`rihmasto access solo` goes back, and the users stay for the next time. Team mode checks every write as IT's
+file does (the same `sign` and `require`), with one difference: team mode names no isolation runner, so
+untrusted code runs as the operator's account, as in solo. When code that a model or a
+developer wrote must not run as the operator, use IT's access file. Whenever IT's file is there, it governs and
+team mode's settings are refused; a team file that cannot be read refuses every decision.
 
 ## The two modes
 
@@ -258,34 +332,42 @@ account, carries out that request and no other, once, before the project has a r
 
 Every command of `rihmasto` is in exactly one of these lists; a test keeps them complete.
 
-**Signed (69):** `adopt`, `answer`, `assess`, `assessment change`, `assume`, `automations add`,
-`automations edit`, `automations pause`, `automations remove`, `automations resume`,
-`automations run-now`, `automations tag`, `autonomy set`, `autopilot relay`, `autopilot start`,
-`autopilot stop`, `change`, `concept edit`, `connector disable`, `connector enable`,
-`contract export`, `decide`, `delegation grant`, `delegation revoke`, `embed create`,
-`embed revoke`, `evidence`, `hooks add`, `hooks bind`, `hooks remove`, `inputs refine`, `intake`,
-`integration declare`, `integration withdraw`, `material add`, `models remove`, `models set`,
-`modules set`, `new`, `output`, `pack`, `posture confirm`, `posture set`, `relay cockpit`,
-`relay subscribe`, `relay unsubscribe`, `repo attach`, `repo contract`, `repo gate`,
-`repo holdouts`, `repo releases`, `repo scan`, `rewind`, `runners set`, `security accept`,
-`security ingest`, `settings`, `shape`, `shape attach`, `shape create`, `shape edit`, `shape say`,
-`shape start`, `signal log`, `tracking digest`, `tracking look`, `tracking set`, `workspace open`,
-`workspace submit`.
+**Signed (115):** `access agent`, `access agent-decide`, `access group`, `access idp`, `access keys-fetch`,
+`access link`, `access role`, `access solo`, `access team`, `access user-add`, `access user-set`, `adopt`,
+`agentobs map`, `agentobs settings`, `agentobs snapshot`, `align`, `answer`, `assess`, `assessment change`,
+`assume`, `automations accept`, `automations add`, `automations describe`, `automations dismiss`,
+`automations edit`, `automations pause`, `automations remove`, `automations resume`, `automations run-now`,
+`automations tag`, `autonomy set`, `autopilot relay`, `autopilot start`, `autopilot stop`, `baseline`, `change`,
+`channel post`, `checks disable`, `checks enable`, `checks run`, `concept edit`, `connector disable`,
+`connector enable`, `console`, `contract export`, `data apply`, `data cleanup`, `decide`, `delegation grant`,
+`delegation revoke`, `destinations`, `dev seen`, `dev session`, `embed create`, `embed revoke`, `evals change`,
+`evals roles`, `evals run`, `evidence`, `hooks add`, `hooks bind`, `hooks remove`, `inputs refine`, `intake`,
+`integration declare`, `integration withdraw`, `itops apply`,
+`itops assess`, `material add`, `models remove`, `models set`, `models use`,
+`modules set`, `new`, `output`, `pack`, `posture confirm`, `posture set`, `project archive`, `project remove`,
+`project restore`, `publish`, `relay cockpit`, `relay subscribe`, `relay unsubscribe`, `repo attach`,
+`repo contract`, `repo gate`, `repo holdouts`, `repo releases`, `repo scan`, `review`, `rewind`, `road choose`,
+`road configure`, `road rollback`, `runners set`, `security accept`, `security ingest`, `settings`, `setup`,
+`shape`, `shape attach`, `shape create`, `shape edit`, `shape say`, `shape start`, `shell`, `signal log`,
+`tracking digest`, `tracking look`, `tracking set`, `walkthrough`, `workspace open`, `workspace submit`
 
-**Unsigned (82):** `access check`, `access keys`, `apply`, `assessment compare`, `assessment list`,
-`assessment show`, `automations dry-run`, `automations history`, `automations install-help`,
-`automations list`, `automations show`, `automations templates`, `automations tick`,
-`autonomy show`, `autopilot run`, `autopilot status`, `build`, `capability check`,
-`capability serve`, `catalogue`, `compile`, `concept apply`, `connector check`, `connector status`,
-`connector validate`, `delegation list`, `delegation rules`, `deliver`, `demo`, `doctor`,
-`embed list`, `graph answers`, `graph approvals`, `graph check`, `graph eval`, `graph impact`,
-`graph parity`, `graph path`, `graph refuted`, `graph show`, `graph trace`, `hooks list`, `ide`,
-`inputs read`, `inputs summary`, `integration check`, `integration kinds`, `integration list`,
-`lanes`, `learn`, `models list`, `models presets`, `models test`, `modules presets`, `modules show`,
-`next`, `observe`, `operate`, `posture list`, `posture preview`, `posture show`, `relay list`,
-`relay log`, `relay run`, `repo list`, `resurface`, `run`, `runners check`, `runners list`, `scan`,
-`security status`, `shape show`, `signal list`, `signal triage`, `spec`, `square`, `status`, `sync`,
-`tick`, `track`, `updates apply`, `workspace list`.
+**Unsigned (117):** `access check`, `access keys`, `access mode`, `access test-token`, `access who`,
+`agentobs show`, `agentobs status`, `apply`, `assessment compare`, `assessment list`, `assessment show`,
+`automations dry-run`, `automations history`, `automations install-help`, `automations list`, `automations show`,
+`automations suggest`, `automations templates`, `automations tick`, `autonomy show`, `autopilot run`,
+`autopilot status`, `build`, `capability check`, `capability serve`, `catalogue`, `channel`, `checks history`,
+`checks list`, `checks tick`, `compile`, `concept apply`, `connector check`, `connector status`,
+`connector validate`, `context audit`, `context map`, `context pack`, `context packs`, `data`, `delegation list`,
+`delegation rules`, `deliver`, `demo`, `dev board`, `dev brief`, `dev hooks`, `dev trace`, `doctor`, `embed list`,
+`evals carry`, `evals findings`, `evals history`, `evals list`, `goal`, `graph answers`, `graph approvals`,
+`graph check`, `graph eval`, `graph impact`, `graph parity`, `graph path`, `graph refuted`, `graph show`,
+`graph trace`, `graph view`, `handoff`, `hooks list`, `ide`, `inputs read`, `inputs summary`, `insights`,
+`integration check`, `integration kinds`, `integration list`, `itops show`, `journey`, `lanes`, `learn`, `models list`,
+`models presets`, `models test`, `modules presets`, `modules show`, `next`, `observe`, `operate`, `posture list`,
+`posture preview`, `posture show`, `project archived`, `project duplicates`, `relay list`, `relay log`, `relay run`,
+`repo list`, `resurface`, `road executions`, `road list`, `road render`, `run`, `runners check`, `runners list`,
+`scan`, `security status`, `shape show`, `signal list`, `signal triage`, `spec`, `square`, `status`, `structure`,
+`sync`, `tick`, `track`, `updates apply`, `workspace list`
 
 An unsigned command takes no person. Many only read (`status`, `square`, `catalogue`, the `graph`
 commands, the lists, `doctor`, `access check`); the others (`run`, `deliver`, `apply`, `tick`,
@@ -579,6 +661,10 @@ This takes a factory from a single operator to enforced access. Every step is on
    file and the keys; each decision names the verified identity beside the person.
 
 ## Not built yet
+
+- **Team mode's isolation and pages.** Team mode names no isolation runner (IT's access file does), and the
+  pages kept from a persona are kept from its sidebar and palette: the projects a member sees are enforced, the
+  pages within them are not.
 
 - **Joiners and leavers.** Nobody is provisioned or removed automatically. SCIM 2.0, so that a leaver
   loses their personas and their open cards re-route, is the next phase. Until then, removing a person

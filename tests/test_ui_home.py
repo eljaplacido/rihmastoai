@@ -96,7 +96,7 @@ class UiHomeTest(unittest.TestCase):
 
         self.step("spend over no run")
         spend = b.wait("(document.querySelector('#grid [data-type=\"spend\"] .card-body') || {}).innerText", "Spend")
-        self.assertIn("Not measured", spend)                   # the demo ran no Gnomon run: nothing is priced
+        self.assertIn("Not known yet", spend)                  # the demo ran no Gnomon run: nothing is priced
         self.assertNotIn("0.0000", spend)
         self.check()
 

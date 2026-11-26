@@ -217,8 +217,28 @@ def _explained(rel: str, how: str, before: dict[str, Any], after: dict[str, Any]
     if decisions:
         return _decisions_judged(decisions.group(1), before, after)
     old = (before.get(" files") or {}).get(rel)
-    return filing is not None and rel == f"projects/{filing}/ledger.jsonl" and how == "changed" and \
-        old is not None and _appended(Path(before[" home"]), rel, old)
+    if old is None or how != "changed" or not _appended(Path(before[" home"]), rel, old):
+        return False
+    return (filing is not None and rel == f"projects/{filing}/ledger.jsonl") or _usage_only(Path(before[" home"]), rel,
+                                                                                            old)
+
+
+_LEDGER = re.compile(r"projects/[^/]+/ledger\.jsonl")
+
+
+def _usage_only(home: Path, rel: str, old: tuple[int, str]) -> bool:
+    """A ledger that only grew by ``model_run`` records: the kernel's usage metadata of a model's run (its role,
+    model, tokens and time, never its prompt or answer, kernel/model_usage.py), not a write of the surface's.
+    Any other record appended is still the surface's doing, and judged so; the new lines are searched for
+    canaries all the same."""
+    if not _LEDGER.fullmatch(rel):
+        return False
+    try:
+        fresh = (home / rel).read_bytes()[old[0]:].decode("utf-8").splitlines()
+        kinds = {json.loads(line)["event"]["kind"] for line in fresh if line.strip()}
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return kinds == {"model_run"}
 
 
 def _file_changes(before: dict[str, Any], after: dict[str, Any], filing: str | None, own: set[str]) -> list[str]:

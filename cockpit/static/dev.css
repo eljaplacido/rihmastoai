@@ -1,0 +1,41 @@
+/* The development board, its briefing, and the trace (cockpit/static/devboard.js, devtrace.js, FR-DEV1): tokens
+   only, no colour of its own. The board reuses the Tasks view's lanes (.board, .lane, .tcard). */
+.dv-view { min-width: 0; display: grid; gap: var(--s3); }
+.dv-brief { min-width: 0; }
+.dv-brief .card-head { flex-wrap: wrap; }
+.dv-brief .card-t { white-space: normal; }
+.dv-brief .card-tools { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin-left: auto; }
+.dv-next { margin: 0 0 var(--s3); padding: var(--s3); border-radius: var(--r-md); background: var(--sunken);
+  border: 1px solid var(--border); border-left: 3px solid var(--accent); min-width: 0; }
+.dv-next-l { margin: 0; font-size: var(--fs-sm); color: var(--text-2); }
+.dv-next-t { margin: 2px 0 var(--s1); font-size: var(--fs-lg); font-weight: 600; overflow-wrap: anywhere; }
+.dv-next-w { margin: 0 0 var(--s2); overflow-wrap: anywhere; }
+.dv-sub { margin: var(--s3) 0 var(--s2); font-size: var(--fs-md); }
+.dv-by { margin: 0 0 var(--s2); }
+.dv-sess, .dv-block, .dv-dl { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.dv-at { color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dv-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; }
+.dv-filters select, .dv-filters input[type="search"] { width: auto; flex: 1 1 150px; max-width: 240px; min-width: 0; }
+.dv-filters .seg { flex: 0 1 auto; max-width: 100%; overflow-x: auto; }
+.dv-mine { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); }
+.dv-card { overflow-wrap: anywhere; }
+.dv-card.dv-blocked { border-left: 3px solid var(--critical-mark); }
+.dv-card.dv-review { border-left: 3px solid var(--warning-mark); }
+.dv-card.dv-in_progress { border-left: 3px solid var(--accent); }
+.dv-card.dv-done { border-left: 3px solid var(--good-mark); }
+.dv-dh { margin: var(--s2) 0 4px; font-size: var(--fs-sm); font-weight: 600; }
+.dv-card code, .dv-dl code { overflow-wrap: anywhere; word-break: break-word; }
+.dv-timeline { display: grid; gap: var(--s2); margin: 0; padding: 0; list-style: none; }
+.dv-item { padding: 6px var(--s3); border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); min-width: 0; }
+.dv-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.dv-who { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); min-width: 0; }
+.dv-who .who-r { color: var(--text-3); }
+.dv-what { margin: 2px 0 0; overflow-wrap: anywhere; }
+.dv-item .tc-d { margin-top: 2px; }
+.dv-rec { margin: var(--s2) 0 0; padding: var(--s2); max-height: 320px; overflow: auto; font-size: var(--fs-xs);
+  background: var(--sunken); border: 1px solid var(--border); border-radius: var(--r-sm); white-space: pre-wrap; word-break: break-word; }
+.dv-hooks { min-width: 0; }
+.dv-file { margin: var(--s2) 0; min-width: 0; }
+.dv-file-h { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.dv-file-h code { overflow-wrap: anywhere; }
+.dv-hooks-holder:empty { display: none; }

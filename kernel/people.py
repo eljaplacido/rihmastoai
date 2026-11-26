@@ -22,7 +22,7 @@ NOT_A_PERSON: frozenset[str] = frozenset({
     "solution-factory", "solutionfactory", "assistant", "bot", "system", "kernel"})
 
 PERSONAS = ("business_owner", "product_owner", "concept_evaluator", "end_user", "it",
-            "developer", "operations", "stakeholder", "compliance")
+            "developer", "operations", "stakeholder", "compliance", "ai_architect")
 
 
 def is_person(name: object) -> bool:

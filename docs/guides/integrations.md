@@ -24,6 +24,14 @@ planned and what Gnomon must add first.
 Nothing connects until IT configures it. With no subscription, no source and no connector, the
 factory runs exactly as before.
 
+**How a capability reaches outside systems** at run time is a different path: it declares each one in its
+plan and IT binds it on the paved road ([data-integrations.md](data-integrations.md)). One of those is a
+**Google Drive folder**: the product imports the paved road's Drive client, lists the files that arrived
+since its last run, downloads them and uploads results, with credentials by name only. On Google Cloud it
+runs as the road's runtime service account, so no key is needed ([gcp.md](gcp.md), a scheduled agent that
+reads recordings from Drive and writes transcripts back). A failing scheduled job opens an incident card,
+which the relay below sends on.
+
 ## 1. Who does what
 
 | Step | Who | How |

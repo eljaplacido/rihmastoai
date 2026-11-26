@@ -6,8 +6,9 @@
 
 import {
   S, $$, h, fill, icon, chip, api, say, signed, needPerson, AuthError, nav, enc, segmented, openModal, closeModal,
-  personaLabel, orList, fmtAt, cap,
+  personaLabel, orList, fmtAt, cap, mayAct,
 } from "./core.js";
+import { pick, tw, autonomyWord, modeWord, ambitionWord } from "./words.js";
 
 const GROUPS = [["intake", "The panel"], ["spec", "The spec"], ["gates", "The gates"], ["people", "People"]];
 // One line for the live region: the preview itself is read when the person moves to it, never announced whole.
@@ -49,7 +50,7 @@ function cardGroup(label, items, value, onChange) {
     const b = h("button", { type: "button", role: "radio", "aria-checked": "false", class: "prof-card pst-card",
       "data-key": "posture:" + p.id },
     h("span", { class: "prof-top" }, h("span", { class: "cat-ic" }, icon(p.icon)),
-      p.autonomy ? chip("neutral", "gauge", "Autonomy " + p.autonomy, { tip: "How far the factory goes alone before a person's go-ahead" }) : null),
+      p.autonomy ? chip("neutral", "gauge", autonomyWord(p.autonomy), { tip: "How far the AI goes alone before a person's go-ahead (level " + p.autonomy + " of 5)" }) : null),
     h("b", null, p.label), h("span", { class: "prof-s" }, p.summary));
     b.addEventListener("click", () => choose(p.id));
     return b;
@@ -83,8 +84,11 @@ function weightRows(p, weights, onChange) {
 }
 
 function choiceSeg(name, label, options, value, onChange) {
-  return segmented(name, options.map((m) => [m, cap(m)]), value, onChange, { label });
+  // a mode or maturity in the reader's words ("People answer every question", not "Socratic")
+  const said = (m) => (MODE_PLAIN[m] ? pick(MODE_PLAIN[m], cap(m)) : cap(ambitionWord(m)));
+  return segmented(name, options.map((m) => [m, said(m)]), value, onChange, { label });
 }
+const MODE_PLAIN = { socratic: "People answer every question", assume: "Rihma assumes, you confirm", mixed: "People and Rihma" };
 
 // The New project dialog's "How it runs": a posture (or none, as before), its weights, the maturity and
 // mode it allows, and the kernel's preview. ``profile`` gives the chosen work profile (whether it has
@@ -96,7 +100,8 @@ export function postureSection(opts) {
   const body = h("div", { class: "pst-body" });
   const out = h("div", { class: "pst-out" });
   const live = h("p", { class: "vh", role: "status" });
-  const custom = { id: "", label: "No posture", icon: "settings", summary: "Choose the maturity and mode yourself; the autonomy cap alone, as before." };
+  const custom = { id: "", label: "No posture", icon: "settings", summary: pick("Custom: set each option yourself.",
+    "Choose the maturity and mode yourself; only the autonomy cap and the maturity's own gates apply.") };
   let timer = null;
   let asked = 0;
   const preview = () => {
@@ -104,8 +109,9 @@ export function postureSection(opts) {
     timer = setTimeout(async () => {
       const n = ++asked;                  // a preview still on its way for an earlier choice is dropped
       if (!state.posture) {
-        fill(out, h("p", { class: "note small" }, icon("info"), h("span", null, "No posture: the project runs by the maturity and mode you choose, "
-          + "with the autonomy cap alone and the maturity's own gates, as before.")));
+        fill(out, h("p", { class: "note small" }, icon("info"), h("span", null, pick("No posture (custom): you choose how far the project "
+          + "goes and who answers its questions.", "No posture: the project runs by the maturity and mode you choose, "
+          + "with the autonomy cap alone and the maturity's own gates."))));
         live.textContent = "No posture.";
         return;
       }
@@ -167,8 +173,10 @@ export function postureChip(p, open) {
   const known = rec && postureOf(rec.name);
   const b = h("button", { type: "button", class: "chip " + (known ? "accent" : "nm") + " pst-chip", "data-control": "posture",
     "data-key": "posture", "aria-haspopup": "dialog",
-    tip: known ? known.summary + " Open what it does and what holds the project." : "No posture: the project runs by its mode, maturity and autonomy cap. Open to choose one." },
-  icon(known ? known.icon : "sliders"), h("span", null, known ? "Posture: " + known.label : "No posture"));
+    tip: known ? known.summary + " Open what it does and what holds the project."
+      : pick("No working rules chosen: the project runs by its ambition, who answers its questions, and how much the AI may do alone. Open to choose a set.",
+        "No posture: the project runs by its mode, maturity and autonomy cap. Open to choose one.") },
+  icon(known ? known.icon : "sliders"), h("span", null, known ? tw("posture", 1, { cap: true }) + ": " + known.label : pick("No working rules set", "No posture")));
   b.addEventListener("click", () => (open ? open() : openPosture(p)));
   return b;
 }
@@ -265,7 +273,7 @@ export async function openPosture(p) {
   let changed = false;
   const rec = view.posture;
   const known = rec && postureOf(rec.posture);
-  const may = (info().setters || []).includes(S.persona);
+  const may = mayAct(info().setters || []);
   const body = h("div", { class: "au-body pst-dialog" },
     known ? h("p", null, h("b", null, known.label), ": " + known.summary) : h("p", null, view.note || "No posture."),
     rec ? h("p", { class: "muted small" }, "Chosen by " + rec.chosen_by + (rec.persona ? " (" + personaLabel(rec.persona) + ")" : "")

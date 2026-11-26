@@ -145,6 +145,7 @@ class Access:
     keys: Mapping[str, Key] = field(default_factory=dict)     # the provider's public keys, by key id
     keys_sha256: str | None = None      # of the key file, as read
     keys_error: str | None = None       # why the key file cannot be used: the cockpit then refuses sign-in
+    source: str = "file"                # "file": IT's access file; "team": Rihmasto's own team mode (kernel.team)
 
     @property
     def enforced(self) -> bool:
@@ -230,6 +231,11 @@ def _proxy(obj: object) -> Proxy:
                  origin=_text(p, "origin", path, _ORIGIN, "the https origin people open (no path)"),
                  audience=_text(p, "audience", path, _AUDIENCE, "the audience the token is issued for"),
                  token_header=_token_header(p, preset, path), **_claims(p, path))
+
+
+def proxy_of(obj: object) -> Proxy:
+    """A sign-in proxy's settings, checked as the access file's ``proxy`` is (team mode's provider, kernel.team)."""
+    return _proxy(obj)
 
 
 def _isolation(obj: object) -> Runner:

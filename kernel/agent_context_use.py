@@ -46,8 +46,11 @@ _SHELL = re.compile(r"[;&|<>`$(){}\\\n]")
 
 
 def _kind(command: str, context: str) -> str | None:
+    """By the command's own words first (a script's name split at ``_``: ``sync_harness.py`` syncs), then by the
+    line or heading it sits under ("run ... and check the diff" does not make a sync script a test)."""
+    words = command.replace("_", " ")
     for kind, rule in _KINDS:
-        if rule.search(command):
+        if rule.search(words):
             return kind
     for kind, rule in _KINDS:
         if rule.search(context):

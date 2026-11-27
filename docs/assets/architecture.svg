@@ -1,0 +1,223 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 960" width="1200" height="960" role="img" aria-labelledby="t d">
+  <title id="t">Rihmasto architecture</title>
+  <desc id="d">People and agents reach Rihmasto through the cockpit, Ask Rihma, the command line, the MCP server and doorbells. The Rihmasto kernel, standard-library Python with no model in it, runs the chain from material and intake to spec, hashed contract, plan, builder cells, gate, delivery and operation, with people deciding in the Inbox. It writes the data layer, files in the factory home with a hash-chained ledger, which the knowledge layer reads. Every model call goes through the Gnomon harness, which runs the Rihma agents against local or hosted models; other harnesses are opt-in and checked after the run. Releases go only to paved roads IT configured; feedback comes back through the change loop.</desc>
+  <style>
+    svg { --bg:#ffffff; --ink:#1f2328; --muted:#59636e; --band:#f6f8fa; --line:#d0d7de; --arrow:#59636e;
+          --k-f:#ddf4ff; --k-s:#0969da; --g-f:#ffffff; --n-f:#fbefff; --n-s:#8250df; --d-f:#fff8c5; --d-s:#9a6700;
+          --a-f:#dafbe1; --a-s:#1a7f37; --e-f:#fff1e5; --e-s:#bc4c00; --p-f:#ffffff; --p-s:#57606a; }
+    @media (prefers-color-scheme: dark) {
+      svg { --bg:#0d1117; --ink:#e6edf3; --muted:#9198a1; --band:#151b23; --line:#3d444d; --arrow:#9198a1;
+            --k-f:#0c2d6b; --k-s:#4493f8; --g-f:#151b23; --n-f:#2e1a4f; --n-s:#ab7df8; --d-f:#3b2e0a; --d-s:#d29922;
+            --a-f:#0f3d1e; --a-s:#3fb950; --e-f:#3d1d0a; --e-s:#f0883e; --p-f:#0d1117; --p-s:#9198a1; }
+    }
+    .bg { fill: var(--bg); }
+    .band { fill: var(--band); stroke: var(--line); stroke-width: 1; }
+    text { font-family: -apple-system, "Segoe UI", system-ui, "Noto Sans", Helvetica, Arial, sans-serif; fill: var(--ink); }
+    .h { font-size: 15px; font-weight: 700; }
+    .hs { font-size: 13px; fill: var(--muted); }
+    .b { font-size: 13px; font-weight: 600; }
+    .s { font-size: 12px; fill: var(--muted); }
+    .title { font-size: 20px; font-weight: 700; }
+    .p { fill: var(--p-f); stroke: var(--p-s); stroke-width: 1.2; }
+    .k { fill: var(--k-f); stroke: var(--k-s); stroke-width: 1.2; }
+    .g { fill: var(--g-f); stroke: var(--k-s); stroke-width: 1.2; stroke-dasharray: 4 3; }
+    .n { fill: var(--n-f); stroke: var(--n-s); stroke-width: 1.2; }
+    .d { fill: var(--d-f); stroke: var(--d-s); stroke-width: 1.2; }
+    .a { fill: var(--a-f); stroke: var(--a-s); stroke-width: 1.2; }
+    .e { fill: var(--e-f); stroke: var(--e-s); stroke-width: 1.2; }
+    .ar { stroke: var(--arrow); stroke-width: 1.6; fill: none; marker-end: url(#tip); }
+    .loop { stroke: var(--k-s); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; marker-end: url(#tipk); }
+    .al { font-size: 12px; fill: var(--muted); font-style: italic; }
+  </style>
+  <defs>
+    <marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--arrow)"/>
+    </marker>
+    <marker id="tipk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--k-s)"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="960" rx="12"/>
+  <text class="title" x="24" y="38">Rihmasto: how the parts relate</text>
+  <text class="hs" x="24" y="60">Models propose. The kernel decides by rule. People own intent and policy. Every step lands in a hash-chained ledger.</text>
+
+  <!-- A. Where people and agents meet it -->
+  <rect class="band" x="16" y="76" width="1168" height="112" rx="10"/>
+  <text class="h" x="30" y="98">Where people and agents meet it</text>
+  <text class="hs" x="290" y="98">every feature in the UI and by chat; every write signed by a person and a persona</text>
+  <rect class="p" x="30" y="110" width="216" height="66" rx="8"/>
+  <text class="b" x="44" y="134">Cockpit (web UI)</text>
+  <text class="s" x="44" y="152">Inbox, views per persona,</text>
+  <text class="s" x="44" y="168">one-use sign-in on 127.0.0.1</text>
+  <rect class="p" x="258" y="110" width="216" height="66" rx="8"/>
+  <text class="b" x="272" y="134">Ask Rihma (chat)</text>
+  <text class="s" x="272" y="152">answers by rule first, proposes;</text>
+  <text class="s" x="272" y="168">you confirm, Take me there</text>
+  <rect class="p" x="486" y="110" width="216" height="66" rx="8"/>
+  <text class="b" x="500" y="134">Command line: rihmasto</text>
+  <text class="s" x="500" y="152">every action, JSON out,</text>
+  <text class="s" x="500" y="168">--person and --persona</text>
+  <rect class="p" x="714" y="110" width="216" height="66" rx="8"/>
+  <text class="b" x="728" y="134">MCP server: your IDE agent</text>
+  <text class="s" x="728" y="152">Claude Code, Cursor, Codex,</text>
+  <text class="s" x="728" y="168">OpenCode: reads and proposals</text>
+  <rect class="p" x="942" y="110" width="228" height="66" rx="8"/>
+  <text class="b" x="956" y="134">Doorbells</text>
+  <text class="s" x="956" y="152">signed webhooks, website chats,</text>
+  <text class="s" x="956" y="168">signals: never a decision</text>
+
+  <path class="ar" d="M600,190 L600,214"/>
+
+  <!-- B. The kernel -->
+  <rect class="band" x="16" y="216" width="1168" height="266" rx="10"/>
+  <text class="h" x="30" y="240">Rihmasto kernel</text>
+  <text class="hs" x="160" y="240">standard-library Python, no model in it: decides what is accepted, writes the ledger, asks people</text>
+
+  <rect class="k" x="30" y="256" width="132" height="62" rx="8"/>
+  <text class="b" x="42" y="280">Material, intake</text>
+  <text class="s" x="42" y="298">what is read, the</text>
+  <text class="s" x="42" y="312">panel's questions</text>
+  <rect class="k" x="174" y="256" width="132" height="62" rx="8"/>
+  <text class="b" x="186" y="280">Spec</text>
+  <text class="s" x="186" y="298">given / when / then,</text>
+  <text class="s" x="186" y="312">who confirmed what</text>
+  <rect class="k" x="318" y="256" width="132" height="62" rx="8"/>
+  <text class="b" x="330" y="280">Contract</text>
+  <text class="s" x="330" y="298">compiled by rule,</text>
+  <text class="s" x="330" y="312">pinned by a hash</text>
+  <rect class="k" x="462" y="256" width="132" height="62" rx="8"/>
+  <text class="b" x="474" y="280">Plan</text>
+  <text class="s" x="474" y="298">tasks, write scopes,</text>
+  <text class="s" x="474" y="312">holdouts in custody</text>
+  <rect class="k" x="606" y="256" width="132" height="62" rx="8"/>
+  <text class="b" x="618" y="280">Builder cells</text>
+  <text class="s" x="618" y="298">one task per cell,</text>
+  <text class="s" x="618" y="312">in its own lane</text>
+  <rect class="k" x="750" y="256" width="132" height="62" rx="8"/>
+  <text class="b" x="762" y="280">Gate</text>
+  <text class="s" x="762" y="298">kernel runs the tests,</text>
+  <text class="s" x="762" y="312">fail-first, verifier</text>
+  <rect class="k" x="894" y="256" width="132" height="62" rx="8"/>
+  <text class="b" x="906" y="280">Delivery</text>
+  <text class="s" x="906" y="298">paved roads only,</text>
+  <text class="s" x="906" y="312">IT's deploy gate</text>
+  <rect class="k" x="1038" y="256" width="132" height="62" rx="8"/>
+  <text class="b" x="1050" y="280">Operate</text>
+  <text class="s" x="1050" y="298">probes, incidents,</text>
+  <text class="s" x="1050" y="312">canary, rollback</text>
+  <path class="ar" d="M162,287 L172,287"/>
+  <path class="ar" d="M306,287 L316,287"/>
+  <path class="ar" d="M450,287 L460,287"/>
+  <path class="ar" d="M594,287 L604,287"/>
+  <path class="ar" d="M738,287 L748,287"/>
+  <path class="ar" d="M882,287 L892,287"/>
+  <path class="ar" d="M1026,287 L1036,287"/>
+  <path class="loop" d="M1104,320 L1104,338 L240,338 L240,322"/>
+  <text class="al" x="560" y="353">the change loop: feedback, incidents and drift go back to the right step</text>
+
+  <rect class="g" x="30" y="366" width="216" height="104" rx="8"/>
+  <text class="b" x="44" y="390">Inbox: people decide</text>
+  <text class="s" x="44" y="408">approve a plan, accept a demo,</text>
+  <text class="s" x="44" y="424">pass a deploy gate; each card</text>
+  <text class="s" x="44" y="440">names a person and a persona</text>
+  <rect class="g" x="258" y="366" width="216" height="104" rx="8"/>
+  <text class="b" x="272" y="390">Access</text>
+  <text class="s" x="272" y="408">solo by default: you hold every</text>
+  <text class="s" x="272" y="424">persona; team mode or IT's</text>
+  <text class="s" x="272" y="440">access file when you grow</text>
+  <rect class="g" x="486" y="366" width="216" height="104" rx="8"/>
+  <text class="b" x="500" y="390">Autonomy and posture</text>
+  <text class="s" x="500" y="408">the cap, delegation with an end</text>
+  <text class="s" x="500" y="424">date, autopilot in a sandbox;</text>
+  <text class="s" x="500" y="440">prototype to regulated</text>
+  <rect class="g" x="714" y="366" width="216" height="104" rx="8"/>
+  <text class="b" x="728" y="390">Keep it healthy</text>
+  <text class="s" x="728" y="408">checks, automations with guards,</text>
+  <text class="s" x="728" y="424">self-healing remedies, Review,</text>
+  <text class="s" x="728" y="440">a recorded console</text>
+  <rect class="g" x="942" y="366" width="228" height="104" rx="8"/>
+  <text class="b" x="956" y="390">Existing repositories</text>
+  <text class="s" x="956" y="408">adopt or attach, assess, align</text>
+  <text class="s" x="956" y="424">their own specs and tests,</text>
+  <text class="s" x="956" y="440">watch upstream drift</text>
+
+  <!-- C. Knowledge and data -->
+  <path class="ar" d="M300,484 L300,506"/>
+  <path class="ar" d="M900,484 L900,506"/>
+  <text class="al" x="912" y="500">appends every transition</text>
+  <text class="al" x="312" y="500">reads the records, writes nothing</text>
+
+  <rect class="band" x="16" y="508" width="574" height="164" rx="10"/>
+  <text class="h" x="30" y="532">Knowledge layer</text>
+  <text class="hs" x="160" y="532">read models, rebuilt from the records</text>
+  <rect class="n" x="30" y="546" width="268" height="54" rx="8"/>
+  <text class="b" x="44" y="568">Knowledge graph</text>
+  <text class="s" x="44" y="586">requirement to test to release, typed</text>
+  <rect class="n" x="310" y="546" width="268" height="54" rx="8"/>
+  <text class="b" x="324" y="568">Context packs</text>
+  <text class="s" x="324" y="586">what each agent is given, and why</text>
+  <rect class="n" x="30" y="608" width="268" height="54" rx="8"/>
+  <text class="b" x="44" y="630">Insights and Review</text>
+  <text class="s" x="44" y="648">counted, or "not measured"</text>
+  <rect class="n" x="310" y="608" width="268" height="54" rx="8"/>
+  <text class="b" x="324" y="630">Structure map</text>
+  <text class="s" x="324" y="648">a repo's own specs, ADRs, tests</text>
+
+  <rect class="band" x="610" y="508" width="574" height="164" rx="10"/>
+  <text class="h" x="624" y="532">Data layer</text>
+  <text class="hs" x="712" y="532">plain files in the factory home; no database</text>
+  <rect class="d" x="624" y="546" width="268" height="54" rx="8"/>
+  <text class="b" x="638" y="568">Ledger (ledger.jsonl)</text>
+  <text class="s" x="638" y="586">hash-chained, append-only</text>
+  <rect class="d" x="904" y="546" width="268" height="54" rx="8"/>
+  <text class="b" x="918" y="568">Canon, spec, contract</text>
+  <text class="s" x="918" y="586">answers, assumptions, decisions</text>
+  <rect class="d" x="624" y="608" width="268" height="54" rx="8"/>
+  <text class="b" x="638" y="630">repo.git and lanes</text>
+  <text class="s" x="638" y="648">the product, cells' work trees</text>
+  <rect class="d" x="904" y="608" width="268" height="54" rx="8"/>
+  <text class="b" x="918" y="630">Holdout custody</text>
+  <text class="s" x="918" y="648">outside every builder's reach</text>
+
+  <!-- D. Agent layer -->
+  <path class="ar" d="M600,672 L600,700"/>
+  <text class="al" x="612" y="692">every model call goes through Gnomon</text>
+
+  <rect class="band" x="16" y="702" width="1168" height="148" rx="10"/>
+  <text class="h" x="30" y="726">Agent layer</text>
+  <rect class="a" x="30" y="738" width="560" height="100" rx="8"/>
+  <text class="b" x="44" y="760">Gnomon harness: the glue</text>
+  <text class="s" x="44" y="779">roles and tools, write scope, sandbox, trust dial, audit trail, enforced during the run</text>
+  <text class="s" x="44" y="797">runs the Rihma agents: analyst, holdout author, builder,</text>
+  <text class="s" x="44" y="813">verifier (always another model family), assistant</text>
+  <text class="s" x="44" y="829">any harness, any model, under one structure of specs, contracts and tests</text>
+  <rect class="a" x="604" y="738" width="270" height="100" rx="8"/>
+  <text class="b" x="618" y="760">Models</text>
+  <text class="s" x="618" y="779">any OpenAI-compatible endpoint,</text>
+  <text class="s" x="618" y="797">local (llama.cpp, vLLM) or hosted,</text>
+  <text class="s" x="618" y="813">or your coding agent's own login</text>
+  <rect class="a" x="888" y="738" width="282" height="100" rx="8"/>
+  <text class="b" x="902" y="760">Other harnesses (opt-in)</text>
+  <text class="s" x="902" y="779">Claude Code, Codex, OpenCode</text>
+  <text class="s" x="902" y="797">or a command IT approved run cells;</text>
+  <text class="s" x="902" y="813">rules checked after the run</text>
+  <path class="ar" d="M590,788 L602,788"/>
+  <path class="ar" d="M886,788 L876,788"/>
+
+  <!-- E. Destinations -->
+  <path class="ar" d="M1176,287 L1190,287 L1190,880 L1176,880"/>
+  <rect class="band" x="16" y="862" width="1160" height="86" rx="10"/>
+  <text class="h" x="30" y="886">Destinations</text>
+  <text class="hs" x="140" y="886">paved roads IT configured; outputs per audience</text>
+  <rect class="e" x="30" y="898" width="214" height="40" rx="8"/>
+  <text class="b" x="44" y="923">Local preview: runs for real</text>
+  <rect class="e" x="256" y="898" width="214" height="40" rx="8"/>
+  <text class="b" x="270" y="923">Docker: stand-ins only</text>
+  <rect class="e" x="482" y="898" width="214" height="40" rx="8"/>
+  <text class="b" x="496" y="923">Cloud Run: stand-ins only</text>
+  <rect class="e" x="708" y="898" width="214" height="40" rx="8"/>
+  <text class="b" x="722" y="923">Azure: preview</text>
+  <rect class="e" x="934" y="898" width="230" height="40" rx="8"/>
+  <text class="b" x="948" y="923">Web app, OpenAPI, packs</text>
+</svg>

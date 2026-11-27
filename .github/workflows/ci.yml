@@ -16,8 +16,9 @@ jobs:
   checks:
     name: ${{ matrix.os }}, Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    # Windows starts processes several times slower than Linux, and the suite starts many: it needs longer.
-    timeout-minutes: ${{ matrix.os == 'windows-latest' && 120 || 60 }}
+    # Windows starts processes several times slower than Linux, and the suite starts many: it needs longer, and
+    # runs in parallel processes (tools/ci_run.py) so it still fits.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 150 || 90 }}
     strategy:
       fail-fast: false
       matrix:
@@ -42,7 +43,12 @@ jobs:
           git config --global core.autocrlf false
 
       - name: Test suite
+        if: runner.os != 'Windows'
         run: python -m unittest discover -s tests
+
+      - name: Test suite (parallel processes)
+        if: runner.os == 'Windows'
+        run: python tools/ci_run.py --shards 2
 
       - name: Contract check
         run: python tools/contract_check.py contract/contract.json

@@ -7,17 +7,42 @@ import {
   pageHead, skeleton, openModal, closeModal, profileOf, profileChip, personaLabel, segmented, viewChoice,
   setViewChoice, avatar, ago, fmtAge, fmtAt, nowChip, iconButton, infoButton, attachTip, local, AuthError,
   KIND_LABEL, KIND_ICON, VERDICT_LABEL, CATALOGUE_STATE, FACTORY_PID, STAGE_ICON, ACCENTS, cap,
+  mayAct, decides, everything, inboxPersona,
 } from "./core.js";
-import { squareDiagram, catalogueCard, WIDGET_DEFS, liveState } from "./widgets.js";
-import { impactPanelFor, tryPanel } from "./project.js";
+import { squareDiagram, catalogueCard, catalogueState, WIDGET_DEFS, liveState } from "./widgets.js";
+import { impactPanelFor, tryPanel, openThread, batchBar, pickBox } from "./project.js";
+import { decideBlock, cardTop, details, commentRow } from "./decide.js";
+import { projectHue } from "./scope.js";
+import { elsewhereNote } from "./elsewhere.js";
+import {
+  word, technical, pick, nowSaid, ambitionWord, modeWord, titleOf, factoryWord, cardTitle, cardTitleEl, plainCard, measureHow, stageWord,
+} from "./words.js";
+import { squareLanes, squareScope, squarePid, setSquarePid, scopeSwitch, scopeLine } from "./square.js";
+import { peopleCard, inboxPersonaFilter } from "./people.js";   // solo and team mode (FR-PPL1)
+import { heldAll } from "./hitl_held.js";   // required answers that hold delivery (FR-HITL2)
 import { dataTable } from "./charts.js";
 import { currentTheme, setTheme, loadLayout, applyTheme } from "./dashboard.js";
 import { loadModules, modulesCard, moduleShows } from "./modules.js";
 import { scanStep, looksLikeFolder } from "./scan.js";
+import { adoptLabel, adoptChoice, adoptEach } from "./feedin.js";
+import { pathField, browseButtons } from "./picker.js";
+import { foldersCard } from "./folders.js";
 import { postureSection } from "./posture.js";
+import { roadsCard, integrationsCard } from "./roads.js";
+import { archivedSection } from "./setup.js";
+import { agentObsSettingsCard } from "./agentobs.js";
+import { aboutCard } from "./about.js";
+import { enforcementSettingsCard as harnessSettingsCard } from "./whoacted.js";   // FR-NVL1
+import { enforcementSettingsCard } from "./enforcement.js";   // how strict each stage is, for all projects (FR-ENF1)
+import { structureSettingsCard } from "./structure.js";   // Rihmasto's structure for all projects (FR-STR1)
+import { unreadableNote } from "./heal.js";   // a project that cannot be read is named (FR-NVL3)
 
 const CHANNEL_ICON = { chat: "message-square", feed: "signal", form: "file-check", email: "send", monitoring: "activity",
   meeting: "users", embed: "code", manual: "edit" };
+// Where a request came in, in the reader's words ("embed" is the website chat to a business owner).
+const CHANNEL_PLAIN = { chat: "A chat", feed: "A feed", form: "A form", email: "An email", monitoring: "Monitoring", meeting: "A meeting",
+  embed: "Website chat", manual: "Typed in by me" };
+function channelWord(c) { return technical() ? cap(c) : CHANNEL_PLAIN[c] || cap(c); }
 const SIGNAL_STATE = {
   new: ["warning", "dashed", "New"], routed: ["info", "arrow-right", "Routed to a project"], concept: ["accent", "lightbulb", "Concept"],
   validated: ["good", "check-circle", "Validated"], parked: ["neutral", "pause", "Parked"], rejected: ["neutral", "x-circle", "Rejected"],
@@ -45,7 +70,7 @@ async function actKeep(container, control, fn, fallback) {
 // The people in a corner: one keyboard stop that names everyone with their persona (on focus, the same
 // tooltip a pointer gets), and each avatar's own tooltip for the pointer.
 function people(list, where) {
-  if (!list || !list.length) return h("span", { class: "muted small" }, "No one yet");
+  if (!list || !list.length) return h("span", { class: "muted small" }, "No one has worked here yet");
   const said = list.map((p) => p.name + " (" + personaLabel(p.persona) + ")");
   return h("span", { class: "people", role: "group", tabindex: "0", "aria-label": "People " + where + ": " + said.join(", "),
     tip: said.join(", ") },
@@ -80,22 +105,23 @@ function namePeopleOnMap(map, people) {
 // -- the delivery square ------------------------------------------------------------------------
 
 function signalForm(sq) {
-  const text = h("textarea", { rows: "3", maxlength: "8000", placeholder: "What was asked, in the words it came in", "aria-label": "The need" });
-  const channel = h("select", { "aria-label": "Channel" }, sq.channels.map((c) => h("option", { value: c, selected: c === "chat" }, cap(c))));
-  const source = h("input", { maxlength: "200", placeholder: "Where: #ops-team, a meeting, a feed", "aria-label": "Source" });
+  const text = h("textarea", { rows: "3", maxlength: "8000", placeholder: "What was asked, in the words it came in", "aria-label": pick("The request", "The need") });
+  const channel = h("select", { "aria-label": pick("Came in through", "Channel") }, sq.channels.map((c) => h("option", { value: c, selected: c === "chat" }, channelWord(c))));
+  const source = h("input", { maxlength: "200", placeholder: "Where: #ops-team, a meeting, a feed", "aria-label": pick("Where exactly", "Source") });
   const form = h("form", { class: "sig-form", novalidate: true, id: "log-signal" },
-    h("div", { class: "field" }, h("label", null, "The need"), text),
-    h("div", { class: "row2" }, h("div", { class: "field" }, h("label", null, "Channel"), channel),
-      h("div", { class: "field" }, h("label", null, "Source"), source)),
-    h("div", { class: "btns" }, h("button", { type: "submit", class: "btn primary", "data-control": "log_signal" }, icon("plus"), "Log the signal"),
-      h("span", { class: "muted small" }, "Signed with your name. Triage routes it to a project, or makes a concept.")));
+    h("div", { class: "field" }, h("label", null, pick("The request", "The need")), text),
+    h("div", { class: "row2" }, h("div", { class: "field" }, h("label", null, pick("Came in through", "Channel")), channel),
+      h("div", { class: "field" }, h("label", null, pick("Where exactly", "Source")), source)),
+    h("div", { class: "btns" }, h("button", { type: "submit", class: "btn primary", "data-control": "log_signal" }, icon("plus"), pick("Log the request", "Log the signal")),
+      h("span", { class: "muted small" }, pick("Saved under your name. Rihma will file it under a project or turn it into a new idea for you to approve.",
+        "Signed with your name. Triage routes it to a project, or makes a concept."))));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     if (!text.value.trim()) { say("Write the need first.", "warning"); text.focus(); return; }
     if (!needPerson()) return;
     actKeep(form, form.querySelector('button[type="submit"]'), async () => {
       const out = await api("POST", "/api/signals", Object.assign({ text: text.value.trim(), channel: channel.value, source: source.value.trim() }, signed()));
-      say(out.signal.id + " is logged. Triage it to route it.", "good");
+      say(out.signal.id + pick(" is logged. Sort it to send it to a project or make it an idea.", " is logged. Triage it to route it."), "good");
       S.focusNext = '[data-key="' + CSS.escape("triage:" + out.signal.id) + '"]';   // the next step: its Triage
       await nav.rerender();
     });
@@ -146,13 +172,15 @@ function signalRow(s) {
 }
 
 function conceptCard(c) {
-  const may = ((S.meta && S.meta.concept_editors) || []).includes(S.persona);
+  const may = mayAct((S.meta && S.meta.concept_editors) || []);
   const profiles = (S.meta && S.meta.profiles) || [];
   const key = "concept:" + c.card;
   const title = h("input", { value: c.title || "", maxlength: "80", "aria-label": "Title", disabled: !may || null, "data-key": key + ":title" });
-  const profile = h("select", { "aria-label": "Work profile", disabled: !may || null, "data-key": key + ":profile" }, profiles.map((p) => h("option", { value: p.id, selected: p.id === c.profile }, p.label)));
-  const maturity = h("select", { "aria-label": "Maturity", disabled: !may || null, "data-key": key + ":maturity" }, Object.keys(S.meta.maturities).map((m) => h("option", { value: m, selected: m === c.maturity }, m)));
-  const mode = h("select", { "aria-label": "Mode", disabled: !may || null, "data-key": key + ":mode" }, Object.keys(S.meta.modes).map((m) => h("option", { value: m, selected: m === c.mode }, m)));
+  // the labels say what each choice changes; a business reader gets the plain words for each value
+  const L = { profile: pick("Type of project", "Work profile"), maturity: pick("How far it should go", "Maturity"), mode: pick("Who answers its questions", "Mode") };
+  const profile = h("select", { "aria-label": L.profile, disabled: !may || null, "data-key": key + ":profile" }, profiles.map((p) => h("option", { value: p.id, selected: p.id === c.profile }, p.label)));
+  const maturity = h("select", { "aria-label": L.maturity, disabled: !may || null, "data-key": key + ":maturity" }, Object.keys(S.meta.maturities).map((m) => h("option", { value: m, selected: m === c.maturity }, ambitionWord(m))));
+  const mode = h("select", { "aria-label": L.mode, disabled: !may || null, "data-key": key + ":mode" }, Object.keys(S.meta.modes).map((m) => h("option", { value: m, selected: m === c.mode }, modeWord(m))));
   const reason = h("input", { maxlength: "2000", placeholder: "Reason (recorded with your decision)", "aria-label": "Reason", "data-key": key + ":reason" });
   const p = profileOf(c.profile);
   const box = h("article", { class: "concept", id: "concept-" + c.card, "data-id": c.card },
@@ -160,12 +188,13 @@ function conceptCard(c) {
       h("div", null, h("b", null, c.title), h("div", { class: "sig-m" }, h("span", { class: "mono" }, c.card), h("span", null, "from " + (c.signal || "?")),
         c.raised_by ? h("span", null, "raised by " + c.raised_by) : null, h("span", null, ago(c.created))))),
     h("p", { class: "concept-t" }, c.text || c.body || ""),
-    (c.profile_basis || []).length ? h("p", { class: "muted small" }, "Profile proposed by rule from: ", (c.profile_basis || []).join(", ")) : null,
+    (c.profile_basis || []).length ? h("p", { class: "muted small" }, pick("Suggested type (from the words ", "Profile proposed by rule from: "),
+      (c.profile_basis || []).join(", "), pick(")", "")) : null,
     h("div", { class: "concept-f" },
       h("div", { class: "field" }, h("label", null, "Title"), title),
-      h("div", { class: "field" }, h("label", null, "Work profile"), profile),
-      h("div", { class: "field" }, h("label", null, "Maturity"), maturity),
-      h("div", { class: "field" }, h("label", null, "Mode"), mode)));
+      h("div", { class: "field" }, h("label", null, L.profile), profile),
+      h("div", { class: "field" }, h("label", null, L.maturity), maturity),
+      h("div", { class: "field" }, h("label", null, L.mode), mode)));
   if (!may) {
     box.append(h("p", { class: "muted small" }, icon("user"), " A " + ((S.meta && S.meta.concept_editors) || []).map(personaLabel).join(" or ") + " validates, parks or rejects it."));
     return box;
@@ -254,9 +283,14 @@ function focusConcept(main) {
 export async function renderSquare(seq) {
   const main = $("#main");
   const ask = SQ_EVERY ? "?signals=all" : SQ_SHOWN.size ? "?show=" + enc([...SQ_SHOWN].join(",")) : "";
-  const sq = await loaded(main, "the delivery square", () => api("GET", "/api/square" + ask));
+  const [all] = await loaded(main, "the delivery square", () => Promise.all([api("GET", "/api/square" + ask),
+    S.projects ? Promise.resolve(S.projects) : api("GET", "/api/projects").then((p) => { S.projects = p; return p; })]));
   if (seq !== S.seq) return;
-  document.title = "Square · Rihmasto.ai";
+  // All projects, or one: the scope switch at the top (square.js, FR-UXO1).
+  const pidNow = (S.projects || []).some((p) => p.id === squarePid()) ? squarePid() : "";
+  const sc = squareScope(all, pidNow);
+  const sq = sc.sq;
+  document.title = "Delivery square · " + (pidNow ? ((S.projects || []).find((p) => p.id === pidNow) || {}).title : "all projects") + " · Rihmasto";
   const listed = sq.signals_list || [];
   const counts = sq.signals || { new: listed.filter((s) => s.state === "new").length, total: listed.length };
   const pipe = WIDGET_DEFS.pipeline.render({ pipeline: sq.pipeline }, { size: "L" });
@@ -271,41 +305,47 @@ export async function renderSquare(seq) {
   const open = sq.end_user_feedback_open;
   const untriaged = typeof sq.end_user_feedback_untriaged === "number" ? sq.end_user_feedback_untriaged : null;
   fill(main,
-    pageHead("Delivery square", "Needs arrive from the operation, a concept is validated, the factory builds, end users test, and production runs. Feedback loops back.",
-      { icon: "square", actions: [button("Log a signal", { icon: "plus", kind: "primary", "data-control": "log_signal",
-        onclick: () => { const t = $("#log-signal textarea"); if (t) { t.scrollIntoView({ block: "center" }); t.focus(); } } })] }),
-    card({ title: "The square at a glance", icon: "square", cls: "sq-card", info: "The delivery square (toimitusneliö): four corners around one canon. "
+    pageHead("Delivery square", word("square.lede") + ". A need arrives, a person validates it, Rihma builds it, end users test it, and it runs in production; feedback loops back.",
+      { icon: "square", actions: [scopeSwitch(pidNow, (v) => { setSquarePid(v); nav.rerender(); }),
+        button(pick("Log a request", "Log a signal"), { icon: "plus", kind: "primary", "data-control": "log_signal",
+          onclick: () => { const t = $("#log-signal textarea"); if (t) { t.scrollIntoView({ block: "center" }); t.focus(); } } })] }),
+    scopeLine(sc),
+    squareLanes(sc),
+    pidNow ? null : card({ title: "The square at a glance", icon: "square", cls: "sq-card", info: "The delivery square (toimitusneliö): four corners around one canon. "
       + "Every arrow is a hand-over with a person who decides." }, namePeopleOnMap(squareDiagram(sq, { people: sq.people }), sq.people)),
     h("div", { class: "sq-cols" },
-      card({ title: "Needs arrive", icon: "signal", id: "needs", tools: [h("span", { class: "muted small" }, counts.new + " new · " + plural(counts.total, "signal")),
+      card({ title: pick("New requests", "Needs arrive"), icon: "signal", id: "needs", tools: [h("span", { class: "muted small" }, counts.new + " new · " + plural(counts.total, pick("request", "signal")) + pick(" in total", "")),
         people(sq.people.needs, "who raised needs")],
       info: "A signal is a need as it arrived: a chat, a data feed, a monitoring alert, a meeting, the website chat. Triage needs no model: "
           + "a signal about an existing project becomes a change on it; a new need becomes a concept for a business owner or product owner." },
       signalForm(sq),
       listed.length ? h("ul", { class: "sig-list" }, listed.map(signalRow)) : empty("signal", "No signal yet."), more),
-      card({ title: "Concepts to validate", icon: "lightbulb", id: "concepts", tools: [people(sq.people.concept, "who decide concepts")],
+      card({ title: pick("New ideas to approve", "Concepts to validate"), icon: "lightbulb", id: "concepts", tools: [people(sq.people.concept, "who decide concepts")],
         info: "Nothing becomes a project without a person's decision. Edit the title, profile, maturity and mode, then validate, park or reject." },
       (sq.concepts || []).length ? h("div", { class: "concepts" }, sq.concepts.map(conceptCard))
-        : empty("lightbulb", "No concept waits. A triaged new need appears here."))),
-    card({ title: "The factory", icon: "factory", tools: [people(sq.people.factory, "who build")], info: "Projects per stage, in four bands: Decide, Shape, Deliver, Run." }, pipe),
+        : empty("lightbulb", pidNow ? "Concepts are not a project yet: switch to All projects to see them." : "No concept waits. A new need that fits no project appears here once it is triaged."))),
+    card({ title: "Being built", icon: "factory", id: "factory", tools: [people(sq.people.factory, "who build")], info: pick("Projects per step, from the first request to live.", "Projects per stage, in four bands: Decide, Shape, Deliver, Run.") }, pipe),
     h("div", { class: "sq-cols" },
-      card({ title: "End-user testing", icon: "users", tools: [
-        typeof open === "number" ? h("span", { class: "muted small" }, open + " open" + (untriaged === null ? "" : " · " + untriaged + " not triaged")) : null,
+      card({ title: pick("People try it", "End users test"), icon: "users", id: "testing", tools: [
+        typeof open === "number" ? h("span", { class: "muted small" }, technical() ? open + " open" + (untriaged === null ? "" : " · " + untriaged + " not triaged")
+          : open ? plural(open, "piece") + " of feedback waiting for a decision" + (untriaged ? " (" + untriaged + " not sorted yet)" : "") : "No feedback waiting") : null,
         people(sq.people.testing, "who test")], info: "What end users report comes back as a change, triaged to the stage that can fix it. "
         + "It never goes straight to code. Every open report waits: a triaged one on a decision, one not triaged yet for its class. "
         + "The corner above counts them all." },
       (sq.feedback || []).length ? h("ul", { class: "fb-list" }, sq.feedback.map((f) => h("li", { class: "fb-row" },
-        avatar(f.person || "?"), h("div", { class: "sig-b" }, h("a", { href: link(f.project, "changes", f.card) }, f.title),
+        avatar(f.person || "?"), h("div", { class: "sig-b" }, h("a", { href: link(f.project, "changes", f.card) }, cardTitleEl(f.title)),
           h("div", { class: "sig-m" }, h("span", null, f.project_title), h("span", { class: "mono" }, f.card), f.person ? h("span", null, f.person) : null, h("span", null, ago(f.created)))),
-        f.state === "open" ? (f.triaged ? chip("warning", "clock", "Waits on a decision") : chip("warning", "dashed", "Not triaged")) : chip("good", "check", cap(f.state)))))
+        f.state === "open" ? (f.triaged ? chip("warning", "clock", "Waits on a decision") : chip("warning", "dashed", pick("Not sorted yet", "Not triaged"))) : chip("good", "check", cap(f.state)))))
         : empty("users", "No end-user feedback yet. A feedback embed or the Try it checklist files it.")),
-      card({ title: "Production", icon: "server", tools: [people(sq.people.production, "who run production")], info: "What runs in production, with DevOps, maintenance, security and compliance around it." },
+      card({ title: "In production", icon: "server", id: "production", tools: [people(sq.people.production, "who run production")], info: "What runs in production, with DevOps, maintenance, security and compliance around it." },
         (sq.production || []).length ? h("ul", { class: "live-list" }, sq.production.map((p) => h("li", { class: "live-row" },
           h("span", { class: "cat-ic" }, icon(profileOf(p.profile).icon)), h("div", { class: "live-b" }, h("a", { href: "#/p/" + enc(p.project) }, p.title),
-            h("div", { class: "live-m" }, (p.now || {}).line || "")), nowChip(p.now, p.project))))
-          : h("div", null, empty("server", "Nothing runs in production yet. A release at stage 7 appears here."),
-            h("ul", { class: "ops-list" }, [["shield", "Security", "CVEs and drift arrive as updates"], ["activity", "Monitoring", "probes open incidents and new signals"],
-              ["file-check", "Compliance", "evidence packs per release"], ["refresh", "Maintenance", "changes go back through the factory"]].map(([ic, t, d]) =>
+            h("div", { class: "live-m" }, nowSaid((p.now || {}).line))), nowChip(p.now, p.project))))
+          : h("div", null, empty("server", pick("Nothing is live yet. Projects appear here once they are live.", "Nothing runs in production yet. A release at stage 7 appears here.")),
+            h("ul", { class: "ops-list" }, (technical() ? [["shield", "Security", "CVEs and drift arrive as updates"], ["activity", "Monitoring", "probes open incidents and new signals"],
+              ["file-check", "Compliance", "evidence packs per release"], ["refresh", "Maintenance", "changes go back through the factory"]]
+              : [["shield", "Security", "security fixes arrive as update offers"], ["activity", "Monitoring", "if a live service fails, an incident is opened for you"],
+                ["file-check", "Compliance", "each release has a proof package for auditors"], ["refresh", "Maintenance", "changes go through the same checks again"]]).map(([ic, t, d]) =>
               h("li", null, icon(ic), h("b", null, t), h("span", { class: "muted small" }, d))))))));
   // where the focus goes when the last concept is decided, or when a signal's row cannot take it
   ["#concepts-h", "#needs-h"].forEach((sel) => { const el = $(sel, main); if (el) el.setAttribute("tabindex", "-1"); });
@@ -319,14 +359,17 @@ const CAT = { state: "all", profile: "", deliverable: "", q: "" };
 function deliverableOf(i) { return i.deliverable || profileOf(i.profile).deliverable || "product"; }
 // A capability pack as last built; a release without one says so, never "no release".
 function packWords(i) {
-  if (i.pack) return "v" + i.pack.version + (i.pack.valid ? " · valid" : " · not valid");
-  if (!i.project) return "a concept: not built";
-  return i.latest_release ? "not built yet for release " + i.latest_release : "no release yet";
+  if (i.pack) {
+    return technical() ? "v" + i.pack.version + (i.pack.valid ? " · valid" : " · not valid")
+      : "release " + String(i.pack.version || "").replace(/\.0$/, "") + (i.pack.valid ? " ready to hand over" : ", not complete");
+  }
+  if (!i.project) return pick("an idea: not built", "a concept: not built");
+  return i.latest_release ? pick("release " + i.latest_release + " not packaged yet", "not built yet for release " + i.latest_release) : pick("not released yet", "no release yet");
 }
 function catCard(it) {
   const el = catalogueCard(it);
   const words = !it.pack && it.project && it.latest_release ? el.querySelector(".cat-pack .muted") : null;
-  if (words) words.textContent = "Pack not built yet for release " + it.latest_release;
+  if (words) words.textContent = pick("Release " + it.latest_release + " not packaged yet", "Pack not built yet for release " + it.latest_release);
   if (it.card && !it.project) el.setAttribute("href", conceptHref(it.card));
   return el;
 }
@@ -334,7 +377,7 @@ export async function renderCatalogue(seq) {
   const main = $("#main");
   const cat = await loaded(main, "the catalogue", () => api("GET", "/api/catalogue"));
   if (seq !== S.seq) return;
-  document.title = "Catalogue · Rihmasto.ai";
+  document.title = "Catalogue · Rihmasto";
   const mode = viewChoice("catalogue", "cards");
   const items = cat.items.filter((i) => (CAT.state === "all" || i.state === CAT.state) && (!CAT.profile || i.profile === CAT.profile)
     && (!CAT.deliverable || deliverableOf(i) === CAT.deliverable)
@@ -348,28 +391,32 @@ export async function renderCatalogue(seq) {
     lifecycle.map((s) => h("li", null, h("button", { type: "button", class: "lc" + (CAT.state === s ? " on" : "") + ((cat.counts[s] || 0) ? "" : " zero"),
       "aria-pressed": String(CAT.state === s), "data-key": "lc:" + s, onclick: () => { CAT.state = CAT.state === s ? "all" : s; refilter(); } },
     h("span", { class: "lc-n" }, String(cat.counts[s] || 0)), h("span", { class: "lc-l" }, icon(CATALOGUE_STATE[s].icon), CATALOGUE_STATE[s].word)))));
-  const profSel = h("select", { "aria-label": "Work profile", "data-key": "cat:profile" }, h("option", { value: "" }, "Every profile"),
-    cat.profiles.map((p) => h("option", { value: p.id, selected: p.id === CAT.profile }, p.label)));
+  // the filters in plain words; the engineering-only profile is a developer's (FR-UXO1 readers' review)
+  const profSel = h("select", { "aria-label": pick("Type", "Work profile"), "data-key": "cat:profile" }, h("option", { value: "" }, pick("All types", "Every profile")),
+    cat.profiles.filter((p) => technical() || !/harness/i.test(p.id + " " + p.label)).map((p) => h("option", { value: p.id, selected: p.id === CAT.profile }, p.label)));
   profSel.addEventListener("change", () => { CAT.profile = profSel.value; refilter(); });
-  const delSel = h("select", { "aria-label": "Deliverable", "data-key": "cat:deliverable" }, h("option", { value: "" }, "Every deliverable"),
-    Object.keys(cat.deliverables).map((d) => h("option", { value: d, selected: d === CAT.deliverable }, cap(d.replace("_", " ")))));
+  const DELIV = { capability_pack: "Reusable AI service", ops_agent: "Report agent" };
+  const delSel = h("select", { "aria-label": pick("Result", "Deliverable"), "data-key": "cat:deliverable" }, h("option", { value: "" }, pick("All results", "Every deliverable")),
+    Object.keys(cat.deliverables).map((d) => h("option", { value: d, selected: d === CAT.deliverable }, technical() ? cap(d.replace("_", " ")) : DELIV[d] || cap(d.replace(/_/g, " ")))));
   delSel.addEventListener("change", () => { CAT.deliverable = delSel.value; refilter(); });
   const q = h("input", { type: "search", value: CAT.q, placeholder: "Search capabilities", "aria-label": "Search capabilities", "data-key": "cat:q" });
   q.addEventListener("change", () => { CAT.q = q.value.trim(); refilter(); });
   fill(main,
-    pageHead("Capability catalogue", "Which agents and products we have, in use, in pilot or proposed, what each one does, and whether its pack is valid.", { icon: "catalogue",
+    pageHead(pick("What we have built", "Capability catalogue"), pick("The agents and products we have, live, being tried or proposed, what each one does, and whether it is released.",
+      "Which agents and products we have, in use, in pilot or proposed, what each one does, and whether its pack is valid."), { icon: "catalogue",
       actions: [button("New project", { icon: "plus", kind: "primary", onclick: () => newProjectModal() })] }),
     strip,
     h("div", { class: "filters" }, profSel, delSel, q, h("span", { class: "spacer" }),
       segmented("cat-view", [["cards", "Cards", "catalogue"], ["table", "Table", "table"]], mode, (v) => { setViewChoice("catalogue", v); refilter(); }, { label: "View", iconOnly: true })),
     !items.length ? empty("catalogue", cat.items.length ? "No capability matches these filters." : "No capability yet. A validated concept or a new project starts one.")
       : mode === "table" ? dataTable([{ label: "Capability", value: (r) => h("a", { href: r.project ? "#/p/" + enc(r.project) : r.card ? conceptHref(r.card) : "#/square" }, r.title) },
-        { label: "State", value: (r) => { const st = CATALOGUE_STATE[r.state]; return chip(st.tone, st.icon, st.word); } },
+        { label: "State", value: (r) => { const st = catalogueState(r); return chip(st.tone, st.icon, st.word); } },
         { label: "Profile", value: (r) => profileChip(r.profile, { short: true }) }, { label: "Deliverable", value: (r) => cap(deliverableOf(r).replace("_", " ")) },
         { label: "Stage", value: (r) => (r.stage ? r.stage + " of 7" : "concept") }, { label: "Maturity", value: (r) => r.maturity || "-" },
-        { label: "Pack", value: packWords }], items, "Capabilities")
+        { label: pick("Released", "Pack"), value: packWords }], items, "Capabilities")
         : h("div", { class: "cat-grid wide" }, items.map(catCard)),
-    h("p", { class: "muted small foot-note" }, icon("package"), " A capability pack names everything a release delivered by its hash, with its evals; it is valid only while they hold."));
+    technical() ? h("p", { class: "muted small foot-note" }, icon("package"),
+      " A capability pack names everything a release delivered by its hash, with its evals; it is valid only while they hold.") : null);
 }
 
 // -- projects -----------------------------------------------------------------------------------
@@ -377,21 +424,28 @@ export async function renderCatalogue(seq) {
 function projectNow(p) {
   const st = liveState({ live: { running: p.running }, now: p.now, last_cell: p.last_cell });
   if (p.factory) return chip("neutral", "sparkles", "Proposals");
-  return chip(st.tone, st.icon, st.word, { tip: (p.now || {}).line || "" });
+  return chip(st.tone, st.icon, st.word, { tip: nowSaid((p.now || {}).line) });
 }
 function miniStages(stage) {
   return h("span", { class: "mini-steps", "aria-label": "Stage " + stage + " of 7" }, [1, 2, 3, 4, 5, 6, 7].map((n) =>
     h("span", { class: "ms " + (n < stage ? "done" : n === stage ? "now" : "ahead") })));
 }
-const FACTORY_LINE = "Proposals to change Rihma itself, decided like any card.";
+const FACTORY_LINE = "Ideas not yet part of a project. Approve them to start one.";
+// A project's settings as words: "quick try-out · Rihma assumes, you confirm" for a business reader.
+const PAGES_LABEL = () => pick("Flow of work", "the Square");
+function settingsWords(p) { return technical() ? p.maturity + " · " + p.mode : cap(ambitionWord(p.maturity)) + " · " + modeWord(p.mode); }
 export async function renderProjectsPage(seq) {
   const main = $("#main");
-  const projects = await loaded(main, "projects", () => api("GET", "/api/projects"));
+  // after the projects (an ended session signs in again once, never twice): a damaged project is named (FR-NVL3)
+  const [projects, broken] = await loaded(main, "projects", async () => {
+    const list = await api("GET", "/api/projects");
+    return [list, await api("GET", "/api/unreadable").catch(() => ({ unreadable: [] }))];
+  });
   if (seq !== S.seq) return;
   S.projects = projects;
-  document.title = "Projects · Rihmasto.ai";
+  document.title = "Projects · Rihmasto";
   const mode = viewChoice("projects", "cards");
-  const mineOf = (p) => Object.entries(p.open_by_kind || {}).reduce((n, [k, c]) => n + (((S.personas.find((x) => x.id === S.persona) || {}).decides || []).includes(k) ? c : 0), 0);
+  const mineOf = (p) => Object.entries(p.open_by_kind || {}).reduce((n, [k, c]) => n + (decides(k) ? c : 0), 0);
   const shown = projects.filter((p) => !S.onlyWaiting || mineOf(p) > 0);
   const products = projects.filter((p) => !p.factory);
   const filter = h("label", { class: "check" }, h("input", { type: "checkbox", checked: S.onlyWaiting, "data-key": "onlywaiting",
@@ -401,26 +455,29 @@ export async function renderProjectsPage(seq) {
     const prof = profileOf(p.profile);
     return h("a", { class: "proj-card" + (p.factory ? " factory" : ""), href: p.factory ? link(p.id, "inbox") : "#/p/" + enc(p.id) },
       h("div", { class: "pc-top" }, h("span", { class: "cat-ic" }, icon(p.factory ? "sparkles" : prof.icon || "globe")), projectNow(p)),
-      h("b", { class: "pc-t" }, p.title),
-      h("p", { class: "pc-now" }, p.factory ? FACTORY_LINE : (p.now || {}).line || ""),
-      p.factory ? null : h("div", { class: "pc-stage" }, miniStages(p.stage), h("span", { class: "muted small" }, "Stage " + p.stage + " · " + cap(p.stage_name))),
-      h("div", { class: "pc-foot" }, p.factory ? null : h("span", null, p.maturity + " · " + p.mode),
-        mine ? chip("warning", "user", plural(mine, "card") + " for you") : h("span", { class: "muted" }, "Nothing for you"),
-        p.stale_approvals ? chip("warning", "alert", p.stale_approvals + " stale") : null));
+      h("b", { class: "pc-t" }, titleOf(p.factory ? FACTORY_PID : p.id, p.title)),
+      h("p", { class: "pc-now", "data-ud": "" }, p.factory ? FACTORY_LINE : nowSaid((p.now || {}).line)),
+      p.factory ? null : h("div", { class: "pc-stage" }, miniStages(p.stage), h("span", { class: "muted small" }, pick("Step ", "Stage ") + p.stage + " · " + stageWord(p.stage, cap(p.stage_name)))),
+      h("div", { class: "pc-foot" }, p.factory ? null : h("span", null, settingsWords(p)),
+        mine ? chip("warning", "user", plural(mine, "decision") + " for you") : h("span", { class: "muted" }, "Nothing for you"),
+        p.stale_approvals ? chip("warning", "alert", p.stale_approvals + pick(" out of date", " stale")) : null));
   }));
-  const table = dataTable([{ label: "Project", value: (p) => h("a", { href: p.factory ? link(p.id, "inbox") : "#/p/" + enc(p.id) }, p.title) },
-    { label: "Now", value: (p) => h("span", { class: "cell-now" }, projectNow(p), h("small", { class: "muted" }, p.factory ? FACTORY_LINE : (p.now || {}).line || "")) },
-    { label: "Stage", value: (p) => (p.factory ? "-" : p.stage + " " + cap(p.stage_name)) }, { label: "Profile", value: (p) => (p.factory ? "-" : profileChip(p.profile, { short: true, noPreview: true })) },
-    { label: "Maturity · mode", value: (p) => (p.factory ? "-" : p.maturity + " · " + p.mode) },
+  const table = dataTable([{ label: "Project", value: (p) => h("a", { href: p.factory ? link(p.id, "inbox") : "#/p/" + enc(p.id) }, titleOf(p.factory ? FACTORY_PID : p.id, p.title)) },
+    { label: "Now", value: (p) => h("span", { class: "cell-now" }, projectNow(p), h("small", { class: "muted" }, p.factory ? FACTORY_LINE : nowSaid((p.now || {}).line))) },
+    { label: pick("Step", "Stage"), value: (p) => (p.factory ? "-" : p.stage + " " + stageWord(p.stage, cap(p.stage_name))) }, { label: "Profile", value: (p) => (p.factory ? "-" : profileChip(p.profile, { short: true, noPreview: true })) },
+    { label: pick("Goal · who answers", "Maturity · mode"), value: (p) => (p.factory ? "-" : settingsWords(p)) },
     { label: "Yours to decide", value: (p) => mineOf(p), num: true }, { label: "Open cards", key: "open_cards", num: true }], shown, "Projects");
   fill(main,
-    pageHead("Projects", "Each thread runs from a business need to the running service. " + plural(products.length, "project") + " in this factory.",
+    pageHead("Projects", plural(products.length, "project") + ", each from the first request to the live service.",
       { icon: "folder", actions: [moduleShows("controls", "new_project") ? button("New project", { icon: "plus", kind: "primary", "data-control": "new_project", onclick: () => newProjectModal() }) : null] }),
+    unreadableNote(broken.unreadable),
     h("div", { class: "filters" }, filter, h("span", { class: "spacer" }),
       segmented("proj-view", [["cards", "Cards", "catalogue"], ["table", "Table", "table"]], mode, (v) => { setViewChoice("projects", v); nav.rerender(); }, { label: "View", iconOnly: true })),
     !products.length ? h("div", { class: "card intro" }, empty("folder", "No project yet. Rihma turns a business need into a running, monitored service.",
-      button("Start your first project", { icon: "plus", kind: "primary", onclick: () => newProjectModal() })))
-      : !shown.length ? empty("check-circle", "No project waits on you right now.") : mode === "table" ? table : cards);
+      button("Start your first project", { icon: "plus", kind: "primary", onclick: () => newProjectModal() })),
+      nav.journey ? nav.journey.starters("projects") : null)   // the three ways in, guided (FR-JRN1)
+      : !shown.length ? empty("check-circle", "No project waits on you right now.") : mode === "table" ? table : cards,
+    archivedSection());   // archived projects and duplicates: restore, remove (setup.js, FR-SET1)
 }
 
 // -- the Inbox across projects ------------------------------------------------------------------
@@ -441,34 +498,25 @@ function focusAfter(article) {
   const all = $$(".inbox-card", $("#main"));
   const i = all.indexOf(article);
   const next = all[i + 1] || all[i - 1];
-  const target = next ? next.querySelector('[data-key$=":reason"], [data-key$=":open"]') : null;
+  const target = next ? next.querySelector('.dc-opt[data-key], [data-key$=":open"]') : null;
   return target ? '[data-key="' + CSS.escape(target.dataset.key) + '"]' : "#view-title";
 }
 
+// The choices with their meanings, Why and Confirm once one is picked (decide.js).
 function inboxDecide(c) {
   const k = ibKey(c);
-  const reason = h("textarea", { id: k + "-reason", rows: "2", "data-key": k + ":reason" });
-  reason.value = DRAFTS.get(k) || "";
-  reason.addEventListener("input", () => { if (reason.value) DRAFTS.set(k, reason.value); else DRAFTS.delete(k); });
-  const form = h("div", { class: "decide" },
-    h("div", { class: "field" }, h("label", { for: reason.id }, "Reason (recorded with your decision)"), reason));
-  form.append(h("div", { class: "btns", role: "group", "aria-label": "Verdicts for " + c.id + " in " + c.project_title },
-    c.verdicts.map((v) => {
-      const b = h("button", { type: "button", class: "btn human", "data-key": k + ":" + v, "data-control": "decide" }, VERDICT_LABEL[v] || v);
-      b.addEventListener("click", () => {
-        if (!needPerson()) return;
-        actKeep(form, b, async () => {
-          const out = await api("POST", "/api/projects/" + enc(c.project) + "/cards/" + enc(c.id) + "/decide",
-            Object.assign({ verdict: v, reason: reason.value.trim() }, signed()));
-          DRAFTS.delete(k);
-          say(c.project_title + " " + c.id + ": " + (VERDICT_LABEL[v] || v) + ", signed by " + S.person.trim() + " as "
-            + personaLabel(S.persona) + "." + (out && out.project ? " It is now project " + out.project + "." : ""), "good");
-          S.focusNext = focusAfter(form.closest(".inbox-card"));
-          await nav.rerender();
-        });
-      });
-      return b;
-    })));
+  let form = null;
+  form = decideBlock(c, { key: k, reasonId: k + "-reason",
+    draft: { get: () => DRAFTS.get(k), set: (v) => { if (v) DRAFTS.set(k, v); else DRAFTS.delete(k); } },
+    decide: (v, reason, b) => actKeep(form, b, async () => {
+      const out = await api("POST", "/api/projects/" + enc(c.project) + "/cards/" + enc(c.id) + "/decide",
+        Object.assign({ verdict: v, reason }, signed(), c.decide_as ? { persona: c.decide_as } : {}));   // the persona it needs (FR-PPL1)
+      DRAFTS.delete(k);
+      say(c.project_title + ": " + (VERDICT_LABEL[v] || v) + (reason ? " (" + reason + ")" : "") + ", signed by " + S.person.trim() + " as "
+        + personaLabel((out && out.decision && out.decision.persona) || S.persona) + "." + (out && out.project ? " It is now project " + out.project + "." : ""), "good");
+      S.focusNext = focusAfter(form.closest(".inbox-card"));
+      await nav.rerender();
+    }) });
   return form;
 }
 
@@ -477,30 +525,40 @@ function inboxCard(c, tries) {
   const pl = c.payload || {};
   const k = ibKey(c);
   const body = [];
-  if (c.kind === "update" && pl.views) {
-    const v = pl.views;
-    body.push(S.lens === "delivery" || S.lens === "insight" ? h("pre", { class: "json" }, JSON.stringify(v.developer, null, 2))
-      : h("p", null, S.lens === "business" ? v.business : v.expert));
-  } else if (c.body && c.body.trim() !== c.title.trim()) body.push(h("p", { class: "body" }, c.body));
-  if (c.kind === "concept") body.push(h("p", { class: "muted small" }, profileChip(pl.profile), " · ", pl.maturity, " · ", pl.mode, " · edit it on the ",
-    h("a", { href: conceptHref(c.id) }, "Square")));
+  // what the checks said on a failed task or release is for a technical reader: folded under Details for anyone else
+  const folded = !technical() && ["escalation", "holdout_ruling"].includes(c.kind);
+  const said = c.body && c.body.trim() !== c.title.trim() ? h("p", { class: "body" }, cardTitle(c.body).text) : null;
+  // an update reads as a sentence in every lens, as in the project's Inbox; its raw payload only under Details
+  const payload = c.kind === "update" && pl.views ? h("pre", { class: "json" }, JSON.stringify(pl.views.developer || {}, null, 2)) : null;
+  if (c.kind === "update" && pl.views) body.push(said || h("p", null, S.lens === "business" ? pl.views.business : pl.views.expert));
+  else if (said && !folded) body.push(said);
+  if (c.kind === "concept") body.push(h("p", { class: "muted small" }, profileChip(pl.profile), " · ", ambitionWord(pl.maturity), " · ",
+    technical() ? pl.mode : "questions answered by " + modeWord(pl.mode), " · " + pick("change these on ", "edit it on the "),
+    h("a", { href: conceptHref(c.id) }, PAGES_LABEL())));
   let action;
   if (c.kind === "question") action = h("a", { class: "btn small", href: link(c.project, "questions", (c.refs || {}).question), "data-control": "answer", "data-key": k + ":open" }, icon("comment"), "Answer the question");
   else if (isPlan) action = h("a", { class: "btn small primary", href: link(c.project, "plan"), "data-key": k + ":open" }, icon("arrow-right"), "Open the plan to approve it");
-  else if (c.kind === "concept") action = h("a", { class: "btn small", href: conceptHref(c.id), "data-key": k + ":open" }, icon("square"), "Validate it on the Square");
+  else if (c.kind === "concept") action = h("a", { class: "btn small", href: conceptHref(c.id), "data-key": k + ":open" }, icon("square"),
+    pick("Approve, park or reject it on " + PAGES_LABEL(), "Validate it on the Square"));
   else action = inboxDecide(c);
   const tryIt = acceptsRelease(c) && !isPlan
     ? h("section", { class: "trybox", "aria-label": "Try release " + (pl.release || "") + " before you decide" },
       h("span", { class: "label" }, "Try it before you decide"),
       tryPanel(c.project, tries[c.project] || null, { where: k, url: pl.url }))
     : null;
-  return h("article", { class: "card decision inbox-card", "data-id": c.id, "data-project": c.project },
-    h("div", { class: "hd" }, h("span", { class: "dec-ic" }, icon(KIND_ICON[c.kind] || "inbox")), h("span", { class: "label" }, KIND_LABEL[c.kind] || c.kind),
-      h("span", { class: "mono muted small" }, c.id), h("a", { class: "small", href: c.project === FACTORY_PID ? link(c.project, "inbox") : "#/p/" + enc(c.project) }, c.project_title),
-      c.blocking ? chip("warning", "alert", "Blocking") : null, h("span", { class: "muted small ib-age" }, icon("clock"), ago(c.created))),
-    h("h3", { class: "card-t" }, c.title), body,
-    c.kind === "change" && impactPanelFor ? impactPanelFor(c.project, c) : null, tryIt, action);
+  const where = INBOX.group === "project" ? null
+    : h("a", { class: "small ib-proj", href: c.project === FACTORY_PID ? link(c.project, "inbox") : "#/p/" + enc(c.project) }, icon("folder"), titleOf(c.project, c.project_title));
+  return h("article", { class: "card decision inbox-card", "data-id": c.id, "data-project": c.project, "aria-labelledby": k + "-h" },
+    cardTop(c, k + "-h", { icon: KIND_ICON[c.kind], project: where }),
+    c.blocking || c.decide_as ? h("p", { class: "ib-flags" }, c.blocking ? chip("warning", "alert", "Blocking work") : null,
+      c.decide_as ? chip("info", "user", "You decide as " + personaLabel(c.decide_as).toLowerCase(), { class: "chip info ib-as" }) : null) : null,
+    body,
+    c.kind === "change" && impactPanelFor ? impactPanelFor(c.project, c, !technical()) : null, tryIt, action,
+    commentRow(() => openThread(c.project, { kind: "card", id: c.id }, [])),
+    details(c, folded && said ? [h("p", { class: "label" }, "What the checks said"), said]
+      : payload ? [h("p", { class: "label" }, "The update as recorded"), payload] : null));
 }
+const INBOX = { group: "project" };
 
 // Decisions that hold work up first (an escalation, a holdout that blocks a release, the approvals and
 // gates, the roads and trust a deploy waits on), then changes, updates to try and concepts, and the
@@ -511,7 +569,7 @@ const INBOX_ORDER = ["escalation", "holdout_ruling", "approval", "go_ahead", "va
 export async function renderInboxAll(seq) {
   const main = $("#main");
   const [inbox, tries] = await loaded(main, "the Inbox", async () => {
-    const box = await api("GET", "/api/inbox?persona=" + enc(S.persona));
+    const box = await api("GET", "/api/inbox?persona=" + enc(inboxPersona()));
     // the checklist for each project with a card that accepts a release, read once per project
     const pids = [...new Set(box.cards.filter(acceptsRelease).map((c) => c.project))];
     const read = await Promise.all(pids.map((pid) => api("GET", "/api/projects/" + enc(pid) + "/try").catch((e) => {
@@ -521,12 +579,14 @@ export async function renderInboxAll(seq) {
     return [box, Object.fromEntries(pids.map((pid, i) => [pid, read[i]]))];
   });
   if (seq !== S.seq) return;
-  document.title = "Inbox · Rihmasto.ai";
+  document.title = "Inbox · all projects · Rihmasto";
   S.inboxCount = inbox.count;
-  const group = viewChoice("inbox", "kind");
+  // By project first: the project is each group's heading, so no card is read without its project (FR-UXO1).
+  const group = viewChoice("inbox2", "project");
+  INBOX.group = group;
   const groups = {};
   const keyOf = (c) => {
-    if (group === "project") return c.project_title;
+    if (group === "project") return titleOf(c.project, c.project_title);
     if (group === "age") {
       const hrs = c.created ? (Date.now() - Date.parse(c.created)) / 3600000 : 0;
       return hrs < 24 ? "Today" : hrs < 24 * 7 ? "This week" : "Older";
@@ -534,18 +594,36 @@ export async function renderInboxAll(seq) {
     return KIND_LABEL[c.kind] || c.kind;
   };
   const rank = (c) => (group === "kind" ? (INBOX_ORDER.indexOf(c.kind) + 1 || INBOX_ORDER.length + 1) : 0);
-  inbox.cards.slice().sort((a, b) => rank(a) - rank(b) || Number(!!b.blocking) - Number(!!a.blocking)
+  const shownCards = everything() && S.inboxAs ? inbox.cards.filter((c) => c.decide_as === S.inboxAs) : inbox.cards;
+  shownCards.slice().sort((a, b) => rank(a) - rank(b) || Number(!!b.blocking) - Number(!!a.blocking)
     || String(a.created || "").localeCompare(String(b.created || "")))
     .forEach((c) => { (groups[keyOf(c)] = groups[keyOf(c)] || []).push(c); });
+  const changes = shownCards.filter((c) => c.kind === "change");
+  const picked = new Set();
+  const head = (g, cs) => {
+    if (group !== "project") return h("h2", { class: "ib-h" }, g, h("span", { class: "count" }, String(cs.length)));
+    const pid = cs[0].project;
+    return h("h2", { class: "ib-h ib-ph" }, h("span", { class: "ib-dot", "data-hue": String(projectHue(pid)) }),
+      h("a", { href: link(pid, "inbox"), "data-key": "ibp:" + pid, tip: "Open this project's Inbox" }, g),
+      h("span", { class: "count", "aria-label": plural(cs.length, "card") + " waiting on you" }, String(cs.length)));
+  };
   fill(main,
-    pageHead("Inbox", "Every card the " + personaLabel(S.persona) + " persona may decide, across every project and Rihma itself. Each decision is signed with your name.",
-      { icon: "inbox" }),
-    h("div", { class: "filters" }, h("span", { class: "muted" }, plural(inbox.count, "card") + " for you"), h("span", { class: "spacer" }),
-      segmented("inbox-group", [["kind", "By kind"], ["project", "By project"], ["age", "By age"]], group, (v) => { setViewChoice("inbox", v); nav.rerender(); }, { label: "Group the cards" })),
-    inbox.cards.length ? Object.entries(groups).map(([g, cs]) => h("section", { class: "ib-group" }, h("h2", { class: "ib-h" }, g, h("span", { class: "count" }, String(cs.length))),
-      h("div", { class: "cards" }, cs.map((c) => inboxCard(c, tries)))))
-      : empty("check-circle", "Nothing needs you right now."));
+    pageHead("Inbox", word("inbox.lede") + (everything()
+      ? " Every card you may decide in any persona you hold, across every project; each is signed with the persona it needs."
+      : " Across every project and the new ideas not yet in one, as " + personaLabel(S.persona) + "."), { icon: "inbox" }),
+    everything() ? inboxPersonaFilter(inbox.cards) : null, elsewhereNote(inbox.elsewhere),   // another role held (FR-ENF2)
+    heldAll(S.projects),   // required answers that hold delivery, across projects (hitl_held.js, FR-HITL2)
+    h("div", { class: "filters" }, h("span", { class: "muted" }, plural(inbox.count, "decision") + (inbox.count === 1 ? " waits" : " wait") + " for you"), h("span", { class: "spacer" }),
+      segmented("inbox-group", [["project", "By project"], ["kind", "By kind"], ["age", "By age"]], group, (v) => { setViewChoice("inbox2", v); nav.rerender(); }, { label: "Group the cards" })),
+    changes.length > 1 ? batchBar(null, changes, picked) : null,     // several changes decided together, as in a project
+    shownCards.length ? Object.entries(groups).map(([g, cs]) => h("section", { class: "ib-group", "data-cz": "ib-" + slugOf(g) }, head(g, cs),
+      h("div", { class: "cards" }, cs.map((c) => { const art = inboxCard(c, tries);
+        if (c.kind === "change" && changes.length > 1) art.prepend(pickBox(c, picked));
+        return art; }))))
+      : empty("check-circle", word("inbox.empty")));
+  $$(".ib-dot", main).forEach((d) => d.style.setProperty("--proj-h", d.dataset.hue));
 }
+function slugOf(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40); }
 
 // -- settings: embeds, appearance, sign-in -------------------------------------------------------
 
@@ -565,7 +643,7 @@ function backToOpener(opener) {
 export function openEmbedForm(prefill) {
   const pf = prefill || {};
   const opener = document.activeElement;
-  const may = ((S.meta && S.meta.embed_creators) || []).includes(S.persona);
+  const may = mayAct((S.meta && S.meta.embed_creators) || []);
   const kinds = h("div", { class: "seg" }, ["feedback", "need"].map((k) => h("label", { class: "seg-b radio" },
     h("input", { type: "radio", name: "em-kind", value: k, checked: (pf.kind || "feedback") === k }), k === "feedback" ? "Feedback on a product" : "A business need")));
   // Feedback is on a product: Rihma itself is never offered. A proposed project the list does not hold
@@ -687,8 +765,8 @@ export async function renderSettings(seq) {
   if (seq !== S.seq) return;
   S.projects = projects;
   applyTheme(currentTheme());
-  document.title = "Settings · Rihmasto.ai";
-  const may = (em.creators || []).includes(S.persona);
+  document.title = "Settings · Rihmasto";
+  const may = mayAct(em.creators || []);
   const t = currentTheme();
   const rows = em.embeds.map((e) => {
     const revoke = e.state === "active" && may ? button("Revoke", { icon: "x", kind: "small", key: "revoke:" + e.id, "data-control": "revoke_embed", aria: "Revoke " + (e.label || e.id) }) : null;
@@ -724,16 +802,28 @@ export async function renderSettings(seq) {
   const offNote = embedsOn ? null : h("p", { class: "note warning", "data-key": "embeds-off" }, icon("alert"), h("span", null,
     h("b", null, "Integrations is off. "), "These chats take no messages while it is off. Revoke one here to stop it for good."));
   fill(main,
-    pageHead("Settings", "The models, the cell runners, the modules in use, embeds for websites, how the cockpit looks, and sign-in links.", { icon: "settings" }),
+    pageHead("Settings", pick("The AI models, where the AI works, the parts of Rihmasto in use, standard setups for hosting and data, integrations, "
+      + "website embeds, how the cockpit looks, and sign-in links.",
+    "The models, the cell runners, the modules in use, the paved roads, integrations, embeds for websites, how the cockpit looks, and sign-in links."), { icon: "settings" }),
     card({ title: "Models", icon: "cpu", id: "set-models", tools: [h("a", { href: "#/models", class: "btn small primary", "data-control": "models_open", "data-key": "set:models" },
       icon("cpu"), h("span", { class: "lbl" }, "Open Models setup"))] },
     h("p", null, "Which model answers for each role (the analyst, the builder, the verifier, the assistant and more): a server on this machine or a hosted "
       + "OpenAI-compatible provider, with a Test that sends it a tiny prompt.")),
     card({ title: "Runners", icon: "layers", id: "set-runners", tools: [h("a", { href: "#/runners", class: "btn small primary", "data-control": "runners_open", "data-key": "set:runners" },
       icon("layers"), h("span", { class: "lbl" }, "Open Runners"))] },
-    h("p", null, "Which harness runs the factory's cells: Gnomon, which enforces the rules during a run, or another harness such as Claude Code, Codex or "
-      + "OpenCode, approved by IT with its version pinned and checked after every run.")),
+    h("p", null, pick("Which AI coding tool builds the work: Gnomon, which enforces the rules while it works, or another tool such as Claude Code, "
+      + "Codex or OpenCode, approved by IT with its version fixed and checked after every run.",
+    "Which harness runs the factory's cells: Gnomon, which enforces the rules during a run, or another harness such as Claude Code, Codex or "
+      + "OpenCode, approved by IT with its version pinned and checked after every run."))),
+    peopleCard(projects),             // People and access: solo or team (people.js, FR-PPL1)
     modulesCard(projects),
+    roadsCard(), integrationsCard(),   // paved roads and what a capability can reach (roads.js)
+    foldersCard(),             // the folders the cockpit may read for a person (FR-RPJ1)
+    agentObsSettingsCard(),   // the agent observability hub's address, once the module is on somewhere (FR-OBS1)
+    aboutCard(),              // About and help: the version, this machine, the guides (about.js, FR-PUB2)
+    harnessSettingsCard(),   // Harness and enforcement: Gnomon on by default, an opt-out recorded (FR-NVL1)
+    enforcementSettingsCard(),   // levels per environment for every project (FR-ENF1)
+    structureSettingsCard(),   // Rihmasto's own conventions: Off, Advise or Enforce for every project (FR-STR1)
     !embedsOn && !em.embeds.length ? null : card({ title: "Embeds: a chat window for a website", icon: "message-square", id: "embeds", cls: "emb-card",
       tools: [embedsOn ? create : null],
       info: "An embed has exactly one capability: it files end-user feedback as a change, or a business need as a signal. It answers only from a public brief "
@@ -751,7 +841,7 @@ export async function renderSettings(seq) {
         h("div", { class: "set-row" }, h("span", null, "Text size"), scale)),
       card({ title: "Sign-in and the assistant", icon: "key" },
         h("p", null, "A sign-in link works once. For another tab, make a new one-use link (valid for 10 minutes) from the person menu."),
-        button("Link for another tab", { icon: "link", onclick: () => nav.openPerson && nav.openPerson(false) }),
+        button("Open in another browser tab", { icon: "link", onclick: () => nav.openPerson && nav.openPerson(false) }),
         h("p", { class: "muted small" }, "The assistant " + (S.meta.assistant === "gnomon" ? "asks Gnomon in the analyst lane"
           : S.meta.assistant === "model" ? "asks an injected model" : "answers from the cockpit map")
           + ". It proposes; you confirm."))));
@@ -801,7 +891,7 @@ function showProposal(target, out, warning, text) {
       !uncertain ? h("p", { class: "small muted" }, "Pick another below if it fits better.") : null)));
 }
 
-export function newProjectModal() {
+export function newProjectModal(opts) {
   const profiles = (S.meta && S.meta.profiles) || [];
   // Nothing is assumed: unless the person picks one, intake proposes the kind of work by rule from the
   // material, and asks which it is when the words point to more than one (FR-DF4).
@@ -902,17 +992,24 @@ export function newProjectModal() {
       source.value = folder;
       actKeep(form, submit, () => scanner.scan(folder)).then(setSubmit);   // after act() gives the buttons back
     } });
+  secret.addEventListener("change", () => scanner.refresh());   // what a confidential project would send, said again
   const folderOf = () => {
     const v = startFrom === "existing" ? repo.value : source.value;
     return looksLikeFolder(v) ? v.trim() : "";
   };
   const scanned = () => !!folderOf() && !!scanner.result && scanner.source === folderOf();
+  // Choosing a folder by browsing goes straight to the scan, as typing it and pressing Scan the folder does.
+  const scanNow = () => { if (form.isConnected) form.requestSubmit(); };
+  const needBrowse = browseButtons({ kind: "folder", name: "a folder of material", title: "Choose a folder of material", start: () => (looksLikeFolder(source.value) ? source.value.trim() : ""),
+    onPick: (p) => { source.value = p; source.dispatchEvent(new Event("input")); scanNow(); } });
   const needPart = h("div", { class: "np-part" },
     h("div", { class: "field" }, h("label", null, "The need, the idea or a written spec"), source,
-      h("small", { class: "muted" }, "Or the path of a folder on this machine: Rihmasto scans any files in it (documents, slides, sheets, PDFs, code) and shows what it would read first.")),
+      h("small", { class: "muted" }, "Or the path of a folder on this machine: Rihmasto scans any files in it (documents, slides, sheets, PDFs, code) and shows what it would read first."),
+      needBrowse),
     h("div", { class: "np-prof-h" }, h("span", { class: "label-h" }, "Work profile"), propose), basis, grid, nowaitField);
   const repoPart = h("div", { class: "np-part" },
-    h("div", { class: "field" }, h("label", null, "Folder or git address"), repo,
+    h("div", { class: "field" }, h("label", null, "Folder or git address"),
+      pathField(repo, { kind: "folder", name: "the project's folder", title: "Choose the project's folder", onPick: scanNow }),
       h("small", { class: "muted" }, "A folder on this machine (a git repository or not), or an https address git clones without a password. For a private repository, clone it first and give the folder. Rihmasto scans it first, and never changes your folder.")),
     h("div", { class: "field" }, h("label", null, "What should Rihmasto do with it?"), intent, intentHelp),
     h("div", { class: "field" }, h("label", null, "Where it runs today"), runsAt,
@@ -931,8 +1028,12 @@ export function newProjectModal() {
   function setSubmit() {
     const scan = !!folderOf() && !scanned();
     const need = startFrom === "need";
-    fill(submit, icon(scan ? "search" : need ? "plus" : "folder"), scan ? "Scan the folder" : need ? "Create and start the intake" : "Adopt the project");
-    submit.disabled = !need && scanned() && !scanner.result.code;
+    const ch = scanner.choice;
+    const res = scanned() ? scanner.result : null;
+    const label = adoptLabel(res, ch);
+    fill(submit, icon(scan ? "search" : need ? "plus" : ch.track ? "eye" : "folder"), scan ? "Scan the folder" : need ? "Create and start the intake" : label);
+    submit.disabled = !need && !!res && ((!res.code && !ch.track) || ((res.adopted_as || []).length > 0 && !ch.again)
+      || (ch.each && !ch.repos.size));
     submitNote.textContent = scan ? "Rihmasto shows what it would read of the folder first. Nothing is sent or created yet."
       : need ? "Nothing is built until the questions that block it are answered."
         : "It runs as a job: Rihmasto reads the project and runs its tests for a baseline. Your folder is never changed.";
@@ -969,14 +1070,18 @@ export function newProjectModal() {
     const picked = folder ? { exclude: scanner.exclude() } : {};
     if (startFrom === "existing") {
       const data = Object.assign({ title: title.value.trim(), source: repo.value.trim(), intent: val(intent),
-        base_url: runsAt.value.trim(), person: by.value.trim(), persona: S.persona, confidential: secret.checked }, how.value(), picked);
+        base_url: runsAt.value.trim(), person: by.value.trim(), persona: S.persona, confidential: secret.checked }, how.value(), picked,
+      folder ? adoptChoice(scanner.result, scanner.choice, !!how.value().posture) : {});
       if (!data.title) { say("Give the project a title.", "warning"); title.focus(); return; }
       if (!data.source) { say("Give the folder or the git address of the existing project.", "warning"); repo.focus(); return; }
       if (!data.person) { say("Name the person who adopts it.", "warning"); by.focus(); return; }
+      const many = folder ? adoptEach(scanner.result, scanner.choice, data) : null;
       actKeep(form, submit, async () => {
-        const out = await api("POST", "/api/adopt", data);
+        const jobs = [];
+        for (const one of many || [data]) jobs.push((await api("POST", "/api/adopt", one)).job.id);
         closeModal();
-        say("Adopting " + data.title + " as job " + out.job.id + ": when its baseline is recorded, Open the project here takes you to it.", "good");
+        say(many ? "Adopting " + many.length + " projects as jobs " + jobs.join(", ") + ": each opens from the Jobs page when its baseline is recorded."
+          : (data.documents ? "Tracking " : "Adopting ") + data.title + " as job " + jobs[0] + ": when its baseline is recorded, Open the project here takes you to it.", "good");
         location.hash = "#/jobs";
       });
       return;
@@ -995,5 +1100,10 @@ export function newProjectModal() {
     });
   });
   openModal("New project", form, { icon: "plus", wide: true });
+  // Opened for an existing project (Ask Rihma's Take me there to the folder picker): that path, its folder given.
+  if (opts && opts.start === "existing") {
+    start.querySelector('[data-key="np-start:existing"]').click();
+    if (opts.folder) { repo.value = opts.folder; setSubmit(); }
+  }
 }
 void iconButton; void infoButton; void attachTip; void local; void fmtAge; void STAGE_ICON; void $$;

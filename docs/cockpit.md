@@ -1,10 +1,13 @@
 # The Rihma cockpit
 
-Rihma is the factory: one living thread from a business need to the running service
-(D-0010). Gnomon is the engine underneath it, and keeps its name. Rihma's product is agentic
-capability: web apps, integrations, mobile prototypes, ML pipelines, agents and assistants,
-harness engineering, and ops agents that deliver a report with an evidence pack. Each release
-is a hash-pinned capability pack whose evals travel with it.
+Rihmasto takes an idea or an existing repository, turns it into a spec and a tested contract, has
+coding agents build against it behind a gate that runs the tests itself, ships it only to targets IT
+configured, and keeps it healthy, with a person signing every decision
+([D-0023](../decisions/D-0023-what-rihmasto-is-and-is-not.md)). Today the one target that has run for
+real is the local preview; the cloud roads are tested against stand-ins. Gnomon is the harness
+underneath it, and keeps its name. What it carries is agentic capability: web apps, integrations,
+mobile prototypes, ML pipelines, agents and assistants, harness engineering, and ops agents that
+deliver a report with an evidence pack. Each release is a hash-pinned capability pack whose evals travel with it.
 
 The cockpit is one web page over Rihma, seen through a lens (FR-T1, FR-M3). It shows the
 delivery square, the capability catalogue, a dashboard per lens that each person can reshape,
@@ -26,7 +29,8 @@ On the machine that runs the kernel (for example a GPU box), from the repository
 python -m cockpit.server --home var --port 8787
 ```
 
-`--home` is the factory home (default: `$GNOMONFACTORY_HOME`, else `var/`). The server
+`--home` is the factory home (default: the first set of `$RIHMASTO_HOME`, `$RIHMA_HOME`,
+`$GNOMONFACTORY_HOME`, else `var/`). The server
 binds to `127.0.0.1` only and refuses any other address. It prints one link:
 
 ```
@@ -35,12 +39,16 @@ Open this link once to sign in: http://127.0.0.1:8787/#k=<one-use bootstrap>
 
 The page sends the bootstrap to `/auth` once and gets a session token, which it keeps in
 that tab's sessionStorage. The link does not work a second time. To open a second tab, press
-**Link for another tab** in the person menu of a signed-in tab: it makes a new one-use link
+**Open in another browser tab** in the person menu of a signed-in tab: it makes a new one-use link
 that is valid for 10 minutes. If every tab is closed, restart the server for a new link.
 
 `--assistant gnomon` (the default when `kernel.model.gnomon_cmd()` finds Gnomon) asks Gnomon in
 the analyst lane, as the `assistant` role, for the cockpit assistant (`kernel.lanes.ensure_analyst_lane`).
-`--assistant map` answers from the cockpit's map only; the server says in one line which it uses.
+`--assistant map` answers from the cockpit's map only; the server says in one line which it uses. With no
+model, a plain request that names one control (pause, resume, a theme, let Rihma assume, answer Q-001: ..., approve
+C-0003, log a signal: ..., build the capability pack, run the checks, accept the suggested automation) is still
+proposed by rule through that control's chat path, checked as a model's proposal is, and runs only when you confirm
+it (`kernel/rule_propose.py`); when the rules refuse it, the answer says why. Anything else points the way.
 A slow model call never holds up other requests: the assistant's route runs outside the write lock.
 
 `--embed-base https://feedback.example` (or `RIHMA_EMBED_BASE`) is the public address of the
@@ -100,7 +108,7 @@ With an access file in mode `enforced` ([guides/access.md](guides/access.md)), t
   the person. A run or a new project starts only when the access file names an isolation runner.
 - The page says the mode (`<meta name="rihmasto-access">`). An enforced page signs in with
   `POST /auth` and no bootstrap: the session is opened for the verified identity and answers only that
-  identity. The printed one-use link is not needed, and **Link for another tab** is hidden. A single
+  identity. The printed one-use link is not needed, and **Open in another browser tab** is hidden. A single
   operator's page asks for nothing until a sign-in link is opened.
 - The person menu shows the verified name, read-only, and offers only the personas granted on the
   open project (outside a project, those granted anywhere). The top bar says "enforced: signed in as
@@ -117,21 +125,76 @@ With an access file in mode `enforced` ([guides/access.md](guides/access.md)), t
 
 ## The shell
 
-- **Sidebar** (240px, collapsible to a 56px icon rail with tooltips, dimmer than the content):
-  the hypha logo, **New project**, then Home, **Square**, **Catalogue**, Projects, **Inbox** (with
-  the count of cards this persona may decide across every project, updates and concepts
-  included), Insight (the Floor) and Jobs. A live badge on Projects counts the cells running now
-  (`kernel.status.live`). With a project open, its views follow in `project_context` order, each
-  with an icon. Settings sits at the bottom.
-- **Top bar** (52px): the breadcrumb; the **lens switcher**, a segmented control with an icon and a
-  label per lens (Business, Concept, Delivery, Operations, Compliance, Insight), starting in the
-  persona's own lens; **Search or jump** (Ctrl+K); density; theme (dark, light or system, the
-  accent and the corners); **Customize** on Home; and the **person chip** (initials, name and
-  persona). The chip opens the person menu: your name, the persona, and **Link for another tab**.
+The cockpit always says what a page is about: **all projects**, or **one project** (FR-UXO1).
+
+- **Scope bar** (the strip at the top of the main area, `data-control="scope_switch"`): "All
+  projects", or "Project: <title> ▾" followed by the capsule and the view. Its switcher lists the
+  projects, the recent ones first, and "← All projects"; switching keeps the view you are on when
+  the other project has it. Inside a project the whole frame takes the project's own accent (a
+  coloured top edge, the switcher, the header's edge and the sidebar's project block), so a project
+  page is unmistakable. Every page title states its scope: "Home and Horizon · Inbox" in a project,
+  "Inbox · all projects" outside one.
+- **Sidebar** (240px, collapsible to a 56px icon rail with tooltips, dimmer than the content). Outside
+  a project: the hypha logo, **New project**, then **Review** (since you last looked), Home,
+  **Square**, **Catalogue**, Projects, **Inbox** (with the count of cards this persona may decide
+  across every project), **Insights**, Floor, Jobs, Automations, **Health**, **Agent activity**, **Data and context** (the factory's stores, ledgers and each agent role's context health) and the **Knowledge graph** across projects.
+  The pages that exist per project too say so: "Inbox · all projects". A live badge on Projects
+  counts the cells running now (`kernel.status.live`). Inside a project the sidebar is the
+  project's: "← All projects", the project's name with what waits on you there, the recent projects
+  to switch to, and a short way to Home, Projects, the Inbox and the Square. It never repeats the
+  project's views: those are the capsules on the page. Settings sits at the bottom.
+- **Top bar** (52px): the **lens switcher**, a segmented control with an icon and a label per lens
+  (Business, Concept, Delivery, Operations, Compliance, Insight), starting in the persona's own lens;
+  **Search or jump** (Ctrl+K); density; theme (dark, light or system, the accent and the corners);
+  **Customize** on every page; and the **person chip** (initials, name and persona). The chip opens
+  the person menu: your name, the persona, and **Open in another browser tab**.
 - **Assistant**: the **Ask Rihma** button, or the `/` key, opens a 400px drawer on the right. On a
   wide screen it pushes the page aside rather than covering it.
-- **Phone width**: one column, a bottom bar of five icons with labels (Home, Square, Inbox,
-  Projects, Ask), the lens switcher as icons, and no customizing.
+- **Phone width** (390 px and up): one column, a bottom bar of five icons with labels (Home, Square,
+  Inbox, Projects, Ask), the lens switcher as icons, Customize as an icon, the scope switcher full
+  width. A project's five capsules fit one row and a capsule's views scroll as chips; outside its
+  Overview a project's header is compact (title and actions), so the capsules are in the first
+  screen. Dialogs open as sheets from the bottom, tables become stacked rows (each value with its
+  column's name), and every touch target is at least 40 px. No page scrolls sideways.
+
+### Capsules: a project's views by purpose
+
+A project's views are grouped into five **capsules** (D-0024 point 3, `data-control="capsules"`). The
+top row has the five; each opens its own short row of views:
+
+| Capsule | Views |
+|---|---|
+| **Now** | Overview, Inbox, Review, Questions (and the Plan while it waits on approval) |
+| **Build** | Spec & contract, Tasks, Changes, Alignment, Console, Assumptions, Assessment, Cell |
+| **Run** | Releases, Outputs, Health, Automations, Try it |
+| **Govern** | Evidence, Track, Insights, Knowledge graph, Ledger |
+| **Agents** | Channel, Sessions, AI tools, Context |
+
+Sessions, Context and Knowledge graph show once the views that draw them register (below); until
+then their capsule simply lists the views it has.
+
+A project opens in its persona's capsule: a business owner, product owner or stakeholder in Now, a
+developer in Build, IT and operations in Run, compliance in Govern (each capsule opens on the view
+last used there). A capsule counts what waits on you in it (Now: the Inbox's cards; Build: changes and
+escalations; Run: gates, incidents, roads and updates; Govern: holdout rulings). Addresses are
+unchanged (`#/p/<pid>/<view>`), so every old link, the palette and Ask Rihma's **Take me there** open
+the right capsule and view. Alignment and AI tools appear for an adopted or attached project,
+Assessment for an adopted one, the Plan while it waits; a view of a module that is off does not appear.
+
+Views take part by **registering** (`cockpit/static/capsules.js`):
+
+```js
+import { registerView } from "./capsules.js";
+registerView({ id: "sessions", capsule: "agents", label: "Sessions", icon: "bot", order: 20,
+  personas: ["developer", "it"],              // brought forward for them in the capsule
+  render: (p, inbox, ctx) => node,            // or module: "sessions.js" (its render export, loaded on first open)
+  when: (p, ctx) => true,                     // whether it applies to this project
+  wait: (p, inbox) => 0 });                   // how many things in it wait on the person
+```
+
+A registered view gets its address (`#/p/<pid>/<id>`; add it to `PAGE_ROUTES` in `core.js` and to
+`cockpit/ui_map.json` too, so Ask Rihma and the route test know it). A view that is not registered
+simply does not appear. There is no horizontal row of every view and no "Show all views".
 
 The look comes from `cockpit/static/tokens.css`: a warm neutral scale in 12 steps for both
 themes, one brand accent (Rihma amber, or teal, violet, blue, green or rose), status colours
@@ -159,6 +222,17 @@ A lens is the same work seen for a purpose (`kernel.lenses`):
 Each persona starts in its own lens and may switch; the choice is kept per persona in the tab. In
 a project, the lens and the project's stage order its views (`project_context`): the first tab is
 what that order puts first.
+
+## Review: since you last looked
+
+**Review** (`#/review`, first in the sidebar) is the morning check of what agents and automations did
+since you last looked, across your projects; each project has a **Review** tab for its own. Home's first
+card says it in one line ("Since you last looked: 3 shipped, 2 waiting on you, 1 failed") and opens it.
+Compact rows in six groups (waiting on you, went wrong, decided for you, shipped, from your IDE, cost and
+usage) say who or what did each thing and link to its record; a drawer previews the diff and the gate's
+signals. Approve, decline, overturn, report a change or mark reviewed in place, by mouse or keys (`j` `k`
+`a` `d` `r` `o`, Enter and Esc), then **Mark all reviewed**; **Morning digest** sends the same review to
+your Teams, Slack or mail receiver at the time you set. See [the review guide](guides/review.md).
 
 ## Home: the dashboard
 
@@ -199,7 +273,23 @@ surface, so every chart has its table view). Charts never animate on refresh.
 
 ## Customize
 
-**Customize** (top bar, on Home) turns the grid into a layout editor: drag a widget to reorder it
+**Customize** is in the top bar on every page.
+
+On any page but Home it customizes **the view you are on** (`customize_view`): each section gets
+**Up**, **Down**, **Size** (normal, compact or wide) and **Hide** or **Show**. In a project the
+capsule row gets them too (`customize_tabs`): hide a tab you never use, or pin a favourite to the
+top row beside the capsules. A section or tab that holds a decision waiting on you is never hidden
+("Waits on you: stays shown"), and a page with hidden sections says how many, with **Show them**.
+**Reset** brings the view and the tabs back; **Done** ends it. These choices are kept **on the server,
+per person and view** (`GET` and `PUT /api/view-layouts`, in the factory home's
+`_cockpit/view-layouts/`, outside every ledger, beside Home's layouts), so they follow you to another
+computer or browser; the browser keeps only a copy to draw from while the server cannot be reached.
+The first time a person opens the cockpit after this change, the layouts an earlier version kept in
+that browser move to the server in one save and the browser's copy is forgotten. Ask Rihma makes the
+same changes from words ("hide the brief", "move Needs attention to the top", "show all sections"):
+the change is shown as a preview on the view with **Keep** or **Undo**, and only **Keep** saves it.
+
+On Home, Customize turns the grid into a layout editor: drag a widget to reorder it
 (or Alt+arrow keys on a focused widget), cycle its size S, M, L, XL, remove it, or **Add widget**
 from the searchable library drawer. Ctrl+Z undoes (20 steps), Esc cancels, **Done** saves.
 **Reset to default** goes back to the lens preset; **Export** and **Import** move a layout as JSON.
@@ -216,8 +306,21 @@ in the top bar keeps it with the lens's layout and in the browser.
 The drawer is a chat: your messages on the right, the assistant's on the left with a bot avatar,
 a thinking state, and suggested questions for the lens and view ("Where do I approve the plan?",
 "How is the current run going?", "Make the gate trend bigger and show it as a table", "Use a
-compact teal theme", "Make a feedback chat for our website"). The conversation is kept per
-project in the tab.
+compact teal theme", "Make a feedback chat for our website").
+
+**What it talks about** (`assistant_scope`): a line at the top of the chat says "Talking about:
+Home and Horizon · Inbox" (or "all projects") and follows the page; its choice switches between
+**This view**, **This project** and **Whole platform**. Each answer begins with what it was about.
+A question that names another project by its title ("How is Equipment loans doing?") is answered
+about that project, and Rihma says it switched. A proposal names its target (the project, or your
+layout). The conversation is kept per project, and one for the whole platform, in the tab.
+
+**How-to answers are practical** (`kernel/assistant_howto.py`): "How do I export the evidence?"
+answers with numbered steps for this project: the path to click ("Open Home and Horizon › Govern ›
+Evidence", with **Take me there**), what to press there, and the command with the project's id, your
+name and persona filled in, each with **Copy**. A command whose value is not known is left out
+rather than shown with a placeholder ("<pid>" never appears), a missing name is asked for, and "the
+snapshot does not show" becomes where to look instead.
 
 `POST /api/assistant {question, persona, project, view, person, lens}` calls `kernel.assistant.ask`;
 the server adds `ui = {widgets: the library, layout: your current layout}`. The answer shows:
@@ -234,11 +337,32 @@ the server adds `ui = {widgets: the library, layout: your current layout}`. The 
 
 The assistant writes nothing itself.
 
+### Walkthroughs
+
+**Walkthroughs** (Home's header, the flag in the chat's header, and a card on Home while there is no
+project) runs a walkthrough in the chat: plug in an existing project, start from a new idea or from
+documents, set up a model, or a five-stop tour. Rihma asks one thing at a time with the answers as
+buttons, shows a folder's scan in the chat (**See the full map** opens New project's map), and each
+change waits on a Confirm button signed with your name, carried out by the cockpit's own route. An
+adoption or an intake is waited on in the chat, with its progress and then What's next. An answer
+whose words ask for a walkthrough ("I have an existing project", "uusi idea") carries a **Walk me
+through it** button. See [Walkthroughs in Ask Rihma](guides/walkthroughs.md).
+
 ## The delivery square
 
-**Square** is the home of the flow: needs arrive from the operation, a concept is validated, the
-factory builds, end users test and feedback flows back, and production runs with DevOps,
-maintenance, security and compliance around it. A map shows the loop with the counts and the
+**Square** shows how needs move from arriving to production, across all projects, and says so in
+its first line: needs arrive from the operation, a concept is validated, the factory builds, end
+users test and feedback flows back, and production runs with DevOps, maintenance, security and
+compliance around it.
+
+Its **scope switch** (`square_scope`, "Show: All projects" or one project) shows the square for one
+project: the signals routed to it, its place in the pipeline, its end-user feedback and production
+(a concept is not a project yet, so a project's square has none, and says so). Five **lanes** come
+first, in the order a need moves: Needs arrive, Concepts to validate, Being built, End users test,
+In production. Each lane's count is a link to its items below; an empty lane says what would
+appear there and how it gets there.
+
+With all projects in scope, a map shows the loop with the counts and the
 people in each corner, each with the persona they signed with: each corner's link names its count
 and its people in words and shows them on keyboard focus as on hover, and each card below has one
 keyboard stop that names them all; below it:
@@ -294,6 +418,23 @@ need. Then maturity, mode and who asks. Creating it starts the intake as a job, 
 heading takes the focus. The third way to start, **Shape it in chat**, opens a conversation instead of
 the form.
 
+**Choosing a folder or a file by browsing** (FR-PICK1). Every field that takes a path on the cockpit's
+machine has **Browse…** and **Browse here** beside it: An existing project's folder and a folder given as
+the need, Add material, Shape it in chat's attach, Settings > Folders the cockpit may read, an automation's
+rescan folder, a Google Cloud road's workload identity file, and a walkthrough's folder step in Ask Rihma.
+Typing or pasting a path still works. **Browse…** opens the computer's own folder dialog when the browser
+runs on the cockpit's machine for a single operator (the page at 127.0.0.1, no `--public-origin` in the
+way, access not enforced); from another computer, a phone or under enforced access it opens the folder
+browser instead. **Browse here** is the folder browser in the page, always: the places to start from (the
+folders you chose before, the allowed roots, the home folder, the drives), a breadcrumb, each folder with a
+**git** badge, the project here that already holds it (adopted or attached) and whether the cockpit may
+read it, a filter as you type, the arrow keys, Enter and Backspace, and **Choose this folder**. At phone
+width it is a full-screen sheet. A folder outside the allowed ones offers **Allow …** (a single operator,
+after a yes; signed and in the factory's ledger). Choosing a project's folder starts its scan at once. A
+dropped folder fills only its name, since browsers do not give the full path. Ask Rihma's "adopt the project
+in C:\dev\x" or "open the folder picker" offers **Plug in an existing project**, started from the folder
+named. The rules are those of [the inputs guide](guides/inputs.md#choose-a-folder-or-a-file).
+
 ## Shape it in chat
 
 **Shape it in chat** (`#/shape`, from Home's header or New project) is a conversation with Rihma, the
@@ -343,11 +484,27 @@ a word (Working only while a cell runs), its now line, a stage bar, maturity and
 cards waiting for you. **Rihma itself** (`_factory`) comes first: the factory's proposals to change
 itself.
 
-**Inbox** gathers every card the persona may decide across every project and Rihma itself,
-grouped by kind (decisions that hold work up first: escalations, holdout rulings, approvals,
-validations, deploy gates, incidents, paved roads and trust; then changes, updates and concepts;
-the panel's questions last; a blocking card first within its group), by project or by age. Each
-card decides in place through the same route as the project's Inbox. Card ids repeat across
+**Inbox · all projects** gathers every card the persona may decide across every project and Rihma
+itself, grouped **by project** (each project a heading with its colour and its count), by kind
+(decisions that hold work up first: escalations, holdout rulings, approvals, validations, deploy
+gates, incidents, paved roads and trust; then changes, updates and concepts; the panel's questions
+last; a blocking card first within its group) or by age.
+
+Every card, here and in a project's Inbox, **says what it wants** (FR-UXO1):
+
+- it leads with one plain line, "Decide: <what in plain words>: <its choices>", for example "Decide:
+  The task 'Show overdue loans first' failed its checks 3 times: retry it, accept it as it is or stop
+  it" (`kernel/card_words.py`, the card's `plain`);
+- its choices are clear options, each with a one-line meaning in the persona's words; nothing is
+  chosen for you;
+- once you pick one, **Why? (optional, saved with your decision)** opens with **Confirm**; parking or
+  rejecting a need, or rejecting an approval, asks for the reason;
+- **Add a comment** is a separate, secondary row at the card's foot: a comment decides nothing;
+- the card's id, kind, the record's own wording, refs and who may decide are folded under **Details**
+  (what a failed task's checks said is shown to a developer, folded for a business owner);
+- a question shows "Rihma suggests: X" above its options and pre-selects none.
+
+Each card decides in place through the same route as the project's Inbox. Card ids repeat across
 projects, so each card's reason, verdicts and status line are named by its project and id; a
 reason typed on one card survives a decision on another, and the focus moves to the next card. A
 card that accepts a release carries the release link and checklist, as in the project's Inbox. A
@@ -360,9 +517,45 @@ cap** ("Autonomy 3 · prepare"), the **Posture** chip (what the project's postur
 the project now, and changing it with a reason: [guides/postures.md](guides/postures.md)), the
 ledger's state, the now line (with the real state: a running
 cell, apparatus failure, ready), a compact stepper of the seven stages with their icons and counts,
-and **Project settings**, **Pause** or **Resume** and **Advance**. The views are tabs with icons, in the
-order the stage and the lens bring forward; **Show all views** shows every view. The Overview has the
-alignment panel and the stage counts beside it.
+and **Project settings**, **Pause** or **Resume** and **Advance**. Below it are the five capsules (Now,
+Build, Run, Govern, Agents; see [Capsules](#capsules-a-projects-views-by-purpose)), each with its own
+short row of views; each view's heading names the project ("Home and Horizon · Overview"). The
+Overview has the alignment panel and the stage counts beside it.
+
+**Words per persona** (`cockpit/static/words.js`, D-0024 point 5): where wording differs, a business
+owner, product owner, stakeholder, concept evaluator or end user reads plain words about outcomes,
+and a developer, IT, operations or compliance person reads the precise technical term, with the same
+meaning (an escalation's Retry is "Let Rihma try again, with what the checks said" or "Run another
+cell round with the objections as input"). Ids and records never change: only the words around them.
+
+- **One word per concept.** A glossary in `words.js` gives each concept its business word, its
+  technical word and a one-line explanation, and every view says it through `term()` (an element
+  whose tooltip explains it and names the other reader's word) or `tw()`:
+
+  | Concept | Business word | Technical word |
+  |---|---|---|
+  | ledger | decision record | ledger |
+  | canon | project record | canon |
+  | spec · contract · criterion | requirements · agreed checks · acceptance check | spec · contract · acceptance criterion |
+  | gate · round · cell | quality check · attempt · AI build team | gate · round · cell |
+  | merged · escalation | accepted (Done) · stuck task | merged · escalation |
+  | holdout · fail-first | hidden test · test that fails before the fix | holdout scenario · fail-first test |
+  | evidence pack · capability pack · attestation | proof package · release package · signed proof | evidence pack · capability pack · attestation |
+  | maturity · mode · autonomy · posture | ambition · who answers · AI independence · working rules | maturity · mode · autonomy cap · posture |
+  | signal · triage · stale | incoming need · sorting · out of date | signal · triage · stale |
+  | hash · commit · repository · SBOM · CI · MCP | fingerprint · saved version · code · parts list · automatic checks · AI tool connection | the same |
+  | stage, a task's status, a card's kind, a view's label | "Design and checks", "Done", "Stuck task", "Decision record" | "Spec and architecture", "Merged", "Escalation", "Ledger" |
+
+- **No filler.** `SLOP` lists inflated, vague or self-referential words ("seamlessly", "leverage",
+  "robust", "it's important to note", "Rihmasto has", "your journey"); no view uses them.
+- **Records stay as written.** A record's own text (card titles, briefs, findings, the kernel's
+  lines) is marked `data-ud` and shown as written; code and ids are monospace.
+- **Every empty state says what would appear and how it gets there** (`emptyState(view)`: a "what"
+  line and a "how" line, in each reader's words).
+
+Wording a person flags as unclear is changed in `words.js`, in one place. `tests/test_ui_words.py`
+reads every page and project view as a business owner and as a developer and fails on a filler
+word, or on a technical word a business owner meets unexplained (`JARGON`).
 
 - **Project settings** (`data-control="project_settings"`) changes the title, kind of work, mode and
   maturity with a preview of what the change means for the work done, signed with a reason; from it,
@@ -407,9 +600,17 @@ alignment panel and the stage counts beside it.
   version by rule at once, and with **Ask the panel too** (when the cockpit has a model) in the
   background; each
   perspective lists its findings with evidence, severity and suggested change, then what was not
-  measured and why; the panel's proposals stay apart as opinions; ticked findings are filed with
-  **File the ticked findings as changes** (`data-control="assessment_changes"`). See
+  measured and why; the panel's proposals stay apart as opinions; **Suggested order** ranks what to fix
+  first and offers quick selections, and each finding has its own suggested change kind with why; ticked
+  findings are filed with **File the ticked findings as changes** (`data-control="assessment_changes"`). See
   [brownfield.md](brownfield.md#assessing-an-adopted-system).
+- **Alignment** (an adopted or attached project brings it forward; its Overview offers it until the first
+  scan) shows what the team's repository already holds and how the project would take it: **Read the
+  repository** (`data-control="align_scan"`) proposes requirements, criteria, a tests trace with its basis and
+  confidence, tasks, decisions, API contracts and gaps; each item has **Accept**, **Edit** and **Reject**
+  (`align_decide`), each group **Accept all open** (`align_bulk`); suggested changes for the repository are
+  copied or downloaded (`align_suggestions`), never written there. See
+  [guides/alignment.md](guides/alignment.md).
 - **Comments**: requirements, criteria, tasks, releases and cards have a **Comment** button that
   opens a small thread. A comment decides nothing; a product owner or business owner may
   **Promote to change**, which files and triages a change card.
@@ -494,7 +695,24 @@ The views as before:
 - **Cell**: every Gnomon run of the project (FR-M3): role, model, verdict with Gnomon's
   native bucket and exit code, whether the audit chain re-verified, tokens and cost. A cost
   that was not measured is shown as "not measured", never as zero.
-- **Floor** (Insight in the sidebar). Its first row is the gate's judgement of the work
+- **Insights** (FR-INS1, [guide](guides/insights.md)): health, compliance, governance, security,
+  context drift, QA and usage, for the factory or one project (and as each project's **Insights**
+  tab), over 24 hours, 7 or 30 days or all records. One filter row (dimension, window, scope), stat
+  tiles with a one-line insight computed by rule and a link to the records, charts with a table view,
+  and **Not measured here** with why and how. **Pin to Home** adds a tile as an *Insight* widget;
+  **Export** saves JSON, CSV or OpenTelemetry JSON and sends nothing anywhere. Routes:
+  `GET /api/insights`, `/api/insights/tile`, `/api/insights/export` (cockpit/insights_routes.py).
+- **Knowledge graph** (FR-GRV1, [guide](guides/knowledge-graph.md)): every project's records as the ontology
+  links them (the sidebar page) and each project's own (its **Knowledge graph** view): a graph drawn by hand
+  with pan, zoom and keyboard navigation, and its table twin (the default on a phone). One filter panel (a sheet
+  on a phone) scopes both: kinds, relations, states, time window, words, only issues, projects; **Focus here**
+  keeps a node and what lies within one to four links. Issues ring the node and say so in words: requirements no
+  test checks, tests without a requirement, decisions overturned, requirements on a refuted assumption, broken
+  links. The filters live in the route (`#/p/<pid>/graph?kinds=...`), which Ask Rihma's Take me there opens.
+  **Saved views** (per person, outside every ledger), **Opens as**, **Pin to Home** (a *Knowledge graph*
+  widget) and **Reset to default**. Routes: `GET /api/projects/<pid>/graph`, `GET /api/graph`,
+  `GET`/`PUT /api/graph/prefs` (cockpit/graph_routes.py).
+- **Floor** (Floor in the sidebar). Its first row is the gate's judgement of the work
   (`floor.gates`, FR-M3): the first-round pass rate ("n of m tasks passed their gate on the first
   round"), tasks merged, tasks escalated and rounds judged. Below it, under **Harness outcomes
   (each Gnomon run)** and the `harness_note` verbatim, come the per-run figures: runs, the harness
@@ -584,6 +802,22 @@ list, never a shell string, started from the repository root with `GNOMONFACTORY
 log is in `<home>/jobs/`. The **Jobs** page shows each job's state and the last lines of its log;
 a run the autonomy cap stopped shows as capped, not done, with the kernel's reason.
 
+## Console, terminal and Health
+
+Each project has a **Console** tab: the workspace (an attached repository's folder, your own workspace,
+or the console's working copy), who may run, and the commands it offers (stated, detected by rule,
+`package.json` scripts, Makefile targets, CI steps), a command line, a Gnomon box (`gnomon task` under the
+workspace's own surface) and the output streaming line by line, with Stop. Each run is a job (a console
+run never holds up Advance) and `console_ran` in the ledger, for developers and IT unless IT changes it,
+through IT's isolation runner when access is enforced. **Open a terminal here** opens the operating
+system's terminal in the workspace, only from the cockpit's own loopback address; only a cockpit started
+with `python -m cockpit.server` opens one. Each project's **Health** tab lists its enabled checks (the
+test suite, CI/CD status, a dependency audit, the secret scan, licences, an SBOM, an HTTP probe, the
+repo gate, the security gate, a custom command) with the last result, the trend, the last run and Run
+now; the **Health** page shows every project's, Home and What's next say when checks fail, and the
+cockpit runs checks on their schedule once a minute while it runs. Where the line is between your IDE,
+the console and a real terminal: [the console and checks](guides/console-and-checks.md).
+
 ## API
 
 | Method and path | What it does |
@@ -591,7 +825,7 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `POST /auth` `{bootstrap}` | exchanges the one-use bootstrap for a session token |
 | `GET /api/meta` | stages and their four bands, modes, maturities (and the last stage each runs), change classes, card kinds, who may pause (`may_pause`), the plan's editors and the criterion kinds; the lenses and each persona's lens, the widget library and the lens presets, the layout's fixed sets, the work profiles and deliverables, signal channels, who edits concepts, creates embeds, promotes comments, exports evidence, builds a capability pack and sets the autonomy cap, where embed snippets point (`embed_base`, null when unset, and `embed_base_local`), and whether the assistant uses a model |
 | `GET /api/personas` | personas with labels and the card kinds each may decide |
-| `GET /api/projects` | id, title, maturity, mode, stage, profile, open cards, `now` (state and line), `running` (a cell runs now) and the last cell's outcome; `_factory` first, as "Rihma itself" |
+| `GET /api/projects` | id, title, maturity, mode, stage, profile, open cards, `now` (state and line), `running` (a cell runs now) and the last cell's outcome; `_factory` first, as "Rihmasto itself" |
 | `GET /api/projects/<pid>` | the whole project view: `meta` (with `requested_by` from the need for a project a validated concept made), `now`, `health`, `evidence` (every criterion) and `evidence_summary` (counts per state, for the project and per requirement), `stage_summary` (a count per stage, the four bands; stage 5 also has verified and claimed), each requirement's sources, each question's `options` with the proposal first and `recommended`, change cards with their `impact`, ledger status against the kept head with who acted on each recent event (`actor`: a person with the persona, or an agent with its model) |
 | `GET /api/projects/<pid>/evidence` | each criterion's evidence state: verified, claimed, held out, failing or not measured (`kernel.status.evidence`) |
 | `GET /api/projects/<pid>/now` | the project's state (working, waiting on you, done, failed) and one line (`kernel.status.now`) |
@@ -618,6 +852,11 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `POST /api/projects` | `{title, source, profile, mode, maturity, requested_by}`; creates the project with its work profile and starts the intake job. An optional `outputs` list is chosen at intake by the requester (`kernel/outputs.py`); a persona that may not choose outputs is refused before the project is made |
 | `POST /api/projects/<pid>/advance` | starts `kernel.cli run` |
 | `GET /api/jobs` | jobs with their state and the last lines of their logs; a finished run carries its `outcome` (the state and reason of the result it printed last), and one the autonomy cap stopped has the state `capped` |
+| `GET /api/projects/<pid>/console` · `GET /api/projects/<pid>/console/output?job=&offset=` | the workspace, the console's settings, the offered commands, the recent runs and whether a terminal can open here; reads only · a run's output from `offset` (whole lines while it runs), its state, and the next offset ([console](guides/console-and-checks.md)) |
+| `POST /api/projects/<pid>/console/run` · `POST /api/projects/<pid>/console/runs/<job>/stop` | `{line, shell?} \| {gnomon, role?, yes?}, timeout?, person, persona`: a job (201), `console_ran` in the ledger at its end · stop it and everything it started, answered once it ended |
+| `POST /api/projects/<pid>/console/terminal` · `PUT /api/projects/<pid>/console/settings` | `{person, persona}`: the operating system's terminal in the workspace, from the loopback address only (a public origin is a 403, a cockpit not started from the command line a 409) · `{personas? (IT), commands?, person, persona}` |
+| `GET /api/checks` · `GET /api/projects/<pid>/checks` | every project's checks, what fails and the catalogue · a project's checks with each last result, trend and last run; reads only |
+| `POST /api/projects/<pid>/checks/<check>/enable` · `/disable` · `/run` · `POST /api/checks/enable` | `{config?, every?, on_fail?, person, persona}`, recorded as `check_enabled` · `check_disabled` · Run now, answered with the result (`check_ran`) · one check on several `projects`, signed on each |
 | `POST /api/links` | a new one-use sign-in link for another tab |
 | `GET /api/dashboard` | every widget's read model in one answer: `kpis` (each with provenance and denominator), `pipeline` (chips with profile), `queue`, `decisions` (queue kinds plus concepts and updates, and every open change as the Inbox lists it, with its class and `needs_decision`; with age), `gate_trend`, `gates`, `timelines` per project, `activity`, `coverage`, `catalogue`, `square`, `projects` (now, health, live and the last cell's outcome), `models`, `updates`, `autonomy`, `evidence_packs` (each attestation, read-only), `spend`, `try_it`, `feed_health`, `eval_trend`. Records nothing |
 | `GET /api/catalogue` | `kernel.dashboard.catalogue` with the states, profiles and deliverables; a proposed concept carries its work profile's `deliverable`, and a project its `releases` and `latest_release` |
@@ -631,6 +870,8 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `GET /api/ui-map` | `cockpit/ui_map.json` |
 | `GET /api/layout?persona=&lens=&person=` | the person's layout for that persona and lens, or the lens preset (`preset: true`), and the `default` |
 | `PUT /api/layout?persona=&lens=` | `{person, layout}`; saved under `<home>/_cockpit/layouts/`. Unknown widget types, more than 24 widgets, a theme value outside its set or a non-person are refused |
+| `GET /api/view-layouts?person=` | the person's Customize choices on every view but Home: `views` (`{"p:<view>" or "g:<page>": {order, hidden, size}}`), the capsule `tabs` (`{hidden, pinned}`) and `saved` (false until their first save); empty for no one. With access enforced, the verified person's own |
+| `PUT /api/view-layouts` | `{person, persona, views?, tabs?, reset?}`: each view in `views` replaces that view's layout (`null` removes it), `tabs` replaces the tab choices, `reset` names views to remove (`"*"`: all, with the tabs). Saved under `<home>/_cockpit/view-layouts/`, outside every ledger. A bad view key, a size outside normal, compact and wide, more than 80 sections or 120 views, or a non-person is refused (`cockpit/viewlayout_routes.py`) |
 | `GET /api/projects/<pid>/timeline` | each task's rounds with start, end and verdict (`kernel.dashboard.timeline`) |
 | `GET /api/projects/<pid>/context?persona=&lens=` | the lens (the persona's own, or the one asked for), `default_lens`, the stage-ordered `views`, the work profile and widgets (`kernel.lenses.project_context`) |
 | `GET /api/projects/<pid>/comments?kind=&id=` · `POST` | the comments, by target · `{target: {kind, id}, text, person, persona}`; a bad target or empty text is a 400, a non-person a 403 |
@@ -660,6 +901,8 @@ a run the autonomy cap stopped shows as capped, not done, with the kernel's reas
 | `GET /api/automations` · `GET /api/projects/<pid>/automations` · `PUT /api/projects/<pid>/tags` | every automation (`?state=`, `?project=`) with its summary and runs, and what the builder offers; reading writes nothing · those reaching a project, its tags and what ran on it · `{tags, person, persona}` ([automations](guides/automations.md)) |
 | `POST /api/automations` · `PUT /api/automations/<AU-n>` · `POST /api/automations/<AU-n>/pause` · `/resume` · `/remove` · `/run` | `{automation, person, persona}` signed where it acts, the kernel checking every scoped project · pause by anyone, the rest by its owner or IT · Run now recorded, carried out by the scheduler's next tick |
 | `POST /api/automations/preview` · `POST /api/automations/<AU-n>/dry-run` | a draft's summary and the projects it reaches · what the next tick would do; both signed, both record nothing |
+| `GET /api/agent-observability[?check=1]` · `PUT /api/agent-observability` | the agent observability hub's address and whether the module is on anywhere; `check=1` asks the hub whether it answers · `{url, token_env?, private?, hosted?, reason?, person, persona}` by IT, a hosted address only with `hosted` ([agent observability](guides/agent-observability.md)) |
+| `GET /api/projects/<pid>/agent-sessions?persona=` · `POST /api/projects/<pid>/agent-sessions/map` · `/snapshot` | the Agent sessions view, read from the hub (developers and IT only; reading writes nothing) · `{hub_project, how?, person, persona}` · `{person, persona}`: records what the hub shows; both refused while the module is off there |
 
 Every GET is a read: none of them records a decision, marks an approval stale, appends
 to a ledger or creates Rihma's own canon on a home without one. `<pid>` may also be `_factory`,

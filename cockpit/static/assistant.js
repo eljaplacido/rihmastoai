@@ -13,13 +13,22 @@
 
 import {
   S, $, $$, h, fill, icon, api, act, say, signed, needPerson, nav, enc, store, chip, button, personaLabel,
-  VERDICT_LABEL, KIND_LABEL, FACTORY_PID, link,
+  VERDICT_LABEL, KIND_LABEL, FACTORY_PID, link, withName, mayAct, PROPOSALS, everything,
 } from "./core.js";
 import { previewProposal, previewing, keepPreview, undoPreview } from "./dashboard.js";
 import { suggestionOn } from "./modules.js";
+import { planBlock, openHandoff } from "./goal.js";   // a goal's plan, its steps one click each (FR-CPL1); a hand-off
+import { strip } from "./progress.js";   // a long job's progress, small (FR-PRG1)
+import { askScope, convKey, scopeLine, answerScope, stepsBlock, localAnswer, layoutBlock, personaAsks } from "./askscope.js";   // FR-UXO1
+import { expandBlock } from "./expand.js";   // FR-CMP1
+import { projectTitle } from "./scope.js";
+import { OBS_WORDS, OBS_DESCRIBE, obsCalls } from "./agentobs.js";
+import { feedbackForm, investigate, report, takeRemedy } from "./heal.js";   // self-healing in chat (FR-HEAL1)
+import { onceLinks } from "./hitl_once.js";   // a confirmed link shown once, never stored (FR-HITL2)
+import { followNow } from "./observe_follow.js";   // an observer link or a pause confirmed here (FR-SHR2)
 
 const A = {
-  convs: {}, key: null, queue: [], current: null, busy: false, tick: null, embedCheck: new WeakMap(),
+  convs: {}, key: null, queue: [], current: null, busy: false, tick: null, embedCheck: new WeakMap(), once: new WeakMap(),
   confirming: new WeakSet(), swept: {}, sweeping: false, sweepAgain: false, sweepTimer: null, unloadAt: 0, gone: false,
 };
 const SIZE_WORD = { S: "small", M: "medium", L: "wide", XL: "wide and tall" };
@@ -43,7 +52,7 @@ async function stillHere() {
 
 // -- conversations: one per persona and project, each saved under its own key ---------------------
 
-function storeKey() { return "gf.assistant." + (S.persona || "-") + "." + ((S.route && S.route.pid) || "-"); }
+function storeKey() { return convKey(); }   // per persona and project, or the whole platform (askscope.js)
 function conv(key) {
   if (!A.convs[key]) {
     let log = [];
@@ -96,9 +105,15 @@ const ACTION_WORDS = {
   decide: ["Decide a card", "check-circle"], answer_question: ["Answer a question", "comment"], let_rihma_assume: ["Let Rihma assume", "bot"],
   pause: ["Pause the project", "pause"], resume: ["Resume the project", "play"], report_change: ["Report a change", "refresh"],
   comment: ["Add a comment", "comment"], open: ["Open a view", "arrow-right"],
+  act: ["Do this", "check-circle"],   // any other cockpit write, by its operation (kernel/assistant_ops.py, FR-SET1)
+  ...OBS_WORDS,
+  run_eval: ["Run a Gnomon audit", "shield"],   // FR-EVL1
+  report_incident: ["Report what is wrong", "flag"], investigate_incident: ["Investigate with Rihma", "sparkles"],
+  take_remedy: ["Take a remedy", "refresh"], give_feedback: ["Give feedback", "message-square"],
 };
 function describe(p) {
   const a = p.args || {};
+  if (OBS_DESCRIBE[p.action]) return OBS_DESCRIBE[p.action](a);   // agent observability (agentobs.js)
   switch (p.action) {
     case "layout_edit": return describeOps(a.ops);
     case "theme": return [describeTheme(a.settings || {})];
@@ -111,7 +126,13 @@ function describe(p) {
     case "report_change": return ["“" + a.text + "”"];
     case "comment": return ["On " + a.target_kind + " " + a.target_id + ": “" + a.text + "”"];
     case "open": return [a.route];
-    default: return [JSON.stringify(a)];
+    case "act": return [a.summary || a.op];
+    case "run_eval": return ["The Gnomon " + a.eval + " audit, as a job: its log streams on the Jobs page"];
+    case "report_incident": return ["“" + a.text + "”"];
+    case "investigate_incident": return ["Investigate " + a.incident];
+    case "take_remedy": return [a.remedy + " on " + a.incident];
+    case "give_feedback": return [(a.kind === "wrong" ? "This is wrong: " : "This is unclear: ") + a.text];
+    default: return PROPOSALS[p.action] ? PROPOSALS[p.action].describe(a) : [JSON.stringify(a)];
   }
 }
 
@@ -120,8 +141,10 @@ function describe(p) {
 function suggestions() {
   const inProject = S.route && S.route.name === "project";
   const factory = inProject && S.route.pid === FACTORY_PID;
-  const out = [];
-  if (mapMode()) {   // the map answers where things are; it cannot answer about runs or change anything
+  const own = personaAsks();   // the AI architect's own questions on their persona and views (FR-AOP3)
+  if (own.length) return unique(own).filter(suggestionOn).slice(0, 5);
+  const out = [inProject && !factory ? "What should I do next?" : "How do I feed in an existing project?"];   // FR-JRN1
+  if (mapMode()) {   // the map answers where things are, and proposes a plain request by rule (kernel/rule_propose.py)
     if (factory) out.push("Where is the inbox?", "Where is the ledger?");
     else if (inProject) out.push("Where do I approve the plan?", "Where is the ledger?", "How do I pause this?");
     else out.push("Where are all the decisions?", "Where do I log a signal?");
@@ -133,7 +156,7 @@ function suggestions() {
     out.push("Where do I make a chat for a website?");
     return unique(out).filter(suggestionOn).slice(0, 5);   // nothing about a module that is off
   }
-  if (inProject && !factory) out.push("Where do I approve the plan?", "How is the current run going?");
+  if (inProject && !factory) out.push("Give this to Claude Code", "Where do I approve the plan?", "How is the current run going?");
   else out.push("What is waiting on me?");
   const byLens = {
     business: ["Which capabilities are in use?", "Make the decisions widget wide"],
@@ -190,7 +213,11 @@ function waitFor(fn, ms) {
 }
 function onPage(route) {
   const hash = location.hash || "";
-  return hash === route || hash.startsWith(route + "/") || (/\/overview$/.test(route) && hash === route.replace(/\/overview$/, ""));
+  if (hash === route || hash.startsWith(route + "/")) return true;
+  // A project entered at #/p/<pid> opens its Board or the view last used, not always Overview (FR-LND2):
+  // on Overview only when that is the view drawn.
+  const bare = /\/overview$/.test(route) && hash === route.replace(/\/overview$/, "");
+  return bare && !!S.projectViews && S.projectViews.current === "overview";
 }
 function focusPage() { const m = $("#main"); if (m) m.focus({ preventScroll: true }); }
 export function highlight(el) {
@@ -200,9 +227,27 @@ export function highlight(el) {
   const target = el.matches(FOCUSABLE) ? el : el.querySelector(FOCUSABLE);
   if (target) target.focus({ preventScroll: true });
 }
+// The controls in New project's An existing project path (and its folder picker): Take me there opens the dialog.
+const NEW_PROJECT_CONTROLS = new Set(["adopt_project", "pick_browse", "pick_here"]);
 async function takeThere(nv) {
   if (nv.control === "assistant" && assistantOpen()) { say("You are in it: ask here.", "info"); $("#as-q").focus(); return; }
+  if (nav.walk && /^walk_/.test(nv.control || "")) { nav.walk.openPicker(nv.control); return; }   // in this panel
+  if (nv.describe && nv.route) {       // an automation asked for: its words go into Describe it (setup.js)
+    const at = (nv.route.match(/^#\/p\/([^/]+)/) || [])[1];
+    S.automationAsk = { pid: at ? decodeURIComponent(at) : "", text: nv.describe };
+  }
+  if (nv.handoff && nv.route) {        // "hand off T-002 to Claude Code": the dialog itself, with them chosen (FR-BRG1)
+    const pid = (nv.route.match(/^#\/p\/([^/]+)/) || [])[1];
+    if (pid) { if (!onPage("#/p/" + pid)) location.hash = nv.route; if (phone()) closeAssistant(true);
+      openHandoff(decodeURIComponent(pid), { to: nv.handoff.to, change: nv.handoff.change }); return; }
+  }
   let el = nv.control ? visibleControl(nv.control) : null;   // already in sight: highlight it where it is
+  if (!el && NEW_PROJECT_CONTROLS.has(nv.control) && nav.newProject) {   // in the New project dialog: open it there
+    if (phone()) closeAssistant(true);
+    nav.newProject({ start: "existing" });
+    el = await waitFor(() => visibleControl(nv.control), 1500);
+    if (el) { highlight(el); return; }
+  }
   const go = !el && nv.route && !onPage(nv.route);
   if (go) location.hash = nv.route;
   if (phone()) closeAssistant(true);   // the drawer covers the page
@@ -231,13 +276,15 @@ async function recheck(p, item, get = (path) => api("GET", path)) {
   const a = p.args || {};
   const meta = S.meta || {};
   const who = personaLabel(S.persona);
-  if (p.persona && p.persona !== S.persona) return "it was checked for " + personaLabel(p.persona) + ", and you are now " + who + ". Ask again.";
-  if (p.action === "create_embed") return (meta.embed_creators || []).includes(S.persona) ? null : "as " + who + " you may not create an embed.";
+  if (PROPOSALS[p.action]) return null;      // people and access: checked again by its route (FR-PPL1)
+  if (p.persona && p.persona !== S.persona && !everything()) return "it was checked for " + personaLabel(p.persona) + ", and you are now " + who + ". Ask again.";
+  if (p.action === "create_embed") return mayAct(meta.embed_creators || []) ? null : "as " + who + " you may not create an embed.";
   const pid = p.project || item.project;
-  if (!pid || ["layout_edit", "theme", "open", "report_change", "comment"].includes(p.action)) return null;
+  if (!pid || ["layout_edit", "theme", "open", "report_change", "comment", "report_incident", "investigate_incident",
+    "take_remedy", "give_feedback", "act"].includes(p.action)) return null;
   const base = "/api/projects/" + enc(pid);
   if (p.action === "pause" || p.action === "resume") {
-    if (!(meta.may_pause || []).includes(S.persona)) return "as " + who + " you may not pause or resume a project.";
+    if (!mayAct(meta.may_pause || [])) return "as " + who + " you may not pause or resume a project.";
     const held = (await get(base)).meta.pause;
     if (p.action === "pause" && held) return "it is already paused by " + held.requested_by + ".";
     return p.action === "resume" && !held ? "it is not paused any more." : null;
@@ -293,10 +340,26 @@ async function confirm(p, item, key) {
     resume: () => api("POST", base + "/resume", signed()),
     report_change: () => api("POST", base + "/changes", Object.assign({ text: a.text }, signed())),
     comment: () => api("POST", base + "/comments", Object.assign({ target: { kind: a.target_kind, id: a.target_id }, text: a.text }, signed())),
+    // the request the kernel filled from its table of operations (kernel/assistant_ops.py), never the model's words
+    act: () => (a.call && /^\/api\//.test(a.call.path) && ["POST", "PUT"].includes(a.call.method)
+      ? api(a.call.method, a.call.path, Object.assign({}, a.call.body || {}, signed())) : Promise.reject(new Error("not a cockpit request"))),
+    ...obsCalls(a, pid),
+    run_eval: () => api("POST", base + "/evals/" + enc(String(a.eval)) + "/run", signed()),
+    // self-healing (heal.js, FR-HEAL1): the same signed routes a click calls
+    report_incident: () => report("report", "assistant", a.text, { pid, words: a.text }),
+    investigate_incident: () => investigate(String(a.incident).toUpperCase(), pid),
+    take_remedy: async () => { const d = await api("GET", "/api/incidents"); const inc = d.incidents.find((x) => x.id === String(a.incident).toUpperCase());
+      const r = inc && inc.offer.remedies.find((x) => x.id === a.remedy); return r ? takeRemedy(inc, r, { pid }) : null; },
+    give_feedback: () => api("POST", "/api/feedback", Object.assign({ kind: a.kind, where: { view: "assistant", text: a.text }, words: a.text, project: pid || "" }, signed())),
   };
-  if (!calls[p.action]) return;
-  const out = await calls[p.action]();
+  const extra = PROPOSALS[p.action];   // people and access (people.js, FR-PPL1)
+  if (!calls[p.action] && !extra) return;
+  const out = extra ? await extra.call(a, pid) : await calls[p.action]();
   p.state = "done";
+  // what the route said (a nudge that went nowhere, a link made), kept; a new link's address only in memory (FR-HITL2)
+  if (p.action === "act" && out && typeof out.said === "string") p.said = out.said.slice(0, 800);
+  if (out && Array.isArray(out.once) && out.once.length) A.once.set(p, { once: out.once, warning: out.warning || null });
+  if (p.action === "act" && /^observe_/.test(a.op || "")) followNow();   // the chip and the pause mirror it at once (FR-SHR2)
   save(key);
   const made = p.action === "decide" && out && out.project;   // a validated concept became a project: open it, as a click does
   if (made) p.made = out.project;
@@ -374,12 +437,14 @@ function settle(...keys) {
   if (el) el.focus(); else $("#as-q").focus();
 }
 function proposalCard(p, item, i, key, idx) {
-  const [title, ic] = ACTION_WORDS[p.action] || [p.action, "info"];
+  const [title, ic] = ACTION_WORDS[p.action] || (PROPOSALS[p.action] || {}).words || [p.action, "info"];
   const k = "prop:" + idx + ":" + i;
   const st = k + ":st";
   const open = !p.state;
   const el = h("div", { class: "prop" + (open || (p.state === "preview" && previewing()) ? "" : " settled") },
-    h("div", { class: "prop-h" }, icon(ic), h("b", null, title)),
+    h("div", { class: "prop-h" }, icon(ic), h("b", null, title),   // the proposal names its target (FR-UXO1)
+      h("span", { class: "prop-on muted small" }, p.project ? "on " + projectTitle(p.project)
+        : p.action === "layout_edit" || p.action === "theme" ? "your layout" : p.scope === "platform" ? "on Rihmasto · every project" : "Rihmasto")),
     h("ul", { class: "prop-args" }, describe(p).map((l) => h("li", null, l))),
     p.why ? h("p", { class: "prop-why" }, h("span", { class: "muted" }, "Why: "), p.why) : null);
   const again = (label) => button(label, { icon: "eye", kind: "small", key: k + ":again", onclick: () => { p.state = undefined; save(key); render(); settle(k + ":ok", st); } });
@@ -401,7 +466,9 @@ function proposalCard(p, item, i, key, idx) {
   } else if (p.state === "made") {
     el.append(status("Chat " + p.madeEmbed + " is made.", "check", st));
   } else if (p.state === "done") {
-    el.append(status(p.made ? "Confirmed: the new project " + p.made + " was made." : "Confirmed, signed with your name.", "check", st));
+    const once = A.once.get(p);
+    el.append(status(p.made ? "Confirmed: the new project " + p.made + " was made." : "Confirmed, signed with your name." + (p.said ? " " + p.said : ""), "check", st));
+    if (once) el.append(onceLinks(once.once, once.warning));
   } else if (p.state === "stale") {
     el.append(status("No longer offered: " + p.stale, "x-circle", st, true));
   } else if (p.state === "dismissed") {
@@ -443,7 +510,11 @@ function bubble(item, idx, key) {
   if (item.role === "thinking") {
     return h("div", { class: "msg bot" }, av(), h("div", { class: "bub thinking" },
       h("span", { class: "dots", "aria-hidden": "true" }, h("i"), h("i"), h("i")), "Thinking",
-      h("small", { class: "th-s muted", "aria-hidden": "true" }, thinkingText(item))));
+      h("small", { class: "th-s muted", "aria-hidden": "true" }, thinkingText(item)),
+      // a slow model can be left: the answer that comes later is dropped (FR-NVL3). A link, so a thinking bubble
+      // never reads as an answer with its buttons.
+      h("a", { href: "#", role: "button", class: "as-stop small", "data-key": "as:cancel", "data-control": "assistant_cancel",
+        onclick: (e) => { e.preventDefault(); if (A.current && A.current.cancel) A.current.cancel(); } }, "Stop waiting")));
   }
   if (item.role === "error") return h("div", { class: "msg bot" }, av(), h("div", { class: "bub err" }, icon("alert"), h("span", null, item.text)));
   const out = item.out || {};
@@ -451,17 +522,45 @@ function bubble(item, idx, key) {
   const go = out.navigate && (out.navigate.route || out.navigate.control);
   return h("div", { class: "msg bot" }, av(),
     h("div", { class: "bub" },
-      h("p", null, out.answer || "I have no answer to that."),
+      answerScope(out, item.asked),
+      h("p", { class: "ans" }, withName(out.answer) || "I have no answer to that yet: ask what to do next, or check Models setup."),   // its lines and lists kept (FR-SRC2)
       out.note ? h("p", { class: "muted small" }, out.note) : null,
+      out.plan ? planBlock(out, item) : null,
+      out.progress ? strip(out.progress, { title: out.progress.title || "Progress" }) : null,   // a long job, as it stood (FR-PRG1)
+      stepsBlock(out, idx, go ? () => takeThere(out.navigate) : null, (nv) => takeThere(nv)),   // a step's own (FR-ASP2)
+      out.viewLayout ? layoutBlock(item, () => save(key), render) : null,
+      out.expandBox ? expandBlock(out.expandBox, idx) : null,   // a compact box opened by name (FR-CMP1)
       (out.sources || []).length ? h("div", { class: "srcs" }, out.sources.map((s) => sourceChip(s, !unbacked.has(s), item.project))) : null,
-      go ? h("div", { class: "btns" }, button("Take me there", { icon: "arrow-right", kind: "small", key: "go:" + idx, onclick: () => takeThere(out.navigate) })) : null,
+      nav.neverlost ? nav.neverlost.block(out, item, idx) : null,   // the step that fills it, triage, who acted (FR-NVL1)
+      (out.start_here || out.sync_plan) && nav.startHere ? nav.startHere.block(out, idx) : null,   // each step a button (FR-LND1, FR-LND2)
+      go && !out.fill && !out.start_here && !(out.steps || []).some((s) => s.action === "navigate")
+        ? h("div", { class: "btns" }, button("Take me there", { icon: "arrow-right", kind: "small", key: "go:" + idx, onclick: () => takeThere(out.navigate) })) : null,
+      nav.journey && (out.journey || out.starters || out.projects) ? nav.journey.block(out, item) : null,   // FR-JRN1
+      out.walkthrough && nav.walk && !out.journey ? nav.walk.offerButton(out.walkthrough) : null,
       (out.propose || []).map((p, i) => proposalCard(p, item, i, key, idx)),
       (out.dropped || []).map((p) => h("div", { class: "prop dropped" }, h("div", { class: "prop-h" }, icon("x-circle"),
         h("b", null, (ACTION_WORDS[p.action] || [p.action])[0])), h("p", { class: "small" }, "Not offered: " + (p.refused || "outside the rules")))),
       out.unasked ? h("p", { class: "muted small" }, (out.unasked === 1 ? "An action was" : out.unasked + " actions were")
         + " suggested that you did not ask for, so none is offered. Ask for it if you want it.") : null,
-      h("p", { class: "by muted small" }, out.by === "map" ? "From the cockpit map" : (S.meta && S.meta.assistant === "gnomon" ? "From Gnomon" : "From the model")
-        + ", checked against the Inbox rules")));
+      h("div", { class: "btns" }, button("This is unclear / this is wrong", { kind: "small quiet", icon: "message-square", key: "fb:" + idx, "data-control": "give_feedback",
+        onclick: () => feedbackForm({ view: "assistant", text: (out.answer || "").slice(0, 200) }) })),
+      h("p", { class: "by muted small", "data-by": out.by || "" }, provenance(out))));
+}
+
+// Where an answer came from (out.by). The rules' own answers (the map, a goal plan, an agent's context pack, the
+// knowledge graph, set up) say so, also when a model is configured; only what a model wrote says "the model".
+const BY_RULES = { goal: "A plan from the project's records and what this Rihmasto has",
+  goal_model: "A plan from the model, each step checked against what this Rihmasto has", map: "From the cockpit map",
+  context: "From the agents' context packs, by rules", graph: "From the knowledge graph, by rules",
+  setup: "From the project's set-up checklist and suggestions, by rules",
+  journey: "From Rihmasto's journeys and the records, by rule: no model was asked",
+  rule: "From the project's records, by rule: no model was asked" };
+BY_RULES.why = "Why it is empty or failing, from the records by rule: no model was asked";   // FR-NVL1
+BY_RULES.triage = "A triage of the open decisions, by rule: no model was asked";
+function provenance(out) {
+  if (out.by === "setup" && out.compose && out.compose.by === "model") return "A draft from the model, checked against the automations' rules";
+  if (BY_RULES[out.by]) return BY_RULES[out.by];
+  return (S.meta && S.meta.assistant === "gnomon" ? "From Gnomon" : "From the model") + ", checked against the Inbox rules";
 }
 
 // A preview waits on Home while the drawer shows another conversation: Keep and Undo are here too.
@@ -481,17 +580,22 @@ function render() {
   const log = load();
   const box = $("#as-log");
   if (!box) return;
+  if (nav.walk && nav.walk.shown()) { nav.walk.render(); return; }   // a walkthrough is shown (walkthrough.js)
   const active = document.activeElement;
   const lost = !!active && (box.contains(active) || $("#as-suggest").contains(active));
   const had = lost ? active.getAttribute("data-key") : null;
   A.shown = renderSign();
+  const line = $("#as-scope");
+  if (line) fill(line, scopeLine(() => { A.key = storeKey(); render(); }));
   const strip = previewStrip(log);
   if (!log.length) {
     fill(box, strip, h("div", { class: "as-hello" }, h("span", { class: "bot-av big" }, icon("bot")),
       h("p", null, h("b", null, "Ask about the cockpit or your projects.")),
       h("p", { class: "muted small" }, mapMode()
-        ? "I can take you to a view or a control and tell you what a button does. No model is set up here, so I cannot answer about runs or propose actions."
-        : "I can take you to a view, tell you what a button does, answer from the records, and propose actions or a new layout that you confirm.")));
+        ? "I can take you to a view or a control and tell you what a button does. No model is set up here: a plain request (pause, a theme, a check, a signal, an automation) I still propose for you to confirm, by rule; a run's details need a model."
+        : "I can take you to a view, tell you what a button does, answer from the records, and propose actions or a new layout that you confirm."),
+      nav.walk ? h("p", { class: "muted small" }, "Or let me walk you through it, step by step:") : null,
+      nav.walk ? nav.walk.pickerList() : null));
   } else {
     fill(box, strip, log.map((it, i) => bubble(it, i, A.key)));
   }
@@ -505,20 +609,27 @@ function render() {
 }
 // What the drawer shows depends on these; a re-render of the same page with the same conversation is skipped.
 function renderSign() {
-  return [storeKey(), S.lens, S.route && S.route.name, previewing(), mapMode()].join("|");
+  return [storeKey(), askScope().label, S.lens, S.route && S.route.name, previewing(), mapMode()].join("|");
 }
 
 // -- asking: one question at a time, the rest queued -------------------------------------------------------
 
-export function send(question) {
+export function send(question, extra) {
   const q = String(question || "").trim();
   if (!q) return false;
   const key = storeKey();
-  const route = S.route || {};
+  const scope = askScope();   // this view, this project or the whole platform (askscope.js)
+  const why = extra && extra.why ? extra.why : null;   // "Why? Ask Rihma" on an empty or failed thing (neverlost.js)
+  const local = why ? null : localAnswer(q);   // a layout change for the view on screen, previewed here (viewcustom.js)
+  if (local) {
+    conv(key).push({ role: "person", text: q }, { role: "assistant", out: local, project: scope.project, persona: S.persona, asked: scope });
+    save(key);
+    if (assistantOpen()) render();
+    return true;
+  }
   const job = {
-    key, q, project: route.name === "project" ? route.pid : null,
-    view: route.name === "project" ? (S.projectViews || {}).current : route.name,
-    persona: S.persona, lens: S.lens, person: S.person.trim(),
+    key, q, project: scope.project, view: scope.view,
+    persona: S.persona, lens: S.lens, person: S.person.trim(), everything: everything(), why,
     item: { role: "person", text: q, pending: true },
   };
   conv(key).push(job.item);
@@ -543,9 +654,13 @@ async function drain() {
     if (at >= 0) log.splice(at + 1, 0, thinking);
     if (assistantOpen()) render();
     let reply;
+    const stopped = new Promise((res) => { job.cancel = () => res(null); });   // Stop waiting (FR-NVL3)
     try {
-      const out = await api("POST", "/api/assistant", { question: job.q, persona: job.persona, project: job.project, view: job.view, person: job.person, lens: job.lens });
-      reply = { role: "assistant", out, project: job.project, persona: job.persona };
+      const out = await Promise.race([stopped, api("POST", "/api/assistant", { question: job.q, persona: job.persona, project: job.project, view: job.view, person: job.person, lens: job.lens, everything: !!job.everything, why: job.why || undefined,
+        last_error: nav.neverlost && nav.neverlost.lastError ? nav.neverlost.lastError() : undefined })]);   // FR-NVL2
+      if (out === null) throw Object.assign(new Error("You stopped waiting: the model was slow. Ask again in a moment; a where-is question is answered from the map at once."), { stopped: true });
+      reply = { role: "assistant", out, project: (out.scope && out.scope.project) || job.project, persona: job.persona,
+        asked: { project: job.project, view: job.view } };
     } catch (e) {
       await stillHere();   // a reload aborted it: the next page says no answer came, never that the server did not answer
       reply = { role: "error", text: e.message || "The assistant did not answer." };
@@ -572,7 +687,8 @@ export function openAssistant(prefill) {
   $("#assistant-fab").setAttribute("aria-expanded", "true");
   $("#as-mode").textContent = modeLine();
   const note = $("#assistant .dr-note");
-  if (note) note.textContent = mapMode() ? "It points the way and changes nothing." : "It proposes; you confirm. Every action is signed with your name.";
+  // the map's rules can offer a change too: nothing changes until you confirm it (FR-AOP3)
+  if (note) note.textContent = mapMode() ? "It points the way, and proposes a plain request by rule; anything it offers to do waits for your Confirm, signed with your name." : "It proposes; you confirm. Every action is signed with your name.";
   if (!S.uiMap) api("GET", "/api/ui-map").then((m) => { S.uiMap = m; }).catch(() => { /* labels fall back to a plain word */ });
   render();
   if (!A.sweepTimer) A.sweepTimer = setInterval(() => sweep(false), SWEEP_EVERY);
@@ -594,6 +710,9 @@ export function closeAssistant(toPage) {
 }
 export function assistantOpen() { return !$("#assistant").hidden; }
 export function onRouteChange() { if (assistantOpen() && renderSign() !== A.shown) render(); }
+
+// Take me there for other views: the agent channel's next-step buttons land on the control they name (FR-CHN3).
+nav.takeThere = (route, control) => takeThere({ route, control });
 
 // When a preview is kept or undone on the dashboard, the proposal says so, in whichever conversation it is.
 nav.previewSettled = (how) => {
@@ -635,7 +754,12 @@ export function wireAssistant() {
   });
   const form = $("#as-form");
   const q = $("#as-q");
-  form.addEventListener("submit", (e) => { e.preventDefault(); if (send(q.value)) q.value = ""; q.focus(); });
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (nav.walk && nav.walk.shown() && nav.walk.send(q.value)) { q.value = ""; return; }   // an answer to the walkthrough
+    if (send(q.value)) q.value = "";
+    q.focus();
+  });
   q.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
     if (e.key === "Escape") { e.preventDefault(); closeAssistant(); }
@@ -647,3 +771,4 @@ export function wireAssistant() {
   document.addEventListener("visibilitychange", () => { if (!document.hidden) sweep(true); });   // back from another tab
 }
 export { chip };
+export { takeThere, render as rerenderAssistant };   // for the walkthroughs (walkthrough.js)

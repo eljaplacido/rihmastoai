@@ -74,8 +74,8 @@ class OracleTest(McpCase):
         made = call(s, "rihma_report_change", pid=pid, text=text)["result"]
         self.assertEqual(made["structuredContent"]["title"], text)
         self.assertEqual(json.loads(made["content"][0]["text"])["title"], text)
-        said = call(s, "rihma_comment", pid=pid, target_kind="task", target_id=HELD_ID, text="ok")["result"]
-        self.assertEqual(said["structuredContent"]["target"], {"kind": "task", "id": HELD_ID})
+        said = call(s, "rihma_comment", pid=pid, target_kind="project", target_id=HELD_ID, text="ok")["result"]
+        self.assertEqual(said["structuredContent"]["target"], {"kind": "project", "id": HELD_ID})
         raised = call(s, "rihma_signal", text="We need pallets tracked.", source=HELD_ID)["result"]
         self.assertEqual(raised["structuredContent"]["source"], HELD_ID)
         self.assertNotIn("[held out]", json.dumps([made, said, raised]))

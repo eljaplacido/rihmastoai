@@ -25,6 +25,10 @@ from kernel.store import REPO_ROOT, write_json, write_text  # noqa: E402
 from mcp.server import PROTOCOL_VERSIONS, TOOLS, RihmaMCP, main, tool_list  # noqa: E402
 
 IDEA = "Our team keeps losing track of who borrowed the drills and laptops."
+# The agent bridge's tools (mcp/bridge_tools.py, FR-BRG1, FR-CHN1): reads, and writes that are proposals or posts.
+BRIDGE_WRITES = ("rihma_progress", "rihma_propose_answer", "rihma_request_gate", "rihma_channel_post", "rihma_ask_rihma")
+BRIDGE_TOOLS = {"rihma_next", "rihma_plan", "rihma_questions", "rihma_handoff", "rihma_feedback", "rihma_insights",
+                "rihma_alignment", "rihma_health", "rihma_channel_read", *BRIDGE_WRITES}
 PERSON = "Tessa"
 # Words a tool that takes a decision would carry. None may appear in the server's tool list.
 DECIDING = ("decide", "answer", "approve", "accept", "reject", "pause", "resume", "deploy", "assume", "settle",
@@ -168,6 +172,10 @@ class StdioTest(McpCase):
                ("rihma_project", {"pid": self.built.pid, "extra": "x"}, "unknown argument"),
                ("rihma_comment", {"pid": self.built.pid, "target_kind": "nothing", "target_id": "x", "text": "t"},
                 "target_kind must be one of"),
+               ("rihma_comment", {"pid": self.built.pid, "target_kind": "requirement", "target_id": "R-999",
+                                  "text": "ghost"}, "no requirement R-999"),        # a target that is not there
+               ("rihma_comment", {"pid": self.built.pid, "target_kind": "card", "target_id": "C-9999",
+                                  "text": "ghost"}, "no card C-9999"),
                ("rihma_report_change", {"pid": self.built.pid, "text": "   "}, "text is required"),
                ("rihma_ask", {"question": "where is the ledger?", "pid": "no-such"}, "no project")]
         for name, args, says in bad:
@@ -189,13 +197,17 @@ class ProposalTest(McpCase):
         self.assertEqual({t["name"] for t in tools},
                          {"rihma_projects", "rihma_project", "rihma_waiting", "rihma_floor", "rihma_timeline",
                           "rihma_evidence", "rihma_square", "rihma_ask", "rihma_report_change", "rihma_comment",
-                          "rihma_signal", "rihma_track", "rihma_autopilot", "rihma_assessment"})
+                          "rihma_signal", "rihma_track", "rihma_autopilot", "rihma_assessment"} | BRIDGE_TOOLS)
         for t in tools:
+            # a proposed answer is a suggestion a person confirms (FR-BRG1): "answer" only after "propose"
+            name, title = (t["name"].replace("propose_answer", "propose"),
+                           t["title"].lower().replace("propose an answer", "propose"))
             for word in DECIDING:
-                self.assertNotIn(word, t["name"].lower(), t["name"])
-                self.assertNotIn(word, t["title"].lower(), t["name"])
+                self.assertNotIn(word, name.lower(), t["name"])
+                self.assertNotIn(word, title, t["name"])
             writes = not t["annotations"]["readOnlyHint"]
-            self.assertEqual(writes, t["name"] in ("rihma_report_change", "rihma_comment", "rihma_signal"))
+            self.assertEqual(writes, t["name"] in ("rihma_report_change", "rihma_comment", "rihma_signal",
+                                                   *BRIDGE_WRITES))
         self.assertIn("No tool here decides a card, answers a question, approves, pauses, resumes or deploys",
                       self.server.instructions)
 

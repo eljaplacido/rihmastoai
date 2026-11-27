@@ -33,6 +33,31 @@ AGENT_KINDS = {"cell_ran": "builder", "gate": "kernel", "merged": "kernel", "esc
 PERSON_KINDS = ("decision", "change_submitted", "pause_requested", "resumed", "plan_edited", "question_answered")
 
 
+def _level(pl: dict) -> str:
+    return "must answer before delivery" if pl.get("level") == "require" else "advise only"
+
+
+def _who(pl: dict) -> str:
+    return str(pl.get("to_person") or str(pl.get("to_persona") or "someone").replace("_", " "))
+
+
+# People in the loop (kernel/hitl.py, FR-HITL1): who asked whom, who answered (and from outside), links given and
+# withdrawn, reminders, and who changed how strictly a check is enforced, at which scope.
+HITL_SAID = {
+    "hitl_asked": lambda pl: f"asked {_who(pl)} ({pl.get('family')} {pl.get('kind')} {pl.get('ask')})",
+    "hitl_answered": lambda pl: f"answered {pl.get('ask')}" + (f", from outside via {pl.get('via')}"
+                                                                 if pl.get("external") else ""),
+    "hitl_link_given": lambda pl: f"gave {pl.get('to_person')} a one-use link ({pl.get('link')}) for "
+                                  f"{', '.join(pl.get('asks') or [])}",
+    "hitl_link_revoked": lambda pl: f"withdrew link {pl.get('link')}",
+    "hitl_sent": lambda pl: f"sent {pl.get('ask')} to {_who(pl)}'s channels",
+    "hitl_nudged": lambda pl: f"reminded {', '.join(str(t).replace('_', ' ') for t in pl.get('to') or [])} about "
+                              f"{pl.get('ask')} ({pl.get('step')})",
+    "hitl_enforcement_set": lambda pl: f"set {pl.get('family')} checks to {_level(pl)} for "
+                                       + ("all projects" if pl.get("scope") == "platform" else "this project"),
+}
+
+
 def _projects(factory):
     return [p for p in factory.projects() if not p.pid.startswith("_")]
 
@@ -120,6 +145,18 @@ def timeline(project) -> dict:
     return {"tasks": out, "start": min(starts) if starts else None, "end": max(ends) if ends else None}
 
 
+def _actor(kind: str, pl: dict) -> dict | None:
+    """Who did it: a person (from outside, when they answered through a one-use link), or an agent."""
+    if kind in PERSON_KINDS or (kind in HITL_SAID and pl.get("person")):
+        actor = {"type": "person", "name": pl.get("person") or pl.get("by"), "persona": pl.get("persona")}
+        return actor | ({"outside": True} if pl.get("external") else {})
+    if kind in HITL_SAID:
+        return {"type": "agent", "name": "relay", "model": None}      # the relay's own reminder round
+    if kind in AGENT_KINDS:
+        return {"type": "agent", "name": AGENT_KINDS[kind], "model": pl.get("final_model") or pl.get("model")}
+    return None
+
+
 def activity(factory, *, limit: int = 40) -> list:
     events = []
     for p in _projects(factory):
@@ -127,13 +164,9 @@ def activity(factory, *, limit: int = 40) -> list:
             if not isinstance(rec, dict):
                 continue
             ev = rec.get("event") or {}
-            kind, pl = ev.get("kind"), ev.get("payload") or {}
-            if kind in PERSON_KINDS:
-                actor = {"type": "person", "name": pl.get("person") or pl.get("by"),
-                         "persona": pl.get("persona")}
-            elif kind in AGENT_KINDS:
-                actor = {"type": "agent", "name": AGENT_KINDS[kind], "model": pl.get("final_model") or pl.get("model")}
-            else:
+            kind, pl = str(ev.get("kind") or ""), ev.get("payload") or {}
+            actor = _actor(kind, pl)
+            if actor is None:
                 continue
             events.append({"project": p.pid, "at": ev.get("at"), "kind": kind, "actor": actor,
                            "summary": summarise(kind, pl)})
@@ -142,6 +175,8 @@ def activity(factory, *, limit: int = 40) -> list:
 
 
 def summarise(kind: str, pl: dict) -> str:
+    if kind in HITL_SAID:
+        return HITL_SAID[kind](pl)
     if kind == "cell_ran":
         return f"{pl.get('task')} round {pl.get('round')}: cell finished ({pl.get('bucket')})"
     if kind == "gate":
@@ -186,8 +221,9 @@ def catalogue_state(project: Project) -> str:
     undo a validation people gave."""
     from kernel.deliver import in_production, release_reach, releases
 
-    if in_production(project):
-        return "in_use"
+    meta = project.meta
+    if in_production(project) or (meta.get("source_kind") == "adopted" and meta.get("maturity") == "production"):
+        return "in_use"           # an adopted system its owner says is in production is used today (adopted_state.py)
     reached = {release_reach(rel) for rel in releases(project)}
     for state in ("pilot", "trying"):
         if state in reached:
@@ -215,7 +251,8 @@ def catalogue(factory) -> dict:
                       "summary": spec.get("summary") or p.meta.get("title"), "profile": prof["id"],
                       "profile_label": prof["label"], "deliverable": prof.get("deliverable", "product"),
                       "maturity": p.meta.get("maturity"), "stage": p.meta.get("stage"),
-                      "pack": {"version": latest.get("version"), "valid": latest["acceptance"]["valid"]}
+                      "adopted": p.meta.get("source_kind") == "adopted",   # an existing system kept, not built
+                      "pack":{"version": latest.get("version"), "valid": latest["acceptance"]["valid"]}
                       if latest else None})
     fp = factory_project(factory, create=False)     # a read never creates the factory's canon
     for c in Canon(fp).cards(kind="concept") if fp is not None else []:
@@ -234,3 +271,19 @@ def tracking(factory: Any) -> dict[str, Any]:
     rows = sorted((summary(p) for p in _projects(factory)), key=lambda r: (worst[r["state"]], r["title"] or ""))
     return {"projects": rows, "counts": {s: sum(1 for r in rows if r["state"] == s) for s in STATES},
             "autopilots": sum(1 for r in rows if r["autopilot"].get("holding"))}
+
+
+def asks_waiting(project: Project) -> list[dict[str, Any]]:
+    """The project's open asks (People in the loop, kernel/hitl.py) as the decisions widget lists them: each waits on
+    the persona it is put to, and one of a required check family holds delivery (``blocking``)."""
+    from kernel import hitl
+
+    if not project.path(hitl.FILE).exists():
+        return []
+    held = {a["id"] for a in hitl.blocking(project)}
+    return [{"project": project.pid, "project_title": project.meta.get("title", project.pid), "card": a["id"],
+             "kind": "ask", "title": str(a.get("text") or "")[:160], "deciders": [a["to"]["persona"]], "verdicts": [],
+             "age_hours": round(hitl.age_hours(project, a), 1), "blocking": a["id"] in held,
+             "payload": {"family": a.get("family"), "ask_kind": a.get("kind"), "to_person": a["to"].get("person"),
+                         "external": bool(a["to"].get("external"))}}
+            for a in hitl.asks(project, state="open")]

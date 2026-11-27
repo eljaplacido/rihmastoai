@@ -134,7 +134,7 @@ def handlers(emit: Callable[[Any], None], model: Callable[[], Any]) -> dict[str,
         out = gate_external.gate(f.project(a.pid), person=a.person, persona=a.persona, head=a.head, base=a.base,
                                  task=a.task, verifier=a.verifier)
         emit(out)
-        return gate_external.exit_code(out["verdict"])
+        return gate_external.exit_code(out["verdict"], out.get("held"))
 
     table: dict[str, Callable[[Factory, Args], Any]] = {
         "modules show": _show,

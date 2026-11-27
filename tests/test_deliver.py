@@ -96,6 +96,11 @@ class DeliveryTestCase(unittest.TestCase):
     maturity = "production"
 
     def setUp(self):
+        from factory_fakes import no_local_routing
+
+        patcher = no_local_routing()                # the machine's own routing overlay is never read by a test
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tmp = Path(tempfile.mkdtemp(prefix="gf-deliver-"))
         self.addCleanup(roadmod.rmtree, self.tmp)
         home, pid = built_product(self.maturity)

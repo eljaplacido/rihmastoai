@@ -30,8 +30,69 @@ The source may be **any folder** on this machine, not only a git repository
   repository is then adopted like any other, and `adopted.json` and the ledger's `snapshot_taken` say
   what was copied, skipped and excluded. A later `sync` reads the snapshot, which does not follow your
   folder: adopt it again to take a new baseline.
-- **A folder with no code at all** (only documents) is refused: there is nothing to adopt. The message
-  offers to start a new project from it as material instead (`rihmasto new "Title" --source <folder>`).
+- **A folder with no code at all** (only documents) is not adopted as code. New project offers two
+  things to do with it (FR-RPJ1): **Build something from these documents** starts a new project whose
+  material they are (`rihmasto new "Title" --source <folder>`), and **Track and evaluate this work**
+  adopts them as a body of work (`rihmasto adopt ... --documents`): a snapshot of the documents, a
+  project in a monitoring state with no build questions, proposed as an **ML experiment or model** when
+  its files fit (training runs, metrics, evaluation results, a `results.zip`). Without `--documents` the
+  command line still refuses it.
+
+### Uncommitted work, workspaces and adopted already
+
+Real folders are rarely tidy (FR-RPJ1). New project's scan says what it found, with the choices:
+
+- **Uncommitted work.** A git repository with changes beside its last commit: "N uncommitted changes
+  (and M untracked files) are not in the last commit: they will not be included". **Adopt the last
+  commit** (the default) adopts exactly what the map shows, because the scan reads the committed tree;
+  **Adopt the working copy as it is now** (`--working-copy`) takes a snapshot of the working tree, as for
+  a folder without git, and your folder is never changed. The brief and `adopted.json` (`took`,
+  `left_out`) say which.
+- **Workspaces.** A folder that holds several git repositories (to two levels) lists them with their
+  commits and uncommitted counts, and the copies beside them (`_snapshot`, `-copy`, `-experiment`,
+  `-prep`): **Adopt each as its own project** (choose which; one adoption job each, titled
+  "<title> · <folder>") or **Adopt the folder as one** (a snapshot). A file a copy holds is read once.
+- **Adopted already.** The same folder (its resolved path, or the folder a snapshot came from) or the
+  same repository (the same origin address, credentials taken out) is said: "Already adopted as
+  <project>" with **Open <project>**; **Adopt it again as a new project** is the only way to make a
+  second one (the adopt route answers 409 without `again`).
+- **How it is used today.** An experiment, a prototype, in use by a few or in production: the adopted
+  project's maturity, inferred by rule from its files (CI, deployment files, tests, commits) until a
+  person says, never defaulted to demo.
+- **A folder outside the allowed ones** is refused with **Allow <folder>** (a single operator, after a
+  yes) or "Ask IT to allow it", and a long scan shows its progress with **Cancel the scan**
+  ([inputs.md](guides/inputs.md#any-folder-the-material-map)).
+
+### An adopted project's page: its state, health, areas and watch
+
+An adopted project did not go through the factory's seven stages, and its page says what it is instead
+([kernel/adopted_state.py](../kernel/adopted_state.py)): **Adopted: monitoring** (or maintaining,
+improving), what was taken, its baseline with the command that produced it, how it is used, its
+activity and its watch, in the header, on the Overview and in the side column. Its kind of work shows
+only once chosen: **Kind: not chosen yet** while "Which kind of work is this?" is open. A game, an ML
+experiment, a knowledge or tooling project, a library or CLI and a data pipeline have profiles of their
+own, proposed from the files too ([guides/profiles.md](guides/profiles.md#real-project-shapes)).
+
+- **Health.** Existing tests that fail at the baseline are a health item and a Track reason, "existing
+  tests fail at the baseline (recorded, not judged)", never On track.
+- **Stated commands.** A test command the project's instructions state that no known runner maps (a
+  script of its own, `python tools/check.py test`) is offered under **Stated test commands**: **Run it as
+  the baseline** runs it after your yes, since it runs the project's own code (through IT's isolation
+  runner under enforced access; `rihmasto baseline <pid> --command "..." --yes`), only as stated, and
+  `baseline.json` names the command and who said yes ([kernel/adopt_stated.py](../kernel/adopt_stated.py)).
+- **Areas** ([kernel/areas.py](../kernel/areas.py)). For a repository that is not just code: what each
+  top-level folder holds (files, types, sizes, asset kinds such as models, textures, audio and scenes),
+  what moved per area over 7 and 30 days from the git history (commits, files changed, lines added and
+  removed, the most recently active areas, the authors) and an index of design, lore and world documents
+  by title. It is kept as `areas.json` at adoption, shown as the **Areas** card, served at
+  `GET /api/projects/<pid>/areas` for Insights, and Ask Rihma answers "how are the assets coming along?"
+  from it. A snapshot has no history: its activity is not measured.
+- **Watching** ([kernel/adopt_watch.py](../kernel/adopt_watch.py)). A project adopted to monitor or
+  maintain offers **Set up the watch**: through the automations engine, in your name, new commits upstream
+  become a summary in Review (the "Upstream changed: review" card) and the timeline, the activity by area
+  is summed up every Monday, and failed checks notify one of IT's channels (it waits for one when there is
+  none). The project then says "Watching: ...". When an automation cannot be set, the watch falls back to
+  the upstream polling `rihmasto sync` does, and says so.
 
 **The team's AI tools.** A repository the team works on in Cursor, Claude Code or another IDE agent
 holds its conventions: `CLAUDE.md`, `AGENTS.md`, Cursor rules, skills, slash commands, hooks and MCP
@@ -42,8 +103,8 @@ them, and the project's Overview shows them beside **Work on it from your IDE**.
 
 In the cockpit, **New project → An existing project** takes the folder and shows the same scan first
 (**Scan the folder**): what would be read, listed and skipped, and whether it is a git repository. Untick
-files to leave them out of the snapshot and the scanned documents; a folder of documents only gets a
-**Start a new project from it** button. `--confidential` (or the box) records the project as
+files to leave them out of the snapshot and the scanned documents; a folder of documents only offers
+**Build something from these documents** and **Track and evaluate this work**. `--confidential` (or the box) records the project as
 confidential, so every later model call for it stays on local models
 ([inputs.md](guides/inputs.md#confidential-material-keep-it-on-local-models)).
 
@@ -126,6 +187,20 @@ upstream after a fetch that worked (a default branch renamed from `master` to `m
 one change card naming the new default branch; the project keeps tracking the old name until a
 person decides. For a monitored project, `rihma sync` also runs a probe round.
 
+## Aligning with the repository's own specs and tests
+
+The as-is spec says only "the existing suite keeps passing". A team that worked in an IDE usually has more:
+specs and user stories (spec-kit, Kiro, BMAD, agent-os, PRDs), acceptance criteria (given / when / then,
+EARS, Gherkin), ADRs, OpenAPI or GraphQL contracts, task lists, CI jobs and linters. The **Alignment** tab of
+an adopted or attached project (`rihmasto align <pid>`, FR-ALN1) reads them by rule from the committed
+revision, proposes requirements, criteria, a trace from the existing tests (with its basis and confidence),
+tasks, decisions, API contract references and the gaps between them, and lets a person accept, edit or reject
+each. What is accepted goes into the project's contract, customer-endorsed by that person and noted as
+imported from the repository; on an adopted project an imported requirement's task is held as the existing
+work, never built unasked. Suggested changes for the repository are text or a patch, never written there. A
+re-scan after the repository changed shows the drift. `rihmasto structure <folder>` shows the structure map of
+any folder. The whole walk: [docs/guides/alignment.md](guides/alignment.md).
+
 ## Assessing an adopted system
 
 ```
@@ -134,11 +209,42 @@ rihmasto assessment list <pid>
 rihmasto assessment show <pid> [--version AS-2] [--full]
 rihmasto assessment compare <pid> [--from AS-1] [--to AS-2]
 rihmasto assessment change <pid> F-3 P-1 --person Aino --persona developer [--as new_requirement]
+rihmasto assessment verdict <pid> F-4 --verdict not_relevant --reason "..." [--also F-5] --person Aino --persona developer
+rihmasto assessment runner <pid> --command "make gates" [--results build/gates.xml] --person Aino --persona developer
 ```
+
+**What is worth acting on, and what is probably noise (FR-ASP1).** The Assessment tab opens on two lines, by
+rule from the latest assessment as people judged it: what to act on now and what is probably noise, each with
+why, and the next steps as buttons; Ask Rihma answers the same ("what is noise here?"). A secret in a test
+fixture's file with an obviously fake value, or inside a long URL path with no credential-shaped query or user
+info, reads "likely not a secret" with the reason and is never critical; Confirm real or Mark as fixture is kept
+for its file. Any finding can be marked not relevant with a reason: it leaves the priorities, and the findings of
+the same rule are proposed for the same verdict. pytest runs once per test root (each package's own); a project
+whose tests another tool runs reads "not measured by Rihmasto yet: map its runner" until its command and the
+results file it writes (JUnit XML or JSON counts) are mapped, and that file is then read at the assessed revision
+as the test run. Requirements and tasks imported from documents carry the document's path and last commit date,
+and one older than the code by 14 days or more is flagged before it is accepted.
+
+**Checked again (FR-ASP2).** The view opens on three lines: worth acting on now, gaps to close (tests not measured,
+old plans, each with what closes it) and probably noise. A webhook or bot URL of a known service, a known credential
+format inside a URL, or a random value beside a URL is possibly real; words that make a value fake count only in a
+test suite's files, as words of their own; a fixture or real mark covers the values marked, never one added later.
+Only a developer, IT, compliance, operations or a product owner marks a secret not relevant. A local project (no
+HTTP route, container or deploy file, and no service's work profile) has its pipeline, deploy, publish and team
+findings "for later", out of what to act on now; Relevant now brings one back. Dismissing a finding proposes the
+open findings of the same kind (the delivery pipeline, documents a published project keeps, open issues of the
+team's log, ...). A mapped runner's results file is read from the upstream's head as last synced when main does not
+hold it, with the drift card that brings it in; a gates command stated in CLAUDE.md or AGENTS.md is the project's
+test command; unittest runs once per test root too. Requirements in a Markdown table or a JSON rule file (`laws/`,
+`rules/`, `policies/`, `requirements*.json`), tasks in a README's status table, and open issues of an `issues.jsonl`
+log are read. The Board's briefing says what the assessment finds worth acting on, and leads there when no task is
+left. Ask Rihma gives each next step its own button.
 
 In the cockpit, an adopted project has an **Assessment** tab beside its Overview. An assessment
 tells you what the system should fix, from five perspectives, and lets you turn what matters into
 changes that go round the factory's change loop (`kernel/assess.py`, `kernel/assess_cards.py`).
+While it runs, the tab shows it live, area by area, with its findings as they land and an estimate from
+the earlier runs: [assessing, and watching it run](guides/assessment.md).
 
 **What it reads.** One revision of the project's own mirror: `main`, what the factory holds, unless
 `--ref` names another (`upstream/main` reads the upstream's head after a `sync`). The files are read
@@ -229,8 +335,10 @@ every version with its sha256 checked against the ledger) and a line in its READ
 3. **Read it by perspective.** The summary says how many findings by severity, and what changed
    since the version before. Each perspective lists its findings with their evidence and suggested
    change, then what was not measured and why; what passed is folded away.
-4. **Choose what matters.** Tick the findings to fix, choose how to file them (a new requirement by
-   default) and press **File the ticked findings as changes**. Each finding shows the card it became.
+4. **Choose what matters.** **Suggested order** explains what to fix first; select the top five, critical
+   and high, or all open, or tick findings yourself. Each finding has Rihma's suggested kind and why; change
+   only the suggestions you disagree with, then press **File the ticked findings as changes**. Each finding
+   is filed as its own shown kind and shows the card it became.
 5. **Decide.** A business owner or product owner finds the cards in the Inbox and accepts, rejects or
    defers each; an accepted one goes back to its stage, and the work is built and gated like any
    change.

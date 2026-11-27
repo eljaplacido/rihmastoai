@@ -28,6 +28,14 @@ store exists, the role reads **Gnomon may have its own key for this host**. Rihm
 and never reads a key's value, so **Test** cannot send a key Gnomon holds and says so; a run goes through
 Gnomon and uses it. `rihmasto doctor` counts a key Gnomon holds as set too.
 
+**No API key?** A role can be answered by the coding agent you already have: Claude Code (your
+login), Codex or OpenCode, run headless with no tools in an empty folder. Models setup lists the ones
+this machine has with their versions. **Use Claude Code (your login)**, **Use Codex** or **Use
+OpenCode** answers every text role (or those you pick) with it, and `rihmasto models use claude-code`
+does the same on the command line. Test sends its tiny prompt through the harness. It is slower than an
+API endpoint and spends your own subscription. See
+[Run Rihmasto with the coding agent you already have](harness-models.md).
+
 ## Open it
 
 - **Settings > Models > Open Models setup**;
@@ -84,6 +92,7 @@ rihmasto models set builder --base-url https://openrouter.ai/api/v1 --model qwen
 rihmasto models set analyst --base-url https://api.example.com/v1 --model some-model \
     --key-stdin --person "Ilkka Example" --persona it < key.txt
 rihmasto models remove analyst --person "Ilkka Example" --persona it
+rihmasto models use claude-code [--roles all|analyst,assistant] --person "Ilkka Example" --persona it
 ```
 
 `--key-stdin` reads the key from standard input, so it never appears in your shell's history or the
@@ -97,3 +106,4 @@ process list. Nothing the command prints holds the key.
 | `PUT /api/models/<role>` | `{base_url, model, family?, key_env? or key?, keep_fallback?, person, persona}`; a refused change is a 400 and writes nothing |
 | `POST /api/models/<role>/test` | `{person, persona}`: the tiny prompt; records nothing |
 | `POST /api/models/<role>/remove` | `{person, persona}`: back to the shipped routing |
+| `POST /api/models/use` | `{harness, roles?, model?, family?, private?, command?, person, persona}`: the text roles (or those named) answered by a coding agent on this machine ([harness-models.md](harness-models.md)); `GET /api/models` lists the harnesses found and their versions |

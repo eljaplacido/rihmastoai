@@ -31,6 +31,7 @@ from typing import Any
 
 from kernel import access_isolation as isolation
 from kernel import integration_standins as standins
+from kernel.gate_own import tests_or_own
 from kernel.lanes import protected_paths
 from kernel.model import ModelError, extract_json, run_gnomon_task
 from kernel.verdicts import combine_verdicts
@@ -345,21 +346,14 @@ def signal_protected(repo_dir: Path, base: str, head: str) -> Signal | None:
 
 def verifier_prompt(contract: dict, task_id: str, base: str) -> str:
     """Open, P8 in docs/code-quality.md (here and in change_verifier_prompt): a `git diff` the read-only
-    verifier cannot run. Listing the changed files is a prompt change for the owner's review."""
+    verifier cannot run. The instructions come first, word for word in every review, the task last (FR-CTX1)."""
     task = next(t for t in contract["tasks"] if t["id"] == task_id)
     crit = {c["id"]: c for r in contract["requirements"] for c in r["acceptance"]}
     reqs = sorted({cid.rsplit("-AC-", 1)[0] for cid in task["criteria"]})
     statements = {r["id"]: r["statement"] for r in contract["requirements"]}
     listing = "\n".join(f"- {cid}: given {crit[cid]['given']}; when {crit[cid]['when']}; then {crit[cid]['then']}"
                         for cid in visible_criteria(contract, task_id))
-    return f"""You review a change in this repository for task {task_id}. Compare it with the base
-revision {base} (`git diff {base} -- app tests`). You may read files and run nothing else.
-
-Requirements:
-{chr(10).join(f"- {r}: {statements[r]}" for r in reqs)}
-
-Acceptance criteria the change must meet:
-{listing}
+    return f"""You review a change against the task named at the end. You may read files and run nothing else.
 
 Try to break it. Look for:
 - a criterion that is not really met;
@@ -371,6 +365,13 @@ Do not report style. Answer with this JSON in a ```json block:
 {{"findings": [{{"criterion": "R-1-AC-1 or null", "in_scope": true, "severity": "high|medium|low",
    "finding": "what breaks", "repro": "how to see it"}}]}}
 An empty list means you found nothing.
+The change is for task {task_id}. Compare it with the base revision {base} (`git diff {base} -- app tests`).
+
+Requirements:
+{chr(10).join(f"- {r}: {statements[r]}" for r in reqs)}
+
+Acceptance criteria the change must meet:
+{listing}
 """
 
 
@@ -486,14 +487,13 @@ An empty list means you found nothing.
 
 
 def judge_change(repo_dir: Path, contract: dict, base: str, head: str, *, label: str, author: str,
-                 task_id: str | None = None, verifier_runner=None) -> GateResult:
-    """The gate for commits a person made in a workspace. With a contract task named, it is the
-    very same `judge` a builder cell meets. Without one, the suite and the independent verifier
-    still run, and trace and fail-first are not applicable: no criterion is claimed."""
+                 task_id: str | None = None, verifier_runner=None, own_suites: list | None = None) -> GateResult:
+    """The gate for a person's workspace commits: with a contract task, the very `judge` a builder cell meets;
+    without, the suite (or an adopted project's ``own_suites``: gate_own) and the verifier, no criterion claimed."""
     if task_id is not None:
         return judge(repo_dir, contract, task_id, base, head, verifier_runner=verifier_runner)
     prompt, run = change_verifier_prompt(contract, base, author), run_suite(repo_dir)
-    signals = [*standins.signal(contract, run), signal_tests(repo_dir, run=run),
+    signals = [*standins.signal(contract, run), tests_or_own(repo_dir, signal_tests(repo_dir, run=run), own_suites),
                Signal("trace", "not applicable", {"criteria": []}, "the change names no criterion"),
                Signal("fail_first", "not applicable", {}, "the change names no criterion"),
                signal_protected(repo_dir, base, head) or _verifier_signal(repo_dir, prompt, runner=verifier_runner)]

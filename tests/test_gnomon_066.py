@@ -28,6 +28,11 @@ def _git(cwd, *args):
 
 class LanesUnder066Test(unittest.TestCase):
     def setUp(self):
+        from factory_fakes import no_local_routing
+
+        patcher = no_local_routing()                # the machine's own routing overlay is never read by a test
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self._tmp = tempfile.TemporaryDirectory(prefix="gf-066-")
         self.tmp = Path(self._tmp.name)
 
@@ -85,6 +90,11 @@ class LanesUnder066Test(unittest.TestCase):
 
 class GnomonCommandTest(unittest.TestCase):
     def setUp(self):
+        from factory_fakes import no_local_routing
+
+        patcher = no_local_routing()                # the machine's own routing overlay is never read by a test
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self._tmp = tempfile.TemporaryDirectory(prefix="gf-066-")
         self.tmp = Path(self._tmp.name)
 

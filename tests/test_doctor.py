@@ -1,4 +1,4 @@
-"""`rihma doctor` (FR-N2-AC-2): Rihma needs Gnomon 0.6.5 or later; 0.6.6 is recommended."""
+"""`rihma doctor` (FR-N2-AC-2): Rihma needs Gnomon 0.6.5 or later; 0.6.7, the latest, is recommended."""
 
 import contextlib
 import io
@@ -38,12 +38,13 @@ class DoctorTest(unittest.TestCase):
                           lanes_root=self.tmp / "lanes", environ=environ or {})
 
     def test_FR_N2_AC_2_doctor_reports_gnomons_version_and_support_and_never_a_keys_value(self):
-        self.assertEqual((MIN_GNOMON, RECOMMENDED_GNOMON), ("0.6.5", "0.6.6"))
+        self.assertEqual((MIN_GNOMON, RECOMMENDED_GNOMON), ("0.6.5", "0.6.7"))   # always the latest Gnomon
         cases = [  # (`gnomon --version`, supported, recommended, exit)
-            ("gnomon/0.6.6+v0.6.6-d3c574a", True, True, 0),
+            ("gnomon/0.6.7+v0.6.7-0a1b2c3", True, True, 0),
+            ("gnomon/0.6.6+v0.6.6-d3c574a", True, False, 0),
             ("gnomon/0.6.5+v0.6.5-53f83bd", True, False, 0),     # this workstation's release
             ("gnomon/0.6.5+fb458ea5", True, False, 0),           # the source build pinned for cells (D-0003)
-            ("gnomon/0.6.6-rc.1+abc1234", True, False, 0),        # a pre-release sorts below its release
+            ("gnomon/0.6.7-rc.1+abc1234", True, False, 0),        # a pre-release sorts below its release
             ("gnomon/0.7.0+npm", True, True, 0),
             ("gnomon/0.6.4+v0.6.4-1a2b3c4", False, False, 1),     # too old: a hard failure
         ]
@@ -89,6 +90,15 @@ class DoctorTest(unittest.TestCase):
             self.assertEqual(report["exit"], code)
             self.assertNotIn(SECRET, out.getvalue())
             self.assertIn({"name": "go", "api_key_env": "OPENCODE_API_KEY", "set": True}, report["endpoints"])
+
+    def test_the_help_and_the_module_name_the_recommended_gnomon(self):
+        """The command line's help and the doctor's own description recommend the same, latest Gnomon."""
+        import kernel.cli
+        import kernel.doctor
+
+        for doc in (kernel.cli.__doc__ or "", kernel.doctor.__doc__ or ""):
+            self.assertIn(f"{RECOMMENDED_GNOMON} recommended", doc)
+            self.assertNotIn("0.6.6 recommended", doc)
 
     def test_FR_N2_AC_2_gnomon_version_parses_every_build_form(self):
         self.assertEqual(parse_version("gnomon/0.6.5+v0.6.5-53f83bd"),

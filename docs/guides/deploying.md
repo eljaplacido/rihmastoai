@@ -48,6 +48,13 @@ file.
 | `local-process` | Runs the product from a checkout at the release's revision, on loopback. | configured |
 | `docker` | An image per revision, a container per environment and slot, a named volume for data. | configured, and `docker` is on PATH |
 | `azure-containerapps` | Renders an Azure Container Apps YAML and an `az` command plan, and validates both. | configured, with an identity, subscription, resource group, environment, registry and region, and `az` on PATH |
+| `gcp-cloudrun` | A Cloud Run service, or a Cloud Run job Cloud Scheduler runs on a schedule: the YAML, the scheduler job and the exact gcloud commands, rendered, validated and run ([gcp.md](gcp.md)). | configured, with projects, a region, an Artifact Registry repository, a deploying and a runtime identity, and `gcloud` on PATH and signed in |
+
+IT configures a Google Cloud road in the cockpit (**Settings > Paved roads**) or with `rihmasto road
+configure`; every other kind is edited in the file. Settings and `rihmasto road list` show each road, ready
+or exactly what is missing, and a project's **Releases** view shows where each environment of its plan
+deploys. [gcp.md](gcp.md) walks through a scheduled agent on Cloud Run Jobs that reads recordings from a
+Google Drive folder and writes transcripts back.
 
 `maturity` maps each maturity to a road, or to a map from environment to road. A project may
 name its own road in `project.json` (`paved_road`).
@@ -87,6 +94,12 @@ rihma operate <project>           # one operations round: probes, incidents
 `deliver` stops at each card and returns `waiting`. If main moves while a release waits, that
 release is superseded and its open cards are withdrawn, because an approval is for one revision.
 
+A project's **Destinations** tab (`rihmasto destinations <pid>`) shows every environment it is delivered
+to, with the release that runs there, its URL and its health, beside the data, channels and registries it
+goes to; **Deliver to test** and **Promote to production** start the delivery from there, and
+`rihmasto publish` pushes a release's image to a registry, test first and production through IT's gate
+([destinations.md](destinations.md)).
+
 ## What is real today
 
 - **Real and tested end to end:** the `local-process` road, with real processes, HTTP, holdouts,
@@ -94,5 +107,10 @@ release is superseded and its open cards are withdrawn, because an approval is f
 - **Real, tested against a fake CLI:** the `docker` road's commands.
 - **Rendered and validated, never deployed:** `azure-containerapps`. It needs IT to configure the
   road with an identity, and the `az` CLI on the deploying host.
+- **Rendered, validated and tested end to end against a fake gcloud on PATH; not yet run against a real
+  Google Cloud project:** `gcp-cloudrun`, a service or a scheduled job: Cloud Build, the test project
+  first, the deploy gate, a candidate revision promoted by traffic or a job's image and schedule, rollback,
+  and a job's executions read into its probe. It needs IT to set up the projects and service accounts,
+  configure the road, and sign `gcloud` in on the deploying host ([gcp.md](gcp.md)).
 - **Not built:** injecting secret values into local or docker products, traffic splitting by
-  weight, and reading an Azure product's traffic log (shadow reports "not measured" there).
+  weight, and reading an Azure or Cloud Run product's traffic log (shadow reports "not measured" there).

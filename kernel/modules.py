@@ -1,16 +1,14 @@
 """Modules: use a very small part of Rihmasto, or the whole of it, and change that later (FR-MOD1).
 
-Rihmasto is a catalogue of modules with their dependencies. A factory chooses the set it uses; a
-project may override it; the choice is a named person's, recorded in the ledger, and editable later:
-
-- **core**, always on: projects, the Inbox and decisions, the ledger, personas and access, the autonomy
-  cap, the knowledge graph, settings and jobs, and attaching a repository of your own;
-- **the modules**, below, each with what it adds, what it needs, and what you get from it;
-- **presets** for the usual starting points, each saying what you bring and what you get.
+A catalogue of modules with their dependencies; a factory chooses its set, a project may override it, a named
+person's choice, recorded and editable later: **core** always on (projects, the Inbox and decisions, the ledger,
+personas and access, the autonomy cap, the knowledge graph, every agent's data and context, settings, jobs and
+attaching a repository); **the modules** below (what each adds, needs and gives); **presets** to start from.
 
 Nothing chosen means the full factory, so a home made before modules existed works as it always did.
 The full factory chosen by its preset stays the full factory when a module is added to the catalogue
-later. Reading a set never creates the factory's own canon.
+later; an **opt-in** module (agent observability) is in no preset: a person turns it on, for the factory
+or one project. Reading a set never creates the factory's own canon.
 
 What a set does (FR-MOD2): the command line refuses a command of a module that is not enabled where it
 acts, and names the command that enables it (`allowed`); the pipeline stops at the edge of the set
@@ -20,14 +18,12 @@ the assistant's map included (`hidden_ids`). A refusal is a refusal like an acce
 the command line, 403 in the cockpit. Reads are never refused, and neither is a safety switch: what
 stops something still live (revoking a website's chat, removing a webhook source, ending a subscription,
 disabling a connector) is core, so turning a module off never leaves a thing running that nobody may
-stop (FR-MOD5). The other surfaces ask the same set: the MCP server's write tools (mcp/server.py), a
-website's chats (kernel/embeds.py) and webhooks (kernel/hooks.py) through `first_off`, and the
-assistant's proposals (kernel/assistant.py).
+stop (FR-MOD5). The other surfaces ask the same set: the MCP server's write tools (mcp/server.py), a website's
+chats (kernel/embeds.py) and webhooks (kernel/hooks.py) through `first_off`, the assistant's proposals.
 
 Hooks for work that plugs in (docs/guides/use-only-what-you-need.md lists the wiring):
-- `extend(module, ...)` adds commands, outputs, pages, views, widgets, controls or routes to a module (a
-  capability's faces add their command and output to `capabilities`; the brownfield assessment adds its
-  report to `assessment`). A name two modules list is shown while either is on;
+- `extend(module, ...)` adds commands, outputs, pages, views, widgets, controls or routes to a module (a capability's
+  faces add theirs to `capabilities`; the assessment its report). A name two modules list is shown while either is on;
 - each preset's `posture` is a hint for the posture presets (prototype, balanced, production,
   regulated): `suggested_posture(factory)` reads it, and nothing here enforces it.
 """
@@ -49,16 +45,20 @@ DEFAULT_PRESET = "full"
 
 
 def _module(label: str, adds: str, *, depends: tuple = (), outputs: tuple = (), planned: tuple = (),
-            **parts: tuple) -> dict[str, Any]:
-    return {"label": label, "adds": adds, "depends": tuple(depends), "outputs": tuple(outputs),
+            optin: bool = False, **parts: tuple) -> dict[str, Any]:
+    return {"label": label, "adds": adds, "depends": tuple(depends), "outputs": tuple(outputs), "optin": optin,
             "planned": tuple(planned), **{k: tuple(parts.get(k, ())) for k in KINDS}}
 
 
 # What is always on. A command, page, view, widget or control no module names is core too.
 CORE = _module(
     "Core", "projects, the Inbox where people decide, the hash-chained ledger, personas and access, the autonomy "
-    "cap, the knowledge graph, settings and jobs, and attaching a repository of your own",
-    pages=("home", "projects", "inbox_all", "jobs", "settings"), views=("overview", "inbox", "ledger"),
+    "cap, the knowledge graph, the data and context of every agent, settings and jobs, and attaching a "
+    "repository of your own",
+    # The Knowledge graph (FR-GRV1) and the Data and context page (FR-CTX1) read the records every set keeps,
+    # and a clean-up of the factory home is never refused: they are core, in every set's navigation.
+    pages=("home", "projects", "inbox_all", "jobs", "settings", "graph_all", "data_all"),
+    views=("overview", "inbox", "ledger", "graph", "context"),
     widgets=("kpi_strip", "pipeline", "decisions", "activity", "health", "autonomy", "spend"),
     controls=("persona", "lens", "pause", "resume", "decide", "comment", "palette", "customize", "theme", "density",
               "autonomy", "modules", "assistant"),
@@ -87,7 +87,8 @@ MODULES: dict[str, dict[str, Any]] = {
         "criterion to a test, checks fail-first, asks an independent verifier; escalations and workspaces; the "
         "same gate for your own repository, and holdouts against your running service", depends=("plan",),
         outputs=("gate verdicts per change, recorded", "merged code on the product's main"),
-        pages=("floor",), views=("tasks", "cell"), widgets=("live", "timeline", "gate_trend", "models"),
+        pages=("floor", "insights_all"), views=("tasks", "cell", "insights"),     # Insights: FR-INS1
+        widgets=("live", "timeline", "gate_trend", "models", "insight"),
         commands=("build", "resurface", "workspace open", "workspace submit", "workspace list", "repo gate",
                   "repo holdouts")),
     "delivery": _module(
@@ -140,10 +141,17 @@ MODULES: dict[str, dict[str, Any]] = {
         commands=("embed create", "relay subscribe", "relay cockpit", "relay run", "relay log", "hooks add",
                   "connector validate", "connector enable", "connector check"), routes=("post_embed",)),
     "assistant": _module(
-        "Assistant", "Ask Rihma in the cockpit answers from a model through Gnomon: how a run goes, what waits, "
-        "proposals you confirm; without it the assistant still points the way from the cockpit's map",
+        "Assistant", "Ask Rihma: answers about your projects from an AI model through Gnomon (how a run goes, what "
+        "waits, proposals you confirm); without it, Ask Rihma only shows the way around the cockpit",
         outputs=("answers and proposals you confirm",)),
+    "agentobs": _module(   # opt-in: off until a person turns it on (kernel/agentobs, FR-OBS1)
+        "Agent observability", "an Agent sessions view for developers and IT: what the IDE agents (Claude Code, "
+        "Cursor, OpenCode) did in the project's repository, read from your own agent observability hub", optin=True,
+        outputs=("agent sessions, rework, failures and the hub's chain check, per project",), views=("agent_sessions",),
+        controls=("agent_sessions_map", "agent_sessions_snapshot"), commands=("agentobs map", "agentobs snapshot"),
+        routes=("post_agent_sessions_map", "post_agent_sessions_snapshot")),
 }
+default_on = lambda: [m for m, s in MODULES.items() if not s.get("optin")]   # noqa: E731 - the catalogue as it is now
 
 
 def _preset(label: str, modules: tuple, brings: str, gets: str, posture: str | None = None) -> dict[str, Any]:
@@ -168,7 +176,7 @@ PRESETS: dict[str, dict[str, Any]] = {
     "capability_only": _preset("Capability only", ("intake", "plan", "build", "delivery", "capabilities"),
                                "a need for one small capability",
                                "a running capability with its capability pack", "prototype"),
-    "full": _preset("Full factory", tuple(MODULES), "any of the above",
+    "full": _preset("Full factory", tuple(default_on()), "any of the above",
                     "everything: a governed service or agent from need to production, and the loop after",
                     "balanced"),
 }
@@ -226,8 +234,8 @@ def needed_by(module: str, among: Iterable[str]) -> list[str]:
 
 
 def preset_of(modules: Iterable[str]) -> str | None:
-    """The preset whose set is exactly ``modules``, or None for a set of one's own."""
-    want = set(modules)
+    """The preset whose set is exactly ``modules`` (opt-in modules aside), or None for a set of one's own."""
+    want = {m for m in modules if not MODULES.get(m, {}).get("optin")}
     return next((p for p, spec in PRESETS.items() if set(spec["modules"]) == want), None)
 
 
@@ -241,8 +249,8 @@ def _store(factory: Factory, *, create: bool) -> Project | None:
 
 def _saved_modules(saved: dict[str, Any]) -> list[str] | None:
     """The modules a saved choice names: the whole catalogue for the full factory chosen by its preset."""
-    if saved.get("preset") == DEFAULT_PRESET:
-        return list(MODULES)
+    if saved.get("preset") == DEFAULT_PRESET:          # the full factory, and the opt-in modules turned on
+        return [m for m in MODULES if m in default_on() or m in (saved.get("modules") or ())]
     return [m for m in MODULES if m in saved["modules"]] if isinstance(saved.get("modules"), list) else None
 
 
@@ -252,7 +260,7 @@ def factory_set(factory: Factory) -> dict[str, Any]:
     saved = (store.read("modules.json") or {}) if store is not None else {}
     mods = _saved_modules(saved) if isinstance(saved, dict) else None
     if mods is None:
-        return {"preset": DEFAULT_PRESET, "modules": list(MODULES), "chosen": False}
+        return {"preset": DEFAULT_PRESET, "modules": default_on(), "chosen": False}
     return {"preset": preset_of(mods), "modules": mods, "chosen": True,
             **{k: saved.get(k) for k in ("set_by", "persona", "at", "reason")}}
 

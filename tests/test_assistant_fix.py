@@ -42,6 +42,12 @@ UI = {"widgets": ["kpi_strip", "gate_trend", "decisions", "activity"],
                                      {"id": "decisions-x1", "type": "decisions", "size": "M"}]}}
 
 
+def written(project) -> int:
+    """The project's records, less the usage metadata of a model run (model_run, FR-INS1-AC-9): that says a model
+    answered, never what; the assistant itself writes nothing."""
+    return len([r for r in project.ledger().records() if r["event"]["kind"] != "model_run"])
+
+
 def answering(answer: dict) -> FakeModel:
     return FakeModel(lambda prompt, role: "```json\n" + json.dumps(answer) + "\n```")
 
@@ -65,7 +71,7 @@ class Built(FactoryTestCase):
         self.ruling = canon.card("holdout_ruling", "Holdout R-1-AC-1 failed", body=SECRET)
         self.p.write("releases/1.json", {"release": 1, "state": "done", "environments": ["demo"], "maturity": "demo",
                                          "steps": [{"step": "deploy:demo", "outcome": "passed"}]})
-        self.records = len(self.p.ledger().records())
+        self.records = written(self.p)
 
     def ask_model(self, question: str, answer: dict, persona: str = "business_owner", **kw) -> dict:
         return ask(self.factory, question, persona=persona, project_id=self.p.pid, model=answering(answer), **kw)
@@ -111,13 +117,14 @@ class MapTest(Built):
         factory_project(self.factory)                                          # Rihma's own canon
         plan = ask(self.factory, "Where do I approve the plan?", persona="business_owner", project_id="_factory")
         self.assertIsNone(plan["navigate"])
-        self.assertIn("Rihma itself has no Plan view", plan["answer"])
+        self.assertIn("Rihmasto itself has no Plan view", plan["answer"])
         self.assertIsNone(ask(self.factory, "How do I pause this?", persona="it", project_id="_factory")["navigate"])
 
     def test_FR_V1_AC_1_without_a_model_a_request_to_act_is_told_so_and_pointed_at_its_control(self):
         theme = ask(self.factory, "Use a compact teal theme", persona="operations")
         self.assertEqual(theme["navigate"], {"route": None, "control": "theme"})
-        self.assertIn("no model is set up", theme["answer"])
+        self.assertIn("by rule (no model is needed for this)", theme["answer"])    # a plain request: proposed by rule
+        self.assertEqual([p["args"]["settings"] for p in theme["propose"]], [{"density": "compact", "accent": "teal"}])
         wide = ask(self.factory, "Make the decisions widget wide", persona="business_owner")
         self.assertEqual(wide["navigate"], {"route": "#/home", "control": "customize"})
         self.assertEqual([h["id"] for h in find_in_map("Where is the embed?")][:2], ["settings", "create_embed"])
@@ -137,7 +144,7 @@ class ProposalTest(Built):
         self.assertEqual([p["action"] for p in asked["propose"]], ["decide"])
         self.assertEqual((asked["propose"][0]["persona"], asked["propose"][0]["project"]), ("developer", self.p.pid))
         self.assertIn("runs only when you confirm it", asked["answer"])
-        self.assertEqual(len(self.p.ledger().records()), self.records)       # it wrote nothing
+        self.assertEqual(written(self.p), self.records)       # it wrote nothing
         for q in ("How is the shipment desk run going?", "Which tasks are merged?", "What does the plan assume?",
                   "Mikä odottaa minua, ja onko projekti tauolla?", "Where do I approve the plan?"):
             self.assertFalse(asks_for_action(q), q)
@@ -165,7 +172,7 @@ class ProposalTest(Built):
             self.assertIsNotNone(honest(said, [], [])[1], said)
         for said in facts:
             self.assertEqual(honest(said, [], []), (said, None), said)
-        self.assertEqual(len(self.p.ledger().records()), self.records)         # it wrote nothing
+        self.assertEqual(written(self.p), self.records)         # it wrote nothing
 
     def test_FR_V1_AC_2_what_the_route_would_refuse_is_not_offered_and_reasons_name_the_persona(self):
         def offered(question, proposal, persona="business_owner", project_id=None):

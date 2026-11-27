@@ -27,14 +27,17 @@ by kernel/material_read.py and the kinds, secrets and the inventory decided by k
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import os
+import time
 from collections.abc import Iterable, Sequence
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import IO, Any
 
 from kernel import agent_context as ac
 from kernel import material_kinds as mk
 from kernel import material_read as mr
+from kernel import material_zip
 
 SCHEMA = "rihmasto.material-map/1"
 MAX_FILES = 5000                 # files looked at; more are counted, never silently dropped
@@ -58,7 +61,61 @@ def _excluded(rel: str, patterns: Sequence[str]) -> str | None:
     return None
 
 
-def _walk(root: Path, patterns: Sequence[str]) -> tuple[list[str], list[dict[str, Any]], int]:
+class ScanCancelled(Exception):
+    """A person stopped a long scan (the cockpit's scan step)."""
+
+
+class Progress:
+    """What a scan has done so far, for a long scan's progress line, and its stop: files looked at, files read,
+    the folder it is in and the time it took. ``cancel`` stops the scan at its next file."""
+
+    def __init__(self) -> None:
+        self.files = 0
+        self.read = 0
+        self.folder = ""
+        self.phase = "walking"
+        self.started = time.monotonic()
+        self.cancelled = False
+
+    def seen(self, folder: str) -> None:
+        self.files += 1
+        self.folder = folder
+        if self.cancelled:
+            raise ScanCancelled("the scan was cancelled")
+
+    def reading(self, rel: str) -> None:
+        self.read += 1
+        self.phase = "reading"
+        self.folder = str(PurePosixPath(rel).parent)
+        if self.cancelled:
+            raise ScanCancelled("the scan was cancelled")
+
+    def view(self) -> dict[str, Any]:
+        return {"files": self.files, "read": self.read, "folder": "" if self.folder == "." else self.folder,
+                "phase": self.phase, "elapsed_s": round(time.monotonic() - self.started, 1)}
+
+
+class FolderTree:
+    """A folder on disk, as the scan reads it (kernel/material_git.py's GitTree reads a repository's last commit)."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def walk(self, patterns: Sequence[str], progress: Progress | None) -> tuple[list[str], list[dict[str, Any]], int]:
+        return _walk(self.root, patterns, progress)
+
+    def size(self, rel: str) -> int:
+        return (self.root / rel).stat().st_size
+
+    def read(self, rel: str) -> bytes:
+        return (self.root / rel).read_bytes()
+
+    def open(self, rel: str) -> IO[bytes]:
+        return (self.root / rel).open("rb")
+
+
+def _walk(root: Path, patterns: Sequence[str], progress: Progress | None = None
+          ) -> tuple[list[str], list[dict[str, Any]], int]:
     """The folder's regular files (relative, POSIX, sorted), the folders not walked and why, and how many
     files were beyond MAX_FILES. A link is never followed."""
     files: list[str] = []
@@ -67,6 +124,9 @@ def _walk(root: Path, patterns: Sequence[str]) -> tuple[list[str], list[dict[str
     for here, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
         base = Path(here)
         rel_here = base.relative_to(root).as_posix()
+        if progress is not None:
+            progress.seen(rel_here)
+            progress.files -= 1          # a folder is not a file: the line counts files
         keep = []
         for d in sorted(dirnames):
             rel = d if rel_here == "." else f"{rel_here}/{d}"
@@ -82,6 +142,8 @@ def _walk(root: Path, patterns: Sequence[str]) -> tuple[list[str], list[dict[str
             rel = f if rel_here == "." else f"{rel_here}/{f}"
             if (base / f).is_symlink() or not (base / f).is_file():
                 continue
+            if progress is not None:
+                progress.seen(rel_here)
             if len(files) >= MAX_FILES:
                 more += 1
             else:
@@ -95,8 +157,9 @@ def _row(rel: str, size: int, action: str, why: str, kind: str = "other", **more
             "chars": 0, **more}
 
 
-def _by_rule(rel: str, size: int, patterns: Sequence[str]) -> dict[str, Any] | None:
-    """A file's row when its name or size decides it, before it is opened; None when it must be read."""
+def _by_rule(rel: str, size: int, patterns: Sequence[str], nested: bool = False) -> dict[str, Any] | None:
+    """A file's row when its name or size decides it, before it is opened; None when it must be read. An
+    archive (``.zip``) is opened by kernel/material_zip.py unless ``nested`` (an archive inside one)."""
     name = PurePosixPath(rel).name
     ext = PurePosixPath(rel.lower()).suffix
     pat = _excluded(rel, patterns)
@@ -104,6 +167,11 @@ def _by_rule(rel: str, size: int, patterns: Sequence[str]) -> dict[str, Any] | N
         return _row(rel, size, "skipped", f"excluded by you ({pat})")
     if mk.secret_by_name(rel):
         return _row(rel, size, "skipped", f"{SECRET_WHY}: never opened, by its name")
+    if mk.HOUSEKEEPING_FILE.fullmatch(name):
+        what = "a lockfile" if mk.LOCKFILE.fullmatch(name) else "a housekeeping file"
+        return _row(rel, size, "listed", f"{what}: kept by a tool, not read", housekeeping=True)
+    if ext == ".zip":
+        return _row(rel, size, "listed", "an archive inside an archive: not opened") if nested else None
     if size > MAX_READ:
         return _row(rel, size, "listed", f"too large to read ({size / 1048576:.0f} MB)")
     if ext in (".doc", ".xls", ".ppt"):
@@ -111,16 +179,20 @@ def _by_rule(rel: str, size: int, patterns: Sequence[str]) -> dict[str, Any] | N
                                          f"{ext}x to have it read")
     if ext in mk.BINARY:
         return _row(rel, size, "listed", "binary: not read")
+    if ext in mk.ENGINE:
+        return _row(rel, size, "listed", "a game engine's or 3D tool's file (a scene, an asset, its settings): "
+                                         "counted by area, not read")
     if mk.HOUSEKEEPING.fullmatch(name):
-        return _row(rel, size, "listed", "a housekeeping file: not the author's request")
+        return _row(rel, size, "listed", "a housekeeping file: not the author's request", housekeeping=True)
     return None
 
 
 class _Scan:
     """One walk of a folder: the rows, the documents with their text, the code and the manifests."""
 
-    def __init__(self, root: Path, patterns: Sequence[str]) -> None:
+    def __init__(self, root: Path, patterns: Sequence[str], tree: Any = None, progress: Progress | None = None) -> None:
         self.root = root
+        self.tree = tree or FolderTree(root)
         self.patterns = list(patterns)
         self.rows: list[dict[str, Any]] = []
         self.docs: list[tuple[dict[str, Any], str]] = []
@@ -128,12 +200,17 @@ class _Scan:
         self.manifests: dict[str, str] = {}
         self.ci: list[str] = []
         self.agent: list[dict[str, Any]] = []      # how the project's AI tools are set up (kernel/agent_context.py)
-        files, self.dirs, self.more = _walk(root, self.patterns)
+        if isinstance(self.tree, FolderTree):
+            files, self.dirs, self.more = self.tree.walk(self.patterns, progress)
+        else:
+            files, self.dirs, self.more = self.tree.walk(self.patterns, progress, _excluded, MAX_FILES)
         for rel in files:
+            if progress is not None:
+                progress.reading(rel)
             self.rows.append(self._look(rel))
 
     def _text(self, rel: str) -> str:
-        return mr.decode((self.root / rel).read_bytes())
+        return mr.decode(self.tree.read(rel))
 
     def _code(self, rel: str, size: int, manifest: bool) -> dict[str, Any]:
         """Code is never read as text; it is checked for secrets, and a manifest's packages are named."""
@@ -150,9 +227,8 @@ class _Scan:
         return _row(rel, size, "listed", "code: counted in the code inventory, not read", kind="code")
 
     def _look(self, rel: str) -> dict[str, Any]:
-        path = self.root / rel
         try:
-            size = path.stat().st_size
+            size = self.tree.size(rel)
             decided = _by_rule(rel, size, self.patterns)
             sub = ac.sub_kind(rel)
             if sub and (decided is None or decided["action"] == "listed"):   # a tool's file is never housekeeping
@@ -163,7 +239,11 @@ class _Scan:
             name = PurePosixPath(rel).name
             if mk.MANIFESTS.fullmatch(name) or mk.CI.search(rel) or mk.language(rel):
                 return self._code(rel, size, bool(mk.MANIFESTS.fullmatch(name)))
-            return self._document(rel, size, path.read_bytes())
+            if material_zip.is_archive(rel):
+                return material_zip.look(self, rel, size)
+            return self._document(rel, size, self.tree.read(rel))
+        except ScanCancelled:
+            raise
         except Exception as exc:  # one odd file never stops the scan: it is listed as not read, with the reason
             return _row(rel, 0, "listed", f"could not be read ({type(exc).__name__})")
 
@@ -178,7 +258,7 @@ class _Scan:
         if decided is not None:                            # too large, or a format the kernel does not read
             self.agent.append({"path": rel, "sub": sub, "not_read": decided["why"]})
             return decided | mark
-        entry = ac.read_entry(rel, sub, (self.root / rel).read_bytes(), keep_text=True)
+        entry = ac.read_entry(rel, sub, self.tree.read(rel), keep_text=True)
         self.agent.append(entry)
         if entry.get("not_read"):
             secret = entry["not_read"].startswith(SECRET_WHY)
@@ -256,6 +336,8 @@ def _allocate(docs: list[tuple[dict[str, Any], str]], budget: int) -> tuple[list
         cost = len(head) + 4
         waiting = len(order) - i - 1
         cap = room - min(MIN_PART * waiting, room // 2)
+        if _readme(row["path"]):          # what the folder says about itself: first and in full when it fits
+            cap = room
         summary = row["state"] == "summarised"
         if len(text) + cost <= cap:
             take, action = text, "summarised" if summary else "read"
@@ -282,27 +364,55 @@ def _digest(text: str) -> str:
     return request_digest(text)
 
 
+_COUNTED = (("secrets", lambda r: r["why"].startswith(SECRET_WHY)),
+            ("excluded", lambda r: r["why"].startswith("excluded by you")),
+            ("code", lambda r: r["kind"] == "code" and r["action"] == "listed"),
+            ("housekeeping", lambda r: bool(r.get("housekeeping"))),
+            ("duplicates", lambda r: bool(r.get("duplicate_of"))), ("in_archives", lambda r: bool(r.get("archive"))))
+
+
 def _totals(rows: list[dict[str, Any]], chars: int, budget: int) -> dict[str, Any]:
-    out: dict[str, Any] = {a: sum(1 for r in rows if r["action"] == a) for a in ACTIONS}
-    out.update(files=len(rows), secrets=sum(1 for r in rows if r["why"].startswith(SECRET_WHY)),
-               excluded=sum(1 for r in rows if r["why"].startswith("excluded by you")),
-               code=sum(1 for r in rows if r["kind"] == "code" and r["action"] == "listed"),
-               chars=chars, budget=budget)
+    out: dict[str, Any] = dict.fromkeys(ACTIONS, 0) | dict.fromkeys((k for k, _ in _COUNTED), 0)
+    for r in rows:
+        out[r["action"]] = out.get(r["action"], 0) + 1
+        for key, counts in _COUNTED:
+            out[key] += counts(r)
+    out.update(files=len(rows), chars=chars, budget=budget)
     return out
 
 
-def gather(folder: str | Path, exclude: Iterable[str] = (), budget: int | None = None
-           ) -> tuple[dict[str, Any], str, list[tuple[str, str]]]:
-    """Scan ``folder``: the map, the request text built from it, and its documents (name, text) in order."""
+def _once(docs: list[tuple[dict[str, Any], str]]) -> list[tuple[dict[str, Any], str]]:
+    """Each text read once: a document whose text another holds too (a copy of a folder, a ``_snapshot``)
+    is listed as that one's copy. The one read is outside a copy-named folder, nearest the top."""
+    from kernel.material_git import is_copy
+
+    groups: dict[str, list[tuple[dict[str, Any], str]]] = {}
+    for d in docs:
+        groups.setdefault(hashlib.sha256(d[1].encode("utf-8", "surrogateescape")).hexdigest(), []).append(d)
+    kept = set()
+    for group in groups.values():
+        group.sort(key=lambda d: (is_copy(d[0]["path"]), d[0]["path"].count("/"), d[0]["path"].lower()))
+        kept.add(id(group[0][0]))
+        for row, _ in group[1:]:
+            row.update(action="listed", why=f"the same text as {group[0][0]['path']}: read once",
+                       duplicate_of=group[0][0]["path"])
+    return [d for d in docs if id(d[0]) in kept]
+
+
+def gather(folder: str | Path, exclude: Iterable[str] = (), budget: int | None = None, *, tree: Any = None,
+           progress: Progress | None = None) -> tuple[dict[str, Any], str, list[tuple[str, str]]]:
+    """Scan ``folder``: the map, the request text built from it, and its documents (name, text) in order.
+    ``tree`` reads something other than the folder on disk (kernel.material_git.GitTree: its last commit);
+    ``progress`` (a `Progress`) is kept up to date and stops the scan when cancelled."""
     from kernel.intake import MAX_SOURCE_CHARS
 
     root = Path(folder).expanduser().resolve()
     if not root.is_dir():
         raise ValueError(f"{root} is not a folder")
     budget = budget or MAX_SOURCE_CHARS
-    scan = _Scan(root, [p for p in exclude if str(p).strip()])
+    scan = _Scan(root, [p for p in exclude if str(p).strip()], tree, progress)
     inv = mk.inventory(scan.code, scan.manifests, scan.ci) if scan.code else None
-    docs = list(scan.docs)
+    docs = _once(scan.docs)
     if inv:
         note = "the code by rule: languages, entry points, tests, manifests, CI"
         docs.append(({"path": INVENTORY, "kind": "code", "state": "summarised", "note": note}, mk.inventory_text(inv)))
@@ -333,14 +443,16 @@ def _shown(value: Any) -> Any:
     return value
 
 
-def scan(folder: str | Path, exclude: Iterable[str] = (), budget: int | None = None) -> dict[str, Any]:
+def scan(folder: str | Path, exclude: Iterable[str] = (), budget: int | None = None, *, tree: Any = None,
+         progress: Progress | None = None) -> dict[str, Any]:
     """The material map of ``folder``: every file with what happens to it and why. Its contents are not kept."""
-    return gather(folder, exclude, budget)[0]
+    return gather(folder, exclude, budget, tree=tree, progress=progress)[0]
 
 
-def preview(folder: str | Path, exclude: Iterable[str] = ()) -> dict[str, Any]:
+def preview(folder: str | Path, exclude: Iterable[str] = (), *, tree: Any = None,
+            progress: Progress | None = None) -> dict[str, Any]:
     """What would leave, before anything is sent: the map, with secret-looking files skipped unread."""
-    return scan(folder, exclude)
+    return scan(folder, exclude, tree=tree, progress=progress)
 
 
 def has_code(mp: dict[str, Any]) -> bool:

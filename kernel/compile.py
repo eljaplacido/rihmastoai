@@ -22,7 +22,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from kernel import scaffold
+from kernel import model_usage, scaffold
 from kernel.confidential import routing_for
 from kernel.intake import _ask_json
 from kernel.lanes import GIT_ID, _git, load_routing, write_product_surface
@@ -133,6 +133,8 @@ def _contract_requirement(r: dict[str, Any], today: str) -> dict[str, Any]:
                            "then": c["then"], "check": check})
     req = {"id": r["id"], "statement": r["statement"], "provenance": r["provenance"],
            "group": r.get("priority", "must"), "acceptance": acceptance}
+    if r.get("notes"):        # a requirement imported from a repository says where from (kernel/alignment_contract.py)
+        req["notes"] = str(r["notes"])
     if r["provenance"] == OBSERVED:
         # An adopted solution's as-is requirement (kernel/adopt.py). The contract's vocabulary has
         # no observed tier: no person stood behind it, so it enters as vendor-proposed and says so.
@@ -184,6 +186,17 @@ def check_plan(contract: dict) -> dict:
     return {"contract_revision": contract["revision"], "checks": rows}
 
 
+def gdrive_client_files(contract: dict) -> dict:
+    """`app/gdrive.py`, the paved road's Drive client (kernel/connectors_gdrive.py, copied as it is), when the
+    contract declares a gdrive integration; nothing otherwise."""
+    from kernel import connectors_gdrive
+    from kernel.integration_decl import from_contract
+
+    if not any(d["kind"] == "gdrive" for d in from_contract(contract)[0]):
+        return {}
+    return {"app/gdrive.py": Path(connectors_gdrive.__file__).read_text(encoding="utf-8")}
+
+
 def init_repo(project, contract: dict, routing: dict | None = None) -> Path:
     """Create the product's bare repository with the paved-road template, the contract and
     the cell surface, as one commit on main."""
@@ -201,6 +214,7 @@ def init_repo(project, contract: dict, routing: dict | None = None) -> Path:
         template = profile_of(project).get("template", "web-service")   # a small capability's, or the web service's
         made = scaffold.files(meta["title"], project.pid, meta["maturity"], look=look, template=template,
                               sign_in=sign_in)
+        made |= gdrive_client_files(contract)   # a declared Google Drive integration's client (FR-GDR1)
         for rel, text in made.items():
             write_text(work / rel, text)
         write_json(work / "contract.json", contract)
@@ -214,11 +228,22 @@ def init_repo(project, contract: dict, routing: dict | None = None) -> Path:
     return bare
 
 
+def _index_only(project, tmp: str, keep: str | None = None) -> Path:
+    """A clone of main whose index holds every file and whose working tree holds none (or only ``keep``): the
+    kernel commits a file or two of its own, and an adopted repository of tens of thousands of files is never
+    written out to disk and removed again for that (seconds per contract amendment, not tens of seconds)."""
+    work = Path(tmp) / "w"
+    _git(Path(tmp), "clone", "-q", "--no-checkout", str(project.path("repo.git")), "w")
+    _git(work, "read-tree", "HEAD")
+    if keep:
+        _git(work, "checkout", "-q", "HEAD", "--", keep, check=False)     # none there yet: nothing to keep
+    return work
+
+
 def update_repo_contract(project, contract: dict) -> str:
     """Commit a new contract revision to the product's main (after an amendment)."""
     with tempfile.TemporaryDirectory(prefix="gf-amend-") as tmp:
-        work = Path(tmp) / "w"
-        _git(Path(tmp), "clone", "-q", str(project.path("repo.git")), "w")
+        work = _index_only(project, tmp)
         write_json(work / "contract.json", contract)
         _git(work, "add", "contract.json")
         _git(work, *GIT_ID, "commit", "-q", "-m", f"Contract amended to {contract['revision'][:19]}")
@@ -232,8 +257,7 @@ def update_repo_surface(project, routing: dict | None = None, *, reason: str = "
     revision, or None when nothing changed."""
     routing = routing or load_routing()
     with tempfile.TemporaryDirectory(prefix="gf-surface-") as tmp:
-        _git(Path(tmp), "clone", "-q", str(project.path("repo.git")), "w")
-        work = Path(tmp) / "w"
+        work = _index_only(project, tmp, keep=".gnomon")
         write_product_surface(work, routing_for(project, routing), WRITE_SCOPE)
         _git(work, "add", "-A", ".gnomon")
         if not _git(work, "diff", "--cached", "--name-only"):  # what is staged decides, not line-ending noise
@@ -279,21 +303,11 @@ def holdout_prompt(spec: dict, rows: list, ruling: dict | None = None, secret_na
     from kernel.holdouts import signing_rules
 
     listing = "\n".join(f"- {r['criterion']} ({r['kind']}): {r['then']}" for r in rows)
+    # The instructions every holdout author shares come first, word for word, and this product last, so an
+    # endpoint that caches prompt prefixes reads them once (FR-CTX1).
     return f"""You write acceptance scenarios that a factory runs against a deployed HTTP service. The
-builder never sees them.
+builder never sees them. The product, its interface and the criteria to check are at the end.
 
-The product: {spec['title']}: {spec.get('summary', '')}
-Its requirements:
-{chr(10).join(f"- {r['id']}: {r['statement']}" for r in spec['requirements'])}
-
-The product's HTTP interface, fixed by the spec. Use exactly these methods and paths:
-{render_interface(spec)}
-
-{signing_rules(list(secret_names or []))}
-
-Write one scenario for each of these criteria:
-{listing}
-{_ruling_section(ruling)}
 All scenarios run one after another against ONE deployment, which may already hold data from
 other scenarios or earlier use. So never assume an empty store. Create your own data with values
 unique to the scenario (for example a name containing the criterion id), and check for the
@@ -318,9 +332,22 @@ one that answered with a list.
 Answer with this JSON in a ```json block:
 {{"scenarios": [{{"criterion": "R-1-AC-2", "steps": [{{"method": "POST", "path": "/items", "body": {{}},
   "expect_status": 201, "expect_json": {{}}}}]}}]}}
-"""
+
+The product: {spec['title']}: {spec.get('summary', '')}
+Its requirements:
+{chr(10).join(f"- {r['id']}: {r['statement']}" for r in spec['requirements'])}
+
+The product's HTTP interface, fixed by the spec. Use exactly these methods and paths:
+{render_interface(spec)}
+
+{signing_rules(list(secret_names or []))}
+
+Write one scenario for each of these criteria:
+{listing}
+{_ruling_section(ruling)}"""
 
 
+@model_usage.recorded("holdouts")    # the run's metadata only, never the holdouts (model_run)
 def author_holdouts(project, *, model, only=None, reason: str | None = None, person: str | None = None,
                     evidence: list | None = None) -> list:
     """The holdout author writes executable scenarios for holdout and probe criteria. They are

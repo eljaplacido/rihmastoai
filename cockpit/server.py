@@ -68,6 +68,8 @@ operator: personas are self-declared". With ``projects/_factory/access/access.js
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import hashlib
 import hmac
 import json
 import os
@@ -78,59 +80,173 @@ import sys
 import threading
 import time
 import traceback
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+from cockpit.adopted_routes import ROUTES as ADOPTED_ROUTES
+from cockpit.adopted_routes import AdoptedRoutes
 from cockpit.agent_routes import ROUTES as AGENT_ROUTES
 from cockpit.agent_routes import AgentContextRoutes
+from cockpit.agentobs_routes import ROUTES as AGENTOBS_ROUTES
+from cockpit.agentobs_routes import AgentObsRoutes
+from cockpit.align_routes import ROUTES as ALIGN_ROUTES
+from cockpit.align_routes import AlignRoutes
+from cockpit.align_triage_routes import ROUTES as ALIGN_TRIAGE_ROUTES   # origin, impact, triage (FR-ORG1)
+from cockpit.align_triage_routes import AlignTriageRoutes
+from cockpit.assess_precise_routes import ROUTES as ASSESS_PRECISE_ROUTES   # a precise assessment (FR-ASP1)
+from cockpit.assess_precise_routes import AssessPreciseRoutes
 from cockpit.automation_routes import ROUTES as AUTOMATION_ROUTES
 from cockpit.automation_routes import UNLOCKED as AUTOMATION_UNLOCKED
 from cockpit.automation_routes import AutomationRoutes, Scheduler
+from cockpit.console_routes import ROUTES as CONSOLE_ROUTES  # the console and Health (FR-CON1, FR-CHK1)
+from cockpit.console_routes import UNLOCKED as CONSOLE_UNLOCKED
+from cockpit.console_routes import ConsoleRoutes
+from cockpit.health_routes import ROUTES as HEALTH_ROUTES
+from cockpit.health_routes import UNLOCKED as HEALTH_UNLOCKED
+from cockpit.health_routes import HealthRoutes, serve_here
+from cockpit.inbox_elsewhere import elsewhere as inbox_elsewhere  # cards that wait on another role held (FR-ENF2)
+from cockpit.journey_routes import ROUTES as JOURNEY_ROUTES  # guided journeys and the next step (FR-JRN1)
+from cockpit.journey_routes import UNLOCKED as JOURNEY_UNLOCKED
+from cockpit.journey_routes import JourneyRoutes
+from cockpit.insights_routes import ROUTES as INSIGHTS_ROUTES
+from cockpit.insights_routes import InsightsRoutes
 from cockpit.runner_routes import ROUTES as RUNNER_ROUTES
 from cockpit.runner_routes import RunnerRoutes
+from cockpit.review_routes import ROUTES as REVIEW_ROUTES
+from cockpit.review_routes import ReviewRoutes
 from cockpit.shape_routes import ROUTES as CHAT_ROUTES
 from cockpit.shape_routes import UNLOCKED as CHAT_UNLOCKED
 from cockpit.shape_routes import ChatRoutes
+from cockpit.walkthrough_routes import ROUTES as WALK_ROUTES
+from cockpit.walkthrough_routes import UNLOCKED as WALK_UNLOCKED
+from cockpit.walkthrough_routes import WalkRoutes
+from cockpit.road_routes import ROUTES as ROAD_ROUTES  # paved roads and integration kinds (FR-GCP1, FR-GDR1)
+from cockpit.road_routes import RoadRoutes
+from cockpit.viewlayout_routes import ROUTES as VIEW_LAYOUT_ROUTES  # Customize on every view, per person (FR-UXO1)
+from cockpit.viewlayout_routes import ViewLayoutRoutes
+from cockpit.bridge_routes import ROUTES as BRIDGE_ROUTES   # the agent bridge and channel (FR-BRG1, FR-CHN1)
+from cockpit.bridge_routes import BridgeRoutes
+from cockpit.source_routes import ROUTES as SOURCE_ROUTES
+from cockpit.source_routes import UNLOCKED as SOURCE_UNLOCKED
+from cockpit.source_routes import SourceRoutes
+from cockpit.progress_routes import ROUTES as PROGRESS_ROUTES   # live progress for long jobs (FR-PRG1)
+from cockpit.progress_routes import UNLOCKED as PROGRESS_UNLOCKED
+from cockpit.progress_routes import ASSESS_WAIT_S, ProgressRoutes, adoption_progress
+from cockpit.pick_routes import ROUTES as PICK_ROUTES   # choose a folder or a file by browsing (FR-PICK1)
+from cockpit.pick_routes import UNLOCKED as PICK_UNLOCKED
+from cockpit.pick_routes import PickRoutes
+from cockpit.context_routes import ROUTES as CONTEXT_ROUTES   # the data and context layer (FR-CTX1)
+from cockpit.context_routes import ContextRoutes
+from cockpit.graph_routes import ROUTES as GRAPH_ROUTES   # the Knowledge graph (FR-GRV1)
+from cockpit.graph_routes import WIDGET as GRAPH_WIDGET
+from cockpit.graph_routes import GraphRoutes
+from cockpit.dev_routes import ROUTES as DEV_ROUTES   # the development board, trace and briefing (FR-DEV1)
+from cockpit.dev_routes import DevRoutes
+from cockpit.destination_routes import ROUTES as DEST_ROUTES   # where the capability goes, publishing (FR-DST1)
+from cockpit.destination_routes import UNLOCKED as DEST_UNLOCKED
+from cockpit.destination_routes import DestinationRoutes
+from cockpit.itdata_routes import ROUTES as ITDATA_ROUTES   # IT's view of integrations and data (FR-ITD1)
+from cockpit.itdata_routes import UNLOCKED as ITDATA_UNLOCKED
+from cockpit.itdata_routes import ItDataRoutes
+from cockpit.native_routes import ROUTES as NATIVE_ROUTES   # a project's own sources (FR-SRC1)
+from cockpit.native_routes import NativeSourceRoutes
+from cockpit.setup_routes import ROUTES as SETUP_ROUTES   # set up, suggest, describe, archive (FR-SET1)
+from cockpit.setup_routes import UNLOCKED as SETUP_UNLOCKED
+from cockpit.setup_routes import SetupRoutes, refuse_archived
+from cockpit import people_routes as kpeople   # solo or team, users, groups, agents (FR-PPL1)
+from cockpit import solo_routes as ksolo_routes
+from kernel import team_access as kteam_access
+from cockpit.eval_routes import ROUTES as EVAL_ROUTES   # Gnomon's audits and evals, the role evals (FR-EVL1)
+from cockpit.eval_routes import EvalRoutes
+from cockpit.heal_routes import ROUTES as HEAL_ROUTES   # incidents, remedies, fixes, feedback (FR-HEAL1)
+from cockpit.heal_routes import UNLOCKED as HEAL_UNLOCKED
+from cockpit.heal_routes import HealRoutes, Watcher, server_error
+from cockpit.about_routes import ROUTES as ABOUT_ROUTES   # About and help: the version, the machine, the guides
+from cockpit.about_routes import UNLOCKED as ABOUT_UNLOCKED
+from cockpit.about_routes import AboutRoutes
+from cockpit.neverlost_routes import ROUTES as NVL_ROUTES   # never lost, who acted, decision triage (FR-NVL1)
+from cockpit.neverlost_routes import NeverLostRoutes
+from cockpit.neverlost_routes import answer_with_who as knvl_answer
+from cockpit.agentops_routes import ROUTES as AGENTOPS_ROUTES   # Agent operations, the AI architect's (FR-AOP1)
+from cockpit.agentops_routes import AgentOpsRoutes
+from cockpit.enforcement_routes import ROUTES as ENFORCEMENT_ROUTES   # levels per environment (FR-ENF1)
+from cockpit.enforcement_routes import EnforcementRoutes
+from cockpit.hitl_routes import ROUTES as HITL_ROUTES   # people in the loop, outside reviewers (FR-HITL1)
+from cockpit.hitl_routes import HitlRoutes
+from cockpit.itops_routes import ROUTES as ITOPS_ROUTES   # what IT checks, eval sets, any assessment (FR-ITO1)
+from cockpit.itops_routes import UNLOCKED as ITOPS_UNLOCKED
+from cockpit.itops_routes import ItOpsRoutes
+from cockpit.structure_routes import ROUTES as STRUCTURE_ROUTES   # Rihmasto's structure, where the work went (FR-STR1)
+from cockpit.structure_routes import StructureRoutes
+from kernel import structure_cards as kstructure_cards
+from kernel import structure_policy as kstructure
+from cockpit.landing_routes import ROUTES as LANDING_ROUTES   # Start here, tasks you open, whole logs (FR-LND1)
+from cockpit.landing_routes import LandingRoutes
+from kernel import hitl_page as khitl_page   # the outside reviewer's page at /r/ (FR-HITL1)
+from cockpit.observe_routes import ROUTES as OBSERVE_ROUTES   # observer links, a read-only view shared (FR-SHR1)
+from cockpit.observe_routes import UNLOCKED as OBSERVE_UNLOCKED
+from cockpit.observe_routes import ObserveRoutes
+from kernel import observe_page as kobserve_page   # the guest's page at /o/ (FR-SHR1)
 from kernel import access as kaccess
 from kernel import access_isolation as kisolation
+from kernel import adopted_state as kadopted
+from kernel import agentops_prices as kagentops_prices
 from kernel import assess as kassess
 from kernel import assess_cards as kassess_cards
 from kernel import assistant as kassistant
 from kernel import autonomy as kautonomy
 from kernel import autopilot as kautopilot
+from kernel import assistant_howto as khowto
+from kernel import card_words as kcard_words
 from kernel import confidential as kconfidential
+from kernel import console_run as kconsole_run
 from kernel import dashboard as kdash
 from kernel import delegation as kdelegation
 from kernel import embeds as kembeds
+from kernel import evidence_loop as kevidence_loop
 from kernel import evidence_pack as kevidence
+from kernel import incidents as kincidents
 from kernel import input_summary as kinputs
+from kernel import job_registry as kjob_registry
+from kernel import journal as kjournal
+from kernel import lanes_home as klanes_home
 from kernel import material as kmaterial
-from kernel import outputs as koutputs
 from kernel import modules as kmodules
 from kernel import next_step as knext
+from kernel import outputs as koutputs
 from kernel import packs as kpacks
 from kernel import plan as kplan
 from kernel import posture as kposture
+from kernel import progress as kprogress
 from kernel import profiles as kprofiles
 from kernel import project_material as kadded
 from kernel import project_settings as ksettings
+from kernel import recovery as krecovery
 from kernel import rewind as krewind
+from kernel import shared_read as kshared
 from kernel import signals as ksignals
+from kernel import solo as ksolo
 from kernel import source_guard as ksource
 from kernel import track as ktrack
+from kernel import task_detail as ktasks   # a task's source and a person's marks on the list (FR-LND1)
+from kernel import walkthrough_intent as kwalk_intent
+from kernel import who_acted as kwho_acted
 from kernel.canon import CARD_DECIDERS, CARD_VERDICTS, PERSPECTIVES, Canon, DecisionRefused, deciders_of
 from kernel.change import CLASSES, NEEDS_DECISION, WAY_BACK, submit, triage
+from kernel.checks import health as chealth
+from kernel.demo_home import contain as demo_contain
 from kernel.insight import alignment, change_impact, impact
 from kernel.intake import MATURITY_MEANING, render_brief
-from kernel.learn import FACTORY_PID, factory_project, immune_memory, model_reliability
+from kernel.learn import FACTORY_PID, FACTORY_TITLE, factory_project, immune_memory, model_reliability
 from kernel.lenses import LENSES, lens_for, project_context
 from kernel.observations import TRIGGERS, apply_updates, observations
 from kernel.people import PERSONAS, Identity, is_person
 from kernel.pricing import load_prices
 from kernel.projections import cell, floor
 from kernel.safestop import MAY_PAUSE, request_pause, resume
+from kernel.security import summary as ksecurity_summary
 from kernel.spec import KINDS as CRITERION_KINDS
 from kernel.status import evidence, health, live, now, try_it
 from kernel.store import (
@@ -196,6 +312,10 @@ PERSONA_INFO = {
     "stakeholder": ("Stakeholder", "goal, brief, questions", "answer questions, request a change"),
     "compliance": ("Compliance", "what ran, which versions, who approved, and the evidence packs",
                    "export evidence, set the autonomy cap, decide updates"),
+    # FR-AOP1: the agents' performance and cost across projects, and the audits that optimise them
+    "ai_architect": ("AI architect", "Agent operations: runs, tokens, cost, latency, tools, harness overhead, "
+                     "context drift and the Optimise audit, across projects and per project",
+                     "run and record the Optimise audit, file an optimisation as a change"),
 }
 
 # The cockpit's widget library: each widget answers one question from one read model of
@@ -221,6 +341,8 @@ WIDGETS = {
     "eval_trend": ("Eval trend", "flask", "Do the evals still hold?"),
     "try_it": ("Try it", "play", "What can people try right now?"),
     "track": ("Staying on track", "flag", "Is each project on track against its approved plan?"),
+    "insight": ("Insight", "insight", "One figure pinned from Insights: what does it say now?"),
+    "graph": GRAPH_WIDGET,     # a slice of the Knowledge graph, pinned from it (cockpit/graph_routes.py, FR-GRV1)
 }
 # Read-only presets per lens; a person's first edit duplicates one into a personal layout.
 LENS_DEFAULTS = {
@@ -230,9 +352,11 @@ LENS_DEFAULTS = {
     "delivery": [("live", "M"), ("gate_trend", "M"), ("timeline", "L"), ("decisions", "M"), ("activity", "M")],
     "operations": [("health", "M"), ("track", "M"), ("updates", "M"), ("decisions", "M"), ("activity", "M"),
                    ("spend", "L")],
-    "compliance": [("evidence_packs", "L"), ("autonomy", "M"), ("coverage", "M"), ("activity", "M"), ("updates", "M")],
-    "insight": [("kpi_strip", "L"), ("gate_trend", "M"), ("models", "M"), ("coverage", "M"), ("spend", "M"),
-                ("pipeline", "L")],
+    # every lens shows what waits on its persona: cards to decide and asks put to it (People in the loop, FR-HITL2)
+    "compliance": [("evidence_packs", "L"), ("decisions", "M"), ("autonomy", "M"), ("coverage", "M"), ("activity", "M"),
+                   ("updates", "M")],
+    "insight": [("kpi_strip", "L"), ("decisions", "M"), ("gate_trend", "M"), ("models", "M"), ("coverage", "M"),
+                ("spend", "M"), ("pipeline", "L")],
 }
 # The view a preset shows first: a list where the widget is a list of things, else its chart.
 LIST_FIRST = {"decisions", "catalogue", "live", "activity", "health", "updates", "evidence_packs", "try_it", "track"}
@@ -252,8 +376,7 @@ MODE_MEANING = {
     "mixed": "blocking questions go to a person and the rest are assumed (the default)",
 }
 
-# The factory's own canon (kernel/learn.py) is shown under the factory's name.
-FACTORY_TITLE = "Rihma itself"
+# The factory's own canon (kernel/learn.py) is shown under the factory's one name, FACTORY_TITLE (imported above).
 # A concept card's title as kernel/signals.py writes it; the title a person edits lives in its payload.
 CONCEPT_PREFIX = "Validate as a concept? "
 # The square lists every signal still new, and the newest of the others up to this many.
@@ -372,14 +495,63 @@ ROUTES = [
     ("POST", rf"/api/projects/{PID}/delegations/(?P<did>DL-\d{{1,9}})/revoke", "post_delegation_revoke"),
     ("POST", r"/api/links", "post_link"),
 ]
+ROUTES += WALK_ROUTES                                  # walkthroughs in Ask Rihma (FR-WLK1)
 ROUTES = [(m, re.compile(p + r"/?\Z"), name)    # chat, Models; AI tools, IDE (FR-AGC1); Runners; FR-AUT1
-          for m, p, name in ROUTES + CHAT_ROUTES + AGENT_ROUTES + RUNNER_ROUTES + AUTOMATION_ROUTES]
+          for m, p, name in ROUTES + CHAT_ROUTES + AGENT_ROUTES + RUNNER_ROUTES + AUTOMATION_ROUTES + SOURCE_ROUTES
+          + ADOPTED_ROUTES]        # real projects of every shape (FR-RPJ1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ALIGN_ROUTES]          # the Alignment tab (FR-ALN1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ALIGN_TRIAGE_ROUTES]   # its triage (FR-ORG1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in INSIGHTS_ROUTES]       # Insights (FR-INS1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in REVIEW_ROUTES]         # since you last looked
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ROAD_ROUTES]           # paved roads (FR-GCP1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in VIEW_LAYOUT_ROUTES]    # view layouts per person
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in AGENTOBS_ROUTES]       # Agent sessions (FR-OBS1)
 # Writes that record nothing (the assistant only proposes; a profile proposal is a rule over text).
 # They run outside the write lock, so a slow model call never holds up a decision. An assessment
 # reads a whole repository and keeps its records under their own file locks (kernel/assess.py): it
 # runs outside the write lock too, and touches no card.
 UNLOCKED = {"post_assistant", "post_profile_propose", "post_source_preview", "post_posture_preview", "post_assessment",
-            *CHAT_UNLOCKED, *AUTOMATION_UNLOCKED}
+            *CHAT_UNLOCKED, *AUTOMATION_UNLOCKED, *SOURCE_UNLOCKED}
+UNLOCKED |= WALK_UNLOCKED                                 # a walkthrough's own steps; its confirm is locked
+
+# The console, "Open a terminal here", checks and Health (cockpit/console_routes.py, cockpit/health_routes.py)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in CONSOLE_ROUTES + HEALTH_ROUTES]
+UNLOCKED |= CONSOLE_UNLOCKED | HEALTH_UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in BRIDGE_ROUTES]   # agent bridge and channel
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in PROGRESS_ROUTES]  # live progress (FR-PRG1)
+UNLOCKED |= PROGRESS_UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in JOURNEY_ROUTES]  # guided journeys (FR-JRN1)
+UNLOCKED |= JOURNEY_UNLOCKED                              # a guide's own record; each step's route is its own
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in PICK_ROUTES]     # the folder picker (FR-PICK1)
+UNLOCKED |= PICK_UNLOCKED                      # a computer's own dialog waits on the person, never on the lock
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in CONTEXT_ROUTES]  # context and data (FR-CTX1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in GRAPH_ROUTES]    # the Knowledge graph (FR-GRV1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in DEST_ROUTES]     # destinations (FR-DST1)
+UNLOCKED |= DEST_UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ITDATA_ROUTES]   # integrations and data (FR-ITD1)
+UNLOCKED |= ITDATA_UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in NATIVE_ROUTES]   # own sources (FR-SRC1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in SETUP_ROUTES]    # FR-SET1
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in DEV_ROUTES]      # development (FR-DEV1)
+UNLOCKED |= SETUP_UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in kpeople.ROUTES]  # People and access (FR-PPL1)
+UNLOCKED |= kpeople.UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in EVAL_ROUTES]     # audits and evals (FR-EVL1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in HEAL_ROUTES]     # self-healing (FR-HEAL1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in AGENTOPS_ROUTES]  # Agent operations (FR-AOP1)
+UNLOCKED |= HEAL_UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ABOUT_ROUTES]    # About and help (FR-PUB2)
+UNLOCKED |= ABOUT_UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in NVL_ROUTES]      # never lost and triage (FR-NVL1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ENFORCEMENT_ROUTES]   # enforcement (FR-ENF1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in HITL_ROUTES]     # people in the loop (FR-HITL1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ITOPS_ROUTES]    # what IT checks (FR-ITO1)
+UNLOCKED |= ITOPS_UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in STRUCTURE_ROUTES]   # Rihmasto's structure (FR-STR1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in OBSERVE_ROUTES]  # observer links (FR-SHR1)
+UNLOCKED |= OBSERVE_UNLOCKED
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ASSESS_PRECISE_ROUTES]   # FR-ASP1
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in LANDING_ROUTES]  # landing and live tasks (FR-LND1)
 
 
 class FileResponse:
@@ -399,6 +571,15 @@ class ApiError(Exception):
 
 # -- background jobs ------------------------------------------------------------------------------
 
+def _ended_at(log: Path | None) -> str | None:
+    """When a finished job's process last wrote its log: when it ended, to the second (FR-LND2)."""
+    try:
+        at = dt.datetime.fromtimestamp(Path(log).stat().st_mtime, dt.UTC) if log else None
+    except OSError:
+        return None
+    return at.replace(microsecond=0).isoformat().replace("+00:00", "Z") if at else None
+
+
 class SubprocessRunner:
     """Runs ``python <args>`` from the repository root as a child process, never through a shell.
 
@@ -408,6 +589,7 @@ class SubprocessRunner:
     def __init__(self, home: str | Path):
         self.home = Path(home)
         self._procs: dict = {}
+        self._logs: dict = {}
         self._lock = threading.Lock()
         self._n = 0
 
@@ -427,17 +609,29 @@ class SubprocessRunner:
             self._n += 1
             job_id = f"J-{self._n:04d}-{proc.pid}"
             self._procs[job_id] = proc
+            self._logs[job_id] = log_path
+        kjob_registry.process(log_path, proc.pid)        # its process and its end, for after a restart (FR-NVL3)
+
+        def wait() -> None:
+            kjob_registry.ended(log_path, "done" if proc.wait() == 0 else "failed", proc.returncode)
+
+        threading.Thread(target=wait, name=f"job-{job_id}", daemon=True).start()
         return job_id
+
+    def at_least(self, n: int) -> None:
+        """Job ids go on from ``n`` (the highest an earlier cockpit gave), never again from 1: set at start."""
+        self._n = max(self._n, n)
 
     def status(self, job_id: str) -> dict:
         with self._lock:
             proc = self._procs.get(job_id)
+            log = self._logs.get(job_id)
         if proc is None:
             return {"state": "unknown", "code": None}
         code = proc.poll()
         if code is None:
             return {"state": "running", "code": None}
-        return {"state": "done" if code == 0 else "failed", "code": code}
+        return {"state": "done" if code == 0 else "failed", "code": code, "ended": _ended_at(log)}
 
 
 # -- the server -----------------------------------------------------------------------------------
@@ -463,10 +657,12 @@ class CockpitServer(ThreadingHTTPServer):
         self._heads_lock = threading.Lock()
         self._jobs_lock = threading.Lock()
         self._links: dict = {}       # bootstrap -> expiry (monotonic seconds) or None
+        self._link_ids: dict = {}    # bootstrap -> the team member it signs in (team mode, FR-PPL1)
         self._sessions: dict = {}    # token -> expiry (monotonic seconds)
         self._session_ids: dict = {}  # token -> (the verified identity it was opened for, its token's expiry)
         self._downloads: dict = {}   # one-time token -> (file name in exports, expiry)
         self.jobs: list = []
+        self.shared = kshared.Shared()   # reads asked at once share one build (FR-NVL3)
         self.assessing: dict = {}    # pid -> the assessment running in the background, or how it ended
         # The cockpit's own files, never in a project's ledger: layouts per person, and exports.
         self.cockpit_dir = factory.home / "_cockpit"
@@ -489,15 +685,43 @@ class CockpitServer(ThreadingHTTPServer):
                              "(python -m embed.server)")
         self.heads_path = factory.home / "cockpit" / "heads.json"
         self.jobs_dir = factory.home / "jobs"
+        # the jobs of an earlier cockpit: ended, still running from before, or interrupted by its restart (FR-NVL3)
+        self.jobs = kjob_registry.restored(self.jobs_dir)
+        kconsole_run.JOBS.at_least(kjob_registry.highest(self.jobs, "C-"))
+        if hasattr(self.runner, "at_least"):
+            self.runner.at_least(kjob_registry.highest(self.jobs, "J-"))
 
     # sign-in
 
-    def issue_link(self, ttl: float | None = LINK_TTL) -> str:
-        """A one-use bootstrap. The link printed at start has no expiry; extra links expire."""
+    def issue_link(self, ttl: float | None = LINK_TTL, identity: str | None = None) -> str:
+        """A one-use bootstrap. The link printed at start has no expiry; extra links expire. In team mode a
+        link made in a signed-in tab names its person (``identity``), and signs in only them."""
         bootstrap = secrets.token_urlsafe(32)
         with self._auth_lock:
             self._links[bootstrap] = None if ttl is None else time.monotonic() + ttl
+            if identity is not None:
+                self._link_ids[bootstrap] = identity
         return bootstrap
+
+    def take_link(self, bootstrap) -> str | bool:
+        """Use up a bootstrap: the identity it names, True for one that names none, False when it is not valid."""
+        if not isinstance(bootstrap, str) or not bootstrap:
+            return False
+        with self._auth_lock:
+            match = next((k for k in self._links if hmac.compare_digest(k, bootstrap)), None)
+            if match is None:
+                return False
+            expiry, named = self._links.pop(match), self._link_ids.pop(match, None)
+        if expiry is not None and expiry < time.monotonic():
+            return False
+        return named or True
+
+    def session_identity(self, token: str) -> str | None:
+        """The identity a live session was opened for (None: no such session, or a single operator's)."""
+        with self._auth_lock:
+            match = next((k for k in self._session_ids if hmac.compare_digest(k, token)), None)
+            found = self._session_ids[match][0] if match else None
+        return found if found is not None and self.session_ok(token, found) else None
 
     def redeem(self, bootstrap) -> str | None:
         """Exchange a bootstrap for a session token, once."""
@@ -513,7 +737,32 @@ class CockpitServer(ThreadingHTTPServer):
                 return None
             token = secrets.token_urlsafe(32)
             self._sessions[token] = now + SESSION_TTL
-            return token
+        self._remember(token)
+        return token
+
+    # A single operator's session outlives a restart of the cockpit: only its sha256 and wall-clock expiry are kept,
+    # in the cockpit's own folder of the home (never the token itself), so a restart does not sign the person out.
+
+    def _sessions_file(self) -> Path:
+        return self.cockpit_dir / "sessions.json"
+
+    def _remember(self, token: str) -> None:
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        with self._auth_lock:
+            kept = {k: v for k, v in (read_json(self._sessions_file(), {}) or {}).items() if v > time.time()}
+            kept[digest] = time.time() + SESSION_TTL
+            self.cockpit_dir.mkdir(parents=True, exist_ok=True)
+            self._sessions_file().write_text(json.dumps(kept), encoding="utf-8")
+
+    def _remembered(self, token: str) -> bool:
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        kept = read_json(self._sessions_file(), {}) or {}
+        ends = next((v for k, v in kept.items() if hmac.compare_digest(k, digest)), None)
+        if not isinstance(ends, int | float) or ends <= time.time():
+            return False
+        with self._auth_lock:
+            self._sessions[token] = time.monotonic() + SESSION_TTL
+        return True
 
     def open_session(self, identity: str, until: float | None = None) -> str:
         """A session for a verified identity (enforced access): the proxy's sign-in replaces the bootstrap.
@@ -552,6 +801,8 @@ class CockpitServer(ThreadingHTTPServer):
         """A live session, opened for ``identity`` (None: a single operator's session, from a bootstrap)."""
         if not isinstance(token, str) or not token:
             return False
+        if identity is None and token not in self._sessions:
+            self._remembered(token)          # a single operator's session from before a restart
         now = time.monotonic()
         with self._auth_lock:
             for known in list(self._sessions):
@@ -605,18 +856,20 @@ class CockpitServer(ThreadingHTTPServer):
                "started": self.factory.clock.stamp(), "by": by}
         with self._jobs_lock:
             self.jobs.append(job)
+        kjob_registry.remember(job)          # a cockpit that starts again still shows it (FR-NVL3)
         return job
 
     def job_view(self, job: dict) -> dict:
         try:
-            status = dict(self.runner.status(job["id"]) or {})
+            status = dict((job.get("runner") or self.runner).status(job["id"]) or {})   # a console run: its own
         except Exception as exc:  # a runner that cannot tell is "unknown", never a crash
             status = {"state": "unknown", "error": str(exc)}
         out = {k: job[k] for k in ("id", "kind", "project", "args", "started", "by")}
         out["log"] = Path(job["log"]).name
         out["state"] = status.get("state", "unknown")
-        out["code"] = status.get("code")
+        out["code"] = kjob_registry.signed_code(status.get("code"))     # Windows' 4294967295 is -1
         out["log_tail"] = _tail(Path(job["log"]), LOG_TAIL_LINES)
+        out["ended"] = self._ended(job, out["state"], status)
         if job["kind"] == "run" and out["state"] == "done":
             # The process ended; what the run itself reached is the last result it printed. A run the
             # autonomy cap stopped is not "done": it shows as capped, with the kernel's reason.
@@ -628,25 +881,41 @@ class CockpitServer(ThreadingHTTPServer):
             made = (_last_result(Path(job["log"])) or {}).get("project")
             if isinstance(made, str) and Project(self.factory, made).path("project.json").exists():
                 out["made"] = made
-        return out
+        if job["kind"] == "adopt":         # its step lines on the shared progress view (FR-PRG1)
+            out["live"] = adoption_progress(out["state"], Path(job["log"]))
+        return out | _job_said(job, out["state"])
+
+    def _ended(self, job: dict, state: str, status: dict) -> str | None:
+        """When a job ended, kept on the job: from its runner, else when first seen ended (FR-LND2)."""
+        if state not in ("running", "unknown"):
+            job.setdefault("ended", status.get("ended") or self.factory.clock.stamp())
+        return job.get("ended")
 
     def running_job(self, pid: str) -> dict | None:
         with self._jobs_lock:
             jobs = list(self.jobs)
         for job in jobs:
-            if job["project"] == pid and self.job_view(job)["state"] == "running":
+            # a console run and a Gnomon audit (FR-EVL1) work in the workspace, never the pipeline's lane
+            if job["project"] == pid and job["kind"] not in ("console", "eval", "role_evals") \
+                    and self.job_view(job)["state"] == "running":
                 return job
         return None
 
-    def run_assessment(self, project: Project, run: dict, model, identity: Identity | None) -> None:
+    def run_assessment(self, project: Project, run: dict, model, identity: Identity | None,
+                       progress: kprogress.Reporter | None = None) -> None:
         """One assessment (kernel/assess.py) in the background, signed by whoever asked; its end, or why it
-        failed, is written on ``run`` for the Assessment view."""
+        failed, is written on ``run`` for the Assessment view. ``progress`` hears every step (FR-PRG1); a
+        cancel asked there ends it "cancelled", with nothing recorded."""
         try:
             with kaccess.signing(identity):
                 end = {"state": "done", "id": kassess.assess(project, person=run["person"], persona=run["persona"],
-                                                             model=model)["id"]}
+                                                             model=model, progress=progress)["id"]}
+        except kprogress.Cancelled as exc:
+            end = {"state": "cancelled", "error": str(exc)[:500]}
         except Exception as exc:  # a background run's failure is shown on its view, never lost in the thread
             end = {"state": "failed", "error": f"{type(exc).__name__}: {exc}"[:500]}
+        if progress is not None and end["state"] == "failed":     # refused before its first step: it ends too
+            progress.finish("failed", end["error"])
         with self._jobs_lock:
             run.update(end, ended=self.factory.clock.stamp())
 
@@ -678,6 +947,67 @@ def _actor(kind, payload) -> dict:
             persona = payload.get("persona")
             return {"type": "person", "name": name, "persona": persona if persona in PERSONAS else None}
     return {"type": "agent", "name": "the kernel", "model": model}
+
+
+def _job_said(job: dict, state: str) -> dict:
+    """What a job worked on, and when it failed, why and what to do (kernel/job_words.py, by rule)."""
+    from kernel import job_words
+
+    out: dict = {"title": job_words.title(job), **({"restored": True} if job.get("restored") else {})}
+    if state == job_words.INTERRUPTED:     # the cockpit restarted while it ran (FR-NVL3)
+        out["failure"] = {"reason": job_words.RESTARTED,
+                          "next": "Run it again: nothing it would have recorded was kept."}
+    elif state == "running" and job.get("restored"):
+        out["note"] = "Still running from before the cockpit restarted: Stop ends it and everything it started."
+    if state == "failed":
+        why = job_words.reason(Path(job["log"]))
+        out["failure"] = {"reason": why or "it printed no error line", "next": job_words.next_step(why)}
+    return out
+
+
+def _broken_scope(factory: Factory, pid: str | None, body: dict, check) -> tuple[str | None, dict | None]:
+    """Ask Rihma scoped to a project that cannot be read or was removed (FR-NVL3): the answer by rule (for Why, or an
+    unreadable project), or the platform's scope for a typed question about a removed one. Any other project is
+    ``check``ed (a 404 for one never here)."""
+    broken = krecovery.scope_note(factory, pid)
+    if broken is None:
+        if pid is not None:
+            check(pid)
+        return pid, None
+    if isinstance(body.get("why"), dict) or broken["why"]["reason"] == "unreadable":
+        return pid, broken | {"who": kwho_acted.for_answer(factory, None, broken, None)}
+    return None, None
+
+
+def _scoped(factory: Factory, question: str, pid: str | None) -> tuple[str | None, bool, str | None]:
+    """The project Ask Rihma answers about, whether it switched to it, and another project it offers instead."""
+    named, switched = khowto.scope_of(factory, question, pid)
+    if switched and pid is not None:
+        return pid, False, named             # inside a project: never switched by a name in the words
+    return named, switched, None
+
+
+def _offer_scope(factory: Factory, here: str, there: str, out: dict) -> dict:
+    """Asked inside one project about another it names: the answer stays about the project the person is in, and
+    says how to ask about the other one (its records never show here unasked)."""
+    def title(pid: str) -> str:
+        return str(factory.project(pid).meta.get("title") or pid)
+
+    note = (f"You are in {title(here)} and I answer about it; your question names {title(there)}. To ask about "
+            f"{title(there)}, open it and ask there.\n\n")
+    return out | {"answer": note + str(out.get("answer") or ""),
+                  "scope": dict(out.get("scope") or {}, offered=there, offered_route=f"#/p/{there}/overview")}
+
+
+def _understood(project: Project) -> dict | None:
+    """What Rihmasto understood of an adopted project (kernel/understanding.py); a failure never breaks the page."""
+    from kernel import understanding
+
+    try:
+        u = understanding.take(project)
+        return None if u is None else u | {"lenses": understanding.lenses(project, u)}
+    except Exception:  # noqa: BLE001  (a record it cannot read: the card says nothing rather than the page failing)
+        return None
 
 
 def _tail(path: Path, lines: int) -> list:
@@ -724,6 +1054,7 @@ class CockpitHandler(BaseHTTPRequestHandler):
     sys_version = ""
 
     def log_message(self, fmt, *args):
+        kincidents.LOG.add(f"{self.log_date_time_string()} - {fmt % args}")   # an incident keeps the lines around it
         if not self.server.quiet:
             sys.stderr.write("%s - %s\n" % (self.log_date_time_string(), fmt % args))
 
@@ -742,8 +1073,10 @@ class CockpitHandler(BaseHTTPRequestHandler):
         body = (json.dumps(obj, ensure_ascii=False, indent=1) + "\n").encode("utf-8")
         self._send(status, body, "application/json; charset=utf-8")
 
-    def _error(self, status: int, message: str, *, enforced: bool = False) -> None:
+    def _error(self, status: int, message: str, *, enforced: bool = False, plain: bool = False) -> None:
         out = {"error": message, "status": status}
+        if plain:     # an expected failure said in plain words with its next step: not a bug to report
+            out["plain"] = True
         if enforced:  # the page then offers to sign in again through the organisation's proxy
             out["access"] = kaccess.ENFORCED
         self._json(status, out)
@@ -787,6 +1120,8 @@ class CockpitHandler(BaseHTTPRequestHandler):
         request that did not come through IT's proxy is refused: 401, or 403 while access cannot apply."""
         if not access.enforced:
             return None
+        if access.source == "team":     # Rihmasto's own team mode: a one-use link's user, or the provider's token
+            return kpeople.team_identity(self, access, urlsplit(self.path).path)
         try:
             return kaccess.from_proxy(access, self.headers)
         except kaccess.AccessBroken as exc:
@@ -839,6 +1174,12 @@ class CockpitHandler(BaseHTTPRequestHandler):
             return self._index(access)
         if path.startswith("/static/"):
             return self._static(path[len("/static/"):])
+        if khitl_page.ours(path):            # an outside reviewer's page: its own link, its own policy (FR-HITL1)
+            return khitl_page.serve(self, self.server.factory)
+        if kobserve_page.ours(path):         # a guest's observer page: read only, its own link (FR-SHR1)
+            return kobserve_page.serve(self, self.server.factory)
+        if path.startswith("/api/") and kobserve_page.guest_request(self):
+            return self._error(403, kobserve_page.REFUSED)     # a guest's session never opens the API (FR-SHR1)
         if path.startswith("/api/"):
             try:
                 identity = self._identity(access)
@@ -850,10 +1191,27 @@ class CockpitHandler(BaseHTTPRequestHandler):
         self._error(404, "not found")
 
     def do_POST(self):
-        self._write("POST")
+        if khitl_page.ours(self.path):       # an outside reviewer's page checks its own origin (FR-HITL1)
+            return self._outside(khitl_page)
+        if kobserve_page.ours(self.path):    # a guest's observer page: comments and suggestions only (FR-SHR1)
+            return self._outside(kobserve_page)
+        self._unless_guest("POST")
+
+    def _outside(self, page) -> None:
+        """A page for someone outside the cockpit (a reviewer's, a guest's): its own link, its own policy."""
+        raw = self._read_body()
+        if raw is not None and self._host_ok(kaccess.load(self.server.factory)):
+            page.serve(self, self.server.factory, raw)
 
     def do_PUT(self):
-        self._write("PUT")
+        self._unless_guest("PUT")
+
+    def _unless_guest(self, method: str) -> None:
+        """A guest's session never writes, on any route (FR-SHR1); anything else goes through the guards."""
+        if not kobserve_page.guest_request(self):
+            return self._write(method)
+        self._read_body()
+        self._error(403, kobserve_page.REFUSED)
 
     def _write(self, method: str):
         """A POST or a PUT: the same guards (Host, Origin, bearer token, a JSON body), then the API.
@@ -884,17 +1242,22 @@ class CockpitHandler(BaseHTTPRequestHandler):
         except ApiError as exc:
             return self._error(exc.status, exc.message)
         if is_auth:
-            return self._auth(body, identity)
+            return self._auth(body, identity, access)
         found = _route(method, path)
         if found is not None and found[1] in UNLOCKED:
             return self._api(method, path, body, access, identity)
         with self.server.write_lock:
             self._api(method, path, body, access, identity)
 
-    def _auth(self, body: dict, identity: Identity | None) -> None:
-        """A session: for the proxy's verified identity when access is enforced, else for a one-use bootstrap."""
+    def _auth(self, body: dict, identity: Identity | None, access: kaccess.Access | None = None) -> None:
+        """A session: for the proxy's verified identity when access is enforced, else for a one-use bootstrap
+        (in team mode, the team member the link names)."""
         lasts = SESSION_TTL
-        if identity is not None:
+        if identity is None and access is not None and access.source == "team" and access.enforced:
+            token = kpeople.team_auth(self.server, access, body.get("bootstrap"))
+            if token is None:
+                return self._error(401, "this sign-in link was already used, has expired or is not valid")
+        elif identity is not None:
             token = self.server.open_session(identity.id, identity.expires)
             if identity.expires is not None:      # the session ends with the token it was opened with
                 lasts = max(0, min(lasts, int(identity.expires - time.time())))
@@ -914,9 +1277,10 @@ class CockpitHandler(BaseHTTPRequestHandler):
         """The page, saying the access mode: with access enforced it signs in through the organisation's
         proxy at once; a single operator's page asks for nothing until a link is opened."""
         body = (STATIC_DIR / "index.html").read_bytes()
-        if access.enforced:
+        if access.enforced:     # team mode without a provider: people sign in with one-use links (FR-PPL1)
+            word = b"team" if access.source == "team" and access.proxy is None else b"enforced"
             body = body.replace(b'<meta name="rihmasto-access" content="single_operator">',
-                                b'<meta name="rihmasto-access" content="enforced">', 1)
+                                b'<meta name="rihmasto-access" content="' + word + b'">', 1)
         self._send(200, body, STATIC_EXT[".html"])
 
     def _static(self, name: str) -> None:
@@ -938,10 +1302,14 @@ class CockpitHandler(BaseHTTPRequestHandler):
         match, name = found
         query = {k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()}
         api = Api(self.server, access, identity)
+        api.request_origin = self.headers.get("Origin") or f"http://{self.headers.get('Host', '')}"   # FR-CON1
+        api.forwarded = bool(self.headers.get("X-Forwarded-For") or self.headers.get("Forwarded"))   # FR-PICK1
         try:   # enforced access: the records name the identity; untrusted work goes through IT's runner
-            with kaccess.signing(identity), kisolation.serving(self.server.factory):
+            with kaccess.signing(identity), kisolation.serving(self.server.factory), kjournal.all_or_nothing():
                 if method != "GET":             # a write of a module not enabled there is refused (FR-MOD2)
                     kmodules.require_route(self.server.factory, name, match.groupdict().get("pid"))
+                    refuse_archived(self.server.factory, name, match.groupdict().get("pid"))   # FR-SET1
+                    body = ksolo_routes.as_needed(api, name, match.groupdict(), body)   # FR-PPL1: the persona it needs
                 status, out = getattr(api, name)(body=body, query=query, **match.groupdict())
         except ApiError as exc:
             return self._error(exc.status, exc.message)
@@ -950,13 +1318,20 @@ class CockpitHandler(BaseHTTPRequestHandler):
         # are a 403 with the kernel's reason; a plain ValueError is input the kernel would not take, a 400.
         except DecisionRefused as exc:
             return self._error(403, str(exc))
-        except PermissionError as exc:
-            return self._error(403, str(exc))
+        except OSError as exc:   # the system's failure (a full disk, a read-only file), said plainly (FR-NVL3)
+            if krecovery.is_os_failure(exc):
+                return self._error(507, krecovery.os_words(exc), plain=True)
+            return self._error(403, str(exc))        # a rule's refusal (AutonomyCapped, EmbedRefused: no errno)
         except ValueError as exc:
             return self._error(400, str(exc))
-        except Exception as exc:  # a bug, never a verdict: say so and keep serving
-            traceback.print_exc()
-            return self._error(500, f"internal error: {type(exc).__name__}")
+        except Exception as exc:  # a bug, never a verdict: say so, open its incident (FR-HEAL1) and keep serving
+            shown = kincidents.mask_text(traceback.format_exc(), 20000)   # a secret in a message is never printed
+            sys.stderr.write(shown)
+            kincidents.LOG.add(shown)
+            seen = server_error(self.server, exc, method=method, path=path, route=name, match=match.groupdict(),
+                                query=query, body=body)
+            return self._json(500, {"error": f"internal error: {type(exc).__name__}", "status": 500,
+                                    **({"incident": seen} if seen else {})})
         if isinstance(out, FileResponse):
             return self._file(status, out)
         self._json(status, out)
@@ -1045,7 +1420,26 @@ def _written_pack(project: Project) -> tuple[dict | None, dict | None]:
     return (pack if isinstance(pack, dict) else None), latest
 
 
-class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
+def _signed_answer(out: dict, person: str) -> None:
+    """An answer's commands with the asking person's own name in place of ``<your name>``."""
+    if person and re.fullmatch(r"[\w .'-]+", person) and isinstance(out.get("answer"), str):
+        out["answer"] = out["answer"].replace("<your name>", person)
+
+
+def _lens_in(body: dict, persona: str) -> str:
+    lens = _text(body, "lens", limit=32) or lens_for(persona)
+    if lens not in LENSES:
+        raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
+    return lens
+
+
+class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes, WalkRoutes, ConsoleRoutes, HealthRoutes,
+          AlignRoutes, InsightsRoutes, ReviewRoutes, RoadRoutes, BridgeRoutes, SourceRoutes, AdoptedRoutes,
+          ProgressRoutes, JourneyRoutes, PickRoutes, ViewLayoutRoutes,
+          ContextRoutes, GraphRoutes, DestinationRoutes, ItDataRoutes, NativeSourceRoutes, SetupRoutes,
+          AgentObsRoutes, kpeople.PeopleRoutes, EvalRoutes, HealRoutes,
+          AboutRoutes, NeverLostRoutes, AgentOpsRoutes, DevRoutes, EnforcementRoutes, HitlRoutes,
+          ItOpsRoutes, AlignTriageRoutes, StructureRoutes, ObserveRoutes, AssessPreciseRoutes, LandingRoutes):
     def __init__(self, server: CockpitServer, access: kaccess.Access | None = None,
                  identity: Identity | None = None):
         self.server = server
@@ -1054,6 +1448,8 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         # The access rules this request came under, and its verified identity when access is enforced.
         self.access = access if access is not None else kaccess.load(server.factory)
         self.identity = identity
+        # In team mode a member sees only the projects their personas cover (kernel/team_access.py, FR-PPL1).
+        self.factory = kteam_access.seen(server.factory, self.access, identity)
 
     # who signs a write
 
@@ -1077,8 +1473,9 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
     def _project(self, pid: str):
         try:
             return self.factory.project(pid)
-        except KeyError:
-            raise ApiError(404, f"no project {pid}") from None
+        except KeyError:   # a removed project's old link says who removed it and where its records are (FR-NVL3)
+            gone = krecovery.removed(self.factory, pid)
+            raise ApiError(410 if gone else 404, krecovery.gone(self.factory, pid)) from None
 
     @staticmethod
     def _read(project, name: str, default, problems: list):
@@ -1137,6 +1534,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         out["title"] = self._card_title(card)
         out["verdicts"] = list(CARD_VERDICTS[card["kind"]])
         out["deciders"] = list(deciders_of(card))   # a card may narrow them (a posture may)
+        out["plain"] = kcard_words.plain(out, canon.project)   # what it asks, in one plain line (FR-UXO1)
         if card["kind"] == "question" and (card.get("refs") or {}).get("question"):
             try:
                 out["question"] = self._question_view(canon.question(card["refs"]["question"]), canon)
@@ -1273,6 +1671,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
             "change": {"changers": list(krewind.CHANGERS), "material_adders": list(kadded.ADDERS),
                        "steps": [{"id": s, "undoes": krewind.UNDOES[s]} for s in krewind.STEPS]},
             "chat_model": self.server.shape_model is not None,
+            "people": kpeople.meta(self),        # solo or team, and what this person's personas do not see
             "assistant": "map" if self.server.assistant_model is None
             else "gnomon" if type(self.server.assistant_model).__name__ == "GnomonModel" else "model",
         }
@@ -1307,6 +1706,30 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         out.sort(key=lambda row: not row["factory"])  # Rihma's own proposals first; the rest keep their order
         return 200, out
 
+    def _requested_by(self, project, problems: list):
+        """Who asked for a project that does not say in project.json: a validated concept's need keeps it, and
+        an adopted project's is who adopted it (FR-RPJ1)."""
+        need = self._read(project, "need.json", None, problems)
+        if isinstance(need, dict) and need.get("requested_by"):
+            return need["requested_by"]
+        if project.meta.get("source_kind") != "adopted":
+            return None
+        adopted = self._read(project, "adopted.json", None, problems)
+        by = adopted.get("adopted_by") if isinstance(adopted, dict) else None
+        return by.get("person") if isinstance(by, dict) else None
+
+    @staticmethod
+    def _weighed(project, problems: list) -> dict:
+        """Each open assumption's weight, whether it grew in importance and what made it grow
+        (kernel/assumption_weight.py), so the Assumptions view shows what Decide what matters shows."""
+        from kernel.assumption_weight import weights
+
+        try:
+            return {w["id"]: {k: w[k] for k in ("weight", "grew", "trigger", "blocking")} for w in weights(project)}
+        except (KeyError, TypeError, ValueError, OSError) as exc:
+            problems.append(f"assumption weights: {type(exc).__name__}")
+            return {}
+
     def get_project(self, pid: str, **_):
         project = self._project(pid)
         canon = Canon(project)
@@ -1315,13 +1738,10 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         meta["title"] = _factory_label(pid, meta.get("title", pid))
         meta["factory"] = pid == FACTORY_PID
         problems: list = []
-        if not meta.get("requested_by"):
-            # A project a validated concept made keeps who asked for it in its need, not in project.json.
-            need = self._read(project, "need.json", None, problems)
-            if isinstance(need, dict) and need.get("requested_by"):
-                meta["requested_by"] = need["requested_by"]
+        meta["requested_by"] = meta.get("requested_by") or self._requested_by(project, problems)
         overdue = {a["id"] for a in canon.overdue()}
-        assumptions = [dict(a, overdue=a["id"] in overdue) for a in canon.assumptions()]
+        weighed = self._weighed(project, problems)       # as Decide what matters weighs them (FR-NVL1)
+        assumptions = [dict(a, overdue=a["id"] in overdue, **weighed.get(a["id"], {})) for a in canon.assumptions()]
         decisions = canon.decisions()
         open_cards = [{k: self._card_title(c) if k == "title" else c.get(k)
                        for k in ("id", "kind", "title", "blocking", "created", "refs")}
@@ -1330,6 +1750,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         contract = self._read(project, "contract.json", None, problems)
         spec = self._read(project, "spec.json", None, problems)
         tasks = self._tasks(contract, self._read(project, "tasks.json", {}, problems))
+        tasks = self._status(lambda p: ktasks.enrich(p, tasks), project, problems) or tasks   # source, marks (FR-LND1)
         releases = self._releases(project, problems)
         criteria = self._status(evidence, project, problems)
         summary = self._evidence_summary(criteria)
@@ -1340,6 +1761,8 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
             "evidence": criteria or [],
             "evidence_summary": summary,
             "stage_summary": self._stage_summary(meta, canon, spec, contract, tasks, releases, summary["counts"]),
+            "adopted": self._status(kadopted.state, project, problems),   # its real state, not stages (FR-RPJ1)
+            "understood": _understood(project),          # what Rihmasto understood of it, to judge and correct
             "goal": canon.goal,
             "brief": canon.brief,
             "readings": self._read(project, "readings.json", {}, problems),
@@ -1432,7 +1855,8 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
                         "depends_on": plan.get("depends_on", []), "status": s.get("status", "pending"),
                         "revision": s.get("revision"), "card": s.get("card"), "permitted_by": s.get("permitted_by"),
                         "reopened_by": s.get("reopened_by"), "stopped_by": s.get("stopped_by"),
-                        "accepted_as_is_by": s.get("accepted_as_is_by"), "rounds": rounds})
+                        "accepted_as_is_by": s.get("accepted_as_is_by"), "rounds": rounds,
+                        "adopted": s.get("adopted") is True, "note": s.get("note")})
         return out
 
     def _releases(self, project, problems: list) -> list:
@@ -1448,11 +1872,19 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
     def get_inbox(self, pid: str, query: dict, **_):
         project = self._project(pid)
         persona = query.get("persona", "")
+        if persona == "*":                # every persona the person holds (solo, FR-PPL1)
+            return 200, ksolo_routes.inbox(self, pid)
         if persona not in PERSONAS:
             raise ApiError(400, f"persona must be one of {', '.join(PERSONAS)}")
         canon = Canon(project)
         cards = [self._card_view(c, canon) for c in canon.cards(state="open", persona=persona)]
-        return 200, {"persona": persona, "cards": cards}
+        mine = {c["id"] for c in cards}
+        # The open cards another persona decides: "nothing needs you" never hides a decision that waits on
+        # someone else (in single-operator mode, on the same person in another persona).
+        others = [{"id": c["id"], "kind": c["kind"], "title": c["title"], "deciders": list(c.get("deciders") or [])}
+                  for c in canon.cards(state="open") if c["id"] not in mine][:10]
+        return 200, {"persona": persona, "cards": cards, "others": others,
+                     "elsewhere": inbox_elsewhere(self, [project], persona)}   # holds work, another role (FR-ENF2)
 
     def get_impact(self, pid: str, query: dict, **_):
         """Impact if changed, for any requirements: ``?requirements=R-1,R-2`` (FR-P5)."""
@@ -1524,7 +1956,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
                             "verdict": d.get("verdict"), "person": d.get("person"), "persona": d.get("persona"),
                             "reason": d.get("reason"), "at": d.get("at"), "redone": bool(c["refs"].get("redone")),
                             "closed": c.get("closed")})
-        from kernel.posture_rules import confirmers   # a confirming posture: the customer's side edits the plan
+        from kernel.posture_rules import confirmers  # a confirming posture: the customer's side edits the plan
 
         editors = confirmers(kposture.of(project)) or CARD_DECIDERS["approval"]
         return {"required": kplan.required(project), "card": self._card_view(card, canon) if card else None,
@@ -1596,7 +2028,25 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
                 out["project"] = made["project"]     # the page opens the new project at once
         elif card["kind"] == "update":
             out["applied"] = apply_updates(project)
-        return 200, out
+        elif card["kind"] == kstructure_cards.KIND:   # Advise instead: the convention becomes a suggestion (FR-STR1)
+            out |= kstructure_cards.carry_out(self.factory, project, card, verdict, person=person, persona=persona,
+                                              reason=reason)
+        return 200, out | self._carry_out(project, card, verdict, person, persona)
+
+    def _carry_out(self, project: Project, card: dict, verdict: str, person: str, persona: str) -> dict:
+        """A person's decision takes effect at once: a decided escalation is carried out (retry, accept as it is,
+        stop), and an accepted change goes into the spec and the contract in a run, whose progress shows in Jobs."""
+        from kernel.dispatch import resolve_escalations
+
+        if card["kind"] == "escalation":
+            return {"carried_out": resolve_escalations(project)}
+        if card["kind"] != "change" or verdict != "accept" or self.server.running_job(project.pid):
+            return {}
+        if self.access.enforced:             # the run asks Gnomon cells: isolated while enforced, or refused
+            kisolation.require(self.factory)
+        job = self.server.start_job("run", project.pid, ["-m", "kernel.cli", "run", project.pid],
+                                    {"person": person, "persona": persona})
+        return {"job": self.server.job_view(job)}
 
     def post_answer(self, pid: str, qid: str, body: dict, **_):
         project = self._project(pid)
@@ -1757,7 +2207,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
             raise ApiError(403, why)
         if body.get("folder") is not True:
             return source, None, secret
-        path = ksource.check_folder(source, persona)
+        path = ksource.check_folder(source, persona, self.factory.home)
         mp, text, _ = kmaterial.gather(path, self._excludes(body))
         if not text.strip():
             raise ApiError(400, "the scan of that folder found nothing to read: every file is listed or skipped")
@@ -1770,9 +2220,15 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         It reads files and records nothing."""
         person, persona = self._sign(_text(body, "person", limit=200), _text(body, "persona", limit=64), FACTORY_PID)
         _require_person(person, persona)
-        path = ksource.check_folder(_text(body, "source", required=True, limit=2000), persona)
-        mp = kmaterial.preview(path, self._excludes(body))
+        path = ksource.check_folder(_text(body, "source", required=True, limit=2000), persona, self.factory.home)
+        from kernel.heal_feed import resilient_preview  # a scan that fails or runs long degrades (FR-HEAL1)
         from kernel.material_adopt import is_git
+
+        mp, degraded = resilient_preview(path, self._excludes(body))
+        if degraded:
+            seen = kincidents.open_incident(self.factory, kind="scan_degraded", where="scan", message=degraded,
+                                            context={"persona": persona}, by="the scan")
+            mp["incident"] = seen["id"]
 
         return 200, {"map": mp, "git": is_git(path), "code": kmaterial.has_code(mp),
                      "send_to": kconfidential.send_to("analyst"),
@@ -1784,7 +2240,10 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         anything is read, by the posture's rules), or none, at production and mixed as before. Returns the
         posture, the maturity and the command line's words for them."""
         posture, mode, maturity = self._how_it_runs(body)
-        maturity = maturity if posture or _text(body, "maturity", limit=32) else "production"
+        given_maturity = _text(body, "maturity", limit=32)
+        # None stated: documents tracked are an experiment's work (explore); code adopted as is runs in production.
+        maturity = (maturity if posture or given_maturity else
+                    "explore" if body.get("documents") is True else "production")
         weights = _weights_in(body)
         if posture:
             eff = kposture.effects(posture, weights, maturity=maturity, mode=mode)
@@ -1810,14 +2269,16 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         person, persona = self._sign(_text(body, "person", limit=200), _text(body, "persona", limit=64), FACTORY_PID)
         _require_person(person, persona)
         exclude = self._excludes(body)
+        how += self._adopt_take(body)     # the working copy, documents to track (FR-RPJ1)
         try:
             kind, location = check_source(source)
             if kind != "url":          # a local folder: read only where the cockpit may read for this person
-                ksource.check_folder(location, persona)
-            if kind == "folder":
+                ksource.check_folder(location, persona, self.factory.home)
+            if kind == "folder" and "--documents" not in how:
                 check_code(location, exclude)
         except (AdoptionRefused, NoCode, OSError) as exc:
             raise ApiError(400, str(exc)) from None
+        self._adopt_again(body, kind, location)    # adopted already: only as an explicit new project
         kisolation.require(self.factory, kisolation.SUITE)   # its baseline runs the repository's own tests
         # The request is on record, signed, before the job runs (D-0017: no path skips the record).
         self._audit(self._factory_canon(), "adopt_requested", title, person, persona, source_kind=kind, intent=intent,
@@ -1891,7 +2352,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         """Ask the project to stop at its next safe point (FR-J3), signed with person and persona."""
         project = self._project(pid)
         if pid == FACTORY_PID:
-            raise ApiError(400, "Rihma itself has no pipeline to pause")
+            raise ApiError(400, "Rihmasto itself has no pipeline to pause")
         person, persona = self._who(body, pid)
         reason = _text(body, "reason", limit=2000)
         held = project.meta.get("pause")
@@ -1917,7 +2378,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         """The project a change acts on and who signs it: never Rihma's own canon, nor while a job runs."""
         project = self._project(pid)
         if pid == FACTORY_PID:
-            raise ApiError(400, "Rihma itself has no settings, steps or material to change")
+            raise ApiError(400, "Rihmasto itself has no settings, steps or material to change")
         person, persona = self._who(body, pid)
         running = self.server.running_job(pid) if idle else None
         if running is not None:
@@ -1936,8 +2397,9 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         runs = [self.server.job_view(j) for j in list(self.server.jobs) if j["project"] == pid and j["kind"] == "run"]
         running = any(j["state"] == "running" for j in runs) or self.server.running_job(pid) is not None
         job = next((j for j in reversed(runs) if j.get("outcome")), None)
-        return knext.next_step(project, last=job and job["outcome"], running=running,
-                               last_started=job and job["started"])
+        nxt = knext.next_step(project, last=job and job["outcome"], running=running,
+                              last_started=job and job["started"])
+        return chealth.with_failing(project, nxt)          # checks failing on it are said too (FR-CHK1)
 
     def put_settings(self, pid: str, body: dict, **_: object) -> tuple[int, dict]:
         """Change the title, kind of work, mode or maturity, signed with a reason; ``redo`` carries it into the work."""
@@ -2068,7 +2530,8 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         return 200, {"delegation": d}
 
     def post_link(self, **_):
-        bootstrap = self.server.issue_link(LINK_TTL)
+        team = self.identity is not None and self.access.source == "team"   # a team link signs in its own person
+        bootstrap = self.server.issue_link(LINK_TTL, self.identity.id if team and self.identity else None)
         return 201, {"url": f"{self.server.origin}/#k={bootstrap}", "expires_in": LINK_TTL}
 
     # -- the dashboard and the capability layer (the redesigned cockpit) ---------------------------
@@ -2150,6 +2613,8 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
                               "deciders": list(deciders_of(c)),
                               "verdicts": list(CARD_VERDICTS[kind]), "age_hours": age,
                               "blocking": bool(c.get("blocking")), "payload": self._card_payload(c)})
+            if not is_factory:          # asks put to a persona in People in the loop wait on a person too (FR-HITL2)
+                items += kdash.asks_waiting(p)
         items.sort(key=lambda i: -(i["age_hours"] or 0))
         return items
 
@@ -2186,8 +2651,10 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         if latest is not None and (pack is None or pack.get("release") != latest.get("release")):
             pack = {"version": None, "release": latest["release"], "acceptance": kpacks.acceptance(project, latest)}
         ev = evidence(project) if project.path("contract.json").exists() else []
+        # the same security summary and signed answers the exported pack holds, so its controls read the same
         files = {"capability-pack.json": pack or {"note": "no release yet, so no capability pack"},
-                 "evidence.json": ev, "decisions.json": decisions,
+                 "evidence.json": ev, "decisions.json": decisions, "security.json": ksecurity_summary(project),
+                 kevidence_loop.FILE: kevidence_loop.loop_file(records),
                  "gnomon-runs.json": [{"chain": r.get("chain")} for r in runs],
                  "ledger-check.json": {"intact": getattr(check, "intact", None),
                                        "broken_seq": getattr(check, "broken_seq", None), "records": len(records)}}
@@ -2197,12 +2664,18 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
                 "pack": None if pack is None else {"version": pack.get("version"), "release": pack.get("release"),
                                                    "valid": acc.get("valid"),
                                                    "not_valid_because": acc.get("not_valid_because") or []},
-                "decisions": len(decisions), "gates": sum(1 for e in events if e.get("kind") == "gate"),
+                "decisions": len(decisions), "answers": kevidence_loop.answered(files),
+                "gates": sum(1 for e in events if e.get("kind") == "gate"),
                 "runs": len(runs), "ledger": files["ledger-check.json"], "criteria": len(ev),
                 "exports": sum(1 for e in events if e.get("kind") == "evidence_exported")}
 
     def get_dashboard(self, **_):
-        """Every widget's read model in one answer (FR-T1-AC-11): the dashboard is a view of these."""
+        """Every widget's read model in one answer (FR-T1-AC-11): the dashboard is a view of these. Requests that
+        ask at once over the same records share one build (kernel/shared_read.py, FR-NVL3)."""
+        key = ("dashboard", getattr(self.identity, "id", None))
+        return 200, self.server.shared.read(key, kshared.factory_stamp(self.factory), self._dashboard)
+
+    def _dashboard(self) -> dict:
         f = self.factory
         products = self._products()
         fl = floor(f)
@@ -2224,6 +2697,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
                     chip["profile"] = m.get("profile") or kprofiles.DEFAULT_PROFILE
                     chip["paused"] = bool(m.get("pause"))
         rows = []
+        unreadable = safe("unreadable", f.unreadable_projects, [])   # one damaged project is named, not fatal
         for p in products:
             rows.append({"project": p.pid, "title": p.meta.get("title"), "stage": p.meta.get("stage", 1),
                          "maturity": p.meta.get("maturity"),
@@ -2267,7 +2741,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
             "in_flight": {"value": len(products) - done, "of": len(products), "provenance": "observed",
                           "basis": "projects not yet done, of all projects"},
             "decisions": {"value": len(decisions), "oldest_hours": oldest, "provenance": "observed",
-                          "basis": "open cards waiting on a person, across projects"},
+                          "basis": "open cards and asks waiting on a person, across projects"},
             "first_round": {"value": g.get("first_round_rate"), "num": g.get("first_round_passed", 0),
                             "of": g.get("tasks_gated", 0), "provenance": "derived",
                             "basis": "tasks that passed their gate on the first round, of tasks gated",
@@ -2276,10 +2750,15 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
             "proven": {"value": coverage.get("proven_share"), "num": proven, "of": n_criteria,
                        "provenance": "derived",
                        "basis": "criteria verified or held out, of all criteria in compiled contracts"},
-            "in_use": {"value": counts.get("in_use", 0), "of": len(catalogue.get("items") or []),
-                       "provenance": "observed", "basis": "capabilities in use, of all in the catalogue"},
+            # of the projects, as "Projects in flight" counts them (a concept waiting for validation is no project);
+            # a release live where people try it (explore, demo, pilot) is said apart, never as in production
+            "in_use": {"value": counts.get("in_use", 0),
+                       "of": sum(1 for i in catalogue.get("items") or [] if i.get("project")),
+                       "live_to_try": sum(1 for r in rows if (r["now"] or {}).get("state") == "done"
+                                          and r.get("maturity") != "production"),
+                       "provenance": "observed", "basis": "capabilities in use in production, of all projects"},
         }
-        return 200, {
+        return {
             "generated_at": self._stamp(),
             "kpis": kpis,
             "pipeline": pipe,
@@ -2293,18 +2772,22 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
             "catalogue": catalogue,
             "square": square,
             "projects": rows,
+            "unreadable": unreadable,
             "models": reliability,
             "updates": updates,
             "autonomy": safe("autonomy", self._autonomy_view, None),
             "evidence_packs": [x for x in packs if x is not None],
-            "spend": {**fl["spend"], "currency": load_prices().get("currency", "USD"),
-                      "runs": fl["overall"].get("runs")},
+            # the runs and the price table Agent operations reads, so Home and it never disagree (FR-AOP3)
+            "spend": safe("spend", lambda: kagentops_prices.spend(f), {**fl["spend"], "runs": fl["overall"].get(
+                "runs"), "currency": load_prices().get("currency", "USD")}),
             "try_it": tries,
             "track": safe("track", lambda: kdash.tracking(f), {"projects": [], "counts": {}, "autopilots": 0}),
             "feed_health": {"measured": False, "why": "no feed probe has reported yet: an integration's freshness "
                                                       "probe writes it once the feed runs"},
             "eval_trend": {"measured": False, "why": "no eval run is recorded over time yet: a model or agent "
                                                      "release's evals appear here once they are re-measured"},
+            "insights": self.insights_pins(),     # each pinned Insight widget reads its own tile (insights_routes.py)
+            "graph": self.graph_pins(),           # each pinned graph slice reads its own (graph_routes.py, FR-GRV1)
             "problems": problems,
         }
 
@@ -2384,7 +2867,8 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         """Who works in each corner of the delivery square, from the decisions and signals people signed."""
         corner_of = {"stakeholder": "needs", "business_owner": "concept", "product_owner": "concept",
                      "concept_evaluator": "concept", "developer": "factory", "end_user": "testing",
-                     "operations": "production", "it": "production", "compliance": "production"}
+                     "operations": "production", "it": "production", "compliance": "production",
+                     "ai_architect": "factory"}
         people: dict = {k: {} for k in ("needs", "concept", "factory", "testing", "production")}
         for s in ksignals.signals(self.factory):
             if s.get("person") and is_person(s["person"]):
@@ -2481,6 +2965,8 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
     def get_inbox_all(self, query: dict, **_):
         """Every open card the persona may decide, across every project and the factory's own canon."""
         persona = query.get("persona", "")
+        if persona == "*":                # every persona the person holds, each card signed as it needs (FR-PPL1)
+            return 200, ksolo_routes.inbox(self)
         if persona not in PERSONAS:
             raise ApiError(400, f"persona must be one of {', '.join(PERSONAS)}")
         cards = []
@@ -2491,7 +2977,8 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
                 view["project"] = p.pid
                 view["project_title"] = _factory_label(p.pid, p.meta.get("title", p.pid))
                 cards.append(view)
-        return 200, {"persona": persona, "cards": cards, "count": len(cards)}
+        return 200, {"persona": persona, "cards": cards, "count": len(cards),
+                     "elsewhere": inbox_elsewhere(self, self.factory.projects(), persona)}   # FR-ENF2
 
     def get_ui_map(self, **_):
         return 200, kassistant.ui_map()
@@ -2518,8 +3005,6 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
     # layouts: per person, persona and lens, in the cockpit's own folder, never in a project ledger
 
     def _layout_path(self, person: str, persona: str, lens: str) -> Path:
-        import hashlib
-
         key = hashlib.sha256(person.strip().encode("utf-8")).hexdigest()[:20]
         return self.server.layouts_dir / key / persona / f"{lens}.json"
 
@@ -2881,13 +3366,16 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         project = self._project(pid)
         with self.server._jobs_lock:
             run = dict(self.server.assessing.get(pid) or {}) or None
-        return 200, {**kassess_cards.view(project), "run": run,
+        seen = kstructure.follow_assessment(self.factory, project, kassess_cards.view(project))   # FR-STR1
+        return 200, {**seen, "run": run, "progress": self._assess_progress(project),
                      "panel_available": self.server.assistant_model is not None}
 
     def post_assessment(self, pid: str, body: dict, **_):
-        """Assess the project's repository, signed by whoever asks. By rule it takes seconds and is recorded
-        before the answer (201). With ``panel: true`` the panel's perspectives speak through the cockpit's
-        own model, which takes minutes: it runs in the background (202) and GET shows its end."""
+        """Assess the project's repository, signed by whoever asks. By rule it usually takes seconds and is
+        recorded before the answer (201); a large repository that takes longer goes on in the background
+        (202). With ``panel: true`` the panel's perspectives speak through the cockpit's own model, which takes
+        minutes: it runs in the background (202). Either way its live progress is read at
+        GET .../assessment/progress (FR-PRG1), and GET shows its end."""
         project = self._project(pid)
         person, persona = self._who(body, pid)
         _require_person(person, persona)
@@ -2901,16 +3389,22 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         with self.server._jobs_lock:
             if (self.server.assessing.get(pid) or {}).get("state") == "running":
                 raise ApiError(409, f"an assessment of {pid} is still running")
+            # Register first: a poll that sees this run must never mistake the previous run's end for its own.
+            rep = self._assess_reporter(project)
             self.server.assessing[pid] = run
         self._audit(project, "assess", pid, person, persona, panel=run["panel"])
+        worker = threading.Thread(target=self.server.run_assessment, name=f"assess-{pid}", daemon=True,
+                                  args=(project, run, model, self.identity, rep))
+        worker.start()
         if model is None:
-            self.server.run_assessment(project, run, None, self.identity)
-            if run["state"] != "done":
-                raise ApiError(500, f"the assessment failed: {run.get('error')}")
-            return 201, {"run": dict(run), "assessment": kassess.summary(kassess.load(project, run["id"]))}
-        threading.Thread(target=self.server.run_assessment, args=(project, run, model, self.identity),
-                         name=f"assess-{pid}", daemon=True).start()
-        return 202, {"run": dict(run)}
+            worker.join(ASSESS_WAIT_S)
+        with self.server._jobs_lock:
+            now = dict(run)
+        if now["state"] == "running" or model is not None:      # the panel always answers in the background
+            return 202, {"run": now}
+        if now["state"] != "done":
+            raise ApiError(500, f"the assessment failed: {now.get('error')}")
+        return 201, {"run": now, "assessment": kassess.summary(kassess.load(project, now["id"]))}
 
     def post_assessment_changes(self, pid: str, body: dict, **_):
         """File chosen findings of an assessment as change cards, signed by the person who files them."""
@@ -2923,8 +3417,11 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         if version is not None and (isinstance(version, bool) or not isinstance(version, int | str)):
             raise ApiError(400, "version is an assessment's number or id, such as AS-2")
         try:
+            kinds = body.get("classes") or {}
+            if not isinstance(kinds, dict) or not all(isinstance(v, str) for v in kinds.values()):
+                raise ApiError(400, "classes maps a finding id to the kind it is filed as, such as defect")
             out = kassess_cards.to_changes(project, ids, person=person, persona=persona, version=version,
-                                           as_class=_text(body, "as", limit=32) or kassess.CLASS_DEFAULT)
+                                           as_class=_text(body, "as", limit=32) or kassess.CLASS_DEFAULT, classes=kinds)
         except LookupError as exc:
             raise ApiError(404, str(exc.args[0] if exc.args else exc)) from None
         self._audit(project, "assessment_changes", out["assessment"], person, persona,
@@ -3003,7 +3500,7 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         project_id = _text(body, "project", limit=100) or None
         if kind == "feedback" and project_id is not None and project_id.startswith("_"):
             # Feedback is on a product. Rihma's own canon takes no anonymous website's word as a change.
-            raise ApiError(400, "a feedback embed belongs to a product; Rihma itself takes no website feedback")
+            raise ApiError(400, "a feedback embed belongs to a product; Rihmasto itself takes no website feedback")
         if project_id is not None:   # a feedback embed files changes on its project: granted there too
             person, persona = self._sign(person, persona, project_id)
         try:
@@ -3045,24 +3542,37 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes):
         persona = _text(body, "persona", limit=64)
         if persona not in PERSONAS:
             raise ApiError(400, f"persona must be one of {', '.join(PERSONAS)}")
-        pid = _text(body, "project", limit=100) or None
-        if pid is not None:
-            self._project(pid)
-        lens = _text(body, "lens", limit=32) or lens_for(persona)
-        if lens not in LENSES:
-            raise ApiError(400, f"lens must be one of {', '.join(LENSES)}")
+        pid, broken = _broken_scope(self.factory, _text(body, "project", limit=100) or None, body,   # FR-NVL3
+                                    self._project)
+        if broken is not None:
+            return 200, broken
+        # The question names another project by its title. Outside any project Rihma answers about that one and says
+        # so (FR-UXO1); inside one it never answers with another project's records on its own (FR-H10): it offers to
+        # ask there, and the person's click changes the scope.
+        pid, switched, offered = _scoped(self.factory, question, pid)
+        lens = _lens_in(body, persona)
         person, persona = self._sign(_text(body, "person", limit=200), persona, pid)
         layout, _ = self._layout_for(person, persona, lens)
         where = self.factory.project(pid) if pid else self.factory      # the widgets and the model it may use
         ui = {"widgets": [w for w in WIDGETS if kmodules.shown(where, "widgets", w)], "layout": layout}
-        try:
-            out = kassistant.ask(self.factory, question, persona=persona, project_id=pid,
-                                 view=_text(body, "view", limit=64) or None, ui=ui,
-                                 model=self.server.assistant_model if kmodules.is_on(where, "assistant") else None)
+        # "Viewing as: everything" (FR-PPL1): the answer may use any persona the person holds, as the page does
+        holding = (ksolo.held(self.access, self.identity, pid) if body.get("everything") is True
+                   and ksolo.chooses(self.access) else None)
+        model = self.server.assistant_model if kmodules.is_on(where, "assistant") else None
+        try:   # "Why? Ask Rihma" carries its context and is answered by rule; every answer says who acted (FR-NVL1)
+            out = knvl_answer(self.factory, pid, body, model, lambda: kassistant.ask(
+                self.factory, question, persona=persona, project_id=pid, person=person or None,
+                view=_text(body, "view", limit=64) or None, ui=ui, holding=holding, model=model))
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
         out["lens"] = lens
-        return 200, out
+        _signed_answer(out, _text(body, "person", limit=80).strip())   # its commands as this person runs them
+        out["walkthrough"] = kwalk_intent.offer(question, out)   # a walkthrough the words ask for: a button
+        # its steps with every known value filled in, and the scope it answered about
+        view = _text(body, "view", limit=64) or None
+        done = khowto.finish(out, question, factory=self.factory, pid=pid, view=view, switched=switched,
+                             person=person, persona=persona, label=_factory_label)
+        return 200, (_offer_scope(self.factory, pid, offered, done) if offered else done)
 
 
 # -- entry points ---------------------------------------------------------------------------------
@@ -3086,8 +3596,12 @@ def access_note(factory: Factory) -> str:
     access = kaccess.load(factory)
     if not access.enforced:
         return f"Access: {kaccess.SINGLE_NOTE}. Whoever holds the session picks the person and the persona."
+    if access.source == "team" and access.proxy is None and not access.error:   # Rihmasto's own team mode (FR-NVL3)
+        return ("Access: team mode. Sign in with the link below as the first IT user; each teammate signs in with the "
+                "one-use link IT makes for them in Settings, People.")
     if access.error or access.proxy is None:
-        return f"Access: enforced, but {access.error}: every request is refused until IT fixes it."
+        return (f"Access: enforced, but {access.error or 'no sign-in is set up'}: every request is refused until IT "
+                "fixes it.")
     keys = f"; but {access.keys_error}, so nobody signs in yet" if access.keys_error else ""
     return (f"Access: enforced. People sign in at {access.proxy.origin} through IT's proxy ({access.proxy.preset}), "
             f"whose signed token the cockpit verifies{keys}; the printed link is not needed. Untrusted code: "
@@ -3108,10 +3622,12 @@ def embed_base_note(base: str | None) -> str:
 
 
 def gnomon_found() -> bool:
-    """Whether ``kernel.model.gnomon_cmd()`` names a Gnomon that exists on this machine."""
+    """Whether ``kernel.model.gnomon_cmd()`` names a Gnomon that exists on this machine, or the analyst or the
+    assistant is answered by a coding agent that is here, which needs no Gnomon (kernel/harness_setup.py)."""
+    from kernel.harness_setup import talking_by_harness
     from kernel.models_setup import gnomon_found as found
 
-    return found()
+    return found() or talking_by_harness()
 
 
 def chat_model() -> object:
@@ -3140,6 +3656,27 @@ def assistant_model_for(choice: str | None):
     return GnomonModel(lane, timeout=180), f"The assistant asks Gnomon in the analyst lane ({lane})."
 
 
+def demo_defaults(factory: Factory, choice: str | None,
+                  environ: MutableMapping[str, str]) -> tuple[str | None, list[str]]:
+    """A demo home (kernel/demo.py's demo.json) keeps to itself unless asked otherwise: Ask Rihma answers from the
+    map (not Gnomon in the owner's shared analyst lane), and its lanes and Console working copies live in the home
+    (``GF_LANES``), never in ~/gf-lanes. Returns the assistant choice and what was said about it."""
+    from kernel.demo import DEMO_MARKER
+    from kernel.lanes import LANES_ENV
+
+    if not (factory.home / DEMO_MARKER).is_file():
+        return choice, []
+    said = []
+    if choice is None:
+        choice = "map"
+        said.append("A demo home: the assistant answers from the cockpit map (--assistant gnomon to ask Gnomon).")
+    if not environ.get(LANES_ENV):
+        environ[LANES_ENV] = str(factory.home / "lanes")
+        said.append(f"A demo home: its lanes and Console working copies are in {environ[LANES_ENV]} "
+                    f"(set {LANES_ENV} to use others).")
+    return choice, said
+
+
 def public_origin_of(url: str) -> str:
     """The origin of a trusted HTTPS front, checked: https only (the sign-in link and the session token
     must never cross a network in clear), a host, and nothing after it."""
@@ -3154,7 +3691,10 @@ def public_origin_of(url: str) -> str:
 def main(argv: list | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m cockpit.server",
                                      description="The Rihma cockpit, on 127.0.0.1 only.")
-    parser.add_argument("--home", help=f"the factory home (default: ${HOME_ENV} or var/)")
+    from kernel.store import HOME_ENVS
+
+    parser.add_argument("--home", help=f"the factory home (default: the first set of "
+                                       f"{', '.join('$' + n for n in HOME_ENVS)}, else var/)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"port on 127.0.0.1 (default {DEFAULT_PORT})")
     parser.add_argument("--host", default=LOOPBACK, help=f"must be {LOOPBACK}; any other address is refused")
     parser.add_argument("--quiet", action="store_true", help="do not log requests")
@@ -3181,8 +3721,12 @@ def main(argv: list | None = None) -> int:
     except ValueError as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2
-    factory = Factory(args.home)
-    model, note = assistant_model_for(args.assistant)
+    factory = Factory(Factory(args.home).home.resolve())   # absolute: git and jobs run in other folders (FR-NVL3)
+    choice, demo_notes = demo_contain(factory, args.assistant)   # a demo home keeps its own lanes (FR-AOP3)
+    for line in demo_notes:
+        print(line, flush=True)
+    lanes_note = klanes_home.settle(factory.home)     # a demo home keeps its own lanes; a shared root is said
+    model, note = assistant_model_for(choice)
     try:
         server, bootstrap = make_server(factory, args.port, assistant_model=model, embed_base=embed_base)
     except ValueError as exc:
@@ -3195,9 +3739,12 @@ def main(argv: list | None = None) -> int:
     server.shape_model = chat_model()
     # automations tick every minute while the cockpit runs (cockpit/automation_routes.py, FR-AUT1)
     server.automation_scheduler = Scheduler(factory, model=server.shape_model).start()
+    server.heal_watcher = Watcher(server).start()   # failed jobs and recorded failures become incidents (FR-HEAL1)
     server.public_origin = public
     print(f"Rihma cockpit for {factory.home}", flush=True)
+    serve_here(server, factory)     # Open a terminal here, and checks on their schedule (FR-CON1, FR-CHK1)
     print(note, flush=True)
+    print(lanes_note, flush=True)
     print(embed_base_note(embed_base), flush=True)
     print(access_note(factory), flush=True)
     print(f"Open this link once to sign in: {public or server.origin}/#k={bootstrap}", flush=True)
@@ -3213,4 +3760,8 @@ def main(argv: list | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # `python -m cockpit.server` runs this file as __main__, but every route module imports `cockpit.server`: a
+    # second copy with its own ApiError, which this copy's handler would not catch (a 4xx became a 500, and a
+    # stale team session an empty reply). Serve from that one imported copy, so what a route raises is caught.
+    from cockpit import server as _imported  # noqa: PLW0406  (the one copy route modules import)
+    sys.exit(_imported.main())

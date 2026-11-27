@@ -118,7 +118,7 @@ def pending_intake(project: Project, *, model: Any) -> str | None:
     meta = project.meta
     if not project.path("source.json").exists():
         return None
-    if meta.get("redo_intake"):
+    if meta.get("redo_intake") or meta.get("panel_unusable"):     # a panel that got no usable answer runs again
         kr.rerun_intake(project, model=model)
         return "intake again over the project's material"
     pending = [n for n in meta.get("reintake_pending") or [] if isinstance(n, int)]
@@ -157,7 +157,7 @@ def _ask(project: Project, text: str, model: Any, note: str) -> list[tuple[str, 
     for perspective in PERSPECTIVES:
         try:
             answer = _ask_json(model, _perspective_prompt(perspective, text, "added material", maturity, profile,
-                                                          note, given))
+                                                          note, given, project.factory))
         except ModelError as exc:
             Canon(project).note("intake", f"perspective {perspective} gave no usable answer on added material: {exc}")
             continue

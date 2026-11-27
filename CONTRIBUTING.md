@@ -56,6 +56,21 @@ rihmasto demo                     # or: python -m kernel.cli demo
 The tests need no Gnomon, no model and no network. They use scripted models and cells, and they
 start product processes on loopback ports.
 
+## Find your way around
+
+| Folder | What is in it |
+|---|---|
+| `kernel/` | the rule engine: one module per job, each starting with a docstring that says what it owns ([architecture](docs/architecture.md)) |
+| `cockpit/` | the web UI's server (`server.py`, `*_routes.py`) and its pages (`static/`, plain JavaScript; wording through `words.js`) |
+| `mcp/`, `embed/`, `gateway/` | the MCP server, the website chat server and the capability gateway |
+| `adapters/`, `connectors/` | reading Gnomon's results and SARIF; reference data connectors |
+| `tools/` | the contract checker and tracer, the quality gate, the release export, sync and build |
+| `contract/contract.json` | Rihmasto's own requirements, criteria and tasks |
+| `decisions/` | every decision, amendment and proposal |
+| `tests/` | `unittest` modules, named after the criteria they prove; `test_ui_*.py` drive the cockpit in headless Chrome |
+| `docs/` | the guides ([index](docs/README.md)); `docs/scenarios/` walks each starting point |
+| `.gnomon/` | the Gnomon surface Rihmasto ships; hashed byte for byte, so LF line endings only |
+
 ## Run the checks
 
 These are the commands CI runs ([.github/workflows/ci.yml](.github/workflows/ci.yml)), on Ubuntu
@@ -70,6 +85,13 @@ python tools/contract_trace.py contract/contract.json
 
 - Run the test modules you touch first, for example `python -m unittest tests.test_docs`, and
   the whole suite once before you open a pull request.
+- **Browser tests.** The `tests/test_ui_*.py` modules drive the cockpit in headless Chrome over the
+  DevTools protocol, at desktop and phone widths, in light and dark. They are skipped when Chrome is
+  not installed (`RIHMA_CHROME` names another Chromium binary). A change to the cockpit's pages
+  should pass them with no console errors and nothing scrolling sideways.
+- **Docs.** `python -m unittest tests.test_docs` checks every relative link, that the docs index
+  links every page, that every `rihmasto` subcommand the README and the getting-started guide name
+  exists, and that no newcomer page names a home folder or a private address.
 - CI also sets a git user name and email before the tests, in case a machine has none.
 - Before a change to Python code, also run the quality gate: `python tools/quality.py --gate`.
   It fails on a hard rule (a file that does not parse, a third-party import in a runtime package,
@@ -208,6 +230,23 @@ The [pull request template](.github/PULL_REQUEST_TEMPLATE.md) asks for these.
   with a clear criterion, and a maintainer ready to help.
 
 [docs/maintainers.md](docs/maintainers.md) gives the maintainers' side: releases and the sync.
+
+## Versions and the changelog
+
+- **Every notable change goes in [CHANGELOG.md](CHANGELOG.md)**, under `## [Unreleased]`, in the
+  section that fits (Added, Changed, Fixed, Removed, Security). Name the criterion it serves and the
+  guide that explains it. A pull request that changes what users see without a changelog line will be
+  asked for one.
+- **Versions follow [PEP 440](https://peps.python.org/pep-0440/):** `1.0.0a1` is an alpha,
+  `1.0.0rc1` a release candidate, `1.0.0` a release. The version lives in `pyproject.toml`.
+- **A maintainer cuts a version** by moving the Unreleased entries under `## [<version>] - <date>`,
+  setting the same version in `pyproject.toml`, and, once that has merged, pushing the tag
+  `v<version>`. The release workflow refuses a tag that does not match the declared version or has
+  no changelog section ([maintainers](docs/maintainers.md)). Unreleased keeps its empty Added,
+  Changed and Fixed headings after a cut, so a branch still open files its entry there and never
+  under the version just dated; rebase an open branch onto them.
+- **Which version you run:** `rihmasto --version`, `rihmasto doctor`, or **Settings > About and
+  help** in the cockpit. The MCP server reports the same version to your IDE agent.
 
 ## Where decisions are recorded
 

@@ -1,0 +1,21 @@
+/* The Context view and the Data and context page (context.js, FR-CTX1). */
+
+.cx-grid { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); min-width: 0; }
+.cx-body, .cx-view { display: grid; gap: var(--s3); min-width: 0; }
+.cx-packs { display: grid; gap: var(--s2); }
+.cx-pack { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); min-width: 0; }
+.cx-pt { overflow-wrap: anywhere; }
+.cx-pm { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: 4px; }
+.cx-bar { display: inline-block; width: 120px; max-width: 40vw; height: 8px; border-radius: 4px; background: var(--sunken);
+  border: 1px solid var(--border); overflow: hidden; }
+.cx-fill { display: block; height: 100%; background: var(--accent); }
+.cx-bar.over .cx-fill { background: var(--critical-mark, var(--accent)); }
+.cx-pack-detail { margin-top: var(--s3); min-width: 0; }
+.cx-detail { display: grid; gap: var(--s2); min-width: 0; overflow-wrap: anywhere; }
+.cx-parts, .cx-list, .cx-fresh { display: grid; gap: 6px; }
+.cx-part summary { cursor: pointer; overflow-wrap: anywhere; }
+.cx-pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-height: 40vh; overflow-y: auto;
+  padding: var(--s2); margin: 6px 0 0; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--sunken);
+  color: var(--text); font-size: var(--fs-xs); }
+.cx-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s2) 0; }
+.cx-list li { overflow-wrap: anywhere; min-width: 0; }

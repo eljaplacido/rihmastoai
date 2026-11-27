@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from kernel import agent_context as ac
+from kernel import alignment_records, channel_consult
 
 BEGIN, END = "<!-- rihmasto:begin {pid} -->", "<!-- rihmasto:end {pid} -->"
 SECTION_TITLE = "Rihmasto's contract and open questions for your IDE agent"
@@ -65,6 +66,9 @@ def context(project: Any) -> dict[str, Any]:
 def record(project: Any, ctx: dict[str, Any], *, at: str) -> None:
     """Keep what was found when a project was adopted or attached, and its counts in the ledger (nothing
     when nothing was found)."""
+    from kernel.agentobs.mapping import record_found
+
+    record_found(project)    # the agent observability hub's hooks, by file names only (FR-OBS1)
     if not ctx.get("found"):
         return
     project.write("agent_context.json", ctx)
@@ -102,7 +106,15 @@ def _quote(arg: str) -> str:
 
 
 def comes_back(project: Any) -> list[str]:
-    """How a developer's change comes back into Rihmasto from the IDE."""
+    """How a developer's change comes back into Rihmasto from the IDE, and how its `rihmasto` commands run as
+    written on this machine (not installed, or another factory home: kernel/console_term.py ``run_note``)."""
+    from kernel.console_term import run_note
+
+    note = run_note(project.factory.home)
+    return [*_comes_back(project), *([note] if note else [])]
+
+
+def _comes_back(project: Any) -> list[str]:
     pid = project.pid
     if kind_of(project) == "attached":
         return ["Commit in your repository as you always do: Rihmasto never writes to it, pushes to it or merges "
@@ -146,13 +158,15 @@ def section(project: Any) -> str:
     lines += [f"- {q['id']}{' (blocking)' if q.get('blocking') else ''}: {q['text']}" for q in questions[:MAX_OPEN]]
     if not cards and not questions:
         lines.append("- Nothing waits.")
+    lines += channel_consult.section_lines(project, MAX_OPEN)   # questions put to coding agents (FR-CHN2)
     lines += ["", "### How your change comes back", ""] + [f"- {x}" for x in comes_back(project)]
     lines += ["", "### Rules", "",
               "- Never edit `.gnomon/`, `contract.json` or `factory/`: the kernel owns them.",
               "- A change to what is built is a decision: propose it, do not build it unasked.",
               "- Rihma over MCP (`rihma_project`, `rihma_waiting`, `rihma_evidence`, `rihma_report_change`, "
-              "`rihma_comment`) reads the factory and files proposals; it decides nothing.",
-              END.format(pid=pid)]
+              "`rihma_comment`) reads the factory and files proposals; it decides nothing."]
+    aligned = alignment_records.ide_lines(project)   # the accepted alignment and its open gaps (FR-ALN1)
+    lines += ([""] + aligned if aligned else []) + [END.format(pid=pid)]
     return "\n".join(lines) + "\n"
 
 

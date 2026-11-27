@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from kernel import harness_setup as hs  # a role a coding agent answers (FR-HMD1)
 from kernel import lanes
 from kernel.canon import DecisionRefused
 from kernel.model import GnomonModel
@@ -231,11 +232,12 @@ def role_view(routing: dict[str, Any], role: str, overlay: dict[str, Any], *, en
     kind, value = _key_of(ep, environ)
     fb = spec.get("fallback")
     return {"role": role, "label": role.replace("_", " ").capitalize(), "purpose": ROLE_PURPOSE.get(role, ""),
-            "model": spec["model"], "family": lanes.model_family(routing, role), **where,
+            "model": spec["model"], "family": lanes.model_family(routing, role), **where, **hs.role_extra(ep),
             "key": {"kind": kind, "name": ep.get("api_key_env"), "set": bool(value) or kind == "gnomon"},
             "set_here": role in (overlay.get("roles") or {}),
             "fallback": {"model": fb["model"], **_endpoint_view(routing, fb["endpoint"])} if fb else None,
-            "readiness": _readiness(where["url"], where["local"], (kind, value), bool(ep.get("api_key_env")), probe)}
+            "readiness": hs.readiness(ep, probe) or _readiness(where["url"], where["local"], (kind, value),
+                                                                bool(ep.get("api_key_env")), probe)}
 
 
 def models_view(*, environ: dict[str, str] | None = None, probe: bool = True) -> dict[str, Any]:
@@ -253,7 +255,7 @@ def models_view(*, environ: dict[str, str] | None = None, probe: bool = True) ->
             "ready": found and any(r["readiness"]["state"] in ("ready", "configured") for r in talking),
             "overlay": {"path": "kernel/" + lanes.ROUTING_LOCAL_FILE.name,
                         "present": lanes.ROUTING_LOCAL_FILE.exists()},
-            "secrets_file": keys_at, "personas": list(PERSONAS)}
+            "secrets_file": keys_at, "personas": list(PERSONAS)} | hs.view_extra(roles, found, probe)
 
 
 # -- setting and removing a role -------------------------------------------------------------------------
@@ -423,6 +425,9 @@ def _answer_text(raw: bytes) -> str:
 def probe_role(role: str, *, environ: dict[str, str] | None = None, timeout: float = TEST_TIMEOUT) -> dict[str, Any]:
     """Send the role's endpoint a tiny prompt and say how long it took, or what went wrong. Records nothing."""
     routing = _role_routing(role)
+    tested = hs.probe(role, routing)          # a harness: a tiny prompt through it (FR-HMD1)
+    if tested is not None:
+        return tested
     spec = routing["roles"][role]
     ep = routing.get("endpoints", {}).get(spec["endpoint"]) or {}
     url, (kind, key) = str(ep.get("url") or ""), _key_of(ep, environ)

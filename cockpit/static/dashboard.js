@@ -12,6 +12,12 @@ import { WIDGET_DEFS, SOURCES, PROV_NOTE } from "./widgets.js";
 import { widgetOn, offNote } from "./modules.js";
 import { modelSetupCard } from "./models.js";
 import { pausedCard } from "./automations.js";
+import { healthCard } from "./health.js";
+import { reviewCard } from "./review.js";
+import { localTime, word } from "./words.js";
+import { sheetButton, headToggles } from "./expand.js";
+import { cuts } from "./expandkeep.js";   // Expand only where the card cuts something (FR-CMP2)
+import { unreadableNote } from "./heal.js";   // a project that cannot be read is named (FR-NVL3)
 
 const SIZES = ["S", "M", "L", "XL"];
 const SIZE_LABEL = { S: "Small", M: "Medium", L: "Wide", XL: "Wide and tall" };
@@ -210,17 +216,22 @@ export async function renderHome(seq) {
   restorePreview();
   applyTheme(C.preview && C.preview.shown ? C.preview.shown.theme : editTheme());
   const lens = ((S.meta && S.meta.lenses) || {})[S.lens] || {};
-  document.title = lens.label + " · Home · Rihmasto.ai";
+  document.title = lens.label + " · Home · Rihmasto";
   fill(main,
     pageHead(lens.label ? lens.label + " view" : "Home", lens.question || "", {
       icon: null,
       actions: [h("span", { class: "fresh-note muted small", id: "fresh-note" }),
         h("a", { href: "#/shape", class: "btn quiet", "data-control": "shape_open", "data-key": "home:shape" }, icon("message-square"),
-          h("span", { class: "lbl" }, "Shape it in chat")),
+          h("span", { class: "lbl" }, "Describe a new idea in chat")),
+        nav.walk ? nav.walk.homeButton() : null,   // walkthroughs in Ask Rihma (walkthrough.js)
         button("Refresh", { icon: "refresh", kind: "quiet", key: "home:refresh", onclick: () => nav.route && nav.route(true) })],
     }),
+    h("div", { class: "home-review", id: "home-review" }),
     h("div", { class: "home-setup", id: "home-setup" }),
+    h("div", { class: "home-review", id: "home-incidents" }),   // incidents open (heal.js, FR-HEAL1)
     h("div", { class: "home-setup", id: "home-auto" }),
+    h("div", { class: "home-walk", id: "home-walk" }),
+    h("div", { class: "home-setup", id: "home-health" }),
     h("div", { class: "dash-notes", id: "dash-notes" }),
     h("div", { class: "cz-bar", id: "cz-bar", hidden: true }),
     h("div", { class: "preview-bar", id: "preview-bar", hidden: true }),
@@ -228,22 +239,27 @@ export async function renderHome(seq) {
   D.refreshing = quick;   // this render owns the flag; a read of an earlier render that comes late leaves it be
   drawFresh();
   drawNotes();
+  reviewCard($("#home-review"));       // "Since you last looked": the first card (review.js)
+  if (nav.incidentsCard) nav.incidentsCard($("#home-incidents"));   // incidents open (heal.js, FR-HEAL1)
   modelSetupCard($("#home-setup"));    // "Set up a model" while no model Rihma talks with answers
   pausedCard($("#home-auto"));         // an automation the circuit breaker paused, and why (automations.js)
+  if (nav.walk) nav.walk.homeCard($("#home-walk"));   // no project yet: a walkthrough is offered (FR-WLK1)
+  healthCard($("#home-health"));       // checks failing or not measured (health.js, FR-CHK1)
   renderGrid();
   if (S.customizing) startCustomize(resumed);
   if (C.preview) showPreviewBar();
   if (quick) refreshBehind(seq);
 }
-function layoutKind() { return S.customizing && C.snapshot && C.undo.length ? "Unsaved changes" : S.layoutPreset ? "Default layout" : "Your layout"; }
+// The layout is named only once the person has made it theirs: the default one says nothing.
+function layoutKind() { return S.customizing && C.snapshot && C.undo.length ? "Unsaved changes" : S.layoutPreset ? "" : "Your layout"; }
 function drawLayoutKind() { const kind = $(".layout-kind"); if (kind) kind.textContent = layoutKind(); }
 
 // The header's note: which layout this is, how old the figures are, and whether fresh ones are on the way.
 function drawFresh() {
   const el = $("#fresh-note");
   if (!el) return;
-  fill(el, h("span", { class: "layout-kind" }, layoutKind()),
-    " · updated " + String((S.dashboard || {}).generated_at || "").slice(11, 16) + " UTC",
+  const kind = layoutKind();
+  fill(el, h("span", { class: "layout-kind" }, kind), (kind ? " · u" : "U") + "pdated " + localTime((S.dashboard || {}).generated_at),
     D.refreshing ? h("span", { class: "dash-refreshing" }, " · refreshing") : null);
   const grid = $("#grid");
   if (grid) grid.setAttribute("aria-busy", D.refreshing ? "true" : "false");
@@ -257,11 +273,12 @@ function drawNotes() {
   const d = S.dashboard || {};
   const off = ((S.layout && S.layout.widgets) || []).filter((w) => !widgetOn(w.type)).length;
   fill(box, off ? offNote(off, off === 1 ? "widget of this layout" : "widgets of this layout") : null,
+    unreadableNote(d.unreadable),        // a project that cannot be read is named, the others go on (FR-NVL3)
     (d.problems || []).length ? h("p", { class: "w-warn page", role: "note" }, icon("alert"),
       h("span", null, "Some read models could not be read: " + d.problems.join(", ") + ". The widgets built on them say so.")) : null,
     D.error ? h("p", { class: "w-warn page", role: "alert" }, icon("alert"),
       h("span", null, "The figures could not be read again (" + D.error + "), so these are the ones from "
-        + String(d.generated_at || "").slice(11, 16) + " UTC. Refresh tries again.")) : null,
+        + localTime(d.generated_at) + ". Refresh tries again.")) : null,
     D.ready ? h("div", { class: "w-note page", role: "status" }, icon("refresh"),
       h("span", null, "Newer figures came in while you were working in a widget; they are not shown yet."),
       button("Show them", { kind: "small", key: "home:newer", onclick: showNewer })) : null);
@@ -441,7 +458,7 @@ function widgetCard(w, index, d) {
     const more = h("button", { type: "button", class: "icon-btn tiny", "aria-label": "Widget menu: " + info.title, "aria-haspopup": "menu",
       "aria-expanded": "false", "data-fk": "menu" }, icon("more"));
     const back = { wid: w.id, fk: "menu" };
-    more.addEventListener("click", () => openMenu(more, [{ group: "View" }].concat(views.map((v) => ({ label: VIEW_LABEL[v], icon: VIEW_ICON[v], checked: v === view,
+    more.addEventListener("click", () => openMenu(more, (full ? [{ label: word("expand.open"), icon: "expand", onclick: () => full.click() }, { sep: true }] : []).concat([{ group: "View" }]).concat(views.map((v) => ({ label: VIEW_LABEL[v], icon: VIEW_ICON[v], checked: v === view,
       onclick: () => editLayout(setView(v), back) })),
     [{ sep: true }, { group: "Size" }], SIZES.map((s) => ({ label: SIZE_LABEL[s] + " (" + s + ")", checked: s === w.size,
       onclick: () => editLayout((l) => { const x = l.widgets.find((y) => y.id === w.id); if (x) x.size = s; }, back) })),
@@ -450,10 +467,20 @@ function widgetCard(w, index, d) {
         neighbourOf(w.id, "menu", '#grid [data-key="grid:add"]')) }]), "Widget menu"));
     tools.push(more);
   }
+  // a small or medium widget opens in full in the side panel, for review; its size stays as set (FR-CMP1)
+  // drawn with no cap (full), and only when it shows more than the card does (FR-CMP2)
+  const whole = def && !custom && (w.size === "S" || w.size === "M") ? () => { const wx = Object.assign({}, wv, { size: "XL", full: true });
+    return h("section", { class: "widget card size-XL", "data-type": w.type }, h("div", { class: "card-body" }, view === "table" ? def.table(d, wx) : def.render(d, wx))); } : null;
+  let cut = false;
+  try { cut = !!whole && cuts(body, whole()); } catch (e) { cut = false; }
+  const full = cut ? sheetButton({ key: "w:" + w.id, name: info.title, icon: info.icon, render: whole }) : null;
+  if (full) tools.unshift(full);
   if (custom) {
-    tools.push(h("button", { type: "button", class: "btn tiny", "aria-label": "Size " + w.size + ": change", tip: "Cycle the size: S, M, L, XL",
+    // the size in words, not a letter: "Size: medium"
+    tools.push(h("button", { type: "button", class: "btn tiny", "aria-label": "Size: " + String(SIZE_LABEL[w.size] || w.size).toLowerCase() + ". Change it",
+      tip: "Change the size: small, medium, wide, wide and tall",
       "data-fk": "size", onclick: () => czEdit((l) => { const x = l.widgets[index]; x.size = SIZES[(SIZES.indexOf(x.size) + 1) % SIZES.length]; },
-        { wid: w.id, fk: "size" }) }, icon("expand"), w.size),
+        { wid: w.id, fk: "size" }) }, icon("expand"), "Size: " + String(SIZE_LABEL[w.size] || w.size).toLowerCase()),
     h("button", { type: "button", class: "icon-btn tiny", "aria-label": "Remove " + info.title, tip: "Remove", "data-fk": "remove",
       onclick: () => czEdit((l) => { l.widgets.splice(index, 1); }, neighbourOf(w.id, null, '#grid [data-key="grid:add"]')) }, icon("x")));
   }
@@ -470,6 +497,7 @@ function widgetCard(w, index, d) {
     about,
     h("span", { class: "card-tools" }, tools)),
   h("div", { class: "card-body" + (custom ? " inert" : ""), inert: custom || null }, body));
+  if (full) headToggles($(".card-head", el), full);
   if (custom) wireDrag(el, index);
   return el;
 }
@@ -500,7 +528,7 @@ function startCustomize(resume) {
     fill(bar, h("span", { class: "cz-t" }, icon("sliders"), h("b", null, "Customizing your " + lensLabel() + " layout"),
       h("span", { class: "muted small" }, S.layoutPreset ? "The default stays as it is; Done saves your own copy." : "Drag to reorder, or Alt+arrows on a focused widget.")),
     h("span", { class: "cz-a" },
-      button("Add widget", { icon: "plus", kind: "small", key: "cz:add", onclick: openLibrary }),
+      button("Add a panel", { icon: "plus", kind: "small", key: "cz:add", onclick: openLibrary }),
       button("Undo", { icon: "undo", kind: "small quiet", aria: "Undo (Ctrl+Z)", key: "cz:undo", onclick: undo }),
       button("Reset to default", { kind: "small quiet", key: "cz:reset", onclick: () => czEdit((l) => { l.widgets = clone((S.layoutDefault || l).widgets); }) }),
       button("Export", { icon: "download", kind: "small quiet", key: "cz:export", onclick: exportLayout }),

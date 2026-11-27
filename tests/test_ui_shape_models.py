@@ -137,15 +137,24 @@ class ShapeModelsUiTest(unittest.TestCase):
         b.wait("location.hash === '#/shape' && !!document.querySelector('#shp-first')", "the chat's start")
         b.type("#shp-first", "Our team keeps losing track of who borrowed the drills and laptops.")
         self.choose_file("#shp-new-file", notes)
-        b.click('[data-key="shape:start"]', what="Start the conversation")
+        b.key("Enter", 13)                                               # Enter starts the conversation
         b.wait("location.hash.startsWith('#/shape/SH-')", "the conversation")
         self.log_has("Who borrows the tools", "Rihma's question")
         self.assertIn("weekdays", b.eval("document.querySelector('#shp-f-constraints').value"))   # it read the file
         self.assertIn("Still needed", b.eval("document.querySelector('#shp-state').textContent"))
         sid = b.eval("location.hash.split('/')[2]")
         self.step("answer rihma")
-        b.type("#shp-input", "The team members borrow them; Pekka keeps the store.")
-        b.click('[data-key="shape:say"]', what="Send")
+        b.type("#shp-input", "The team members borrow them; ")
+        before = b.eval("document.querySelectorAll('#shp-log .shp-msg').length")
+        b.cmd("Input.dispatchKeyEvent", {"type": "keyDown", "key": "Enter", "code": "Enter",
+                                         "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13,
+                                         "modifiers": 8, "text": "\r"})       # Shift+Enter: a newline, not Send
+        b.cmd("Input.dispatchKeyEvent", {"type": "keyUp", "key": "Enter", "code": "Enter",
+                                         "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13, "modifiers": 8})
+        self.assertTrue(b.eval("document.querySelector('#shp-input').value.endsWith('\\n')"))
+        self.assertEqual(b.eval("document.querySelectorAll('#shp-log .shp-msg').length"), before)
+        b.cmd("Input.insertText", {"text": "Pekka keeps the store."})
+        b.key("Enter", 13)                                               # Enter sends the reply
         self.log_has("create the project when you are ready", "Rihma's answer")
         b.wait("document.querySelector('#shp-state').textContent.includes('Good enough to create the project')",
                "good enough")

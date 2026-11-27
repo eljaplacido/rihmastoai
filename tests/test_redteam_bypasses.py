@@ -39,7 +39,7 @@ LAYERS = ("python", "javascript", "html", "dockerfile", "actions", "secrets")
 def seeds(root: Path) -> set[tuple[str, str, int]]:
     """Every (rule, path, line) a fixture tree seeds; lines counted at `\\n` only, as the rules count them."""
     out = set()
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+    for path in sorted(p for p in root.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
         rel = path.relative_to(root).as_posix()
         for n, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
             m = SEED.search(line)

@@ -231,7 +231,7 @@ SECRET_QUIET = (
 def seeds(root: Path) -> dict[str, tuple[str, int]]:
     """{rule id: (relative path, line)} from the `seeded:` markers of a fixture tree."""
     out = {}
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+    for path in sorted(p for p in root.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
         rel = path.relative_to(root).as_posix()
         for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             m = SEED.search(line)

@@ -94,15 +94,18 @@ def _wanted(ids: Iterable[str]) -> list[str]:
 
 
 def to_changes(project: Any, ids: Iterable[str], *, person: str, persona: str, version: int | str | None = None,
-               as_class: str = CLASS_DEFAULT) -> dict[str, Any]:
+               as_class: str = CLASS_DEFAULT, classes: dict[str, str] | None = None) -> dict[str, Any]:
     """File each chosen finding of an assessment (the latest by default) as a change card signed by
-    ``person``; skip one whose earlier card is still open. Returns what was opened and what was skipped."""
+    ``person``, each as its own kind (``classes``, by finding id) or ``as_class``; skip one whose earlier card
+    is still open. Returns what was opened and what was skipped."""
     from kernel.canon import Canon
     from kernel.change import CLASSES
 
     _check_asker(person, persona)
-    if as_class not in CLASSES:
-        raise AssessmentRefused(f"a change is filed as one of {', '.join(CLASSES)}, not {as_class!r}")
+    kinds = {str(k).upper(): v for k, v in (classes or {}).items()}
+    for kind in {as_class, *kinds.values()}:
+        if kind not in CLASSES:
+            raise AssessmentRefused(f"a change is filed as one of {', '.join(CLASSES)}, not {kind!r}")
     wanted = _wanted(ids)
     record = load(project, version)
     found = _by_id(record)
@@ -119,7 +122,8 @@ def to_changes(project: Any, ids: Iterable[str], *, person: str, persona: str, v
             if earlier and _state(canon, earlier["card"]) == "open":
                 skipped.append({"finding": fid, "card": earlier["card"], "why": "its change card is still open"})
                 continue
-            card = _open_card(project, record, f, person=person, persona=persona, as_class=as_class)
+            card = _open_card(project, record, f, person=person, persona=persona,
+                              as_class=kinds.get(fid.upper(), as_class))
             filed[f["key"]] = {"card": card["card"], "assessment": record["id"], "finding": fid,
                                "person": person, "at": project.factory.clock.stamp()}
             opened.append(card)
@@ -132,8 +136,17 @@ def filed(project: Any) -> dict[str, Any]:
 
     canon, out = Canon(project), {}
     for key, entry in (read_json(project.path(FOLDER, "filed.json"), {}) or {}).items():
-        out[key] = dict(entry, state=_state(canon, entry.get("card", "")))
+        card = entry.get("card", "")
+        out[key] = dict(entry, state=_state(canon, card), verdict=_verdict(canon, card))
     return out
+
+
+def _verdict(canon: Any, card_id: str) -> str | None:
+    """The decision on a filed change card (accept, reject, defer), or None while it is open."""
+    try:
+        return ((canon.get_card(card_id).get("decision")) or {}).get("verdict")
+    except KeyError:
+        return None
 
 
 def view(project: Any) -> dict[str, Any]:
@@ -144,10 +157,23 @@ def view(project: Any) -> dict[str, Any]:
         latest, problem = (load(project) if index else None), None
     except LookupError as exc:
         latest, problem = None, str(exc.args[0] if exc.args else exc)
-    return {"project": project.pid, "adopted": is_adopted(project), "has_repo": project.path("repo.git").is_dir(),
-            "perspectives": PERSPECTIVES, "severities": list(SEVERITIES),
-            "history": checked(project),
-            "latest": latest, "problem": problem, "filed": filed(project)}
+    from kernel.assess_headline import headline
+    from kernel.assess_measure import runner
+    from kernel.assess_precise import overlay
+    from kernel.assess_priority import ranked
+
+    if latest:      # each finding's origin (a rule of Rihmasto's) and what filing it would do (FR-ORG1)
+        from kernel import alignment_impact, alignment_origin
+
+        for f in [*latest.get("checks", []), *(latest.get("proposals") or [])]:
+            f["origin"] = alignment_origin.of_finding(f)
+            f["impact"] = alignment_impact.of_finding(project, f)
+    out = {"project": project.pid, "adopted": is_adopted(project), "has_repo": project.path("repo.git").is_dir(),
+           "perspectives": PERSPECTIVES, "severities": list(SEVERITIES),
+           "history": checked(project),
+           "latest": overlay(project, latest), "problem": problem, "filed": filed(project), "runner": runner(project)}
+    out |= {"priority": ranked(out)}        # which open findings to fix first, and why (by rule)
+    return out | {"headline": headline(out)}     # what is worth acting on now, and what is probably noise (FR-ASP1)
 
 
 def for_evidence(project: Any) -> dict[str, Any]:

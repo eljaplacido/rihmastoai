@@ -1,0 +1,75 @@
+/* A clear landing and live tasks (starthere.js, tasklive.js, runlog.js; FR-LND1). Colours come from tokens.css, so
+   dark and light both follow the theme. */
+
+.sh-box { min-width: 0; margin-bottom: var(--s4); scroll-margin-top: 72px; }   /* under the sticky top bar */
+.start-here { display: grid; gap: var(--s2); padding: var(--s3) var(--s4); min-width: 0; overflow-wrap: anywhere;
+  border-left: 3px solid var(--accent); }
+.start-here .card-head { display: flex; align-items: center; gap: var(--s2); }
+.start-here .card-tools { margin-left: auto; }
+.sh-u { margin: 0; font-size: var(--fs-md); }
+.sh-u .btn { vertical-align: middle; }
+.sh-steps { display: grid; gap: var(--s2); margin: 0; padding: 0; list-style: none; min-width: 0; }
+.sh-step { display: grid; grid-template-columns: auto 1fr auto; gap: var(--s2); align-items: start; padding: var(--s2);
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); min-width: 0; }
+.sh-n { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-weight: 600;
+  font-size: 0.8rem; background: var(--accent-subtle); border: 1px solid var(--accent-border); color: var(--accent-text); }
+.sh-what { min-width: 0; }
+.sh-what p { margin: 2px 0 0; }
+.sh-find { margin: var(--s1) 0 0; padding-left: 1.1em; }
+.sh-mw h4 { margin: var(--s2) 0 var(--s1); }
+.sh-mw ul { margin: 0; padding-left: 1.1em; }
+.sh-ask { margin: 0; }
+.sh-hidden { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 0 0 var(--s3); }
+.sh-hidden .ic { width: 14px; height: 14px; }
+@media (max-width: 640px) {
+  .sh-step { grid-template-columns: auto 1fr; }
+  .sh-step > .btn { grid-column: 1 / -1; justify-self: start; }
+}
+
+/* Tasks: the filters, the card's Open, and the panel of one task */
+.tl-bar { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s2) var(--s3); margin: 0 0 var(--s3); min-width: 0; }
+.tl-bar > .ic { align-self: center; }
+.tl-f { display: grid; gap: 2px; }
+.tl-f select { max-width: 100%; }
+.tl-live { display: inline-flex; align-items: center; gap: 4px; }
+.tl-live .ic { width: 13px; height: 13px; }
+.tc-o { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin: 4px 0; }
+/* FR-LND2: a card's chips shrink with their lane (an ellipsis, the whole text in the title), never past it */
+.tc-o { min-width: 0; }
+.tc-o > .chip { min-width: 0; flex: 0 1 auto; }
+.tasks-board { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.tcard.done { border-left: 3px solid var(--good-mark); }
+@media (max-width: 1100px) { .tasks-board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .tasks-board { grid-template-columns: minmax(0, 1fr); } }
+.td-mark > span, .td-wait > span { min-width: 0; flex: 1 1 auto; }
+.tc-open { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; }
+.tc-open .ic { width: 13px; height: 13px; }
+.task-panel { display: grid; gap: var(--s3); padding: var(--s3) var(--s4); margin-bottom: var(--s4); min-width: 0;
+  overflow-wrap: anywhere; border-left: 3px solid var(--accent); }
+.task-panel .card-head { display: flex; align-items: flex-start; gap: var(--s2); min-width: 0; }
+.task-panel .card-t { white-space: normal; min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
+.task-panel .card-tools { margin-left: auto; }
+.task-panel > *, .start-here > * { min-width: 0; }
+.td-st { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.td-s h4 { margin: 0 0 var(--s1); }
+.td-list { display: grid; gap: var(--s1); margin: 0; padding-left: 1.1em; min-width: 0; }
+.td-list p { margin: 2px 0 0; }
+.td-list code { overflow-wrap: anywhere; }
+.td-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s3); min-width: 0; }
+.td-hist { margin: 0; padding-left: 1.1em; display: grid; gap: 2px; }
+.td-done { display: grid; gap: var(--s1); max-width: 640px; }
+.td-done textarea { width: 100%; box-sizing: border-box; }
+.td-acts { flex-wrap: wrap; }
+
+/* The whole log of a run */
+.rl-head { margin: 0 0 var(--s1); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rl-out { margin: 0; min-height: 40vh; max-height: 70vh; overflow: auto; padding: var(--s3); white-space: pre-wrap;
+  overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--fs-sm); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-md); color: var(--text); }
+.rl-follow { display: inline-flex; align-items: center; gap: 4px; }
+.rl-after { margin-top: var(--s3); }
+.rl-changed { display: grid; gap: 4px; }
+.rl-runs { display: grid; gap: var(--s2); }
+.rl-run { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; min-width: 0; }
+.run-log-open { display: inline-flex; align-items: center; gap: 4px; }
+.live .run-log-open { margin-top: var(--s1); }

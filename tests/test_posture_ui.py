@@ -124,7 +124,7 @@ class PostureUiTest(unittest.TestCase):
         b.click('[data-control="new_project"]', what="New project")
         b.wait(f"!!document.querySelector('{SECTION} [data-key=\"posture:\"][aria-checked=\"true\"]')",
                "No posture chosen by default: nothing holds a daily user by surprise")
-        self.preview_says("No posture: the project runs by the maturity and mode you choose")
+        self.preview_says("No posture")          # in the reader's words (business or technical, FR-UXO1)
         b.click(f'{SECTION} [data-key="posture:balanced"]', what="Balanced, one click away")
         self.preview_says("What Balanced will do")
         self.assertIn("go-ahead", self.preview_says("Autonomy 2"))
@@ -156,7 +156,8 @@ class PostureUiTest(unittest.TestCase):
         self.assertEqual((project.meta["posture"]["name"], project.meta["posture"]["chosen_by"], project.meta["mode"]),
                          ("regulated", PERSON, "socratic"))
         self.assertEqual(self.runner.started[0][:4], ["-m", "kernel.cli", "intake", project.pid])
-        self.assertEqual(b.eval("document.querySelector('.pst-chip').textContent"), "Posture: Regulated")
+        self.assertIn(b.eval("document.querySelector('.pst-chip').textContent"),
+                      ("Posture: Regulated", "Working rules: Regulated"))          # the reader's word (FR-UXO1)
 
         self.step("the posture dialog by keyboard")
         b.eval("document.querySelector('.pst-chip').focus(); true")
@@ -179,7 +180,8 @@ class PostureUiTest(unittest.TestCase):
         b.type("#pst-reason", "A rough demo first, then we tighten it")
         b.click('#modal .pst-form button[type="submit"]', what="Set the posture")
         b.wait("!document.querySelector('#modal').open", "the dialog closed")
-        b.wait("(document.querySelector('.pst-chip') || {}).textContent === 'Posture: Prototype'", "the header's new posture")
+        b.wait("/^(Posture|Working rules): Prototype$/.test((document.querySelector('.pst-chip') || {}).textContent || '')",
+               "the header's new posture")
         rec = project.meta["posture"]
         self.assertEqual((rec["name"], rec["chosen_by"], rec["persona"], rec["reason"]),
                          ("prototype", PERSON, "business_owner", "A rough demo first, then we tighten it"))
@@ -190,13 +192,13 @@ class PostureUiTest(unittest.TestCase):
         self.theme("light")
         b.cmd("Page.navigate", {"url": f"{self.server.origin}/#/projects"})
         b.click('[data-control="new_project"]', what="New project")
-        self.preview_says("No posture: the project runs by the maturity and mode you choose")
+        self.preview_says("No posture")          # in the reader's words (business or technical, FR-UXO1)
         b.click(f'{SECTION} [data-key="posture:balanced"]', what="Balanced")
         self.preview_says("What Balanced will do")
         b.wait(FITS, "the New project dialog at 1440 pixels")
         self.assertEqual(b.eval(NAMED), [])
         b.click(f'{SECTION} [data-key="posture:"]', what="No posture")         # as before: any maturity and mode
-        self.preview_says("No posture: the project runs by the maturity and mode you choose")
+        self.preview_says("No posture")          # in the reader's words (business or technical, FR-UXO1)
         self.assertEqual(b.eval(f"document.querySelectorAll('{SECTION} [data-key^=\"np-maturity:\"]').length"), 4)
 
         self.step("new project light 390")
@@ -243,7 +245,7 @@ class PostureUiTest(unittest.TestCase):
         self.assertEqual(b.eval(f"!!document.querySelector('[data-key=\"{card}:approve\"]')"), False)
         self.assertTrue(b.eval(FITS))
         # FR-POS7-AC-6: the project's Inbox counts nothing for a developer (the plan card is not theirs)
-        self.assertEqual(b.eval("(document.querySelector('#sb-project .count') || {}).textContent || ''"), "")
+        self.assertEqual(b.eval("(document.querySelector('.cap-t[data-capsule=\"now\"] .count') || {}).textContent || ''"), "")
         self.step("plan as a developer light 390")
         self.theme("light")                               # the theme menu is in the top bar at 1440 pixels
         self.width(390)
@@ -255,7 +257,7 @@ class PostureUiTest(unittest.TestCase):
         b.cmd("Page.navigate", {"url": plan})
         b.wait(f"!!document.querySelector('[data-key=\"{card}:approve\"]')", "Approve the plan for the business owner")
         self.assertEqual(b.eval(f"document.querySelector('[data-key=\"{card}:approve\"]').textContent"), "Approve the plan")
-        b.wait("(document.querySelector('#sb-project .count') || {}).textContent === '1'", "the plan card in her Inbox count")
+        b.wait("(document.querySelector('.cap-t[data-capsule=\"now\"] .count') || {}).textContent === '1'", "the plan card in her Inbox count")
         self.check()
 
 

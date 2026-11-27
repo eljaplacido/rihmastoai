@@ -40,9 +40,9 @@ def is_git(folder: str | Path) -> bool:
     return proc.returncode == 0
 
 
-def check_code(folder: str | Path, exclude: Iterable[str] = ()) -> dict[str, Any]:
+def check_code(folder: str | Path, exclude: Iterable[str] = (), *, tree: Any = None) -> dict[str, Any]:
     """The folder's map, when it holds code; NoCode when it holds only documents."""
-    mp = material.scan(folder, exclude)
+    mp = material.scan(folder, exclude, tree=tree)
     if not material.has_code(mp):
         raise NoCode(NO_CODE.format(folder=Path(folder)))
     return mp
@@ -54,20 +54,27 @@ def _git(cwd: Path, *args: str) -> str:
     return kernel_git(cwd, "-c", "core.autocrlf=false", "-c", "core.safecrlf=false", *args)
 
 
-def snapshot(home: Path, folder: str, exclude: Iterable[str] = ()) -> tuple[str, dict[str, Any]]:
+def snapshot(home: Path, folder: str, exclude: Iterable[str] = (), *, documents: bool = False
+             ) -> tuple[str, dict[str, Any]]:
     """Copy what passes the scan's rules into a new repository under ``home``/snapshots and commit it as the
-    baseline. Returns the repository's path and what was taken. NoCode when the folder holds no code."""
+    baseline. Returns the repository's path and what was taken. NoCode when the folder holds no code, unless
+    ``documents``: a folder of documents adopted to track and evaluate the work (FR-RPJ1)."""
     from kernel.lanes import GIT_ID
+    from kernel.material_git import WorkTree, is_repo_root
 
     src = Path(folder).resolve()
-    mp = check_code(src, exclude)
+    # A git repository's working copy is taken as git sees it: what its .gitignore keeps out is never copied.
+    tree = WorkTree(src) if is_repo_root(src) else None
+    mp = material.scan(src, exclude, tree=tree) if documents else check_code(src, exclude, tree=tree)
+    if not any(r["action"] != "skipped" and not r.get("archive") for r in mp["files"]):
+        raise NoCode(f"{src} holds nothing to take: every file is skipped")
     dest = home / SNAPSHOTS / f"{slugify(src.name) or 'folder'}-{secrets.token_hex(3)}"
     dest.mkdir(parents=True)
     try:
         _git(dest, "init", "-q", "-b", "main")
         copied = 0
         for row in mp["files"]:
-            if row["action"] == "skipped":
+            if row["action"] == "skipped" or row.get("archive"):   # an archive's entries travel inside it
                 continue
             target = dest / row["path"]
             target.parent.mkdir(parents=True, exist_ok=True)

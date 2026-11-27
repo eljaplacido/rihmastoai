@@ -54,6 +54,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from kernel import assess_measure, assess_precise
+from kernel import assess_progress as progress_words
 from kernel.adopt import VENDORED, _git_read, detect_tests, dockerfiles, endpoints, is_adopted, languages, readme
 from kernel.assess_delivery import CICD, MAINTENANCE
 from kernel.assess_ops import ARCHITECTURE
@@ -61,6 +63,7 @@ from kernel.assess_panel import propose
 from kernel.assess_repo import PERSPECTIVES, SEVERITIES, Repo, result, snapshot
 from kernel.assess_trust import COMPLIANCE, SECURITY, redteam, scan_coverage
 from kernel.people import PERSONAS, is_person
+from kernel.progress import Reporter
 from kernel.store import read_json, updating_json, write_json, write_text
 
 SCHEMA = "rihmasto.assessment/1"
@@ -142,25 +145,42 @@ def _factory(project: Any) -> dict[str, Any]:
             "scans": summary(project).get("scans") or []}
 
 
-def _run_rules(repo: Repo) -> list[dict[str, Any]]:
-    """Every rule's result. A rule that cannot read what it needs is not measured, and says why."""
+def _rule(repo: Repo, perspective: str, rule: Rule) -> dict[str, Any]:
+    """One rule's result. A rule that cannot read what it needs is not measured, and says why."""
+    try:
+        return rule(repo)
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError, IndexError, RecursionError) as exc:
+        return result(f"{perspective}.{rule.__name__}", perspective, rule.__name__.replace("_", " "),
+                      "not measured", reason=f"the rule could not read the repository: "
+                                             f"{type(exc).__name__}: {str(exc)[:200]}")
+
+
+def _reported(rep: Reporter, sid: str, checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A step's results as it ends: its findings so far, and its verdicts counted (kernel/progress.py)."""
+    rep.found(sid, [c for c in checks if c["verdict"] == "failed"])
+    rep.done(sid, counts=progress_words.verdicts(checks), said=f"{len(checks)} check{'s' if len(checks) != 1 else ''}")
+    return checks
+
+
+def _run_rules(repo: Repo, rep: Reporter) -> list[dict[str, Any]]:
+    """Every rule's result, area by area, each area a step of the progress."""
     out = []
-    for perspective, rule in RULES:
-        try:
-            out.append(rule(repo))
-        except (OSError, RuntimeError, ValueError, KeyError, TypeError, IndexError, RecursionError) as exc:
-            out.append(result(f"{perspective}.{rule.__name__}", perspective, rule.__name__.replace("_", " "),
-                              "not measured", reason=f"the rule could not read the repository: "
-                                                     f"{type(exc).__name__}: {str(exc)[:200]}"))
+    for perspective in PERSPECTIVES:
+        rules = [r for p, r in RULES if p == perspective]
+        rep.start(f"rules.{perspective}", progress_words.area_said(perspective, len(rules)))
+        out += _reported(rep, f"rules.{perspective}", [_rule(repo, perspective, r) for r in rules])
     return out
 
 
-def _scan(root: Path, gaps: list[str], which: Callable[[str], str | None]) -> tuple[list[dict[str, Any]], Any]:
+def _scan(root: Path, gaps: list[str], which: Callable[[str], str | None],
+          rep: Reporter) -> tuple[list[dict[str, Any]], Any]:
     """The red team's static layer over the revision: each finding, and what it read."""
     from kernel.redteam.static import LIMITS, scan
 
+    rep.start(progress_words.REDTEAM, "The red team's static layer reads the code, secrets, Dockerfiles and Actions")
     report = scan([root], root=root, which=which)
-    return [*redteam(report), scan_coverage(report, gaps, report.notes[len(LIMITS):])], report
+    found = [*redteam(report), scan_coverage(report, gaps, report.notes[len(LIMITS):])]
+    return _reported(rep, progress_words.REDTEAM, found), report
 
 
 def _ordered(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -173,15 +193,23 @@ def _ordered(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _examine(project: Any, bare: Path, root: Path, revision: str, committed: str,
-             which: Callable[[str], str | None]) -> dict[str, Any]:
+             which: Callable[[str], str | None], rep: Reporter) -> dict[str, Any]:
+    rep.start("read.mirror", f"Reading revision {revision[:7]} from the mirror's objects, never a checkout")
     snap = snapshot(bare, revision, root)
+    rep.done("read.mirror", said=f"{len(snap.files)} file{'s' if len(snap.files) != 1 else ''} at {revision[:7]}")
+    rep.start("read.inventory", "Taking the inventory: languages, tests, routes and the team's conventions")
     inv = _inventory(root, snap.files)
     repo = Repo(root=root, files=snap.files, bare=bare, revision=revision, committed=committed,
                 records={"inventory": inv, "baseline": project.read("baseline.json"), "factory": _factory(project)},
                 notes=snap.notes)
-    scanned, report = _scan(root, snap.notes, which)
-    return {"checks": _ordered(_run_rules(repo) + scanned), "inventory": inv, "files": snap.files,
-            "notes": snap.notes, "report": report}
+    rep.done("read.inventory", said=progress_words.inventory_said(inv))
+    checks = _run_rules(repo, rep)
+    added, precise = assess_measure.extra(project, repo)      # what the tests are measured against (FR-ASP1)
+    checks = assess_precise.never_ran(checks + added)
+    scanned, report = _scan(root, snap.notes, which, rep)
+    assess_precise.judge_secrets(scanned, root, project)       # a fixture or a URL path is likely not a secret
+    return {"checks": _ordered(checks + scanned), "inventory": inv, "files": snap.files,
+            "notes": snap.notes, "report": report, "precise": precise}
 
 
 # -- the record --------------------------------------------------------------------------------------
@@ -269,7 +297,7 @@ def _record(project: Any, body: dict[str, Any], *, person: str, persona: str, re
                   "asked_by": {"person": person, "persona": persona}, "inventory": body["inventory"],
                   "checks": checks, "proposals": proposals, "panel": panel, "counts": _counts(checks, proposals),
                   "since": {"previous": previous["id"], **diff(previous, {"checks": checks, "proposals": proposals})}
-                  if previous else None, "scan": scan, "notes": body["notes"],
+                  if previous else None, "scan": scan, "notes": body["notes"], "precise": body.get("precise"),
                   "trace": _trace(person, persona, checks, panel, revision, scan)}
         sha = digest(record)
         write_json(folder / f"{aid}.json", record)
@@ -293,22 +321,33 @@ def _log(project: Any, record: dict[str, Any], sha: str) -> None:
                   "resolved": len(since.get("resolved") or [])} if since else None})
 
 
+def _panel(model: Any, body: dict[str, Any], rep: Reporter) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if model is None:
+        return [], {"used": False, "reason": "no model was given: the rules' findings only"}
+    return propose(model, body["inventory"], body["checks"], body["files"], progress=rep)
+
+
 def assess(project: Any, *, person: str, persona: str, model: Any = None, ref: str = "main",
-           which: Callable[[str], str | None] = shutil.which) -> dict[str, Any]:
+           which: Callable[[str], str | None] = shutil.which, progress: Reporter | None = None) -> dict[str, Any]:
     """Assess the project's repository at ``ref`` and record the assessment as its next version. With
-    ``model``, the panel's perspectives propose further findings, kept apart as model_proposed."""
+    ``model``, the panel's perspectives propose further findings, kept apart as model_proposed. ``progress``
+    (kernel/progress.py) hears each step as it starts and ends; a cancel asked there stops the assessment
+    between two steps, and nothing is recorded (kernel.progress.Cancelled)."""
     _check_asker(person, persona)
     bare = mirror(project)
     revision, committed = _resolve(bare, ref)
-    with tempfile.TemporaryDirectory(prefix="rihmasto-assess-", ignore_cleanup_errors=True) as tmp:
-        body = _examine(project, bare, Path(tmp), revision, committed, which)
-    proposals: list[dict[str, Any]]
-    if model is None:
-        proposals, panel = [], {"used": False, "reason": "no model was given: the rules' findings only"}
-    else:
-        proposals, panel = propose(model, body["inventory"], body["checks"], body["files"])
-    return _record(project, body, person=person, persona=persona, ref=ref, revision=revision, committed=committed,
-                   proposals=proposals, panel=panel)
+    rep = progress if progress is not None else Reporter(progress_words.KIND)
+    rep.plan(progress_words.plan({p: sum(1 for q, _ in RULES if q == p) for p in PERSPECTIVES}, model))
+    with rep.running():
+        with tempfile.TemporaryDirectory(prefix="rihmasto-assess-", ignore_cleanup_errors=True) as tmp:
+            body = _examine(project, bare, Path(tmp), revision, committed, which, rep)
+        proposals, panel = _panel(model, body, rep)
+        rep.start(progress_words.RECORD, "Writing the record and putting its sha256 in the ledger")
+        record = _record(project, body, person=person, persona=persona, ref=ref, revision=revision,
+                         committed=committed, proposals=proposals, panel=panel)
+        rep.done(progress_words.RECORD, said=f"{record['id']} recorded")
+        rep.result = {"id": record["id"], **{k: record["counts"][k] for k in ("findings", "proposed")}}
+    return record
 
 
 # -- reading records ----------------------------------------------------------------------------------

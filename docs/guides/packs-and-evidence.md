@@ -53,6 +53,7 @@ An exportable zip for compliance and audit: an AI Act, GDPR or NIS2 review, or a
 | `contract.json`, `spec.md` | what was promised |
 | `evidence.json` | each criterion's evidence state |
 | `decisions.json` | every decision, with its person and persona |
+| `people-in-the-loop.json` | every ask, every signed answer from people in the loop (inside, or outside through a one-use link) and every enforcement change; the summary's decisions by people counts the answers |
 | `gates.json` | every gate verdict, round by round |
 | `holdout-scores.json` | holdout results as scores; the scenarios stay in custody |
 | `gnomon-runs.json` | each Gnomon run: role, model, surface hash, audit-chain head and whether it was intact |

@@ -4,6 +4,7 @@
    page never shows "checked after the run" as Gnomon's in-run assurance. The project line lives in Project settings. */
 
 import { S, $, h, fill, icon, chip, api, act, say, signed, needPerson, enc, button, card, pageHead, skeleton, openModal, closeModal, segmented } from "./core.js";
+import { pick } from "./words.js";
 
 const STATE = { active: ["good", "check-circle", "In use"], waiting: ["warning", "clock", "Waiting on IT"], declined: ["critical", "x-circle", "Declined"],
   withdrawn: ["nm", "dashed", "Withdrawn"] };
@@ -34,7 +35,8 @@ function appliesCard(scope, a) {
 }
 
 function lookList(look) {
-  if (!look) return h("p", { class: "muted small", id: "rn-look-none" }, "Check looks for each runner on this machine and asks its version.");
+  if (!look) return h("p", { class: "muted small", id: "rn-look-none" }, pick("Check finds which AI tools are installed on this computer, and their versions.",
+    "Check looks for each runner on this machine and asks its version."));
   return h("div", null,
     h("ul", { class: "emb-list rn-list", "aria-label": "Runners on this machine" }, look.runners.map((r) =>
       h("li", { class: "rn-row", "data-key": "rn-found:" + r.id },
@@ -139,7 +141,7 @@ export async function renderRunners(seq) {
   try { data = await api("GET", "/api/runners" + (PAGE.project ? "?project=" + enc(PAGE.project) : "")); } finally { done(); }
   if (seq !== S.seq) return;
   PAGE.data = data;
-  document.title = "Runners · Rihmasto.ai";
+  document.title = "Runners · Rihmasto";
   const lookBox = h("div", { id: "rn-look", "aria-live": "polite" }, lookList(PAGE.look));
   const check = button("Check", { icon: "refresh", kind: "small", "data-control": "runners_check", key: "rn-check", aria: "Look for each runner on this machine" });
   check.addEventListener("click", () => act(check.parentNode, async () => {
@@ -148,11 +150,17 @@ export async function renderRunners(seq) {
   }));
   const choose = button("Choose a runner", { icon: "layers", kind: "small primary", "data-control": "runners_set", key: "rn-choose", onclick: openChoose });
   fill(main,
-    pageHead("Runners", "Which harness runs the factory's cells. Gnomon is the default and the reference; another harness is opt-in, approved by IT on a card with its version pinned.", { icon: "layers" }),
-    h("p", { class: "note" }, icon("shield"), h("span", null, h("b", null, "Two levels of assurance. "),
+    pageHead("Runners", pick("Which AI tool writes the code: Gnomon (the default; its rules are enforced while it works). Another tool (such as Claude Code) "
+      + "is opt-in, approved by IT with its version fixed. The details below are for IT.",
+    "Which harness runs the factory's cells. Gnomon is the default and the reference; another harness is opt-in, approved by IT on a card with its version pinned."), { icon: "layers" }),
+    h("p", { class: "note" }, icon("shield"), h("span", null, h("b", null, "Two levels of assurance. "), pick(
+      "With Gnomon the rules (which files the AI may change, which are protected, which commands it may run) are enforced while it works, "
+      + "with a tamper-evident record of every step. With another tool nothing is enforced while it works: afterwards, Rihmasto checks it "
+      + "changed only the files it may, touched nothing protected, wrote tests that failed before the fix, and that the independent reviewer "
+      + "and the hidden tests agree. Work that fails any of these is never accepted.",
       "With Gnomon the write scope, the protected paths and the shell rules are enforced during the run, with a hash-chained record of every tool call. "
       + "With another harness nothing is enforced during the run: after it, Rihmasto checks the diff stays in the write scope, no protected path is touched, "
-      + "each criterion's tests fail first, and the independent verifier and the holdouts pass. A change that fails any of them never merges.")),
+      + "each criterion's tests fail first, and the independent verifier and the holdouts pass. A change that fails any of them never merges."))),
     Object.entries(data.applies).map(([scope, a]) => appliesCard(scope, a)),
     card({ title: "On this machine", icon: "monitor", id: "rn-machine", tools: [check, choose] }, lookBox),
     card({ title: "Choices", icon: "list", id: "rn-choices" }, data.choices.length

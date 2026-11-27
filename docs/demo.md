@@ -37,6 +37,10 @@ Without installing, the two lines are `python -m kernel.cli demo` and
 `python -m cockpit.server --home var/demo`. Running the demo again replaces an earlier demo home,
 and it refuses any other folder that is not empty.
 
+A demo home stays self-contained: the cockpit keeps its lanes inside the home (`var/demo/lanes`, never
+`~/gf-lanes`), and Ask Rihma answers from the cockpit map and Rihma's rules without asking any model. Start it
+with `--assistant gnomon` only if you want Gnomon to answer, in the demo's own lanes.
+
 The cockpit listens on 127.0.0.1 only and prints a link you open once. Then press the **person
 chip** at the top right, type your name, pick the persona the stop below names, and press **Done**.
 Each persona starts in its own lens; the **lens switcher** in the top bar changes it at any time.

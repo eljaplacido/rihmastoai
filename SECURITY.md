@@ -2,12 +2,19 @@
 
 ## Supported versions
 
-Rihmasto is in development. Security fixes go to the `main` branch and the latest release.
+Rihmasto is alpha software. Security fixes go to the `main` branch and the latest release; there
+are no backports while it is before 1.0.0.
 
 | Version | Supported |
 |---|---|
-| 1.0.0.dev0 (latest) | yes |
+| 1.0.0a1 (latest) | yes |
+| 1.0.0.dev0 | no: upgrade to the latest |
 | anything older | no |
+
+Each release's files can be checked before you run them: `sha256sum --check SHA256SUMS`, then
+`gh attestation verify <file> -R eljaplacido/rihmastoai` for its signed build provenance. The same
+holds for Gnomon, Rihmasto's one runtime dependency
+([getting started](docs/getting-started.md#verify-what-you-install)).
 
 ## Report a vulnerability
 

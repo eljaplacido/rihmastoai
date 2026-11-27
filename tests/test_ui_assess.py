@@ -2,8 +2,9 @@
 
 The test builds the demo home (whose Stock levels service is an adopted system), starts the cockpit on
 127.0.0.1 over it, signs in as a developer, opens the adopted project's Assessment tab, assesses it with the
-keyboard, reads its findings by perspective, ticks one and files it as a change card. It looks at the view
-in dark and light and at 1440 and 390 px wide, checks that every control has an accessible name and that
+keyboard, reads its findings by perspective, tries the quick selections, files two findings as different
+kinds, and refiles one after its card is decided. It looks at the view in dark and light and at 1440 and
+390 px wide, checks that every control has an accessible name and that
 the page does not scroll sideways, and after every step that there was no console error, uncaught exception,
 failed request or Content-Security-Policy violation. It is skipped when Chrome is not installed.
 """
@@ -101,6 +102,11 @@ class UiAssessTest(unittest.TestCase):
         b.click("#menu-pop .menu-item", text=word, what=f"{word} in the theme menu")
         b.wait(f"document.documentElement.dataset.theme === {json.dumps(word.lower())}", f"the {word} theme")
 
+    def choose(self, selector: str, value: str) -> None:
+        self.browser.eval(f"(() => {{ const s = document.querySelector({json.dumps(selector)});"
+                          f" s.value = {json.dumps(value)}; s.dispatchEvent(new Event('change', {{ bubbles: true }}));"
+                          " return s.value; })()")
+
     def sign_in(self) -> None:
         b = self.browser
         b.cmd("Page.navigate", {"url": f"{self.server.origin}/#k={self.bootstrap}"})
@@ -120,8 +126,9 @@ class UiAssessTest(unittest.TestCase):
         self.sign_in()
         self.step("open the assessment")
         b.cmd("Page.navigate", {"url": f"{self.server.origin}/#/p/{pid}/overview"})
+        b.click('.cap-t[data-capsule="build"]', what="the Build capsule")          # FR-UXO1: Assessment is in Build
         b.click(f'.tabs a[href="#/p/{pid}/assessment"]', what="the Assessment tab")
-        b.wait("(document.querySelector('.view-body h2') || {}).textContent === 'Assessment'"
+        b.wait("((document.querySelector('.view-body h2') || {}).textContent || '').endsWith(' · Assessment')"
                " && !!document.querySelector('[data-control=\"run_assessment\"]')", "the Assessment view")
         self.assertIn("Not assessed yet.", b.eval("document.querySelector('.view-body').textContent"))
         self.assertTrue(b.eval("document.querySelector('#as-panel').disabled"))   # the panel needs a model
@@ -138,17 +145,66 @@ class UiAssessTest(unittest.TestCase):
                                  "Architecture and operations"])
         record = json.loads(stock.path("assessments", "AS-1.json").read_text(encoding="utf-8"))
         self.assertEqual(record["asked_by"], {"person": PERSON, "persona": "developer"})
-        first = next(c for c in record["checks"] if c.get("id") == "F-1")
-        self.step("tick and file a finding")
-        box = "#as-pick-F-1"
-        self.assertIn(first["title"], b.eval(f"document.querySelector('{box}').labels[0].textContent"))
-        b.click(box, what="the first finding's box")
-        b.wait(f"document.querySelector('{box}').checked", "F-1 ticked")
+        findings = [c for c in record["checks"] if c.get("verdict") == "failed"]
+        first = next(c for c in findings if c.get("id") == "F-1")
+        second = next(c for c in findings if c.get("id") != first["id"])
+
+        self.step("review suggested order and kinds")
+        reasons = b.eval("[...document.querySelectorAll('.as-prio ol li .muted')].map((x) => x.textContent)")
+        self.assertTrue(reasons and all(r.strip().endswith(".") for r in reasons))
+        for f in findings:
+            sel = f"#as-kind-{f['id']}"
+            self.assertEqual(b.eval(f"document.querySelector('{sel}').labels[0].textContent.trim()"),
+                             f"File {f['id']} as")
+            self.assertTrue(b.eval(f"document.querySelector('{sel}').value"))
+            why = b.eval(f"document.querySelector('{sel}').getAttribute('aria-describedby')")
+            self.assertIn("Suggested:", b.eval(f"document.getElementById({json.dumps(why)}).textContent"))
+        b.click('[data-key="as-all"]', what="Select all open")
+        b.wait(f"document.querySelector('.as-prio [role=\"status\"]').textContent === '{len(findings)} findings ticked'",
+               "all findings ticked")
+        b.click('[data-key="as-clear"]', what="Clear")
+        b.wait("document.querySelector('.as-prio [role=\"status\"]').textContent === '0 findings ticked'",
+               "the ticked findings cleared")
+        b.click('[data-key="as-top"]', what="Select the top findings")
+        top = min(5, len(findings))
+        b.wait(f"document.querySelector('.as-prio [role=\"status\"]').textContent.startsWith('{top} ')",
+               "the top findings ticked")
+        b.click('[data-key="as-clear"]', what="Clear")
+
+        self.step("file two findings as their own kinds")
+        chosen = {first["id"]: "defect", second["id"]: "infra_change"}
+        for fid, kind in chosen.items():
+            box = f"#as-pick-{fid}"
+            b.click(box, what=f"the {fid} finding's box")
+            b.wait(f"document.querySelector('{box}').checked", f"{fid} ticked")
+            self.choose(f"#as-kind-{fid}", kind)
+        self.assertIn(first["title"], b.eval("document.querySelector('#as-pick-F-1').labels[0].textContent"))
         b.click('[data-control="assessment_changes"]', what="File the ticked findings as changes")
-        filed = b.wait("(document.querySelector('[data-id=\"F-1\"] a[href*=\"/changes/\"]') || {}).textContent",
-                       "the card F-1 was filed as")
-        card = filed.split()[2]
-        self.assertEqual(Canon(stock).get_card(card)["refs"]["origin"], "assessment")
+        cards = {}
+        for fid, kind in chosen.items():
+            filed = b.wait(f"(document.querySelector('[data-id=\"{fid}\"] a[href*=\"/changes/\"]') || {{}}).textContent",
+                           f"the card {fid} was filed as")
+            cards[fid] = filed.split()[2]
+            card = Canon(stock).get_card(cards[fid])
+            self.assertEqual(card["refs"]["origin"], "assessment")
+            self.assertEqual(card["payload"]["triage"]["class"], kind)
+
+        self.step("refile a finding whose card was decided")
+        Canon(stock).decide(cards[first["id"]], "defer", person="Pekka", persona="business_owner",
+                            reason="next quarter")
+        b.cmd("Page.reload", {"ignoreCache": True})
+        box = f"#as-pick-{first['id']}"
+        b.wait(f"!!document.querySelector('{box}') && !!document.querySelector('#as-kind-{first['id']}')",
+               "the decided finding can be filed again with its own kind")
+        self.assertIn(first["id"], b.eval("document.querySelector('.as-prio').textContent"))
+        b.click(box, what="the decided finding's box")
+        self.choose(f"#as-kind-{first['id']}", "change_request")
+        b.click('[data-control="assessment_changes"]', what="Refile the decided finding")
+        changed = b.wait(f"(() => {{ const a = document.querySelector('[data-id=\"{first['id']}\"] a[href*=\"/changes/\"]');"
+                         f" return a && !a.textContent.includes({json.dumps(cards[first['id']])}) ? a.textContent : ''; }})()",
+                         "the decided finding's new card")
+        new_card = Canon(stock).get_card(changed.split()[2])
+        self.assertEqual(new_card["payload"]["triage"]["class"], "change_request")
         for word in ("Light", "Dark"):
             self.step(f"{word.lower()} theme at 1440 px")
             self.width(1440)

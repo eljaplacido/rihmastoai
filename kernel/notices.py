@@ -112,7 +112,8 @@ def render_teams(notice: dict[str, Any]) -> dict[str, Any]:
     card = {"type": "AdaptiveCard", "version": "1.4",
             "body": [{"type": "TextBlock", "text": head, "weight": "Bolder", "wrap": True},
                      {"type": "TextBlock", "text": detail, "wrap": True, "isSubtle": True}],
-            "actions": [{"type": "Action.OpenUrl", "title": OPEN_LABEL, "url": notice["link"]}]}
+            "actions": [{"type": "Action.OpenUrl", "title": notice.get("open_label") or OPEN_LABEL,
+                         "url": notice["link"]}]}
     return {"type": "message",
             "attachments": [{"contentType": "application/vnd.microsoft.card.adaptive", "content": card}]}
 
@@ -128,7 +129,8 @@ def render_slack(notice: dict[str, Any]) -> dict[str, Any]:
     return {"text": head,
             "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": f"*{head}*\n{detail}"}},
                        {"type": "actions", "elements": [{"type": "button", "url": notice["link"],
-                                                         "text": {"type": "plain_text", "text": OPEN_LABEL}}]}]}
+                                                         "text": {"type": "plain_text",
+                                                                  "text": notice.get("open_label") or OPEN_LABEL}}]}]}
 
 
 def render_email(notice: dict[str, Any], *, sender: str, to: list[str], now: dt.datetime) -> EmailMessage:
@@ -142,5 +144,5 @@ def render_email(notice: dict[str, Any], *, sender: str, to: list[str], now: dt.
     msg["Date"] = format_datetime(now)
     msg["Message-ID"] = f"<{notice['event_id']}@rihmasto.invalid>"
     msg["Auto-Submitted"] = "auto-generated"
-    msg.set_content(f"{head}\n\n{detail}\n\n{OPEN_LABEL}:\n{notice['link']}\n")
+    msg.set_content(f"{head}\n\n{detail}\n\n{notice.get('open_label') or OPEN_LABEL}:\n{notice['link']}\n")
     return msg

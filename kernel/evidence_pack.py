@@ -6,7 +6,8 @@ The bundle holds:
 - the capability pack;
 - the contract and the spec;
 - each criterion's evidence state;
-- every decision with its person and persona;
+- every decision with its person and persona, and every signed answer from people in the loop, inside or
+  outside, with the enforcement changes (`people-in-the-loop.json`, kernel/evidence_loop.py);
 - every gate verdict;
 - the holdouts' results as scores only (the scenarios stay in their custody, never in the bundle);
 - the Gnomon runs (role, model, surface hash, audit-chain head and whether it was intact);
@@ -42,6 +43,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from kernel import evidence_loop
 from kernel.canon import DecisionRefused
 from kernel.ledgerstore import LedgerStore
 from kernel.people import is_person
@@ -162,6 +164,7 @@ def _gather(project) -> tuple[dict, bytes]:
         "contract.json": project.read("contract.json") or {"note": "not compiled yet"},
         "evidence.json": _evidence(project),
         "decisions.json": _of(records, "decision"),
+        evidence_loop.FILE: evidence_loop.loop_file(records),
         "gates.json": _of(records, "gate"),
         "holdout-scores.json": (pack.get("acceptance") or {}).get("holdout_scores"),
         "gnomon-runs.json": runs,
@@ -198,10 +201,12 @@ def _assessment_line(project: Any) -> str:
 GUARANTEES = ("pinning", "evals", "revocation", "evidence", "telemetry")
 GOVERNANCE_STATES = ("held", "partial", "lost")
 # Where the factory runs the release itself, by road kind; anything else is an export a site runs.
-FACTORY_RUN = ("local-process", "docker", "azure-containerapps")
+FACTORY_RUN = ("local-process", "docker", "azure-containerapps", "gcp-cloudrun")
 # A target resting on a platform feature nobody has verified: no guarantee there is ever "held".
 UNVERIFIED = {"azure-containerapps": "it rests on Azure Container Apps, rendered and validated but never deployed "
-                                     "(UNVERIFIED)"}
+                                     "(UNVERIFIED)",
+              "gcp-cloudrun": "it rests on Google Cloud Run, rendered, validated and tested against a fake gcloud, "
+                              "not yet run against a real Google Cloud project (UNVERIFIED)"}
 
 
 def _pinning(target: Any, artifacts: dict, guarded: bool) -> tuple[str, str]:
@@ -320,12 +325,13 @@ def _controls(files: dict) -> list:
     """The control table, naming the security scan where there is one."""
     sec = files.get("security.json") or {}
     if not sec.get("scans"):
-        return CONTROLS
+        return evidence_loop.oversight(CONTROLS, files)
     tools = ", ".join(_code(f"{s['tool']} {s['version']}") for s in sec["scans"])
     by = {"ai-act:art15": f"evidence.json, gates.json, holdout-scores.json; security.json: the latest scan by {tools}",
           "nis2:art21": "change control and approvals in decisions.json; security.json: scan findings and the risks "
                         "a named person accepted, with their expiry"}
-    return [dict(c, by=by[c["control"]]) if c["control"] in by else c for c in CONTROLS]
+    return evidence_loop.oversight([dict(c, by=by[c["control"]]) if c["control"] in by else c for c in CONTROLS],
+                                   files)
 
 
 UNCHECKED_END = ("the ledger's end was not checked against a head kept outside it, so records cut from its end "
@@ -340,7 +346,7 @@ def attestation(files: dict) -> dict:
     pack = files["capability-pack.json"] if isinstance(files["capability-pack.json"], dict) else {}
     if not lc["intact"] or any(_chain_intact(r) is False for r in runs):
         verdict = "chain broken"
-    elif not pack.get("acceptance") or not files["decisions.json"]:
+    elif not pack.get("acceptance") or not (files["decisions.json"] or evidence_loop.answered(files)):
         verdict = "insufficient evidence"
     else:
         verdict = "attestable"
@@ -403,7 +409,7 @@ def _readme(project, files: dict) -> str:
              "This bundle is evidence for a reviewer to judge. It does not claim conformity with any framework.", "",
              "## At a glance", "",
              _pack_line(pack),
-             f"- Decisions by people: {len(files['decisions.json'])}. Gate verdicts: {len(files['gates.json'])}.",
+             evidence_loop.decisions_line(files),
              f"- Gnomon runs: {len(files['gnomon-runs.json'])}, of which audit chain not intact: {broken_runs}.",
              evidence_line(files.get("cell-runners.json") or []),
              _ledger_line(lc),

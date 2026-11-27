@@ -91,7 +91,7 @@ legend { font-size: var(--fs-md); font-weight: 600; padding: 0 4px; color: var(-
   background: transparent; color: var(--text-2); font: 500 var(--fs-md)/1 var(--font-sans); cursor: pointer; transition: background var(--t-fast), color var(--t-fast);
 }
 .seg-b:hover { color: var(--text); }
-.seg-b[aria-checked="true"] { background: var(--raised); color: var(--text); box-shadow: var(--e1); }
+.seg-b[aria-checked="true"], .seg-b[aria-pressed="true"] { background: var(--raised); color: var(--text); box-shadow: var(--e1); }
 
 /* -- chips: a state is an icon and a word, never colour alone ----------------------------------- */
 
@@ -216,7 +216,11 @@ html.signed-out .shell { grid-template-columns: 1fr; }
 @container topbar (max-width: 1519px) {
   .lens-b .lbl { display: none; }
   .lens-b { padding: 0 9px; }
+  /* the chosen view keeps its word, so the reader sees what the icons change */
+  .lens-b[aria-checked="true"] .lbl { display: inline; }
+  .lens-b[aria-checked="true"] { padding: 0 10px; }
 }
+.lens-lbl { flex: none; color: var(--text-3); font: 500 var(--fs-sm)/1 var(--font-sans); white-space: nowrap; margin-right: calc(-1 * var(--s2)); }
 .tb-menu { display: none; }
 .crumbs { display: flex; align-items: center; gap: 4px; min-width: 64px; flex: 1 1 0; font-weight: 500; color: var(--text-2); white-space: nowrap; overflow: hidden; }
 .crumbs a { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; }
@@ -276,8 +280,10 @@ html.signed-out .shell { grid-template-columns: 1fr; }
 
 main { width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--s5) var(--s6) 96px; outline: none; flex: 1; }
 .toasts { position: fixed; top: calc(var(--topbar-h) + 10px); left: 50%; transform: translateX(-50%); z-index: 60; display: grid; gap: var(--s2); width: min(560px, calc(100vw - 32px)); pointer-events: none; }
+/* A toast's text lets clicks through to the header's buttons under it; its link and Dismiss still take them. */
+.toast a, .toast button { pointer-events: auto; }
 .toast {
-  pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; padding: 10px 8px 10px 12px; border-radius: var(--r-lg);
+  pointer-events: none; display: flex; align-items: flex-start; gap: 10px; padding: 10px 8px 10px 12px; border-radius: var(--r-lg);
   background: var(--overlay); border: 1px solid var(--border-strong); box-shadow: var(--e2); font-size: var(--fs-md); animation: enter var(--t-enter) var(--ease-out);
 }
 .toast > span { flex: 1; padding-top: 1px; }
@@ -305,6 +311,7 @@ html.drawer-open .fab { display: none; }
     position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;   /* still the name */
   }
   html.drawer-open .lens-b, html.library-open .lens-b { padding: 0 9px; }
+  html.drawer-open .lens-lbl, html.library-open .lens-lbl { display: none; }
 }
 /* The drawer takes 400px from the page: below 1700px a stage's name no longer fits its step, so the
    stepper shows its icons (each keeps its tooltip), as it does on a narrow screen. */
@@ -664,14 +671,15 @@ html.customizing .widget.cz:focus-visible { outline: 2px solid var(--accent-text
 .cat-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--fs-xs); color: var(--text-3); }
 .cat-pack { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
 .cat-pack > .ic { color: var(--text-3); }
-.live-row, .health-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s3); align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
+.live-row, .health-row { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, max-content); gap: var(--s3); align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
 .live-row:first-child, .health-row:first-child { border-top: 0; padding-top: 0; }
 .live-b, .hr-b { min-width: 0; }
 .live-b > a, .hr-b > a { font-weight: 500; color: var(--text); }
 .live-m { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: var(--fs-sm); color: var(--text-3); overflow: hidden; }
 .live-m > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .hr-b p { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hr-f { display: flex; flex-direction: column; align-items: flex-end; font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; }
+/* the forecast wraps and may shrink: with a wider font (a Linux runner's) a no-wrap line pushed the page sideways */
+.hr-f { display: flex; flex-direction: column; align-items: flex-end; font-size: var(--fs-sm); font-weight: 500; min-width: 0; text-align: right; overflow-wrap: anywhere; }
 .hr-f small { color: var(--text-3); font-weight: 400; }
 @container (max-width: 440px) {
   .health-row { grid-template-columns: minmax(0, 1fr); row-gap: 4px; }
@@ -788,6 +796,7 @@ dialog::backdrop { background: var(--backdrop); }
 .dots i:nth-child(2) { opacity: 0.7; }
 .dots i:nth-child(3) { opacity: 0.4; }
 .bub .btns { margin-top: var(--s2); }
+.bub > p.ans { white-space: pre-line; overflow-wrap: anywhere; }   /* an answer's own lines and "- " lists (FR-SRC2) */
 .by { margin: var(--s2) 0 0; }
 .srcs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--s2); }
 .src { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--r-pill); border: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-2); background: var(--surface); }
@@ -1066,7 +1075,6 @@ details > summary { cursor: pointer; }
 .signin-card { max-width: 520px; display: grid; gap: var(--s3); padding: var(--s6); }
 .toast-inline { display: flex; gap: 8px; align-items: center; color: var(--warning); }
 
-html:not(.on-home) .tb-customize { display: none; }
 /* one column that may shrink to the page: a wide table scrolls in its own box instead of widening the view */
 .view-body > div:not(.with-side), .view-body .cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); align-content: start; }
 .view-body > div > .section, .view-body > div > .q { margin-top: 0; margin-bottom: 0; }
@@ -1138,6 +1146,7 @@ p.empty { display: block; padding: var(--s3) 0; text-align: left; color: var(--t
 .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--s3); }
 .note { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: var(--r-md); background: var(--sunken); border: 1px solid var(--border); font-size: var(--fs-md); color: var(--text-2); }
 .note > .ic { margin-top: 2px; color: var(--text-3); }
+.note > span, .note .mono { min-width: 0; overflow-wrap: anywhere; }   /* a long path never widens the page */
 .note.warning { background: var(--warning-bg); border-color: var(--warning-border); color: var(--text); }
 .note.warning > .ic { color: var(--warning); }
 .people { display: inline-flex; align-items: center; }
@@ -1227,6 +1236,10 @@ main > .card { margin-bottom: var(--gap); }
 .acc-amber { background: #e8920c; } .acc-teal { background: #0f8f86; } .acc-violet { background: #6d4fd8; }
 .acc-blue { background: #2f6fd6; } .acc-green { background: #2f8a3c; } .acc-rose { background: #d6416b; }
 .np-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); }
+/* Nothing in New project may push it wider than a phone: long paths, chips and button rows wrap (Linux fonts run wider). */
+.np-form, .np-form * { min-width: 0; }
+.np-form { overflow-wrap: anywhere; }
+.np-form .btns { flex-wrap: wrap; }
 .np-form .field { margin: 0; }
 /* New project: the need part and the existing-project part keep the form's spacing and never widen it. */
 .np-part { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); min-width: 0; }
@@ -1319,7 +1332,8 @@ label.scan-label { cursor: pointer; }
 /* -- widths: no horizontal scroll at any width ----------------------------------------------------- */
 
 @media (max-width: 1280px) {
-  .lens-b .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }   /* still the name */
+  .lens-lbl { display: none; }
+  .lens-b .lbl, .lens-b[aria-checked="true"] .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }   /* still the name */
   .lens-b { padding: 0 9px; }
   .search-btn { min-width: 0; }
   .with-side { grid-template-columns: minmax(0, 1fr); }
@@ -1405,7 +1419,6 @@ label.scan-label { cursor: pointer; }
   .seg, .bar, .part, .segp, .wf-bar { forced-color-adjust: none; }
 }
 
-.brand-text .brand-tld { color: var(--accent); font-weight: 600; }
 
 /* -- the intake summary (cockpit/static/inputs.js): from your input, asked, assumed, side by side -------- */
 
@@ -1525,8 +1538,9 @@ label.scan-label { cursor: pointer; }
 .shp-row:first-child { border-top: 0; }
 .home-setup:empty { display: none; }
 .home-setup .card { margin-bottom: var(--gap); }
-.mdl-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s3); align-items: start; padding: 12px 0; border-top: 1px solid var(--border); }
-.mdl-row:first-child { border-top: 0; }
+.mdl-row, .hm-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s3); align-items: start; padding: 12px 0; border-top: 1px solid var(--border); }
+.mdl-row:first-child, .hm-row:first-child { border-top: 0; }
+.hm-home { margin: var(--s2) 0; }
 .mdl-main { min-width: 0; overflow-wrap: anywhere; }
 .mdl-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .mdl-tools { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
@@ -1537,7 +1551,7 @@ label.scan-label { cursor: pointer; }
 @media (max-width: 900px) {
   .shp-cols { grid-template-columns: minmax(0, 1fr); }
   .shp-msg { max-width: 100%; }
-  .mdl-row { grid-template-columns: minmax(0, 1fr); }
+  .mdl-row, .hm-row { grid-template-columns: minmax(0, 1fr); }
   .mdl-tools { justify-content: flex-start; }
 }
 
@@ -1588,11 +1602,37 @@ label.scan-label { cursor: pointer; }
 .as-h label { font-weight: 500; overflow-wrap: anywhere; }
 .as-h input[type="checkbox"] { width: 18px; height: 18px; flex: none; }
 .as-row p { margin: 4px 0 0; overflow-wrap: anywhere; }
+/* a precise assessment (assessment_precise.js, FR-ASP1): the two lines on top, a reason, the old plans */
+.asp-lines p { display: flex; gap: var(--s2); align-items: flex-start; margin: 0 0 var(--s2); overflow-wrap: anywhere; }
+.asp-lines .ic { flex: none; margin-top: 3px; }
+.asp-why { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s2); }
+.asp-why input { flex: 1 1 14rem; min-width: 0; }
+.asp-plans-h { margin-top: var(--s4); }
+/* FR-ASP2: a finding for later on its row, and the assessment's word on the landing's briefing */
+.asp-later .btn { margin-left: var(--s1); }
+.dv-assess { margin: var(--s3) 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--sunken);
+  border: 1px solid var(--border); color: var(--text-2); }
+.dv-assess p { margin: 0 0 var(--s2); overflow-wrap: anywhere; }
+.dv-assess p > .ic { vertical-align: -2px; margin-right: 4px; }
 .as-ev { margin: 4px 0 0; gap: 2px; font-size: var(--fs-sm); color: var(--text-2); }
 .as-ev li, .as-ev code { overflow-wrap: anywhere; word-break: break-word; }
 .as-fix { color: var(--text); }
 .as-check { display: inline-flex; align-items: center; gap: 6px; }
 .as-more summary { cursor: pointer; font-size: var(--fs-sm); color: var(--text-2); padding: 4px 0; }
+
+/* The Alignment view (cockpit/static/alignment.js): a repository's own structure, proposed item by item. */
+.align .card { min-width: 0; }
+.al-t { overflow-wrap: anywhere; min-width: 0; }
+.al-src { color: var(--text-2); overflow-wrap: anywhere; word-break: break-word; }
+.al-acts { margin-top: var(--s2); }
+.al-edit { margin-top: var(--s2); gap: var(--s2); }
+.al-edit textarea, .al-edit input { width: 100%; max-width: 100%; box-sizing: border-box; }
+.al-pre { margin: var(--s2) 0; padding: var(--s2); max-height: 18rem; overflow: auto; max-width: 100%; box-sizing: border-box;
+  background: var(--raised); border: 1px solid var(--border); border-radius: 6px; font-size: var(--fs-sm);
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.al-pre:focus-visible { outline: 2px solid var(--accent-text); outline-offset: 2px; }
+.al-callout .note a { margin-left: 4px; }
+.al-group .card-tools .btns { flex-wrap: wrap; justify-content: flex-end; }
 
 /* A small capability's runtime and faces, in its capability pack (project.js runtimeSection). */
 .pack-runtime h4 { margin: var(--s3) 0 0; font-size: var(--fs-sm); }
@@ -1638,3 +1678,106 @@ label.scan-label { cursor: pointer; }
 .amn-picks { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .amn-summary { margin: 0; }
 .amn-tab .card { margin-bottom: var(--gap); }
+/* The Console tab and Health (console.js, health.js; FR-CON1, FR-CHK1). */
+.con-out { background: var(--sunken); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s3); font-size: var(--fs-sm); min-height: 120px; max-height: 420px; overflow: auto; }
+.con-what { display: block; margin-bottom: var(--s2); color: var(--text-2); overflow-wrap: anywhere; }
+.con-path { overflow-wrap: anywhere; }
+.con-state { display: inline-flex; }
+.con-offers .btn { max-width: 100%; }
+.con-offers .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.con-li { overflow-wrap: anywhere; }
+.con-fs, .hl-fs { border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s2) var(--s3); margin: 0 0 var(--s3); display: grid; gap: 6px; }
+.con-picks, .hl-picks { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
+#con-gnomon, #con-cmds { width: 100%; }
+.hl-line { display: flex; align-items: center; gap: 8px; font-weight: 500; margin: 0 0 var(--s3); }
+.hl-counts { margin-bottom: var(--s4); align-items: center; }
+.hl-sum { margin: 6px 0 0; }
+.hl-trend { display: inline-flex; gap: 3px; align-items: center; }
+.hl-sq { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--border-strong); }
+.hl-sq.ok { background: var(--good); border-color: var(--good); }
+.hl-sq.bad { background: var(--critical); border-color: var(--critical); }
+.hl-sq.nm { background: transparent; border-style: dashed; }
+.hl-ev pre { margin-top: var(--s2); }
+.hl-cell { display: inline-flex; align-items: center; gap: 4px; }
+.hl-kpi { padding: var(--s3) var(--s4); display: grid; gap: 4px; }
+.hl-kpi-n { font-size: var(--fs-xl); }
+@media (max-width: 760px) { .con-tab .ev-grid { grid-template-columns: minmax(0, 1fr); } .hl-tab .row2 { grid-template-columns: minmax(0, 1fr); } }
+/* The paved roads and the integration kinds in Settings, and where a project deploys (roads.js). */
+.road-list { list-style: none; display: grid; padding: 0; margin: 0; }
+.road-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: var(--s3); align-items: start;
+  padding: 10px 0; border-top: 1px solid var(--border); }
+.road-row:first-child { border-top: 0; }
+@media (max-width: 640px) { .road-row { grid-template-columns: 32px minmax(0, 1fr); } .road-row > .chip { grid-column: 2; justify-self: start; } }
+.road-missing { margin: 4px 0 0; padding-left: 18px; color: var(--text-2); }
+.road-missing li { overflow-wrap: anywhere; }
+.road-row .sig-m span { overflow-wrap: anywhere; }
+.drive-card { padding-bottom: var(--s3); }
+.kinds-list { list-style: none; padding: 0; margin: 0; }
+.kinds-list li { padding: 8px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+
+/* Real projects of every shape (FR-RPJ1): the scan step's notices, an adopted project's state, Settings > Folders. */
+.proposal.info { border-color: var(--border); background: var(--sunken); }
+.proposal.info .ic { color: var(--accent); }
+.feed-note { min-width: 0; }
+.feed-note > div { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.feed-acts { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s2); align-items: center; }
+.feed-acts p { flex-basis: 100%; }
+.feed-note .seg { margin-top: var(--s2); flex-wrap: wrap; }
+.feed-repos { max-height: none; margin-top: var(--s2); }
+.feed-usage { display: grid; gap: var(--s1); margin: 0; }
+.feed-usage .seg { flex-wrap: wrap; }
+.scan-progress { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.scan-error { overflow-wrap: anywhere; }
+.adopted-line { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s2); min-width: 0; }
+.adopted-line .chip { max-width: 100%; }
+.adopted-line .chip span { overflow-wrap: anywhere; white-space: normal; }
+.adopted-act { overflow-wrap: anywhere; min-width: 0; }
+.adopted-card { min-width: 0; }
+.adopted-card .watch-line, .stated-row { overflow-wrap: anywhere; }
+.stated-row { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: baseline; margin-bottom: var(--s2); }
+.areas-tbl { width: 100%; }
+.areas-tbl td, .areas-tbl th { overflow-wrap: normal; word-break: normal; vertical-align: top; }
+@media (max-width: 560px) { .areas-tbl td, .areas-tbl th { padding-left: 6px; padding-right: 6px; } .areas-tbl { font-size: var(--fs-sm); } }
+.adopted-side .sc { grid-template-columns: minmax(70px, auto) minmax(0, 1fr); align-items: baseline; }
+.adopted-side .sc-c { white-space: normal; overflow-wrap: anywhere; text-align: right; }
+.fold-list { display: grid; gap: var(--s2); margin: 0 0 var(--s3); }
+.fold-row { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; min-width: 0; }
+.fold-path { overflow-wrap: anywhere; min-width: 0; }
+.fold-form { display: grid; gap: var(--s2); }
+.fold-form .field { margin: 0; }
+
+/* What Rihmasto understood (Overview): the same understanding read as each reader. */
+.understood-lens { display: grid; gap: var(--s2); margin-top: var(--s3); min-width: 0; }
+.understood-lens [role="tablist"] { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.understood-lens [role="tab"] { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--raised); padding: var(--s1) var(--s2); }
+.understood-lens [role="tab"][aria-selected="true"] { border-color: var(--accent); font-weight: 600; }
+.understood-lens h4 { margin: var(--s2) 0 var(--s1); font-size: var(--fs-sm); }
+.understood-lens ul { margin: 0; padding-left: 1.2em; overflow-wrap: anywhere; }
+
+/* The set-up checklist's and suggestions' buttons carry long labels: on a phone they wrap instead of widening the page. */
+.mdl-row { flex-wrap: wrap; min-width: 0; }
+.mdl-main, .mdl-tools { min-width: 0; max-width: 100%; }
+.mdl-tools .btn { white-space: normal; max-width: 100%; text-align: left; height: auto; }
+/* People and access (people.js, FR-PPL1): solo or team, users, groups, roles, pages, the provider, agents */
+.fr-mode { border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 12px; margin: 0 0 var(--s3); }
+.fr-mode legend { padding: 0 4px; font-weight: 600; }
+.fr-mode-row { display: flex; flex-wrap: wrap; gap: var(--s3); margin-bottom: 6px; }
+.ppl-now { margin: 0 0 var(--s2); }
+.ppl-sec { padding-top: var(--s3); margin-top: var(--s3); border-top: 1px solid var(--border); min-width: 0; }
+.ppl-sec h4 { margin: 0 0 var(--s2); font-size: var(--fs-md); }
+.ppl-form { display: grid; gap: var(--s2); max-width: 640px; }
+.ppl-form .field { margin: 0; }
+.ppl-personas { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 4px 0 var(--s2); }
+.ppl-row { grid-template-columns: minmax(0, 1fr) auto auto auto; display: grid; gap: var(--s2); align-items: center; padding: 8px 0;
+  border-top: 1px solid var(--border); }
+.ppl-row:first-child { border-top: 0; }
+.ppl-list { list-style: none; padding: 0; margin: 0 0 var(--s2); }
+.ppl-list li { padding: 6px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.ppl-link { display: grid; gap: 6px; margin: var(--s2) 0; }
+.ppl-link input, .ppl-card input, .ppl-card select, .ppl-card textarea { max-width: 100%; min-width: 0; }
+.ppl-card .sig-m span, .ppl-card .mono { overflow-wrap: anywhere; }
+.ib-as-f { gap: var(--s2); align-items: center; }
+@media (max-width: 640px) {
+  .ppl-row { grid-template-columns: minmax(0, 1fr); }
+  .ppl-row .btn { justify-self: start; }
+}

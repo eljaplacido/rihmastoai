@@ -161,7 +161,7 @@ class ScanTest(MaterialCase):
         (root / "brief.md").write_text("# Brief\n\n" + "The register must log visitors.\n" * 900, encoding="utf-8")
         (root / "plan.md").write_text("# Plan\n\n" + "First the lobby, then the gates.\n" * 400, encoding="utf-8")
         for n in range(4):
-            (root / "notes" / f"note-{n}.md").write_text("# Note\n\n" + "A remark from the pilot.\n" * 200,
+            (root / "notes" / f"note-{n}.md").write_text(f"# Note {n}\n\n" + "A remark from the pilot.\n" * 200,
                                                          encoding="utf-8")
         mp, text, _ = material.gather(root, budget=20_000)
         rows = self.rows(mp)

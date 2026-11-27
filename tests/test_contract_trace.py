@@ -10,8 +10,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(REPO, "tools"))
+sys.path.insert(0, HERE)   # its sibling test_contract_check, also as `python -m unittest tests.test_contract_trace`
 import contract_trace as ct  # noqa: E402
-
 from test_contract_check import base_contract  # noqa: E402
 
 

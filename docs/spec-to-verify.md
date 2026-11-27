@@ -2,7 +2,7 @@
 
 Status: design proposal, 22 Nov 2026.
 Grounded in Gnomon `master` at `fb458ea` (22 Nov 2026), whose `[verify]` keys v0.6.6 released
-the same day. Rihma needs Gnomon 0.6.5 or later; 0.6.6 recommended
+the same day. Rihma needs Gnomon 0.6.5 or later; 0.6.7 (the latest) recommended
 ([gnomon-0.6.6-audit.md](gnomon-0.6.6-audit.md)).
 
 A specification in prose cannot stop anything. Rihma turns it into a chain of

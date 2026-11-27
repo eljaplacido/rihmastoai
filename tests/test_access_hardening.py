@@ -404,7 +404,7 @@ class AccessPageTest(FactoryTestCase):
         b.step = "single operator"
         b.cmd("Page.navigate", {"url": "about:blank"})          # the link differs only by its fragment: load it anew
         b.cmd("Page.navigate", {"url": f"{self.server.origin}/#k={self.bootstrap}"})
-        self.fits(kaccess.SINGLE_NOTE)
+        self.fits("Only you use this cockpit")        # kaccess.SINGLE_NOTE in a business owner's words (words.js)
         # enforced: Chrome puts the provider's ID token in Authorization on every request, as oauth2-proxy
         # in front of it would (over the page's own value); the page keeps its session in X-Rihmasto-Session
         b.step = "enforced"

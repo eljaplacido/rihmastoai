@@ -133,11 +133,26 @@ def _held_release(rels: list) -> str | None:
             f"{blocked.get('environment', 'its next environment')}: {findings}; {then}")
 
 
+def _holding(project, rels: list) -> tuple[str | None, dict, dict]:
+    """What holds delivery for a person: a held release, and required answers from people in the loop (FR-HITL2)."""
+    from kernel.hitl import holds, holds_line
+
+    release = _held_release(rels)
+    asks = holds(project)
+    line = "; ".join(x for x in (release, holds_line(asks) if asks else None) if x) or None
+    return line, ({"blocked": rels[-1]["blocked"]} if release else {}), ({"hitl": asks} if asks else {})
+
+
+PANEL_UNUSABLE = ("The model gave no usable answer to the panel: check Models setup, then Advance runs the panel "
+                  "again.")
+
+
 def now(project) -> dict:
     canon, meta = Canon(project), project.meta
-    waiting = [c for c in canon.cards() if c["kind"] in DECISION_KINDS
-               and (c["kind"] != "question" or c.get("blocking"))
-               and (c["kind"] != "change" or (c["payload"].get("triage") or {}).get("needs_decision"))]
+    # every open card that waits on a person, as the Inbox lists it (FR-AOP3): a change whatever its triage, an update;
+    # a question or an enforcement card only when it holds the work
+    waiting = [c for c in canon.cards() if (c["kind"] in DECISION_KINDS or c["kind"] in ("enforcement", "update"))
+               and (c["kind"] not in ("question", "enforcement") or c.get("blocking"))]
     tasks = project.read("tasks.json", {}) or {}
     building = [t for t, s in tasks.items() if s.get("status") == "building"]
     records = project.ledger().records()
@@ -145,6 +160,8 @@ def now(project) -> dict:
     since = (last.get("event") or {}).get("at")
     if meta.get("halted"):
         return {"state": "failed", "line": "A person stopped the build.", "since": since}
+    if meta.get("panel_unusable"):          # the model answered nothing usable: the concept is not done (FR-NVL3)
+        return {"state": "failed", "line": PANEL_UNUSABLE, "since": since, "reason": "model"}
     if meta.get("pause"):
         pz = meta["pause"]
         where = f" at {pz['stopped_at']}" if pz.get("stopped_at") else " (stopping at the next safe point)"
@@ -156,14 +173,14 @@ def now(project) -> dict:
         line = f"Building {building[0]}: {title[:70]}" + (f" (repair round {rounds})" if rounds else "")
         return {"state": "working", "line": line, "since": since}
     rels = _releases(project)
-    held = _held_release(rels)
+    held, blocked, extra = _holding(project, rels)
     if waiting:
         kinds = sorted({c["kind"].replace("_", " ") for c in waiting})
         line = f"{len(waiting)} decision(s) waiting: " + ", ".join(kinds) + (f"; {held}" if held else "")
-        return {"state": "waiting_on_you", "line": line, "since": since, "cards": [c["id"] for c in waiting]}
+        return {"state": "waiting_on_you", "line": line, "since": since, "cards": [c["id"] for c in waiting]} | extra
     if held:
         return {"state": "waiting_on_you", "line": held[0].upper() + held[1:], "since": since, "cards": [],
-                "blocked": rels[-1]["blocked"]}
+                **blocked} | extra
     if rels and rels[-1].get("state") == "done":
         return {"state": "done", "line": f"Release {rels[-1]['number']} is live ({meta['maturity']}).", "since": since}
     if rels and rels[-1].get("state") == "failed":
@@ -172,6 +189,10 @@ def now(project) -> dict:
         return {"state": "failed", "since": since,
                 "line": f"Release {rels[-1]['number']} stopped: "
                         f"{custody_safe(rels[-1].get('reason')) or rels[-1].get('failed_step')}"}
+    if meta.get("source_kind") == "adopted" and meta.get("intent"):     # its own state, not a stage (FR-RPJ1)
+        doing = {"monitor": "monitoring", "maintain": "maintaining", "improve": "improving"}.get(meta["intent"])
+        return {"state": "working", "line": f"Adopted, {doing}: waits for upstream changes, a change or a person.",
+                "since": since}
     return {"state": "working", "line": f"Stage {meta['stage']}: ready for the next step.", "since": since}
 
 
@@ -185,6 +206,9 @@ def _lock_is_free(lane: Path) -> bool:
             return True
     except LockHeld:
         return False
+
+
+RECENT = 12   # the tool steps the live view keeps, newest first
 
 
 def live(project, *, lanes_root=None) -> dict:
@@ -207,7 +231,7 @@ def live(project, *, lanes_root=None) -> dict:
             continue  # the holder died mid-task: the system freed its lock, and its lease file stayed
         since = held.get("since") if isinstance(held.get("since"), (int, float)) else lease.stat().st_mtime
         out: dict[str, Any] = {"running": True, "task": holder.split(":", 1)[1], "lane": lane.name, "steps": 0,
-                               "model": None, "role": None, "last": None, "ended": False}
+                               "model": None, "role": None, "last": None, "recent": [], "ended": False}
         trails = _trails_since(lane, since)
         return _read_trail(trails[-1], out) if trails else out
     return {"running": False, "why": "no lane is held for this project"}
@@ -225,7 +249,9 @@ def _trails_since(lane: Path, since: float) -> list[Path]:
 
 
 def _read_trail(path: Path, out: dict[str, Any]) -> dict[str, Any]:
-    """Fold one Gnomon audit trail into the live view: role, model, tool steps, the last action."""
+    """Fold one Gnomon audit trail into the live view: role, model, tool steps, the last action and the steps
+    before it, newest first (RECENT of them, the last action first: its box's Expand shows them, FR-CMP1)."""
+    out.setdefault("recent", [])
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             rec = json.loads(line)
@@ -238,8 +264,9 @@ def _read_trail(path: Path, out: dict[str, Any]) -> dict[str, Any]:
             out["model"] = rec.get("model") or out["model"]
         elif kind == "tool_call":
             out["steps"] += 1
-            out["last"] = {"tool": rec.get("tool"), "target": str(rec.get("target") or "")[:120],
-                           "at": rec.get("ts"), "bucket": rec.get("bucket")}
+            out["last"] = step = {"tool": rec.get("tool"), "target": str(rec.get("target") or "")[:120],
+                                  "at": rec.get("ts"), "bucket": rec.get("bucket")}
+            out["recent"] = [step] + out["recent"][:RECENT - 1]
         elif kind == "session_end":
             out["ended"] = True
     return out
@@ -274,6 +301,28 @@ def try_it(project) -> dict:
     return {"release": number, "env": env, "url": base, "items": items}
 
 
+def _none_ran(base: dict) -> bool:
+    runs = [r.get("counts") or {} for r in base.get("runs") or [] if isinstance(r, dict)]
+    return bool(runs) and not any(c.get("passed") or c.get("failed") for c in runs)
+
+
+def failed_baseline(project) -> str:
+    """An adopted project whose existing tests fail at its baseline: a health item, recorded, never judged."""
+    if project.meta.get("source_kind") != "adopted":
+        return ""
+    base = project.read("baseline.json") or {}
+    if base.get("verdict") != "failed":
+        return ""
+    from kernel.native_apply import baseline_passes_by_root
+
+    if baseline_passes_by_root(project):      # its own test roots ran and pass: a run from the root misled (FR-SRC1)
+        return ""
+    cmd = base.get("command") or " ".join((base.get("runs") or [{}])[0].get("command") or [])
+    said = ("the existing suite could not run at the baseline: errors while collecting, no test ran"
+            if _none_ran(base) else "existing tests fail at the baseline")
+    return said + " (recorded, not judged)" + (f": {cmd}" if cmd else "")
+
+
 def health(project) -> dict:
     canon = Canon(project)
     tasks = project.read("tasks.json", {}) or {}
@@ -289,6 +338,7 @@ def health(project) -> dict:
     rels = _releases(project)
     if rels and rels[-1].get("state") == "failed":
         reasons.append(f"release {rels[-1]['number']} stopped")
+    reasons += list(filter(None, [failed_baseline(project)]))       # an adopted baseline whose tests fail
     if reasons and status == "on_track":
         status = "at_risk"
     started, durations = {}, []
@@ -307,7 +357,7 @@ def health(project) -> dict:
     contract = project.read("contract.json") or {"tasks": []}
     left = sum(1 for t in contract["tasks"] if tasks.get(t["id"], {}).get("status") != "merged")
     per = round(median(durations), 1) if durations else None
-    forecast = {"tasks_left": left, "median_task_minutes": per,
+    forecast = {"tasks_left": left, "tasks_total": len(contract["tasks"]), "median_task_minutes": per,
                 "eta_minutes": round(left * per) if per is not None else None,
                 "basis": f"{len(durations)} merged task(s) in this project" if durations
                 else "not measured: no task merged yet"}

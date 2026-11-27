@@ -1,5 +1,4 @@
-"""`rihmasto`: the operator's command line (FR-N2). `rihma` is the same command under its earlier
-name (D-0013). Without installing it, run `python -m kernel.cli`.
+"""`rihmasto`: the operator's command line (FR-N2); `rihma` is its earlier name (D-0013). Or `python -m kernel.cli`.
 
 The chain, from a need to a running product
     rihmasto new "Title" --source "idea text or a path" [--posture balanced] [--mode M --maturity M] --requested-by Aino
@@ -8,9 +7,9 @@ The chain, from a need to a running product
     rihmasto intake <pid> --source-file request.md --requested-by Aino
     rihmasto run <pid>                  advance until a person is needed
     rihmasto tick                       carry out decided concepts (a validated one becomes a project); runs none
-    rihmasto status [<pid>]
-    rihmasto answer <pid> <Q-id> "text" --person Aino --persona business_owner
-    rihmasto assume <pid> <Q-id> --person Aino --persona business_owner
+    rihmasto status [<pid>]             each open question card with its Q-id
+    rihmasto answer <pid> <Q-id or its C-id> "text" --person Aino --persona business_owner
+    rihmasto assume <pid> <Q-id or its C-id> --person Aino --persona business_owner
     rihmasto decide <pid> <C-id> <verdict> --person Ilkka --persona it [--reason ...]
     rihmasto change <pid> "text" --person Tester --persona end_user
     rihmasto apply <pid> <C-id>         carry a triaged (and, if needed, accepted) change back
@@ -19,7 +18,7 @@ The chain, from a need to a running product
     rihmasto operate <pid>              one operations round: probes, incidents
     rihmasto learn                      lessons across projects, proposals, model reliability
     rihmasto lanes                      prepare the analyst lane and show the pool
-    rihmasto doctor                     Python, Gnomon (0.6.5 or later; 0.6.6 recommended), git, docker, the
+    rihmasto doctor                     Python, Gnomon (0.6.5 or later; 0.6.7 recommended), git, docker, the
                                         lanes root, endpoint keys (set or not); exit 1 when Gnomon is missing
                                         or too old
     rihmasto demo [--home DIR]          a demo factory home with no model keys, no network and no Gnomon (var/demo)
@@ -45,12 +44,13 @@ The capability layer (a write is signed with --person and --persona)
     rihmasto autonomy show [<pid>] | autonomy set <1-4> [--project PID] --reason "..."
     rihmasto signal log --text "..." --channel chat --source "..." | signal list | signal triage <S-id>
     rihmasto concept edit <C-id> [--title ...] [--profile ...] [--maturity ...] [--mode ...] | concept apply
+    rihmasto console <pid> -- <command> | shell <pid> | checks list|enable|disable|run|history|tick
     rihmasto observe <trigger> --facts '{"project": "<pid>"}' --source "..." | updates apply <pid>
     rihmasto square | catalogue                   the delivery square; the capability catalogue
     rihmasto automations list|add|edit|pause|resume|remove|run-now|dry-run|tick|history|install-help
 
 The factory home is --home, else $RIHMASTO_HOME, $RIHMA_HOME or $GNOMONFACTORY_HOME, else var/.
-A refused capability or signed command prints why on stderr and exits 2 (access: docs/guides/access.md).
+A refused command (a mistyped id or verdict too) prints why on stderr and exits 2 (access: docs/guides/access.md).
 Models are reached only through Gnomon, in the lanes (`kernel/routing.json`); `rihmasto models` sets them.
 """
 
@@ -65,21 +65,25 @@ from collections.abc import Callable
 from typing import Any
 
 from adapters import sarif
-from kernel import access, assess_cli, autonomy, embeds, evidence_pack, faces, graph_ask, integrations, observations
-from kernel import (access_cli, automations_cli, autopilot_cli, change_cli, ide, input_summary, integration_decl,
-                    material_cli, modules, outputs, packs, posture_cli, security, shape_cli, signals, standalone)
+from kernel import (access, assess_cli, autonomy, embeds, evidence_pack, faces, graph_ask, integrations, observations,
+                   access_cli, alignment_cli, automations_cli, autopilot_cli, bridge_cli, change_cli, console_cli,
+                   destinations_cli, evals_cli, ide, input_summary, integration_decl, journey_cli, material_cli,
+                   modules, outputs, packs, posture_cli, review_cli, road_settings, security, setup_cli, shape_cli,
+                   signals, standalone, task_cli, walkthrough_cli, chain_cli)
+from kernel.agentobs import cli as agentobs_cli
 from kernel.canon import Canon, DecisionRefused
+from kernel.insights import cli as insights_cli
 from kernel.dashboard import catalogue
 from kernel.people import PERSONAS, is_person
 from kernel.profiles import PROFILES
 from kernel.runners import cli as runners_cli
-from kernel.store import HOME_ENVS, MATURITIES, MODES, STAGES, Factory
+from kernel.store import HOME_ENVS, MATURITIES, MODES, Factory
 
 PROG = "rihmasto"  # the command's name (D-0013); `rihma` is installed as an alias of the same main
 Args = argparse.Namespace
 Handler = Callable[[Factory, Args], int | None]
-# What the kernel raises to refuse a capability command: not a person, a persona that may not, a bad
-# value (DecisionRefused and SarifError are ValueErrors), an unknown id, or a missing file.
+# What the kernel raises to refuse a command: not a person, a persona that may not, a bad value or verdict
+# (DecisionRefused and SarifError are ValueErrors), an unknown id, or a missing file: a line on stderr, exit 2.
 REFUSED = (ValueError, LookupError, FileNotFoundError)
 
 
@@ -97,23 +101,6 @@ def _model() -> Any:
 
 def _print(obj: Any) -> None:
     print(json.dumps(obj, indent=2, ensure_ascii=False, default=str))
-
-
-def status(factory: Factory, pid: str | None) -> dict:
-    projects = [factory.project(pid)] if pid else factory.projects()
-    out = []
-    for p in projects:
-        meta, canon = p.meta, Canon(p)
-        tasks = p.read("tasks.json", {}) or {}
-        out.append({"id": p.pid, "title": meta["title"], "maturity": meta["maturity"], "mode": meta["mode"],
-            "stage": f"{meta['stage']} {STAGES[meta['stage']]}",
-            "open_cards": [{"id": c["id"], "kind": c["kind"], "title": c["title"][:80]} for c in canon.cards()],
-            "questions": {s: len(canon.questions(s)) for s in ("open", "answered", "assumed")},
-            "overdue_assumptions": [a["id"] for a in canon.overdue()],
-            "tasks": {t: s.get("status") for t, s in tasks.items()}, "ledger_intact": p.ledger().verify().intact,
-        })
-    print(f"{PROG} status: access: {access.describe(access.load(factory))}", file=sys.stderr)   # stdout stays JSON
-    return {"projects": out}
 
 
 # -- the parser ------------------------------------------------------------------------------------
@@ -164,11 +151,10 @@ def _chain_parsers(sub: Any) -> None:
     _add(sub, "apply", "pid", "card")
     _add(sub, "deliver", "pid").add_argument(
         "--new", action="store_true", help="start a new release even if this revision was delivered")
-    _add(sub, "learn")
     _add(sub, "tick", about="carry out decided concept cards: a validated concept becomes a project")
     _add(sub, "resurface", "pid").add_argument("--reason", default="routing changed")
-    _add(sub, "lanes")
-    _add(sub, "doctor")
+    for bare in ("learn", "lanes", "doctor"):     # commands with no arguments of their own
+        _add(sub, bare)
     _add(sub, "demo", about="build a demo factory home: no model keys, no network, no Gnomon").add_argument(
         "--home", dest="demo_home", help="where to build it (default: var/demo in this checkout). An earlier demo "
                                          "home there is replaced; any other folder that is not empty is refused")
@@ -252,42 +238,44 @@ def _square_parsers(sub: Any) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog=PROG, description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog=PROG, description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     envs = ", ".join(f"${name}" for name in HOME_ENVS)
     ap.add_argument("--home", help=f"the factory home (default: the first set of {envs}, else ./var)")
+    ap.add_argument("--version", action="version", version=f"{PROG} {_kernel('version').rihmasto_version()}")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for add in (_chain_parsers, _brownfield_parsers, _evidence_parsers, _embed_autonomy_parsers, _square_parsers,
                 graph_ask.add_parsers, input_summary.add_parsers, autopilot_cli.add_parsers, outputs.add_parsers,
                 standalone.add_parsers, material_cli.add_parsers, change_cli.add_parsers, shape_cli.add_parsers,
                 posture_cli.add_parsers, assess_cli.add_parsers, faces.add_parsers, access_cli.add_parsers,
                 integration_decl.add_parsers, ide.add_parsers, runners_cli.add_parsers,  # FR-DS1; FR-AGC1; D-0019
-                automations_cli.add_parsers):  # FR-AUT1
+                automations_cli.add_parsers, alignment_cli.add_parsers,  # FR-AUT1; FR-ALN1
+                insights_cli.add_parsers, review_cli.add_parsers, setup_cli.add_parsers,  # FR-INS1; FR-REV1; FR-SET1
+                road_settings.add_parsers, bridge_cli.add_parsers, agentobs_cli.add_parsers,  # GCP1; channel; OBS1
+                task_cli.add_parsers,
+                *(_kernel(m).add_parsers for m in ("devcli", "itops_cli", "observe_cli", "native_cli"))):
         add(sub)
+    walkthrough_cli.add_parsers(sub)          # walkthroughs in a terminal (FR-WLK1)
+    journey_cli.add_parsers(sub)              # guided journeys and the next step (FR-JRN1)
+    console_cli.add_parsers(sub)  # the console, a shell, and the checks (FR-CON1, FR-CHK1)
+    _kernel("context_cli").add_parsers(sub)   # the data and context layer (FR-CTX1)
+    destinations_cli.add_parsers(sub)  # destinations and publish (FR-DST1)
+    evals_cli.add_parsers(sub)  # Gnomon's audits and evals, and the role evals (FR-EVL1)
     return integrations.add_parsers(sub, ap)  # relay, hooks and connector (D-0015)
 
 
 # -- handlers of more than one step (one-step handlers are in the tables below) ----------------------
+
+def _status(factory: Factory, args: Args) -> None:
+    out = chain_cli.status(factory, args.pid)
+    print(f"{PROG} status: access: {access.describe(access.load(factory))}", file=sys.stderr)   # stdout stays JSON
+    _print(out)
+
 
 def _compile(factory: Factory, args: Args) -> None:
     compiler = _kernel("compile")
     p = factory.project(args.pid)
     c = compiler.compile_project(p)
     _print({"revision": c["revision"], "counts": c["counts"], "holdouts": compiler.author_holdouts(p, model=_model())})
-
-
-def _answer(factory: Factory, args: Args) -> None:
-    p = factory.project(args.pid)
-    _print(Canon(p).answer(args.qid, args.text, person=args.person, persona=args.persona))
-    _kernel("intake").render_brief(p)
-
-
-def _assume(factory: Factory, args: Args) -> None:
-    p = factory.project(args.pid)
-    q = Canon(p).question(args.qid)
-    _print(Canon(p).assume(args.qid, q["opinions"].get(q["perspective"], "") or "as the panel proposed",
-                           chosen_by=args.person, persona=args.persona))
-    _kernel("intake").render_brief(p)
 
 
 def _change(factory: Factory, args: Args) -> None:
@@ -404,14 +392,15 @@ def _observe(factory: Factory, args: Args) -> None:
 # Each command line selects one handler, by its command ("status") or its group and command
 # ("workspace open"). A handler returns the exit code, or None for 0.
 HANDLERS: dict[str, Handler] = {
-    "compile": _compile, "answer": _answer, "assume": _assume, "change": _change, "learn": _learn, "lanes": _lanes,
+    "compile": _compile, "answer": lambda f, a: chain_cli.answer(f, a, _print),
+    "assume": lambda f, a: chain_cli.assume(f, a, _print), "change": _change, "learn": _learn, "lanes": _lanes,
     "doctor": _doctor, "demo": _demo, "sync": _sync, **material_cli.handlers(_print, lambda: _model()),  # new, adopt
     "run": lambda f, a: _print(_kernel("pipeline").advance(f.project(a.pid), model=_model())),
     "tick": lambda f, a: _print(_kernel("pipeline").tick(f)),
     "spec": lambda f, a: _print(
         {"requirements": len(_kernel("spec").make_spec(f.project(a.pid), model=_model())["requirements"])}),
     "build": lambda f, a: _print(_kernel("dispatch").build(autonomy.cleared_to_build(f.project(a.pid)))),
-    "status": lambda f, a: _print(status(f, a.pid)),
+    "status": _status,
     "decide": lambda f, a: _print(Canon(f.project(a.pid)).decide(a.card, a.verdict, person=a.person,
                                                                  persona=a.persona, reason=a.reason)),
     "apply": lambda f, a: _print(_kernel("change").apply_change(f.project(a.pid), a.card, model=_model())),
@@ -426,8 +415,8 @@ HANDLERS: dict[str, Handler] = {
         f.project(a.pid), a.path, person=a.person, persona=a.persona, task=a.task)),
     "workspace list": lambda f, a: _print({"workspaces": _kernel("workspace").workspaces(f.project(a.pid))}),
 }
-# The capability layer. A write is signed by a named person and persona, and a refusal from the
-# kernel is a message on stderr and exit 2, never a traceback.
+# The capability layer. A write is signed by a named person and persona. A refusal from the kernel, here or in
+# the chain above, is a message on stderr and exit 2, never a traceback.
 CAPABILITY: dict[str, Handler] = {
     "security ingest": lambda f, a: _print(sarif.ingest(f.project(a.pid), a.file, person=a.person,
                                                         persona=a.persona)),
@@ -449,7 +438,15 @@ CAPABILITY: dict[str, Handler] = {
     **input_summary.handlers(_print, lambda: _model(), print), **autopilot_cli.handlers(_print, _model),
     **standalone.handlers(_print, _model), **change_cli.handlers(_print, _model), **runners_cli.handlers(_print),
     **shape_cli.handlers(_print, lambda: _model(), print), **integration_decl.handlers(_print), **ide.handlers(_print),
-    **automations_cli.handlers(_print, lambda: _model())}
+    **automations_cli.handlers(_print, lambda: _model()), **agentobs_cli.handlers(_print)}
+CAPABILITY.update(walkthrough_cli.handlers(_print, lambda: _model()))     # walkthroughs in a terminal (FR-WLK1)
+CAPABILITY.update({**console_cli.handlers(_print), **alignment_cli.handlers(_print)})  # FR-CON1, FR-CHK1; FR-ALN1
+CAPABILITY.update({**road_settings.handlers(_print), **task_cli.handlers(_print),   # roads (GCP1); Start here (LND1)
+                   **_kernel("observe_cli").handlers(_print), **_kernel("context_cli").handlers(_print)})  # SHR1; CTX1
+for _cli in (journey_cli, evals_cli, insights_cli, review_cli, bridge_cli, destinations_cli, _kernel("devcli"),
+             _kernel("itops_cli")):   # FR-JRN1, EVL1, INS1, REV1, CPL1/BRG1/CHN1, DST1, DEV1, ITO1
+    CAPABILITY.update(_cli.handlers(_print, print))
+CAPABILITY.update(setup_cli.handlers(_print, lambda: _model()) | _kernel("native_cli").handlers(_print))  # SET1, SRC1
 
 
 def command_of(args: Args) -> str:
@@ -470,9 +467,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise DecisionRefused(f"{args.person!r} is not a person: a write is signed by a named person")
             return CAPABILITY[name](factory, args) or 0
     except (access.AccessRefused, *REFUSED) as exc:
-        if name in HANDLERS and not isinstance(exc, access.AccessRefused):
-            raise
-        print(f"{PROG} {name}: {exc.args[0] if isinstance(exc, KeyError) and exc.args else exc}", file=sys.stderr)
+        print(f"{PROG} {name}: {chain_cli.explain(factory, args, exc)}", file=sys.stderr)   # a mistyped id or verdict
         return 2
 
 

@@ -16,14 +16,15 @@ From the repository root:
 python -m mcp.server --home <factory home> --person "<your name>" --persona developer
 ```
 
-- `--home` is the factory home (default: `$RIHMA_HOME`, then `$GNOMONFACTORY_HOME`, then `var/`).
+- `--home` is the factory home (default: the first set of `$RIHMASTO_HOME`, `$RIHMA_HOME`, `$GNOMONFACTORY_HOME`,
+  else `var/`).
   It must exist.
 - `--person` and `--persona` are fixed for the life of the server. They sign every write and
   decide what the reads show: the cards this persona may decide, and what waits on it. The server
   refuses to start (exit code 2, a line on stderr, nothing on stdout) when the name is not a person
   (`kernel.people.is_person`: "assistant", "claude", "model" and the like are refused) or the
   persona is not one of `business_owner`, `product_owner`, `concept_evaluator`, `end_user`, `it`,
-  `developer`, `operations`, `stakeholder`.
+  `developer`, `operations`, `stakeholder`, `compliance`, `ai_architect`.
 - `--lanes` is where the product lanes are, for the live cell (default: `$GF_LANES`, then
   `~/gf-lanes`).
 - With access enforced ([guides/access.md](guides/access.md)), the server signs as the operating
@@ -130,6 +131,29 @@ change request.
 
 A write answers with the ids it made and with what the client sent, as it sent it: the change
 card's title (the first line of `text`), the comment's target and the signal's source.
+
+### The agent bridge and the agent channel
+
+The agent bridge (FR-BRG1, FR-CHN1, `mcp/bridge_tools.py`) adds the tools a coding agent works on a
+project with. [guides/agentic-help.md](guides/agentic-help.md) is the guide.
+
+| Tool | Arguments | What it does |
+|---|---|---|
+| `rihma_next` | `pid` | What the project waits for, who can act, and the actions, each with its cockpit control and command line (`kernel.next_step`). |
+| `rihma_plan` | `pid` | The spec in short, the contract's requirements with each criterion's given, when and then, and the tasks with their state. |
+| `rihma_questions` | `pid` | The open questions and assumptions. |
+| `rihma_handoff` | `pid`, `change` (optional), `to` (optional) | The hand-off brief (`kernel.agent_bridge`) as JSON and Markdown, and how the agent named in `to` takes it. |
+| `rihma_feedback` | `pid`, `since` (optional) | Review feedback, failed gates and checks, change cards, settled proposals and people's messages in the channel since a time. |
+| `rihma_insights`, `rihma_alignment`, `rihma_health` | `pid` | Key figures, alignment gaps and checks, when this installation has them; otherwise `available: false` and why. |
+| `rihma_channel_read` | `pid`, `since`, `thread` (optional) | The project's agent channel, oldest first; posts a person's pause holds are not shown. |
+| `rihma_progress` | `pid`, `text`, `files`, `criteria`, `commit`, `agent`, `harness`, `thread` | Posts the agent's progress to the timeline and the channel. |
+| `rihma_propose_answer` | `pid`, `question`, `text`, `agent` | Suggests an answer to an open question: a proposal a person confirms or rejects in the cockpit, never an answer by itself. |
+| `rihma_request_gate` | `pid`, `head` or `check`, `agent` | Asks the gate to check a commit of an attached repository (or an enabled check to run); the result posts itself into the channel. |
+| `rihma_channel_post` | `pid`, `text`, `kind`, `criteria`, `commit`, `agent`, `thread` | A message in the channel; a question naming `@analyst` or `@verifier` is answered by a Rihma agent. |
+| `rihma_ask_rihma` | `pid`, `question`, `commit`, `agent`, `thread` | Asks a Rihma agent: answered from the records by rule with its sources, or through a model when `RIHMA_AGENT_MODEL=gnomon` (a confidential project only on a local or private one), within per-thread limits. |
+
+Each of these writes is signed as the agent (`agent`, default `agent`) for the server's person, its
+operator, recorded as `mcp_write` and in the channel (`channel_posted`), and decides nothing.
 
 ## Resources
 

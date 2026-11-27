@@ -40,6 +40,44 @@ Dependency, build, cache, virtual-environment and version-control folders (`node
 `__pycache__/`, `build/`, `dist/`, `target/`, `.git/` and the like) are not walked, and a link is
 never followed. A scan looks at the first 5,000 files and counts the rest.
 
+**Housekeeping is listed, never read** (FR-RPJ1). The files a tool keeps beside the work are counted on
+one line, wherever they sit: ignore and attribute lists (`.gitignore`, a nested `.gitignore` too,
+`.gitattributes`, `.ignore`, `.dockerignore`), editor and linter settings (`.editorconfig`, `.prettierrc`),
+checksum lists (`SHA256SUMS`, `*.sha256`, `checksums.txt`), example environments (`.env.example`), and
+lockfiles (`uv.lock`, `poetry.lock`, `package-lock.json`, `go.sum`). A game engine's or 3D tool's own files
+(scenes, assets, project settings: `.tscn`, `.unity`, `.uasset`, `.glb`, `.blend`) are listed too, and
+counted by area for an adopted project. **The README at the top is read first and in full** whenever it
+fits the budget, before plans and other documents, however many other files wait.
+
+**Archives are read inside, never extracted** (FR-RPJ1, [kernel/material_zip.py](../../kernel/material_zip.py)).
+A `.zip` (an experiment's `results.zip`) is opened in place: its entries are listed as
+`results.zip!/results/metrics.csv`, and each is decided by the same rules as a file in the folder (excluded,
+secret-looking, binary, housekeeping, code listed, documents read within the budget). Nothing is written to
+disk. An entry over 2 MB is listed; an archive whose entries would inflate past 8 GB, or more than 200 times
+their packed size, is refused as a zip bomb, and so is an entry that inflates beyond the cap whatever its
+header says; an archive inside an archive is listed, not opened.
+
+**A copy is read once.** A folder that holds copies (`app_snapshot/`, `app-copy/`, `app-prep/`) would spend
+the budget twice on the same text: a document whose text another holds is listed as "the same text as
+<path>: read once", and the one read is outside the copy-named folder.
+
+**A git repository is scanned as it will be adopted.** In New project's An existing project, the scan of a
+repository reads its **last commit** (a file changed since is read from git, an unchanged one from disk,
+[kernel/material_git.py](../../kernel/material_git.py)), so the map's numbers are the adoption's; choosing
+**Adopt the working copy as it is now** scans the folder as it is. See
+[brownfield.md](../brownfield.md#uncommitted-work-workspaces-and-adopted-already).
+
+**A long scan shows how far it is.** The cockpit scans in the background: the step says how many files it
+looked at, the time and the folder it is in, with **Cancel the scan**. A folder the cockpit may not read,
+or a scan that fails, is said in the step with what to do, never a scan that stays on "Scanning the folder".
+
+**Folders the cockpit may read.** Your home folder, the operator's `RIHMASTO_SOURCE_ROOTS` and the folders
+allowed in **Settings > Folders the cockpit may read** (kept in the factory home, `source_roots.json`,
+signed and recorded as `source_root_allowed`, at once and without a restart). A single operator allows one
+after saying yes, and a refused folder offers **Allow C:\dev** in the scan step; under enforced access only
+IT allows one, and the refusal says **Ask IT to allow it**. A system folder, a folder of keys or a drive's
+root is never allowed.
+
 **The formats** ([kernel/material_read.py](../../kernel/material_read.py), standard library only):
 Markdown, reStructuredText and text as they are; HTML with its scripts and styles dropped, its entities
 decoded and its headings kept as `#` lines; Word (`.docx`) paragraphs with their headings; PowerPoint
@@ -67,6 +105,46 @@ The request the panel reads is built from the map, each part headed with its fil
 (`## docs/requirements.md (brief or spec)`), and each part is then read as its own document by the
 rules below. A single file given as the source is read by its format the same way, and refused when it
 may hold secrets.
+
+## Choose a folder or a file
+
+You need not type a path (FR-PICK1). Every field of the cockpit that takes a folder or a file on the
+cockpit's machine has two buttons beside it:
+
+- **Browse…** opens the computer's own folder dialog (Explorer's on Windows, the Finder's on macOS, zenity
+  or kdialog on Linux) when you sit at the cockpit's machine: the page at `http://127.0.0.1:<port>` of a
+  single operator's cockpit. It runs in a separate process, one at a time, for at most ten minutes. From
+  another computer, a phone, through `--public-origin` or under enforced access the cockpit cannot open a
+  dialog on your screen, so Browse… opens the folder browser instead. A page reached through an SSH tunnel
+  (`ssh -L 8872:127.0.0.1:8872 …`) looks to the cockpit like its own machine's, so while the dialog is open the
+  page names the computer it opened on and offers **Browse here instead**, which closes that dialog and opens
+  the folder browser. A field that takes a file or a folder (Add material, Shape it in chat's attach, a
+  walkthrough's documents step) has **File…** and **Folder…** in place of Browse…, since the computer's own
+  dialog picks one or the other.
+- **Browse here** is the folder browser in the page, from anywhere. It starts from the folders you chose
+  before (kept per person in the factory home, outside every ledger), the roots in `RIHMASTO_SOURCE_ROOTS`
+  and those allowed in Settings, your home folder and the drives. Each folder says whether it is a **git**
+  repository, whether a project here already holds it (adopted or attached, with its name), when it last
+  changed, and whether the cockpit may read it and why not. Filter as you type; the arrow keys move, Enter
+  or the right arrow opens a folder, Backspace or the left arrow goes up; **Choose this folder** takes it.
+
+The folder browser reads under the same rules as every read here. Dot folders, `node_modules`, `.venv` and
+the like are folded (**Show hidden or tool folders**); a long folder shows its first 300 and how many more,
+and the filter then searches the whole folder, so it finds those too. Opening a folder with the keyboard
+keeps the focus in the list, and after choosing the focus goes back to the field.
+A link that leads out of the allowed folders is marked **link, not followed** and is never read. A system
+folder or a folder of keys (`.ssh`, `.aws` and the like) is never listed. Outside the allowed folders a single
+operator sees the subfolders' names only (never a file), to find the folder to allow, with **Allow …**
+(after a yes, signed and recorded as in Settings > Folders the cockpit may read); under enforced access such
+a folder is refused, and IT allows one. Browsing records nothing, and the path you choose is checked again
+where it is used. Typing or pasting a path works as before; a folder dropped on the field gives only its
+name, because browsers do not give the full path, so the field asks you to browse for it.
+
+In Ask Rihma, "adopt the project in C:\dev\x" or "open the folder picker" offers **Plug in an existing
+project**, started from the folder you named (in quotes a path is taken whole, spaces and all:
+`"C:\dev\My Projects\shop"`); its folder step has the same two buttons. The routes are
+`GET /api/pick/places`, `GET /api/pick/list?path=…&files=0|1&q=…`, `POST /api/pick/native`,
+`POST /api/pick/native/cancel` and `POST /api/pick/recent` ([cockpit/pick_routes.py](../../cockpit/pick_routes.py)).
 
 ## How AI tools here are set up
 
@@ -150,6 +228,15 @@ resolve names. A model server on your own network that you reach by name (a GPU 
 VPN) is local once you say so: tick **On my own network** in Models setup, or
 `rihmasto models set <role> --base-url http://<name>:<port>/v1 --model <name> --private`, which writes
 `"private": true` on its endpoint in `kernel/routing.local.json`.
+
+**A confidential adoption** calls no model: it reads the repository and runs its tests. So New project
+says it plainly (FR-RPJ1, [kernel/confidential_local.py](../../kernel/confidential_local.py)): "Adopting
+works (it calls no model). These roles would be refused until they use a local model: ...". When the
+routing already has a local or private model that a role uses (the shipped assistant on `local`, for
+example), **Use my local model for these roles** points the hosted roles at it in one click, signed and
+recorded as `models_set` (`via: confidential: use my local model`), each role's fallback kept. The verifier
+keeps to a family other than the builder's, as the routing requires: with no such local model it is left
+out, and the dialog says so.
 
 ## The kinds of input
 

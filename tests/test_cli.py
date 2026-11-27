@@ -1,8 +1,8 @@
 """The command line's chain after its refactor into small handlers selected by a table (FR-N2).
 
 The chain's commands print what they printed before, through `main(argv)`, against a temporary factory
-home and the scripted model. A refused or failing chain command still raises, as before: only the
-capability layer's commands (tests/test_cli_capability.py) turn a refusal into a message and exit 2.
+home and the scripted model. A refused chain command, a mistyped id or verdict included, is one line on stderr
+and exit 2, as the capability layer's commands are (tests/test_cli_capability.py).
 `doctor`, `demo`, `adopt` and `sync` have their own tests (test_doctor, test_demo, test_adopt)."""
 
 import contextlib
@@ -18,7 +18,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from factory_fakes import FactoryTestCase, model  # noqa: E402
 
-from kernel.canon import DecisionRefused  # noqa: E402
 from kernel.cli import command_of, main  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -80,20 +79,52 @@ class ChainCliTest(FactoryTestCase):
         self.assertEqual(set(self.cli("learn")),
                          {"added_default_checks", "proposals_opened", "immune_memory", "model_reliability"})
 
-    def test_a_refused_or_failing_chain_command_raises_as_it_did_before_the_table(self):
-        home = str(self.factory.home)
+    def refused(self, *argv: str) -> str:
+        """A chain command that is refused: exit 2 and one line on stderr, never a traceback."""
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = main(["--home", str(self.factory.home), *argv])
+        self.assertEqual(code, 2, argv)
+        line = err.getvalue().strip().splitlines()[-1]
+        self.assertNotIn("Traceback", err.getvalue())
+        return line
+
+    def test_a_mistyped_id_or_verdict_is_one_line_on_stderr_and_exit_2(self):
         p = self.new(mode="assume")
-        with contextlib.redirect_stdout(io.StringIO()):
-            with self.assertRaises(KeyError):
-                main(["--home", home, "status", "no-such-project"])
-            with self.assertRaises(FileNotFoundError):
-                main(["--home", home, "deliver", p.pid])                         # nothing compiled yet
-            with self.assertRaises(KeyError):
-                main(["--home", home, "decide", p.pid, "C-0099", "accept", "--person", "Aino",
-                      "--persona", "business_owner"])
+        sign = ("--person", "Aino", "--persona", "business_owner")
+        line = self.refused("status", "nope")
+        self.assertIn("no project 'nope'", line)
+        self.assertIn(f"the projects are {p.pid}", line)                         # the ids there are
+        self.assertIn("no project 'nope'", self.refused("answer", "nope", "Q-1", "x", *sign))
+        self.assertTrue(self.refused("deliver", p.pid))                          # nothing compiled yet
+        line = self.refused("decide", p.pid, "C-0099", "accept", *sign)
+        self.assertIn("no card C-0099", line)
         self.cli("intake", p.pid, "--source", IDEA, "--requested-by", "Aino")
-        with self.assertRaises(DecisionRefused), contextlib.redirect_stdout(io.StringIO()):
-            main(["--home", home, "assume", p.pid, "Q-001", "--person", "Aino", "--persona", "business_owner"])
+        self.assertIn("is assumed, not open", self.refused("assume", p.pid, "Q-001", *sign))
+        qpid = self.cli("new", "Equipment loans", "--source", IDEA, "--mode", "socratic",
+                        "--requested-by", "Aino")["project"]
+        line = self.refused("answer", qpid, "Q-099", "x", *sign)
+        self.assertIn("no question Q-099", line)
+        self.assertIn("Q-001 (card C-0001)", line)                                # what to use instead
+        line = self.refused("decide", qpid, "C-0001", "maybe", *sign)
+        self.assertIn("not 'maybe'", line)
+        self.assertIn("answer", line)                                             # the verdicts it takes
+
+    def test_status_names_each_open_question_and_answer_takes_its_card_id(self):
+        pid = self.cli("new", "Equipment loans", "--source", IDEA, "--mode", "socratic",
+                       "--requested-by", "Aino")["project"]
+        row = self.cli("status", pid)["projects"][0]
+        card = next(c for c in row["open_cards"] if c["kind"] == "question")
+        self.assertRegex(card["question"], r"^Q-\d+$")
+        self.assertIn({"id": card["question"], "card": card["id"]},
+                      [{k: q[k] for k in ("id", "card")} for q in row["open_questions"]])
+        answered = self.cli("answer", pid, card["id"], "The team lead approves", "--person", "Tester",
+                            "--persona", "business_owner")
+        self.assertEqual((answered["id"], answered["status"]), (card["question"], "answered"))
+        other = self.cli("status", pid)["projects"][0]["open_cards"]
+        card = next(c for c in other if c["kind"] == "question")
+        assumed = self.cli("assume", pid, card["id"], "--person", "Tester", "--persona", "business_owner")
+        self.assertEqual(assumed["question"], card["question"])
 
     def test_a_command_line_names_its_table_key(self):
         import argparse

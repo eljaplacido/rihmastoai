@@ -657,8 +657,12 @@ class ScriptedCell:
         return self._record(task, steps=9, output="Wrote each criterion's test first, saw it fail, then the code.")
 
     def _record(self, task: str, *, steps: int, output: str) -> dict:
+        # the runner says what ran the round: a scripted stand-in, not Gnomon (no in-run policy, no audit trail)
+        from kernel.runners import assurance_of
         return {"code": 0, "bucket": "result", "stop_reason": "answered", "tool_steps": steps,
-                "model": BUILDER_NAME, "output": f"{task}: {output} (scripted for the demo)"}
+                "model": BUILDER_NAME, "output": f"{task}: {output} (scripted for the demo)",
+                "runner": {"name": "scripted", "label": "scripted", "version": None,
+                           **assurance_of("scripted")}}
 
     def verify(self, prompt: str) -> str:
         """The verifier's review. It is read-only and, in the demo, scripted."""
@@ -674,6 +678,8 @@ class ScriptedCell:
                                          "finding": "the webhook does not check the carrier's shared secret yet",
                                          "repro": "POST /webhooks/shipments without any header is accepted"}]})
         return _fence({"findings": []})
+
+    verify.__dict__["model"] = MODEL_NAME     # the stand-in names its model: the routing's is not what answered
 
 
 def _write(path: Path, text: str) -> None:

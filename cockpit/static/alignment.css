@@ -1,0 +1,28 @@
+/* The Alignment view's origin, impact and triage (alignment_triage.js, FR-ORG1). */
+
+.al-triage { display: grid; gap: var(--s2); min-width: 0; overflow-wrap: anywhere; }
+.al-triage-said { margin: 0; font-weight: 600; }
+.al-advice { display: grid; gap: var(--s2); margin: 0; padding: 0; min-width: 0; }
+.al-advice li { padding-left: var(--s2); border-left: 3px solid var(--border); }
+.al-advice p { margin: 0; }
+.al-filter { flex-wrap: wrap; }
+.al-filter .btn[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: var(--accent-subtle); }
+.al-confirm { display: grid; gap: var(--s2); margin-top: var(--s2); padding: var(--s2) var(--s3); border: 1px solid var(--accent-border);
+  border-radius: var(--r-md); background: var(--raised); min-width: 0; overflow-wrap: anywhere; }
+.al-confirm p { margin: 0; }
+.al-impact, .al-origin { overflow-wrap: anywhere; }
+/* a group's header carries its counts by origin: it wraps under the title on a narrow screen */
+.al-group .card-head { flex-wrap: wrap; row-gap: var(--s1); }
+.al-group .card-tools { flex: 1 1 auto; min-width: 0; max-width: 100%; justify-content: flex-end; }
+.al-group .card-tools .btns { min-width: 0; max-width: 100%; }
+.al-group .card-tools .chip { max-width: 100%; }
+.al-group .card-tools .chip > span { white-space: normal; overflow-wrap: anywhere; }
+.al-row .chip { max-width: 100%; }
+.al-row .chip > span { overflow-wrap: anywhere; white-space: normal; }
+
+/* the origin filter: only the rows whose origin words include the one chosen */
+.align[data-filter="project"] .al-row:not([data-o~="project"]),
+.align[data-filter="old"] .al-row:not([data-o~="old"]),
+.align[data-filter="convention"] .al-row:not([data-o~="convention"]),
+.align[data-filter="deferred"] .al-row:not([data-o~="deferred"]) { display: none; }
+.align:not([data-filter="all"]) .al-group.al-none { display: none; }

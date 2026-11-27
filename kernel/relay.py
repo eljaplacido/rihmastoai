@@ -417,6 +417,15 @@ def _digest(rnd: _Round, sub: dict[str, Any], state: dict[str, Any]) -> str | No
     return outcome
 
 
+def _review_digest(rnd: _Round, sub: dict[str, Any], state: dict[str, Any]) -> list[str]:
+    """The morning review digests due on this subscription (kernel/review_digest.py, FR-REV1)."""
+    if _missing(sub, rnd.env):
+        return []
+    from kernel.review_digest import relay_round
+
+    return relay_round(rnd, sub, state, _post_notice, _scrub)
+
+
 def _one(rnd: _Round, sub: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     if state.get("next_at") and int(state["next_at"]) > rnd.now:
         return {"id": sub["id"], "state": "waiting", "next_at": state["next_at"]}
@@ -449,10 +458,16 @@ def run(factory: Factory, *, environ: Mapping[str, str] | None = None, post: Pos
                 digest = _digest(rnd, sub, cursors[sub["id"]])
                 if digest:
                     results[-1]["digest"] = digest
+                morning = _review_digest(rnd, sub, cursors[sub["id"]])
+                if morning:
+                    results[-1]["review_digest"] = morning
                 write_json(_dir(factory) / "cursors.json", cursors)
+            from kernel.hitl_nudge import relay_round  # reminders due on open asks (FR-HITL1)
+
+            nudged = relay_round(factory, environ=rnd.env, post=rnd.post, send=rnd.send)
     except LockHeld:
         return {"subscriptions": len(subs), "busy": "another relay round is running"}
-    return {"subscriptions": len(subs), "results": results}
+    return {"subscriptions": len(subs), "results": results, **({"hitl_nudged": nudged} if nudged else {})}
 
 
 def deliveries(factory: Factory, *, subscription: str | None = None, limit: int = 50) -> list[dict[str, Any]]:

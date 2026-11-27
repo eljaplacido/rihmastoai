@@ -91,6 +91,8 @@ from cockpit.agent_routes import ROUTES as AGENT_ROUTES
 from cockpit.agent_routes import AgentContextRoutes
 from cockpit.agentobs_routes import ROUTES as AGENTOBS_ROUTES
 from cockpit.agentobs_routes import AgentObsRoutes
+from cockpit.gnomon_posture_routes import ROUTES as GNOMON_POSTURE_ROUTES   # each project's Gnomon posture (FR-GNP1)
+from cockpit.gnomon_posture_routes import GnomonPostureRoutes
 from cockpit.align_routes import ROUTES as ALIGN_ROUTES
 from cockpit.align_routes import AlignRoutes
 from cockpit.align_triage_routes import ROUTES as ALIGN_TRIAGE_ROUTES   # origin, impact, triage (FR-ORG1)
@@ -178,6 +180,12 @@ from cockpit.hitl_routes import HitlRoutes
 from cockpit.itops_routes import ROUTES as ITOPS_ROUTES   # what IT checks, eval sets, any assessment (FR-ITO1)
 from cockpit.itops_routes import UNLOCKED as ITOPS_UNLOCKED
 from cockpit.itops_routes import ItOpsRoutes
+from cockpit.team_routes import ROUTES as TEAM_ROUTES   # teams, their words and what applies where (FR-TM1)
+from cockpit.team_routes import TeamRoutes
+from cockpit.ask_routes import ROUTES as ASK_ROUTES   # machines, asks between agents, the doctor (FR-XAG1)
+from cockpit.ask_routes import UNLOCKED as ASK_UNLOCKED
+from cockpit.ask_routes import AskRoutes
+from kernel import ask_page as kask_page   # an agent elsewhere answers its ask at /x/ (FR-XAG1)
 from cockpit.structure_routes import ROUTES as STRUCTURE_ROUTES   # Rihmasto's structure, where the work went (FR-STR1)
 from cockpit.structure_routes import StructureRoutes
 from kernel import structure_cards as kstructure_cards
@@ -506,6 +514,7 @@ ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in REVIEW_ROUTES]  
 ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ROAD_ROUTES]           # paved roads (FR-GCP1)
 ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in VIEW_LAYOUT_ROUTES]    # view layouts per person
 ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in AGENTOBS_ROUTES]       # Agent sessions (FR-OBS1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in GNOMON_POSTURE_ROUTES]  # Gnomon posture (FR-GNP1)
 # Writes that record nothing (the assistant only proposes; a profile proposal is a rule over text).
 # They run outside the write lock, so a slow model call never holds up a decision. An assessment
 # reads a whole repository and keeps its records under their own file locks (kernel/assess.py): it
@@ -552,6 +561,9 @@ ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in OBSERVE_ROUTES] 
 UNLOCKED |= OBSERVE_UNLOCKED
 ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ASSESS_PRECISE_ROUTES]   # FR-ASP1
 ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in LANDING_ROUTES]  # landing and live tasks (FR-LND1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in TEAM_ROUTES]     # teams, vocabulary, scope (FR-TM1)
+ROUTES += [(m, re.compile(p + r"/?\Z"), name) for m, p, name in ASK_ROUTES]      # machines, asks, reach (FR-XAG1)
+UNLOCKED |= ASK_UNLOCKED
 
 
 class FileResponse:
@@ -638,6 +650,9 @@ class SubprocessRunner:
 
 class CockpitServer(ThreadingHTTPServer):
     daemon_threads = True
+    # The page loads some ninety modules at once; the default queue of 5 refuses connections on a busy machine, and a
+    # refused module leaves the page without its code (cockpit/static/boot.js then says so).
+    request_queue_size = 64
     # On Windows SO_REUSEADDR would let another socket take the same port.
     allow_reuse_address = os.name != "nt"
 
@@ -1178,6 +1193,8 @@ class CockpitHandler(BaseHTTPRequestHandler):
             return khitl_page.serve(self, self.server.factory)
         if kobserve_page.ours(path):         # a guest's observer page: read only, its own link (FR-SHR1)
             return kobserve_page.serve(self, self.server.factory)
+        if kask_page.ours(path):             # an agent's reply link: POST only (FR-XAG1)
+            return kask_page.serve(self, self.server.factory)
         if path.startswith("/api/") and kobserve_page.guest_request(self):
             return self._error(403, kobserve_page.REFUSED)     # a guest's session never opens the API (FR-SHR1)
         if path.startswith("/api/"):
@@ -1195,6 +1212,8 @@ class CockpitHandler(BaseHTTPRequestHandler):
             return self._outside(khitl_page)
         if kobserve_page.ours(self.path):    # a guest's observer page: comments and suggestions only (FR-SHR1)
             return self._outside(kobserve_page)
+        if kask_page.ours(self.path):        # an agent elsewhere answers its ask through its reply link (FR-XAG1)
+            return self._outside(kask_page)
         self._unless_guest("POST")
 
     def _outside(self, page) -> None:
@@ -1437,9 +1456,10 @@ class Api(ChatRoutes, AgentContextRoutes, RunnerRoutes, AutomationRoutes, WalkRo
           AlignRoutes, InsightsRoutes, ReviewRoutes, RoadRoutes, BridgeRoutes, SourceRoutes, AdoptedRoutes,
           ProgressRoutes, JourneyRoutes, PickRoutes, ViewLayoutRoutes,
           ContextRoutes, GraphRoutes, DestinationRoutes, ItDataRoutes, NativeSourceRoutes, SetupRoutes,
-          AgentObsRoutes, kpeople.PeopleRoutes, EvalRoutes, HealRoutes,
+          AgentObsRoutes, GnomonPostureRoutes, kpeople.PeopleRoutes, EvalRoutes, HealRoutes,
           AboutRoutes, NeverLostRoutes, AgentOpsRoutes, DevRoutes, EnforcementRoutes, HitlRoutes,
-          ItOpsRoutes, AlignTriageRoutes, StructureRoutes, ObserveRoutes, AssessPreciseRoutes, LandingRoutes):
+          ItOpsRoutes, AlignTriageRoutes, StructureRoutes, ObserveRoutes, AssessPreciseRoutes, LandingRoutes,
+          TeamRoutes, AskRoutes):
     def __init__(self, server: CockpitServer, access: kaccess.Access | None = None,
                  identity: Identity | None = None):
         self.server = server

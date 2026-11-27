@@ -80,10 +80,71 @@ export const GLOSSARY = {
   prompt_cache: ["reuse of repeated text", "prompt cache", "Text sent the same way at the start of every call can be reused by the AI provider at a lower price."],
 };
 function cap1(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+/* The words a team or a project gives Rihmasto's own terms (kernel/vocab.py, FR-TM2): the overlay in force for the
+   page, loaded by vocab.js. A redefinition changes how records are read and labelled, never the records. A glossary
+   word that stands for a kind of record (spec: requirements) reads in the word in force. */
+let VOCAB = { terms: {} };
+export function setVocabulary(v) { VOCAB = v && v.terms ? v : { terms: {} }; SOLO = !!(v && v.solo); SWAP = null; }
+let SWAP = null;
+const plural1 = (w) => (/[^aeiou]y$/.test(w) ? w.slice(0, -1) + "ies" : /(s|x|ch|sh)$/.test(w) ? w + "es" : w + "s");
+/* The shipped name of each kind that reads differently here (lower case, singular and plural) and the word in force
+   (kernel/vocab_say.py says the same of the text the kernel writes). A hidden kind keeps its shipped name. */
+function swapTable() {
+  if (SWAP) return SWAP;
+  SWAP = new Map();
+  for (const [id, e] of Object.entries(VOCAB.terms)) {
+    const old = String(e.shipped || "").trim().toLowerCase(), now = String(e.label || "").trim();
+    if (!id.startsWith("kind:") || e.hidden || !old || !now || old === now.toLowerCase()) continue;
+    SWAP.set(old, now);
+    SWAP.set(plural1(old), plural1(now));
+  }
+  SWAP.re = SWAP.size ? new RegExp("(?<![\\w./-])(?:" + [...SWAP.keys()].sort((a, b) => b.length - a.length)
+    .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")(?![\\w-]|\\.\\w)", "gi") : null;
+  return SWAP;
+}
+export const hasWords = () => !!swapTable().re;
+function caseOf(found, now) {
+  if (found.length > 1 && found === found.toUpperCase()) return now.toUpperCase();
+  if (found.charAt(0) !== found.charAt(0).toLowerCase()) return cap1(now);
+  return now.slice(1) !== now.slice(1).toLowerCase() ? now : now.toLowerCase();
+}
+/* A text with each kind of record named in the word in force; the text itself when no kind is redefined here. */
+export function sayWords(text) {
+  const t = swapTable();
+  return t.re && text ? String(text).replace(t.re, (m) => caseOf(m, t.get(m.toLowerCase()))) : text;
+}
+let SOLO = false;        // one person, one team: nothing says "team" (kernel/scope_table.py SOLO_SCOPE_WORD)
+export function vocabEntry(id) { return VOCAB.terms[id] || null; }
+const GLOSSARY_TERM = { spec: "kind:requirement" };
+const SCOPE_WORDS = { project: "This project", team: "This team", home: "All teams", platform: "All teams", default: "Shipped default",
+  shipped: "Shipped default", personal: "You" };
+const SOLO_HOME = "All projects";
+/* Where a setting or a term is set, in words: this project, all teams (one setting every team shares), this team (its own
+   words) or the shipped default (kernel/scope_table.py). A home of one person says "all projects", never "team". */
+export function scopeWord(scope) {
+  if (SOLO && (scope === "home" || scope === "platform")) return SOLO_HOME;
+  return SOLO && scope === "team" ? "Your words" : SCOPE_WORDS[scope] || String(scope || "");
+}
+/* A term's word in force, as plain text in lower case; n !== 1 gives the plural, opts.cap capitalises. */
+export function vw(id, n, opts) {
+  const e = VOCAB.terms[id];
+  const base = e ? String(e.label).toLowerCase() : id.replace(/^[a-z]+:/, "").replace(/_/g, " ");
+  const many = n !== undefined && n !== 1;
+  const w = many ? (/y$/.test(base) ? base.slice(0, -1) + "ies" : /s$/.test(base) ? base : base + "s") : base;
+  return opts && opts.cap ? cap1(w) : w;
+}
+function glossWord(key, n, opts) {
+  const id = GLOSSARY_TERM[key];
+  const e = id && VOCAB.terms[id];
+  return e && e.scope && e.scope !== "shipped" && !e.hidden ? vw(id, n, opts) : null;
+}
 /* A glossary word as plain text: n !== 1 gives the plural; opts.cap capitalises it. */
 export function tw(key, n, opts) {
   const g = GLOSSARY[key];
   if (!g) return key;
+  const mine = glossWord(key, n, opts);
+  if (mine) return mine;
   const tech = technical();
   const many = n !== undefined && n !== 1;
   let w = many ? (tech ? g[4] : g[3]) || (tech ? g[1] : g[0]) + "s" : tech ? g[1] : g[0];
@@ -98,7 +159,11 @@ export function term(key, opts) {
   if (!g) return String(key);
   const tech = technical();
   const other = tech ? g[0] : g[1];
-  const tip = g[2] + (other && other !== (tech ? g[1] : g[0]) ? " (" + (tech ? "in plain words: " : "technical term: ") + other + ")" : "");
+  const mine = glossWord(key, 1, o);
+  const own = mine && VOCAB.terms[GLOSSARY_TERM[key]];
+  const tip = (own && own.description ? own.description + " (" + scopeWord(own.scope).toLowerCase() + "'s word, as defined"
+    + (own.since ? " on " + String(own.since).slice(0, 10) : "") + ")" : g[2])
+    + (!mine && other && other !== (tech ? g[1] : g[0]) ? " (" + (tech ? "in plain words: " : "technical term: ") + other + ")" : "");
   return h("span", { class: "term", "data-term": key, tip, tabindex: o.focus ? "0" : null }, tw(key, o.n, o));
 }
 export function explain(key) { const g = GLOSSARY[key]; return g ? g[2] : ""; }
@@ -306,6 +371,8 @@ const EMPTY = {
     ["No insight data yet.", "Insights are computed from rounds, gates and costs as tasks run."]],
   review: [["Nothing new since you last looked.", "Decisions, finished work and changes appear here as they happen."],
     ["No changes since your last look.", "New ledger records, merges and card decisions appear here."]],
+  asks: [["No question is waiting on another agent.", "When you ask an AI agent here or on another computer something, the ask and its answer appear here; with nothing connected there, copy it over and paste the answer back."],
+    ["No ask open.", "Put an ask to a named agent (optionally on a machine); it is read over MCP here, by a reply link through the HTTPS front, or copied over and answered by paste (FR-XAG1)."]],
   agents: [["No agent has worked on this yet.", "Hand the work to an AI coding agent from the header; what it does and says appears here."],
     ["No agent sessions.", "Hand off from the header or connect an agent over MCP; its messages and actions appear here."]],
   aitools: [["No AI tool setup found in this code.", "Instructions for AI coding tools (such as CLAUDE.md or AGENTS.md) appear here once they are in the code."],
@@ -359,6 +426,11 @@ const EMPTY = {
     ["No such task in the contract.", "Open Tasks for the contract's tasks."]],
   run_changed: [["The run changed nothing in the project's records.", "What a run adds (tasks, decisions, checks) is listed here when it ends."],
     ["No ledger record was added while it ran.", "Tasks, cards, gates, merges and releases recorded during the run are listed here."]],
+  teams: [["There is no team yet beyond your own.", "A team is made for you automatically; make another here when a group of people shares projects."],
+    ["Only the automatic team of one exists.", "IT makes a team (name and members); a project is moved into it from its settings or from this page."]],
+  vocabulary: [["Every word reads as Rihmasto says it.", "Choose a term and give it your team's word, a description or a synonym; Ask Rihma then finds it by that word."],
+    ["No term is redefined for this scope.", "Rename or describe a kind, relation or attribute, add synonyms, hide it or add a custom term; each change is previewed, signed and can be undone."]],
+  scope: [["Nothing to show.", "Open a project to see where each of its settings comes from."], ["No scope table.", "The scope table could not be read; open a project."]],
   runs: [["Nothing has run in this session yet.", "Runs you start (Advance, an adoption, a check) and the AI build team's work appear here, each with its whole log."],
     ["No job or running cell.", "Jobs started from the cockpit and cells holding a lane appear here, each with its whole log."]],
 };

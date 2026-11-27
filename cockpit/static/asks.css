@@ -1,0 +1,14 @@
+/* Asks between agents and machines, the machines, Test connection (asks.js, FR-XAG1, FR-RCH1). */
+.ak-list, .mc-list { display: grid; gap: var(--s3); margin: var(--s2) 0; }
+.ak-row, .mc-row { border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s3); min-width: 0; }
+.ak-head, .mc-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); min-width: 0; }
+.ak-q { margin: var(--s2) 0; overflow-wrap: anywhere; }
+.ak-a { margin: var(--s2) 0; padding-left: var(--s3); border-left: 3px solid var(--line); overflow-wrap: anywhere; }
+.ak-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16rem; overflow: auto; font-size: var(--fs-sm, 0.875rem); }
+.ak-fields { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.ak-field { display: flex; flex-direction: column; gap: 2px; flex: 1 1 160px; min-width: 0; }
+.ak-field input, .ak-field select, .ak-field textarea { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.ak-new, .mc-new, .ak-answer, .rc-draft { display: grid; gap: var(--s2); margin-top: var(--s3); min-width: 0; }
+.rc-box { display: grid; gap: var(--s2); min-width: 0; }
+.rc-fix { margin: var(--s2) 0; padding-left: var(--s4); overflow-wrap: anywhere; }
+.rc-result { min-width: 0; overflow-wrap: anywhere; }

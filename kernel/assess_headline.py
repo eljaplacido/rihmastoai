@@ -1,6 +1,6 @@
 """The Assessment view's first two lines, and Ask Rihma's answers on them (FR-ASP1).
 
-The owner (2026-11-26): "when I jump into the game project its not clear what should I do". So the view opens on
+The owner (2026-11-26): "when I jump into [an adopted project] its not clear what should I do". So the view opens on
 two lines, by rule and from the latest assessment as people judged it: what is worth acting on now, and what is
 probably noise, each with why; then the next steps, each a button (guide, don't describe). Ask Rihma answers the
 same by rule ("what is noise here?", "what should I act on?") and proposes the same writes the buttons make: a

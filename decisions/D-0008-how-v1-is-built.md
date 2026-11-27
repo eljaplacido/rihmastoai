@@ -25,7 +25,7 @@ At that rate v1 would take weeks.
 - **In-flight cells continue.** These are T-006 round 3 and T-011.
 - **Products go through the factory.** Spec, contract, Gnomon cells in lanes, gates,
   deployment and operation: this is where the factory is proven. That includes the test
-  inputs: a vague idea, an existing spec, and a factoryctl demo.
+  inputs: a vague idea, an existing spec, and an existing demo product.
 
 **Why it is acceptable.** The invariant "every dispatch goes through Gnomon" governs the
 factory's dispatches, that is, the products. Building the builder by hand is the bootstrap

@@ -11,6 +11,8 @@ Reads write nothing:
 - ``GET /api/run-log?job=J-..&from=N`` the whole log of a background job from byte N, ``?project=<pid>&from=N`` the
   running cell's steps from step N, and with neither the runs to open a log of (Activity); a finished job says what
   it changed (kernel/run_log.py).
+- ``GET /api/projects/<pid>/wip``: its work in progress, what its working copy holds uncommitted, by kind and area,
+  or "not measured" with why (kernel/wip.py, FR-WIP1); nothing is written to the repository.
 
 Writes are signed by a person and persona (with access enforced, one granted where it acts) and recorded:
 
@@ -23,7 +25,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from kernel import run_log, start_here, task_detail
+from kernel import run_log, start_here, task_detail, wip
 from kernel.people import is_person
 
 PID = r"(?P<pid>_factory|[a-z0-9][a-z0-9-]{0,80})"
@@ -37,6 +39,7 @@ ROUTES = [
     ("POST", rf"/api/projects/{PID}/tasks/{TID}/done", "post_task_done"),
     ("POST", rf"/api/projects/{PID}/tasks/{TID}/handoff", "post_task_handoff"),
     ("GET", r"/api/run-log", "get_run_log"),
+    ("GET", rf"/api/projects/{PID}/wip", "get_wip"),   # work in progress (FR-WIP1)
 ]
 Reply = tuple[int, dict[str, Any]]
 RECENT = 20
@@ -92,6 +95,10 @@ class LandingRoutes:
         project = self._project(pid)
         jobs = [{k: v for k, v in j.items() if k != "_raw"} for j in self._jobs(pid)] if pid != "_factory" else []
         return 200, start_here.panel(project, person=self._reader(query or {}), jobs=jobs)
+
+    def get_wip(self, pid: str, query: dict[str, Any] | None = None, **_: object) -> Reply:
+        fresh = str((query or {}).get("fresh") or "") in ("1", "true")    # Refresh: read again, not the cached one
+        return 200, wip.read(self._project(pid), fresh=fresh)
 
     def get_task_rows(self, pid: str, **_: object) -> Reply:
         return 200, task_detail.rows(self._project(pid))

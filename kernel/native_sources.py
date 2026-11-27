@@ -1,7 +1,7 @@
 """A project's own sources (FR-SRC1): where an adopted or attached project keeps its requirements, criteria, tests,
 test results, findings and tasks, said by the project, proposed by Rihmasto, and read as the truth.
 
-The owner (2026-11-26): "Im still not happy with clarity, when I jump into the game project its not clear what
+The owner (2026-11-26): "Im still not happy with clarity, when I jump into [an adopted project] its not clear what
 should I do and claude code in IDE didnt find most of insights relevant". A project's real requirements may be a
 folder of rule files, its real tests a gate run on another machine, its real plan a round's README: guessing them
 from old documents misleads. Here a person maps each source (kernel/native_detect.py proposes them by rule):

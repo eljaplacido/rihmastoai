@@ -34,6 +34,10 @@ import { agentObsSettingsCard } from "./agentobs.js";
 import { aboutCard } from "./about.js";
 import { enforcementSettingsCard as harnessSettingsCard } from "./whoacted.js";   // FR-NVL1
 import { enforcementSettingsCard } from "./enforcement.js";   // how strict each stage is, for all projects (FR-ENF1)
+import { teamsSettingsCard } from "./teams.js";   // teams, each tied to projects (FR-TM1)
+import { machinesSettingsCard } from "./asks.js";   // machines, asks between them, Test connection (FR-XAG1)
+import { vocabSettingsCard } from "./vocab.js";   // the team's words for Rihmasto's own terms (FR-TM2)
+import { scopeSettingsCard } from "./applieswhere.js";   // what applies where (FR-TM3)
 import { structureSettingsCard } from "./structure.js";   // Rihmasto's structure for all projects (FR-STR1)
 import { unreadableNote } from "./heal.js";   // a project that cannot be read is named (FR-NVL3)
 
@@ -824,6 +828,10 @@ export async function renderSettings(seq) {
     harnessSettingsCard(),   // Harness and enforcement: Gnomon on by default, an opt-out recorded (FR-NVL1)
     enforcementSettingsCard(),   // levels per environment for every project (FR-ENF1)
     structureSettingsCard(),   // Rihmasto's own conventions: Off, Advise or Enforce for every project (FR-STR1)
+    teamsSettingsCard(),       // teams, each tied to projects (teams.js, FR-TM1)
+    machinesSettingsCard(projects),   // the machines, how each is reached, Test connection (asks.js, FR-XAG1)
+    vocabSettingsCard(),       // the team's words for Rihmasto's own terms (vocab.js, FR-TM2)
+    scopeSettingsCard(projects),   // what applies where: every setting's scope (scope.js, FR-TM3)
     !embedsOn && !em.embeds.length ? null : card({ title: "Embeds: a chat window for a website", icon: "message-square", id: "embeds", cls: "emb-card",
       tools: [embedsOn ? create : null],
       info: "An embed has exactly one capability: it files end-user feedback as a change, or a business need as a signal. It answers only from a public brief "

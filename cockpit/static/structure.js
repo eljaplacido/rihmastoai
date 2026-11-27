@@ -8,15 +8,15 @@
 
 import { h, fill, icon, chip, api, enc, card, button, say, plural, signed, needPerson, act, ago, AuthError,
   mayAct, PROPOSALS } from "./core.js";
-import { pick, datum } from "./words.js";
+import { pick, datum, scopeWord as baseScopeWord } from "./words.js";
 
 const LEVELS = ["off", "advise", "enforce"];
 const levelWord = (l) => pick({ off: "Off: hide it", advise: "Advise: a suggestion", enforce: "Enforce: a decision" }[l],
   { off: "Off", advise: "Advise", enforce: "Enforce" }[l]) || l;
 const LEVEL_TONE = { off: "neutral", advise: "info", enforce: "warning" };
 const LEVEL_ICON = { off: "pause", advise: "info", enforce: "shield" };
-const scopeWord = (s) => pick({ project: "This project", platform: "All projects", default: "Rihmasto's default" }[s],
-  { project: "Project", platform: "Platform", default: "Default" }[s]) || s;
+// The scope wording is the scope table's (words.js scopeWord, kernel/scope_table.py): this project, this team, the shipped default.
+const scopeWord = (s) => baseScopeWord(s);
 const KIND_WORD = { own: ["Projects with their own structure", "Adopted or attached projects"],
   built: ["Projects Rihmasto builds", "Built by Rihmasto"] };
 // Each convention in a business reader's words; a developer reads the kernel's own name.

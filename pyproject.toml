@@ -63,4 +63,4 @@ rihma-mcp = "mcp.server:main"
 # Every package directory (tests/test_wiring.py lists them): the checks, Insights, the red team, the cell runners,
 # agent observability.
 packages = ["kernel", "kernel.checks", "kernel.insights", "kernel.redteam", "kernel.runners", "kernel.agentobs",
-            "adapters", "cockpit", "embed", "mcp"]
+            "kernel.gnomon_posture", "adapters", "cockpit", "embed", "mcp"]

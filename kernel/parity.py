@@ -254,6 +254,13 @@ CLI_WHY_NOT.update({
     "access agent-decide": "an agent decides a card through the persona delegated to it, by its own signed request; "
                            "a person sees and revokes the delegation beside it"})
 
+# Each project's Gnomon posture (FR-GNP1): the card is a read; Ask Rihma answers "how well is Gnomon governing this
+# project?" and "what should I tighten first?" by rule (kernel/gnomon_posture/ask.py), and Take me there opens the
+# view, where filing a suggestion as a change card is a judgement made beside the setting it names.
+READS = READS | frozenset({"gnomon_posture_card"})
+CHAT.update({"gnomon_posture_propose": ("open", JUDGED)})
+CLI_ROUTES.update({"gnomon-posture propose": "post_gnomon_posture_propose"})
+
 # People in the loop (FR-HITL1): what waits on whom and copying a new link change nothing; every other control is an
 # Ask Rihma operation (kernel/hitl_chat.py OPS), but the channels, which are IT's with a key's name on its machine.
 READS = READS | frozenset({"hitl_waiting", "hitl_link_copy"})
@@ -315,9 +322,33 @@ CLI_ROUTES.update({"assessment verdict": "post_assessment_verdict", "assessment 
 # change nothing; Ask Rihma answers "what should I do here?" with the same steps (kernel/start_here_chat.py), and a
 # task's start, done and hand-off are Ask Rihma operations (kernel/start_here_chat.py OPS) and signed commands.
 READS = READS | frozenset({"start_here", "task_open", "task_filters", "task_ask", "run_log_open", "run_log_copy"})
+# Work in progress (FR-WIP1): reading the working copy changes nothing; Ask Rihma's "what am I in the middle of?"
+# answers it by rule (kernel/wip_chat.py), `rihmasto wip` prints it.
+READS = READS | frozenset({"wip_card"})
 CHAT.update({
     "start_here_hide": ("open", "hiding Start here is a person's own choice of what they see, made on the panel; "
                                 "Ask Rihma's \"what should I do here?\" gives the same steps by rule "
                                 "(kernel/start_here_chat.py)"),
     "task_start": ("op", "start_task"), "task_done": ("op", "mark_task_done"), "task_handoff": ("op", "hand_off_task")})
 CLI_ROUTES.update({"task start": "post_task_start", "task done": "post_task_done", "task handoff": "post_task_handoff"})
+
+# Teams, their words and what applies where (FR-TM1, FR-TM2, FR-TM3): the page, the previews and the scope view only
+# read; every change is answered and proposed by rule (kernel/teams_chat.py), the person confirms it, signed.
+READS = READS | frozenset({"teams_page", "teams_preview", "vocab_preview", "scope_view"})
+CHAT.update({c: ("chat", "kernel.teams_chat:answer") for c in (
+    "teams_set", "teams_undo", "teams_move", "vocab_team", "vocab_project", "vocab_undo")})
+CLI_ROUTES.update({"teams create": "post_team", "teams set": "put_team", "teams move": "post_project_team",
+                   "teams undo": "post_team_undo", "vocab set": "put_project_vocabulary",
+                   "vocab undo": "post_vocabulary_undo"})
+# Machines, asks between agents and machines, Test connection (FR-XAG1, FR-RCH1): seeing them and testing a connection
+# change nothing; a machine or an ask is proposed by rule (kernel/asks_chat.py) and the person confirms it, signed.
+# Copying an ask and making its reply link stay clicks beside the ask: the clipboard is the person's, a link shown once.
+READS = READS | frozenset({"machines_page", "reach_test", "asks_list", "asks_waiting"})
+CHAT.update({c: ("chat", "kernel.asks_chat:answer") for c in (
+    "machine_add", "machine_remove", "ask_put", "ask_answer", "ask_withdraw")})
+CHAT.update({"ask_copy": ("open", "the message goes to the person's own clipboard, beside the ask: Take me there "
+                                  "opens it"),
+             "ask_link": ("open", "a reply link is shown once, beside the ask it answers: Take me there opens it")})
+CLI_ROUTES.update({"machines add": "post_machine", "machines remove": "post_machine_remove", "asks put": "post_ask",
+                   "asks copy": "post_ask_copy", "asks answer": "post_ask_answer", "asks withdraw": "post_ask_withdraw",
+                   "asks link": "post_ask_link"})

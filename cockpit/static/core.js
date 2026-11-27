@@ -32,8 +32,10 @@ export const PAGE_ROUTES = {
   "agentops_all": "#/agentops", "agentops": "#/p/{pid}/agentops",
   "board": "#/p/{pid}/board", "trace": "#/p/{pid}/trace",
   "enforcement": "#/p/{pid}/enforcement",
+  "vocabulary": "#/p/{pid}/vocabulary",
   "loop": "#/p/{pid}/loop",
   "itops": "#/p/{pid}/itops",
+  "gnomon_posture": "#/p/{pid}/gnomon_posture",
   "share": "#/share"
 };
 export const TOP_PAGES = Object.keys(PAGE_ROUTES).filter((k) => !PAGE_ROUTES[k].includes("{pid}"));
@@ -98,6 +100,7 @@ export const VIEWS = {
   incidents: { label: "Incidents", icon: "alert" },   // this project's incidents (heal.js, FR-HEAL1)
   agentops: { label: "Agent operations", icon: "gauge" },   // the project's agents: cost, speed, context (agentops.js)
   enforcement: { label: "Enforcement", icon: "shield" },   // how strict each stage is (enforcement.js, FR-ENF1)
+  vocabulary: { label: "Vocabulary", icon: "book" },   // Rihmasto's own words by team and project (vocab.js, FR-TM2)
 };
 export const FACTORY_VIEWS = ["overview", "inbox", "ledger"];
 export const STAGE_ICON = { 1: "briefcase", 2: "lightbulb", 3: "code", 4: "file-check", 5: "hammer", 6: "users", 7: "server" };

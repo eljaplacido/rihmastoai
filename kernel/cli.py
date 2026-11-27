@@ -69,8 +69,9 @@ from kernel import (access, assess_cli, autonomy, embeds, evidence_pack, faces, 
                    access_cli, alignment_cli, automations_cli, autopilot_cli, bridge_cli, change_cli, console_cli,
                    destinations_cli, evals_cli, ide, input_summary, integration_decl, journey_cli, material_cli,
                    modules, outputs, packs, posture_cli, review_cli, road_settings, security, setup_cli, shape_cli,
-                   signals, standalone, task_cli, walkthrough_cli, chain_cli)
+                   signals, standalone, task_cli, walkthrough_cli, chain_cli, teams_cli)
 from kernel.agentobs import cli as agentobs_cli
+from kernel.gnomon_posture import cli as gnomon_posture_cli
 from kernel.canon import Canon, DecisionRefused
 from kernel.insights import cli as insights_cli
 from kernel.dashboard import catalogue
@@ -251,8 +252,9 @@ def build_parser() -> argparse.ArgumentParser:
                 automations_cli.add_parsers, alignment_cli.add_parsers,  # FR-AUT1; FR-ALN1
                 insights_cli.add_parsers, review_cli.add_parsers, setup_cli.add_parsers,  # FR-INS1; FR-REV1; FR-SET1
                 road_settings.add_parsers, bridge_cli.add_parsers, agentobs_cli.add_parsers,  # GCP1; channel; OBS1
-                task_cli.add_parsers,
-                *(_kernel(m).add_parsers for m in ("devcli", "itops_cli", "observe_cli", "native_cli"))):
+                task_cli.add_parsers, teams_cli.add_parsers, gnomon_posture_cli.add_parsers,  # LND1; TM1; GNP1
+                *(_kernel(m).add_parsers for m in ("devcli", "itops_cli", "observe_cli", "native_cli", "wip_cli",
+                                                   "asks_cli"))):
         add(sub)
     walkthrough_cli.add_parsers(sub)          # walkthroughs in a terminal (FR-WLK1)
     journey_cli.add_parsers(sub)              # guided journeys and the next step (FR-JRN1)
@@ -438,15 +440,19 @@ CAPABILITY: dict[str, Handler] = {
     **input_summary.handlers(_print, lambda: _model(), print), **autopilot_cli.handlers(_print, _model),
     **standalone.handlers(_print, _model), **change_cli.handlers(_print, _model), **runners_cli.handlers(_print),
     **shape_cli.handlers(_print, lambda: _model(), print), **integration_decl.handlers(_print), **ide.handlers(_print),
-    **automations_cli.handlers(_print, lambda: _model()), **agentobs_cli.handlers(_print)}
+    **automations_cli.handlers(_print, lambda: _model()), **agentobs_cli.handlers(_print),
+    **gnomon_posture_cli.handlers(_print)}   # each project's Gnomon posture (FR-GNP1)
 CAPABILITY.update(walkthrough_cli.handlers(_print, lambda: _model()))     # walkthroughs in a terminal (FR-WLK1)
 CAPABILITY.update({**console_cli.handlers(_print), **alignment_cli.handlers(_print)})  # FR-CON1, FR-CHK1; FR-ALN1
 CAPABILITY.update({**road_settings.handlers(_print), **task_cli.handlers(_print),   # roads (GCP1); Start here (LND1)
+                   **teams_cli.handlers(_print),   # teams, words, scope (TM1)
                    **_kernel("observe_cli").handlers(_print), **_kernel("context_cli").handlers(_print)})  # SHR1; CTX1
 for _cli in (journey_cli, evals_cli, insights_cli, review_cli, bridge_cli, destinations_cli, _kernel("devcli"),
              _kernel("itops_cli")):   # FR-JRN1, EVL1, INS1, REV1, CPL1/BRG1/CHN1, DST1, DEV1, ITO1
     CAPABILITY.update(_cli.handlers(_print, print))
 CAPABILITY.update(setup_cli.handlers(_print, lambda: _model()) | _kernel("native_cli").handlers(_print))  # SET1, SRC1
+CAPABILITY.update(_kernel("wip_cli").handlers(_print, print))   # work in progress (FR-WIP1)
+CAPABILITY.update(_kernel("asks_cli").handlers(_print, print))   # machines, asks, reach (FR-XAG1, FR-RCH1)
 
 
 def command_of(args: Args) -> str:

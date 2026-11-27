@@ -26,6 +26,7 @@ from kernel import (
     observe_chat,
     start_here_chat,
 )
+from kernel import asks_chat as asks_q
 from kernel import assess_headline as assess_q
 from kernel import channel_consult_chat as consult_q
 from kernel import devask as dev_q
@@ -35,7 +36,10 @@ from kernel import itdata_chat as itdata_q
 from kernel import itops_chat as itops_q
 from kernel import native_chat as native_q
 from kernel import structure_chat as structure_q
+from kernel import teams_chat as teams_q
+from kernel import wip_chat as wip_q
 from kernel.agentobs import ask as agentobs_q
+from kernel.gnomon_posture import ask as gnomon_posture_q
 
 MONITOR = re.compile(r"\b(?:monitor\w*|what to watch|keep track)\b", re.IGNORECASE)
 
@@ -86,14 +90,18 @@ def agentops_first(factory: Any, question: str, project: Any, persona: str,
 def _own(factory: Any, question: str, project: Any, persona: str, view: str | None,
          holding: tuple[str, ...] | None) -> dict | None:
     answerers = (
+        lambda: gnomon_posture_q.answer(factory, question, project, persona),   # Gnomon posture (FR-GNP1)
         lambda: assess_q.answer(factory, question, project, persona, view=view),   # the assessment (FR-ASP1)
         lambda: sync_plan(factory, question, project),   # how to sync a named agent and what to monitor (FR-LND2)
+        lambda: asks_q.answer(factory, question, project, persona),   # agents on machines, reach (XAG1)
         lambda: consult_q.answer(factory, project, question, persona),   # ask a coding agent, sync (FR-CHN2)
         lambda: agentops_first(factory, question, project, persona, holding),   # the optimise audit (FR-AOP3)
         lambda: itdata_q.answer(factory, question, project, persona),   # integrations and data (FR-ITD1)
         lambda: itops_q.answer(factory, question, project, persona),   # what IT checks (FR-ITO1)
         lambda: native_q.answer(factory, question, project, persona),   # its own sources (FR-SRC1)
+        lambda: wip_q.answer(factory, question, project, persona),   # its work in progress (FR-WIP1)
         lambda: structure_q.answer(factory, question, project, persona, holding=holding),   # its structure (FR-STR1)
+        lambda: teams_q.answer(factory, question, project, persona, holding=holding),   # teams, words, scope (FR-TM1)
     )
     for answer in answerers:
         about = answer()

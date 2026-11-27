@@ -41,6 +41,8 @@ FIX = Path(__file__).parent / "fixtures" / "gnomon"
 UNPRICED = {"models": {}}  # a price table that prices nothing: every run's cost is not measured
 _DEFAULT = object()
 _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never through a proxy
+# A loaded CI machine (GitHub sets CI=true) can take longer than 10 s to answer one call; it gets three times that.
+CALL_TIMEOUT = 30 if os.environ.get("CI") else 10
 
 
 class FakeRunner:
@@ -93,7 +95,7 @@ class CockpitTestCase(FactoryTestCase):
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(self.origin + path, data=data, headers=headers, method=method)
         try:
-            with _DIRECT.open(req, timeout=10) as res:
+            with _DIRECT.open(req, timeout=CALL_TIMEOUT) as res:
                 payload, status, hdrs = res.read(), res.status, res.headers
         except urllib.error.HTTPError as exc:
             with exc:
@@ -1852,7 +1854,7 @@ class EmbedBaseTest(RedesignTestCase):
             data = None if body is None else json.dumps(body).encode("utf-8")
             req = urllib.request.Request(server.origin + path, data=data, headers=headers, method=method)
             try:
-                with _DIRECT.open(req, timeout=10) as res:
+                with _DIRECT.open(req, timeout=CALL_TIMEOUT) as res:
                     return res.status, json.loads(res.read() or b"null")
             except urllib.error.HTTPError as exc:
                 with exc:
@@ -1971,14 +1973,14 @@ class AssistantRouteTest(RedesignTestCase):
         req = urllib.request.Request(server.origin + "/auth", data=json.dumps({"bootstrap": bootstrap}).encode(),
                                      headers={"Content-Type": "application/json", "Origin": server.origin},
                                      method="POST")
-        with _DIRECT.open(req, timeout=10) as res:
+        with _DIRECT.open(req, timeout=CALL_TIMEOUT) as res:
             token = json.loads(res.read())["token"]
         mine = {"v": 1, "lens": "delivery", "widgets": [{"id": "my-gate", "type": "gate_trend", "size": "M"}]}
         put = urllib.request.Request(server.origin + "/api/layout?persona=developer&lens=delivery",
                                      data=json.dumps({"person": "Dev", "layout": mine}).encode(), method="PUT",
                                      headers={"Content-Type": "application/json", "Origin": server.origin,
                                               "Authorization": "Bearer " + token})
-        with _DIRECT.open(put, timeout=10) as res:
+        with _DIRECT.open(put, timeout=CALL_TIMEOUT) as res:
             self.assertEqual(res.status, 200)
         before = self.ledgers()
         layout_file = next((self.factory.home / "_cockpit" / "layouts").rglob("*.json")).read_bytes()

@@ -26,6 +26,7 @@ import { lastActionBox } from "./expand.js";                                    
 import { openAssistant, send as askRihma } from "./assistant.js";       // a failed job: ask Rihma why
 import { handoffButton } from "./goal.js";                                     // hand off to an agent (FR-BRG1)
 import { startHerePanel } from "./starthere.js";                               // Start here (FR-LND1)
+import { wipCard } from "./wip.js";                                           // work in progress (FR-WIP1)
 import { tasksTop, taskShown, taskCardExtra } from "./tasklive.js";            // tasks you open, live (FR-LND1)
 import { logLink } from "./runlog.js";                                         // the whole log of a run (FR-LND1)
 import { postureChip } from "./posture.js";
@@ -857,7 +858,7 @@ function ledgerBadge(l) {
   return badge("crit", tw("ledger") + pick(" damaged", " broken") + (l.broken_seq !== null && l.broken_seq !== undefined ? " at seq " + l.broken_seq : ""), explain("ledger"));
 }
 
-// A view's heading states its scope: "Home and Horizon · Inbox" (FR-UXO1).
+// A view's heading states its scope: "Webshop · Inbox" (FR-UXO1).
 function viewHead(title, question) {
   const pid = S.route && S.route.name === "project" ? S.route.pid : null;
   return h("div", { class: "q" }, h("h2", { class: "view-h", tabindex: "-1" },
@@ -982,6 +983,7 @@ VIEW_FN.overview = function viewOverview(p, inbox, ctx) {
     nextStrip(p),
     nav.journey ? nav.journey.card(p) : null,   // where it is on its journey, and the next step (FR-JRN1)
     agentsStrip(p),
+    p.meta.factory ? null : wipCard(p),       // its uncommitted work in progress (FR-WIP1)
     planCard ? h("p", { class: "callout" }, glyph("human"), h("span", null, "The plan waits on approval before anything is built: "
       + "read it, edit a requirement, approve it, or send it back with a reason."),
     h("a", { href: link(meta.id, "plan"), class: "callout-go" }, "Open the plan")) : null,

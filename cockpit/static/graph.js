@@ -65,7 +65,12 @@ function summary(st) {
   return h("div", { class: "gv-sum" },
     h("p", { class: "muted small", "aria-live": "polite" }, c.nodes + " nodes · " + c.matching + " match · " + c.shown + " shown · " + c.edges + " links"
       + (m.scope === "factory" ? " · " + (m.projects || []).length + " projects" : "")),
-    focus, clear, m.focus_missing ? chip("warning", "alert", "No node " + st.f.focus + " here: the focus is left out") : null,
+    focus, clear, m.focus_missing ? chip("warning", "alert", m.hidden && m.hidden.focus_hidden
+      ? st.f.focus + " is a kind of record your words hide: the focus is left out" : "No node " + st.f.focus + " here: the focus is left out") : null,
+    m.hidden ? h("p", { class: "small muted", "data-key": "gv-hidden" }, chip("info", "eye", "Hidden by your words"), " ",
+      h("span", { "data-ud": "" }, m.hidden.note + (m.hidden.said.length ? " " + m.hidden.said.join(" ") : ""))) : null,
+    m.vocabulary && m.vocabulary.mixed ? h("p", { class: "small muted", "data-key": "gv-mixed" }, chip("neutral", "layers", "Several readings"), " ",
+      h("span", { "data-ud": "" }, m.vocabulary.mixed.note)) : null,
     (m.issues || []).map((i) => h("button", { type: "button", class: "chip " + i.severity + " gv-iss", "aria-label": i.count + ": " + i.text + " Show only issues",
       onclick: () => setFilters(st, { issues: true }) }, icon(i.severity === "critical" ? "x-circle" : "alert"), h("span", null, i.count + " · " + i.text))));
 }

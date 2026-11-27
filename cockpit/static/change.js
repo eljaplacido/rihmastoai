@@ -13,6 +13,7 @@ import { pathField } from "./picker.js";
 import { archiveButton } from "./setup.js";
 import { openHandoff } from "./goal.js";
 import { sourcesPanel } from "./sources.js";   // a project's own sources (FR-SRC1)
+import { teamField } from "./teams.js";   // the project's team, moved with a preview (FR-TM1)
 
 const STEP_LABEL = { material: "the material", questions: "the questions", spec: "the spec", plan: "the plan" };
 const FIELD_LABEL = { title: "Title", kind: "Kind of work", mode: "Mode", maturity: "Maturity", build_without_waiting: "Build without waiting for me" };
@@ -106,6 +107,9 @@ export function openSettings(p) {
           + orList(((S.meta && S.meta.postures) || {}).looseners || []) + "."))),
     // What runs this project's builder and verifier, and its assurance (D-0019): chosen in Settings > Runners, approved by IT.
     h("div", { class: "field chg-runner" }, h("span", { class: "label-h" }, "Cell runners"), runnerBox),
+    // The team this project is in: a person working alone has a team made for them (one line); a move to another team
+    // is previewed, signed and undone in place, apart from Save (teams.js, FR-TM1).
+    h("div", { class: "field chg-team", "data-slot": "team" }, h("span", { class: "label-h" }, "Team"), teamField(pid)),
     // Where an adopted or attached project keeps its own requirements, tests, findings and tasks (sources.js, FR-SRC1)
     ["adopted", "attached"].includes(p.meta.source_kind) ? h("div", { class: "field chg-sources", "data-slot": "sources" },
       h("span", { class: "label-h" }, "Project's own sources"), sourcesPanel(pid, { onChange: () => nav.rerender && nav.rerender() })) : null,

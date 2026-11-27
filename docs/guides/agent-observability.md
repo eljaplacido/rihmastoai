@@ -1,7 +1,7 @@
 # Agent observability: what the IDE agents did, per project
 
 Your developers work in their IDE and terminal with coding agents: Claude Code, Cursor, OpenCode. An
-agent observability hub that your team runs itself (the "AI Architect Cockpit") records the metadata of
+agent observability hub that your team runs itself records the metadata of
 each of those sessions: what ran, where, how long, what failed and what it touched. **Agent
 observability** brings that into Rihmasto, per project, for developers and IT: the **Agent sessions**
 view.

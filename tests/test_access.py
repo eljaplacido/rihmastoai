@@ -26,7 +26,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import enforcement_fakes  # noqa: E402  (the enforcement levels' preview, FR-ENF1)
 import structure_fakes  # noqa: E402  (the preview of Rihmasto's structure, FR-STR1)
+import team_fakes  # noqa: E402  (the previews of teams and their words, FR-TM1)
 import gnomon_fakes  # noqa: E402  (the signed `rihmasto evals` commands, FR-EVL1)
+import gnomon_posture_fakes  # noqa: E402  (the signed `rihmasto gnomon-posture` command, FR-GNP1)
 import itops_fixture  # noqa: E402  (the signed `rihmasto itops` commands, FR-ITO1)
 import observe_fakes  # noqa: E402  (where the sharer is, for guests following, FR-SHR1)
 import test_brief_ln as ln  # noqa: E402  (its FactoryApiTest builds the world every write route acts on)
@@ -469,6 +471,7 @@ class EveryWriteRouteTest(EnforcedCockpitCase):
                                    "persona": "product_owner"}),
                 enforcement_fakes.preview_row(w),                                   # records nothing
                 structure_fakes.preview_row(w),                                     # records nothing (FR-STR1)
+                *team_fakes.preview_rows(w),                                        # records nothing (FR-TM1)
                 observe_fakes.presence_row(w),                         # in memory: records nothing (FR-SHR1)
                 *self.scan_writes(src)]
 
@@ -494,6 +497,7 @@ class EveryWriteRouteTest(EnforcedCockpitCase):
         every_write = {name for method, _, name in cockpit.ROUTES if method in ("POST", "PUT")}
         takes_no_person = {"post_link", "post_profile_propose", "post_posture_preview"}   # record nothing, sign nothing
         takes_no_person.add("post_people_test_token")              # a token's test records nothing (FR-PPL1)
+        takes_no_person.add("post_reach")                          # Test connection records nothing (FR-RCH1)
         # Settings > People and access: with IT's access file in force IT's file governs people, so each is refused
         # whoever signs it (tests/test_people.py, FR-PPL1).
         people = {r[0] for r in ln.FactoryApiTest.people_writes(w)}
@@ -532,7 +536,7 @@ class EveryWriteRouteTest(EnforcedCockpitCase):
                         "post_automation_dry_run", "post_source_scan", "post_source_scan_cancel",
                         "post_pick_recent", "post_pick_cancel", "put_graph_prefs",
                         "post_automation_compose", "post_enforcement_preview", "post_structure_preview",
-                        "post_observe_presence"):
+                        "post_observe_presence", "post_teams_preview", "post_vocabulary_preview"):
                 continue                     # kept outside every ledger: a preview or a Test records nothing
             self.assertTrue(any(e.get("identity") == IDA for e in added), (name, added))
         for p in self.factory.projects():
@@ -680,6 +684,7 @@ def cli_writes(pid: str, tmp: Path) -> dict:
                        "--persona", "product_owner"],
         **setup_cli_writes(pid),
         **itops_fixture.cli_writes(pid),     # the IT check set turned on, an assessment (FR-ITO1)
+        **gnomon_posture_fakes.cli_writes(pid),   # a Gnomon posture suggestion filed (FR-GNP1)
         # a project's own sources (kernel/native_cli.py, FR-SRC1): mapping, reading, importing and running are signed
         **{f"sources {sub}": ["sources", sub, pid, *rest, *who, "--persona", "developer"] for sub, rest in (
             ("map", ["--key", "requirements:rules/*"]), ("change", ["SRC-1", "--every", "daily"]),
@@ -689,6 +694,22 @@ def cli_writes(pid: str, tmp: Path) -> dict:
         "task start": ["task", "start", pid, "T-001", *who, "--persona", "developer"],
         "task done": ["task", "done", pid, "T-001", "--evidence", "the suite passed", *who, "--persona", "developer"],
         "task handoff": ["task", "handoff", pid, "T-001", "--to", "codex", *who, "--persona", "developer"],
+        # teams and their words (kernel/teams_cli.py, FR-TM1, FR-TM2): defined by IT, moved by IT or the owner
+        "teams create": ["teams", "create", "Platform", *who, "--persona", "it"],
+        "teams set": ["teams", "set", "team-solo", "--name", "Ours", *who, "--persona", "it"],
+        "teams move": ["teams", "move", pid, "team-solo", *who, "--persona", "it"],
+        "teams undo": ["teams", "undo", "--project", pid, *who, "--persona", "it"],
+        "vocab set": ["vocab", "set", "--team", "team-solo", "--term", "kind:task", "--label", "Job", *who,
+                      "--persona", "it"],
+        "vocab undo": ["vocab", "undo", "--team", "team-solo", *who, "--persona", "it"],
+        # machines and asks between agents and machines (kernel/asks_cli.py, FR-XAG1)
+        "machines add": ["machines", "add", "laptop", "--reach", "hand", *who, "--persona", "it"],
+        "machines remove": ["machines", "remove", "laptop", *who, "--persona", "it"],
+        "asks put": ["asks", "put", pid, "--to", "codex", "--text", "Is main green?", *who, "--persona", "it"],
+        "asks copy": ["asks", "copy", pid, "AK-0001", *who, "--persona", "it"],
+        "asks answer": ["asks", "answer", pid, "AK-0001", "--text", "yes", *who, "--persona", "it"],
+        "asks withdraw": ["asks", "withdraw", pid, "AK-0001", *who, "--persona", "it"],
+        "asks link": ["asks", "link", pid, "AK-0001", *who, "--persona", "it"],
     }
 
 

@@ -173,7 +173,7 @@ export function waterfall(opts) {
     open: { color: STATUS_MARK.neutral, icon: "clock", label: "In its gate" },
   };
   const vOf = (r) => (r.verdict === "passed" ? "passed" : r.verdict ? "failed" : "open");
-  const fmt = (ms) => { const d = new Date(ms); return String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0"); };
+  const fmt = (ms) => { const d = new Date(ms); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
   const rows = tasks.map((t) => {
     const track = h("div", { class: "wf-track" });
     t.rounds.forEach((r, i) => {
@@ -202,7 +202,7 @@ export function waterfall(opts) {
   const ticks = ok.length ? [0, 1 / 3, 2 / 3, 1].map((f) => h("span", { class: f > 0 && f < 1 ? "mid" : null, style: { left: (f * 100) + "%" } },
     fmt(t0 + f * span))) : [];
   return h("figure", { class: "viz waterfall" }, h("div", { class: "wf" }, rows,
-    h("div", { class: "wf-row wf-axis", "aria-hidden": "true" }, h("span", { class: "wf-l" }, "UTC"), h("div", { class: "wf-track" }, ticks))),
+    h("div", { class: "wf-row wf-axis", "aria-hidden": "true" }, h("span", { class: "wf-l" }, "Local time"), h("div", { class: "wf-track" }, ticks))),
   legend([{ label: VERD.passed.label, color: VERD.passed.color, icon: "check-circle" },
     { label: VERD.failed.label, color: VERD.failed.color, icon: "x-circle" },
     { label: VERD.open.label, color: VERD.open.color, icon: "clock" }]),
@@ -216,7 +216,8 @@ export function dataTable(columnsDef, rows, caption) {
     h("tbody", null, rows.map((r) => h("tr", null, columnsDef.map((c, i) => {
       const v = typeof c.value === "function" ? c.value(r) : r[c.key];
       const cell = v === null || v === undefined ? h("span", { class: "nm-text" }, c.none || "not measured") : v;
-      return i === 0 ? h("th", { scope: "row" }, cell) : h("td", { class: c.num ? "num" : null }, cell);
+      // each cell names its column, so a phone shows the table as stacked rows (shell.css)
+      return i === 0 ? h("th", { scope: "row" }, cell) : h("td", { class: c.num ? "num" : null, "data-label": c.label }, cell);
     }))))));
 }
 

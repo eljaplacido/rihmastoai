@@ -61,9 +61,11 @@ def render(trigger: str, facts: dict, project) -> dict:
         expert = (f"{facts.get('model')} is available" + (f", {delta} on this product's evals" if delta else
                   ", not yet measured on this product's evals") + (f"; it would replace {facts['replaces']}" if
                   facts.get("replaces") else "") + ".")
-        business = f"{title} could improve with a newer model. Start a trial against its evals?"
+        business = (f"A newer AI model may build {title} better. Test it on this project's checks first "
+                    "(changes nothing live)?")
     elif trigger == "cve":
-        expert = f"{facts.get('id', 'A CVE')} ({facts.get('severity', 'severity unknown')}) names {facts.get('component')}."
+        expert = (f"{facts.get('id', 'A CVE')} ({facts.get('severity', 'severity unknown')}) "
+                  f"names {facts.get('component')}.")
         business = f"A security fix may be needed for {title}. Start a trial with the patched version?"
     elif trigger == "eval_drift":
         expert = f"Criterion {facts.get('criterion')} moved from {facts.get('before')} to {facts.get('after')}."

@@ -17,10 +17,12 @@ import re
 from typing import Any
 
 from kernel.agent_context_use import conventions_note
+from kernel.assess_progress import model_name, panel_said
 from kernel.assess_repo import PERSPECTIVES, SEVERITIES
 from kernel.canon import PERSPECTIVES as PANEL
 from kernel.intake import PERSPECTIVE_VOICES, _ask_json
 from kernel.model import Model, ModelError
+from kernel.progress import SILENT
 
 PER_PERSPECTIVE = 3
 MAX_TEXT = 1000
@@ -116,27 +118,42 @@ def _answered_by(model: Model) -> str | None:
     return str(name)[:200] if name else None
 
 
-def propose(model: Model, inv: dict[str, Any], checks: list[dict[str, Any]],
-            files: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """The panel's proposals, numbered P-1 on, and what the model did: asked, answered, failed, dropped."""
-    ids, names = {c["id"] for c in checks if c.get("id")}, set(files)
+def _perspective(model: Model, panel: str, inv: dict[str, Any], checks: list[dict[str, Any]],
+                 known: tuple[set[str], set[str]], note: dict[str, Any], rep: Any) -> list[dict[str, Any]]:
+    """One perspective's proposals, each step of it told to the progress (kernel/progress.py): started with the
+    model that answers, then done with what it proposed, or failed with why."""
+    sid = f"panel.{panel}"
+    rep.start(sid, panel_said(panel, model_name(model)))
+    try:
+        answer = _ask_json(model, prompt(panel, inv, checks))
+    except (ModelError, ValueError) as exc:
+        error = f"not measured: {type(exc).__name__}: {_text(exc, 200)}"
+        note["errors"].append({"perspective": panel, "error": error})
+        rep.failed(sid, error)
+        return []
+    raw = answer.get("findings") if isinstance(answer, dict) else None
+    kept = [p for p in (_proposal(x, panel, *known) for x in (raw if isinstance(raw, list) else [])) if p]
+    kept = kept[:PER_PERSPECTIVE]
+    dropped = (len(raw) if isinstance(raw, list) else 0) - len(kept)
+    note["dropped"] += dropped
+    note["answered"].append(panel)
+    note["models"][panel] = _answered_by(model) or "not recorded"
+    rep.found(sid, kept)
+    rep.done(sid, counts={"proposed": len(kept), "dropped": dropped}, said="Answered", by=_answered_by(model))
+    return kept
+
+
+def propose(model: Model, inv: dict[str, Any], checks: list[dict[str, Any]], files: list[str],
+            progress: Any = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """The panel's proposals, numbered P-1 on, and what the model did: asked, answered, failed, dropped.
+    ``progress`` (a kernel.progress.Reporter whose plan has the panel's steps) hears each perspective."""
+    known = ({c["id"] for c in checks if c.get("id")}, set(files))
+    rep = progress if progress is not None else SILENT
     proposals: list[dict[str, Any]] = []
     note: dict[str, Any] = {"used": True, "role": "analyst", "panel": list(PANEL), "answered": [], "errors": [],
                             "dropped": 0, "models": {}}
     for panel in PANEL:
-        try:
-            answer = _ask_json(model, prompt(panel, inv, checks))
-        except (ModelError, ValueError) as exc:
-            note["errors"].append({"perspective": panel, "error": f"not measured: {type(exc).__name__}: "
-                                                                  f"{_text(exc, 200)}"})
-            continue
-        raw = answer.get("findings") if isinstance(answer, dict) else None
-        kept = [p for p in (_proposal(x, panel, ids, names) for x in (raw if isinstance(raw, list) else []))
-                if p][:PER_PERSPECTIVE]
-        note["dropped"] += (len(raw) if isinstance(raw, list) else 0) - len(kept)
-        note["answered"].append(panel)
-        note["models"][panel] = _answered_by(model) or "not recorded"
-        proposals += kept
+        proposals += _perspective(model, panel, inv, checks, known, note, rep)
     for n, p in enumerate(proposals, 1):
         p["id"] = f"P-{n}"
     return proposals, note

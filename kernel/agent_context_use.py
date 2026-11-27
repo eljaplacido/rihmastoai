@@ -38,7 +38,8 @@ _STARTS = ("python", "python3", "py", "pytest", "uv", "poetry", "pipenv", "hatch
            "ctest", "pre-commit", "bazel", "sbt", "lein", "stack", "cabal", "zig", "jest", "vitest", "playwright")
 _KINDS = (("lint", re.compile(r"(?i)\b(lint|ruff|eslint|flake8|mypy|black|prettier|clippy|fmt|format|typecheck|"
                               r"pre-commit|vet)\b")),
-          ("test", re.compile(r"(?i)\b(test|tests|pytest|unittest|jest|vitest|mocha|rspec|ctest|tox|nox|check)\b")),
+          ("test", re.compile(r"(?i)\b(test|tests|pytest|unittest|jest|vitest|mocha|rspec|ctest|tox|nox|check|"
+                              r"gates?|smoke|e2e)\b")),       # a project's own gates are its tests (FR-ASP2)
           ("build", re.compile(r"(?i)\b(build|compile|package|install|tsc|bundle|assemble|sync)\b")),
           ("run", re.compile(r"(?i)\b(run|serve|start|dev|up)\b")))
 _PLAIN = re.compile(r"^[\w./:=@,+%~*?\[\]-]+$")     # argv words, never through a shell: a glob stays a word
@@ -46,8 +47,11 @@ _SHELL = re.compile(r"[;&|<>`$(){}\\\n]")
 
 
 def _kind(command: str, context: str) -> str | None:
+    """By the command's own words first (a script's name split at ``_``: ``sync_harness.py`` syncs), then by the
+    line or heading it sits under ("run ... and check the diff" does not make a sync script a test)."""
+    words = command.replace("_", " ")
     for kind, rule in _KINDS:
-        if rule.search(command):
+        if rule.search(words):
             return kind
     for kind, rule in _KINDS:
         if rule.search(context):

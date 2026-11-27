@@ -196,13 +196,15 @@ def health(project: Project) -> dict[str, Any]:
     and a last release that stopped. Track carries them, so the one answer the cockpit's header shows is
     never better than the health."""
     from kernel.insight import alignment
-    from kernel.status import _releases
+    from kernel.status import _releases, failed_baseline
 
     stale = [f["text"] for f in alignment(project) if f["kind"] == "stale_approval"]
     rels = _releases(project)
     failed = rels[-1].get("number") if rels and rels[-1].get("state") == "failed" else None
-    return figure(len(stale) + (failed is not None), "approvals gone stale, and whether the last release stopped",
-                  stale=stale, release_failed=failed)
+    base = failed_baseline(project)
+    return figure(len(stale) + (failed is not None) + bool(base), "approvals gone stale, whether the last release "
+                  "stopped, and an adopted baseline whose tests fail", stale=stale, release_failed=failed,
+                  baseline_failed=base or None)
 
 
 def posture(project: Project) -> dict[str, Any]:
@@ -351,6 +353,8 @@ def _work_reasons(f: dict[str, Any]) -> list[dict[str, str]]:
 def _watch_reasons(f: dict[str, Any], cps: dict[str, Any], held: dict[str, Any] | None) -> list[dict[str, str]]:
     """What the watch says: the budget, the posture, checkpoints due and an autopilot whose time is up."""
     out = _budget_reasons(f["time"], f["cost"])
+    if f["health"].get("baseline_failed"):     # an adopted project's existing tests fail (FR-RPJ1)
+        out.append(_reason("at_risk", "health", f["health"]["baseline_failed"]))
     if f["posture"]["value"] is False:
         out.append(_reason("at_risk", "posture", f"the run does not keep its posture: {f['posture']['basis']}"))
     out += [_reason("at_risk", "checkpoints", f"checkpoint {s} ({STAGES.get(s)}) is due: a person looks")
@@ -413,6 +417,18 @@ def summary(project: Project) -> dict[str, Any]:
         "tasks": {k: t["figures"]["tasks"].get(k) for k in ("done", "left", "total")}}
 
 
+def _digest_line(r: dict[str, Any], defang: Any) -> str:
+    why = f" ({defang(r['reasons'][0]['why'])})" if r["reasons"] else ""
+    return f"- {defang(r['title'] or r['project'])}: {r['state'].replace('_', ' ')}{why}"
+
+
+def _held_lines(held: list[Any]) -> list[str]:
+    if not held:
+        return []
+    return [f"- {len(held)} more {'project is' if len(held) == 1 else 'projects are'} bound to an autopilot's "
+            "sandbox and not listed here until a person stops the run"]
+
+
 def digest_notice(factory: Any, *, cockpit: str, sub_id: str, day: str,
                   subscription: dict[str, Any] | None = None) -> dict[str, Any]:
     """The daily Track digest (kernel/notices.py renders it, kernel/relay.py sends it): one line per
@@ -422,20 +438,13 @@ def digest_notice(factory: Any, *, cockpit: str, sub_id: str, day: str,
     from kernel.autopilot import outbound_hold
     from kernel.notices import NOT_HERE, defang
 
-    shown, held = [], []
-    for p in factory.projects():
-        if p.pid.startswith("_"):
-            continue
-        (held if subscription is not None and outbound_hold(p, subscription) else shown).append(p)
-    rows = [summary(p) for p in shown]
+    listed = [p for p in factory.projects() if not p.pid.startswith("_")]
+    held = [p for p in listed if subscription is not None and outbound_hold(p, subscription)]
+    rows = [summary(p) for p in listed if p not in held]
     counts = Counter(r["state"] for r in rows)
     head = "Rihmasto daily track: " + (", ".join(f"{counts[s]} {s.replace('_', ' ')}" for s in STATES if counts[s])
                                         or "no project listed")
-    lines = [f"- {defang(r['title'] or r['project'])}: {r['state'].replace('_', ' ')}"
-             + (f" ({defang(r['reasons'][0]['why'])})" if r["reasons"] else "") for r in rows[:30]]
-    if held:
-        lines.append(f"- {len(held)} more {'project is' if len(held) == 1 else 'projects are'} bound to an "
-                     "autopilot's sandbox and not listed here until a person stops the run")
+    lines = [_digest_line(r, defang) for r in rows[:30]] + _held_lines(held)
     return {"digest": True, "event_id": f"digest-{sub_id}-{day}", "card_kind": None, "headline": head,
             "detail": "\n".join(lines + [NOT_HERE]), "link": cockpit.rstrip("/") + "/#/home", "day": day,
             "counts": dict(counts), "held": [p.pid for p in held]}

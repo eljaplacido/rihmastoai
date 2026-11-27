@@ -7,20 +7,28 @@ import {
   S, h, icon, chip, fill, api, act, say, signed, needPerson, decides, personaLabel, link, enc, num, pct, plural,
   fmtAge, ago, fmtAt, fmtMoney, fmtMinutes, avatar, profileOf, profileChip, nowChip, healthChip, empty, button,
   KIND_LABEL, KIND_ICON, VERDICT_LABEL, CATALOGUE_STATE, HEALTH, EVIDENCE, NOW_STATE, FACTORY_PID, nav, stageName,
-  download, attachTip, infoButton, orList,
+  download, attachTip, infoButton, orList, mayAct,
 } from "./core.js";
 import { columns, bars, stack100, segbar, waterfall, dataTable, legend, meter, SERIES, STATUS_MARK, tipBox } from "./charts.js";
-import { TRACK, trackState, reasonLine } from "./track.js";
+import { TRACK, trackState } from "./track.js";
 import { tileOn } from "./modules.js";
+import {
+  pick, tw, datum, kernelWord, stageWord, technical, localTime, basisWord, cardTitleEl, titleOf, nowSaid, activityLine,
+  trackSaid, etaSaid, waitingCount, squareWord,
+} from "./words.js";
+const cap1 = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
-const asOf = (d) => "as of " + String(d.generated_at || "").slice(11, 16) + " UTC";
+const asOf = (d) => "as of " + localTime(d.generated_at);
 export const PROV_NOTE = { observed: "Observed: counted directly from the records", derived: "Derived: computed from observed counts" };
+const PROV_PLAIN = { observed: "counted", derived: "calculated" };
 
 // The provenance word, with its meaning on hover and focus of the widget's ⓘ, and in the text for a screen reader.
+// A business reader does not need it on every tile: it is said once, for a screen reader, and in the tooltip.
 function foot(d, prov, denom) {
-  return h("p", { class: "kpi-foot" }, h("span", { class: "prov " + prov, tip: PROV_NOTE[prov] }, prov,
-    h("span", { class: "vh" }, " (" + (PROV_NOTE[prov] || "").replace(/^\w+: /, "") + ")")),
-  denom ? h("span", null, denom) : null, h("span", { class: "fresh" }, asOf(d)));
+  return h("p", { class: "kpi-foot" }, technical() ? h("span", { class: "prov " + prov, tip: PROV_NOTE[prov] }, prov,
+    h("span", { class: "vh" }, " (" + (PROV_NOTE[prov] || "").replace(/^\w+: /, "") + ")"))
+    : h("span", { class: "vh" }, PROV_PLAIN[prov] || ""),
+  denom ? h("span", null, denom) : null, h("span", { class: "fresh", tip: String(d.generated_at || "") }, asOf(d)));
 }
 
 function notMeasured(reason, compact) {
@@ -99,32 +107,45 @@ function kpis(d) {
   const pr = k.proven || {};
   // The API's first_round.series is the hourly pass rate of every gate round, repairs included, not of
   // first rounds: drawn under this figure it would describe another number, so the tile draws no line.
+  const prov = (p) => (technical() ? "" : " (" + PROV_PLAIN[p] + ")");
+  const untested = pr.of ? pr.of - pr.num : 0;
   return [
     { label: "Projects in flight", icon: "folder", value: k.in_flight ? k.in_flight.value : null, provenance: "observed",
-      denom: k.in_flight ? "of " + plural(k.in_flight.of, "project") : null, info: k.in_flight && k.in_flight.basis,
+      denom: k.in_flight ? "of " + plural(k.in_flight.of, "project") : null, info: k.in_flight && basisWord("in_flight", k.in_flight.basis) + prov("observed"),
       problems: problemsOf(d, ["now"]) },
     { label: "Decisions waiting", icon: "inbox", value: k.decisions ? k.decisions.value : null, provenance: "observed",
       sub: k.decisions && k.decisions.oldest_hours !== null && k.decisions.oldest_hours !== undefined
         ? "oldest waits " + fmtAge(k.decisions.oldest_hours) : (k.decisions && k.decisions.value ? null : "nothing waits"),
-      denom: "across projects", info: k.decisions && k.decisions.basis, problems: problemsOf(d, ["decisions"]),
+      denom: "across projects", info: k.decisions && basisWord("decisions", k.decisions.basis) + prov("observed"), problems: problemsOf(d, ["decisions"]),
       partial: problemsOf(d, ["inbox"]) },
-    { label: "First-round gate pass", icon: "gate", value: fr.of ? fr.value : null, display: pct(fr.value),
-      provenance: "derived", denom: fr.of ? fr.num + " of " + plural(fr.of, "task") + " gated" : null,
-      why: "No task has reached a gate yet.", info: fr.basis },
-    { label: "Criteria proven", icon: "file-check", value: pr.of ? pr.value : null, display: pct(pr.value), provenance: "derived",
-      denom: pr.of ? pr.num + " of " + plural(pr.of, "criterion", "criteria") : null,
-      why: "No contract is compiled yet, so there are no criteria.", info: pr.basis, problems: problemsOf(d, ["coverage"]) },
-    { label: "Capabilities in use", icon: "catalogue", value: k.in_use ? k.in_use.value : null, provenance: "observed",
-      denom: k.in_use ? "of " + k.in_use.of + " in the catalogue" : null, info: k.in_use && k.in_use.basis,
+    { key: "First-round gate pass", label: pick("Passed the quality check first time", "First-round gate pass"), icon: "gate", value: fr.of ? fr.value : null, display: pct(fr.value),
+      provenance: "derived", denom: fr.of ? fr.num + " of " + plural(fr.of, "task") + pick(" checked", " gated") : null,
+      why: pick("No task has been checked yet.", "No task has reached a gate yet."), info: fr.basis && basisWord("first_round", fr.basis) + prov("derived") },
+    { key: "Criteria proven", label: pick("Agreed checks shown to work", "Criteria proven"), icon: "file-check", value: pr.of ? pr.value : null, display: pct(pr.value), provenance: "derived",
+      denom: pr.of ? pr.num + " of " + plural(pr.of, tw("criterion"), tw("criterion", 2)) : null,
+      sub: pr.of && !technical() ? (untested ? "The other " + untested + " have not been tested yet." : "Every agreed check is shown to work.") : null,
+      why: pick("No work is planned yet, so there is nothing to prove.", "No contract is compiled yet, so there are no criteria."), info: pr.basis && basisWord("proven", pr.basis) + prov("derived"), problems: problemsOf(d, ["coverage"]) },
+    { key: "Capabilities in use", label: pick("Live and in use", "Capabilities in use"), icon: "catalogue", value: k.in_use ? k.in_use.value : null, provenance: "observed",
+      denom: k.in_use ? "of " + plural(k.in_use.of, "project") : null,   // the same denominator as Projects in flight
+      sub: k.in_use && !technical() && (!k.in_use.value || k.in_use.live_to_try) ? (k.in_use.value ? "" : "None has reached production yet.")
+        + (k.in_use.live_to_try ? (k.in_use.value ? "" : " ") + plural(k.in_use.live_to_try, "release") + " live to try (explore, demo or pilot), not in production." : "") : null,
+      info: k.in_use && basisWord("in_use", k.in_use.basis) + prov("observed"),
       problems: problemsOf(d, ["catalogue"]) },
-  ].filter((t) => tileOn(t.label));   // a figure of a module that is off is not shown (cockpit/static/modules.js)
+  ].filter((t) => tileOn(t.key || t.label));   // a figure of a module that is off is not shown (cockpit/static/modules.js)
 }
 
 // -- decisions: inline actions go through the same routes as the Inbox ----------------------------
 
+// An ask put to a persona in People in the loop (kernel/hitl.py): it waits on whoever holds that persona.
+const waitsOnMe = (it) => (it.kind === "ask" ? mayAct(it.deciders) : decides(it.kind, it.deciders));
+
 export function decideButtons(item, opts) {
   const o = opts || {};
   const kind = item.kind;
+  if (kind === "ask") {
+    return waitsOnMe(item) ? h("a", { class: "btn small", href: link(item.project, "loop"), "data-control": "hitl_answer" }, "Answer")
+      : h("span", { class: "muted small" }, "Waits on " + orList(item.deciders || []));
+  }
   if (!decides(kind, item.deciders)) return h("span", { class: "muted small" }, "Waits on " + orList(item.deciders || []));
   const box = h("div", { class: "inline-decide" });
   const verdicts = (item.verdicts || []).filter((v) => !(kind === "question" && v === "assume"));
@@ -152,15 +173,15 @@ export function decideButtons(item, opts) {
 }
 
 function decisionRow(it) {
-  const mine = decides(it.kind, it.deciders);
+  const mine = waitsOnMe(it);
   return h("li", { class: "dec-row" + (mine ? " mine" : "") },
     h("span", { class: "dec-ic" }, icon(KIND_ICON[it.kind] || "inbox")),
     h("div", { class: "dec-b" },
       h("a", { class: "dec-t", href: it.project === FACTORY_PID ? (it.kind === "concept" ? "#/square" : link(it.project, "inbox", it.card))
-        : link(it.project, it.kind === "change" ? "changes" : "inbox", it.card) }, it.title),
-      h("div", { class: "dec-m" }, h("span", null, KIND_LABEL[it.kind] || it.kind), h("span", null, it.project_title),
-        h("span", { class: "mono" }, it.card), h("span", { tip: "how long it has waited" }, icon("clock"), fmtAge(it.age_hours)),
-        it.blocking ? chip("warning", "alert", "Blocking") : null)),
+        : it.kind === "ask" ? link(it.project, "loop") : link(it.project, it.kind === "change" ? "changes" : "inbox", it.card) }, cardTitleEl(it.title)),
+      h("div", { class: "dec-m" }, h("span", null, KIND_LABEL[it.kind] || it.kind), h("span", null, titleOf(it.project, it.project_title)),
+        technical() ? h("span", { class: "mono" }, it.card) : null, h("span", { tip: "how long it has waited" }, icon("clock"), fmtAge(it.age_hours)),
+        it.blocking ? chip("warning", "alert", it.kind === "ask" ? pick("Holds delivery", "Required") : pick("Holds work up", "Blocking")) : null)),
     h("div", { class: "dec-a" }, decideButtons(it)));
 }
 
@@ -183,6 +204,8 @@ function hourly(series, blank) {
 // -- the widget definitions -----------------------------------------------------------------------
 
 const DEF = {};
+// How many rows a list shows: its size's cap, none in the side panel Expand opens, which shows it in full (FR-CMP2).
+const upTo = (w, n) => (w.full ? undefined : n);
 
 DEF.kpi_strip = {
   views: ["chart", "table"],
@@ -198,17 +221,23 @@ DEF.kpi_strip = {
 function squareCorners(sq) {
   if (!sq) return [];
   const bands = (sq.pipeline && sq.pipeline.bands) || [];
+  const band = (name) => (bands.find((b) => b.band === name) || {}).count || 0;
+  const tech = technical();
   return [
-    { id: "needs", icon: "signal", label: "Needs arrive", value: sq.signals.new, of: sq.signals.total, unit: "new signals",
-      sub: "chats, feeds, monitoring, meetings, the website chat", href: "#/square" },
-    { id: "concept", icon: "lightbulb", label: "Concept validation", value: sq.concepts_waiting.length, unit: "concepts waiting",
-      sub: "a business owner or product owner validates", href: "#/square" },
-    { id: "factory", icon: "factory", label: "The factory", value: (sq.pipeline || {}).total || 0, unit: "projects",
-      bands: bands.map((b) => ({ label: b.band, count: b.count })), href: "#/projects" },
-    { id: "testing", icon: "users", label: "End-user testing", value: sq.end_user_feedback_waiting, unit: "feedback waiting",
-      sub: "feedback flows back as changes", href: "#/square" },
-    { id: "production", icon: "server", label: "Production", value: sq.in_production, unit: "in production",
-      sub: "DevOps, maintenance, security, compliance", href: "#/square" },
+    { id: "needs", icon: "signal", label: squareWord("needs"), value: sq.signals.new, of: sq.signals.total, unit: pick("new", "new signals"),
+      sub: pick("Go to Ideas to approve them", "chats, feeds, monitoring, meetings, the website chat"), href: "#/square" },
+    { id: "concept", icon: "lightbulb", label: squareWord("concept"), value: sq.concepts_waiting.length, unit: pick("waiting", "concepts waiting"),
+      sub: pick("A business owner or product owner approves each", "a business owner or product owner validates"), href: "#/square" },
+    { id: "factory", icon: "factory", label: squareWord("factory"), value: (sq.pipeline || {}).total || 0, unit: "projects",
+      bands: tech ? bands.map((b) => ({ label: b.band, count: b.count })) : null,
+      sub: tech ? null : band("Decide") + band("Shape") + " being shaped, " + band("Deliver") + " being built, " + band("Run") + " live",
+      href: "#/projects" },
+    { id: "testing", icon: "users", label: squareWord("testing"), value: sq.end_user_feedback_waiting, unit: pick("pieces of feedback waiting", "feedback waiting"),
+      sub: pick("Feedback becomes a change request", "feedback flows back as changes"), href: "#/square" },
+    { id: "production", icon: "server", label: squareWord("production"), value: sq.in_production, unit: pick("live", "in production"),
+      sub: tech ? "DevOps, maintenance, security, compliance"
+        : sq.in_production ? "Live services are watched; problems come back as new requests"
+          : "Nothing is live yet. Live services are watched, and problems come back as new requests", href: "#/square" },
   ];
 }
 
@@ -223,7 +252,7 @@ export function squareDiagram(sq, opts) {
   };
   const corner = (x, next) => h("a", { class: "sq-corner sq-" + x.id, href: x.href },
     h("span", { class: "sq-top" }, h("span", { class: "sq-ic" }, icon(x.icon)), h("span", { class: "sq-label" }, x.label), o.people ? ppl(x.id) : null),
-    h("span", { class: "sq-v" }, String(x.value), h("small", null, x.unit + (x.of !== undefined ? " of " + x.of : ""))),
+    h("span", { class: "sq-v" }, String(x.value), h("small", null, x.unit + (x.of !== undefined ? pick(", " + x.of + " in total", " of " + x.of) : ""))),
     x.sub ? h("span", { class: "sq-sub" }, x.sub) : null,
     next ? h("span", { class: "sq-next" }, icon("arrow-right"), next) : null);
   const arrow = (cls, label) => h("span", { class: "sq-flow " + cls, "aria-hidden": "true" }, icon("arrow-right"), label ? h("span", null, label) : null);
@@ -232,16 +261,19 @@ export function squareDiagram(sq, opts) {
     return h("ol", { class: "sq-steps" }, [needs, concept, factory, testing, production].map((x, i) => h("li", null,
       h("a", { class: "sq-step", href: x.href }, h("span", { class: "sq-ic" }, icon(x.icon)), h("span", { class: "sq-label" }, x.label),
         h("span", { class: "sq-v" }, String(x.value), h("small", null, x.unit))),
-      i === 4 ? h("span", { class: "sq-back" }, icon("refresh"), "Monitoring and feedback bring new needs") : null)));
+      i === 4 ? h("span", { class: "sq-back" }, icon("refresh"), pick("Problems and feedback come back as new requests", "Monitoring and feedback bring new needs")) : null)));
   }
+  // the arrows show the direction; a business reader is not given arrow words that repeat the corners
+  const tech = technical();
   return h("div", { class: "sq-map" },
-    corner(needs, "to concept validation"), arrow("f-top", "validate"), corner(concept, "to the factory"),
-    arrow("f-left", "monitor"),
+    corner(needs, tech ? "to concept validation" : null), arrow("f-top", tech ? "validate" : null), corner(concept, tech ? "to the factory" : null),
+    arrow("f-left", tech ? "monitor" : null),
     h("a", { class: "sq-factory", href: factory.href }, h("span", { class: "sq-top" }, h("span", { class: "sq-ic" }, icon(factory.icon)),
       h("span", { class: "sq-label" }, factory.label), o.people ? ppl("factory") : null, h("span", { class: "sq-v inline" }, String(factory.value), h("small", null, factory.unit))),
-    h("span", { class: "sq-bands" }, factory.bands.map((b) => h("span", { class: "sq-band" }, h("b", null, String(b.count)), b.label)))),
-    arrow("f-right", "build"),
-    corner(production, "monitoring feeds new needs"), arrow("f-bottom", "release"), corner(testing, "feedback flows back"));
+    factory.bands ? h("span", { class: "sq-bands" }, factory.bands.map((b) => h("span", { class: "sq-band" }, h("b", null, String(b.count)), b.label)))
+      : h("span", { class: "sq-sub" }, factory.sub)),
+    arrow("f-right", tech ? "build" : null),
+    corner(production, tech ? "monitoring feeds new needs" : null), arrow("f-bottom", tech ? "release" : null), corner(testing, tech ? "feedback flows back" : null));
 }
 
 DEF.square = {
@@ -263,14 +295,14 @@ DEF.pipeline = {
     if (!(d.pipeline || {}).total) return empty("pipeline", "No project yet.", button("New project", { icon: "plus", kind: "small", onclick: () => nav.newProject && nav.newProject() }));
     // the box is a size container: the stages go from seven columns to four, then to rows, by its width
     return h("div", { class: "pipe-box" }, h("div", { class: "pipe" }, stages.map((s) => h("div", { class: "pipe-col" + (s.projects.length ? "" : " empty") },
-      h("div", { class: "pipe-h" }, h("span", { class: "pipe-n" }, String(s.stage)), h("span", { class: "pipe-name" }, s.name),
+      h("div", { class: "pipe-h" }, h("span", { class: "pipe-n" }, String(s.stage)), h("span", { class: "pipe-name" }, stageWord(s.stage, s.name)),
         h("span", { class: "pipe-c" }, String(s.projects.length))),
       h("div", { class: "pipe-band" }, s.band),
       s.projects.map((p) => h("a", { class: "pchip", href: "#/p/" + enc(p.id), tip: p.title + " · " + (p.maturity || "") },
         icon(profileOf(p.profile).icon || "globe"), h("span", { class: "pchip-b" }, h("span", { class: "pchip-t" }, p.title),
           h("span", { class: "pchip-m" }, (p.maturity || "") + (p.paused ? " · paused" : "")))))))));
   },
-  table: (d) => dataTable([{ label: "Stage", value: (r) => r.stage + " " + r.name }, { label: "Band", key: "band" },
+  table: (d) => dataTable([{ label: tw("stage", 1, { cap: true }), value: (r) => r.stage + " " + stageWord(r.stage, r.name) }, { label: "Band", key: "band" },
     { label: "Projects", value: (r) => r.projects.map((p) => p.title).join(", ") || "-" }], pipelineStages(d), "Projects per stage"),
 };
 
@@ -279,7 +311,7 @@ DEF.decisions = {
   render: (d, w) => {
     // as the Inbox orders them: yours first, then what holds work up, the panel's open questions last, oldest first
     const holds = (x) => (x.blocking || x.kind !== "question" ? 1 : 0);
-    const items = (d.decisions || []).slice().sort((a, b) => (decides(b.kind, b.deciders) - decides(a.kind, a.deciders)) || (holds(b) - holds(a))
+    const items = (d.decisions || []).slice().sort((a, b) => (waitsOnMe(b) - waitsOnMe(a)) || (holds(b) - holds(a))
       || ((b.age_hours || 0) - (a.age_hours || 0)));
     if (!items.length) return empty("check-circle", "Nothing waits on a person right now.");
     if (w.view === "chart") {
@@ -287,10 +319,10 @@ DEF.decisions = {
       items.forEach((i) => { by[i.kind] = (by[i.kind] || 0) + 1; });
       return bars({ rows: Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, n]) => ({ label: KIND_LABEL[k] || k, icon: KIND_ICON[k], value: n })), unit: "cards waiting" });
     }
-    const mine = items.filter((i) => decides(i.kind, i.deciders)).length;
+    const mine = items.filter(waitsOnMe).length;
     return h("div", null, h("p", { class: "w-sum" }, h("b", null, String(mine)), " yours to decide as " + personaLabel(S.persona),
       h("span", { class: "muted" }, " · " + items.length + " waiting in all")),
-    h("ul", { class: "dec-list" }, items.slice(0, w.size === "S" ? 4 : 8).map(decisionRow)),
+    h("ul", { class: "dec-list" }, items.slice(0, upTo(w, w.size === "S" ? 4 : 8)).map(decisionRow)),
     items.length > 8 ? h("a", { class: "more-link", href: "#/inbox" }, "All " + items.length + " in the Inbox", icon("arrow-right")) : null);
   },
   table: (d) => dataTable([{ label: "Card", value: (r) => r.card + " " + r.title }, { label: "Kind", value: (r) => KIND_LABEL[r.kind] || r.kind },
@@ -300,26 +332,39 @@ DEF.decisions = {
 };
 
 export function catalogueCard(it) {
-  const st = CATALOGUE_STATE[it.state] || { tone: "neutral", icon: "dashed", word: it.state };
+  const st = catalogueState(it);
   const p = profileOf(it.profile);
   const href = it.project ? "#/p/" + enc(it.project) : "#/square";
   return h("a", { class: "cat-card", href },
     h("div", { class: "cat-top" }, h("span", { class: "cat-ic" }, icon(p.icon || "globe")), chip(st.tone, st.icon, st.word)),
     h("b", { class: "cat-t" }, it.title),
     h("p", { class: "cat-s" }, it.summary || ""),
-    h("div", { class: "cat-meta" }, h("span", null, p.label), it.deliverable ? h("span", null, it.deliverable.replace("_", " ")) : null,
+    h("div", { class: "cat-meta" }, h("span", null, p.label), it.deliverable ? h("span", null, deliverableWord(it.deliverable)) : null,
       it.maturity ? h("span", null, it.maturity) : null),
-    h("div", { class: "cat-pack" }, icon("package"), it.pack ? [h("span", { class: "mono" }, "v" + it.pack.version),
-      it.pack.valid ? chip("good", "check-circle", "Valid") : chip("warning", "alert", "Not valid")]
-      : h("span", { class: "muted" }, it.project ? "No pack yet: no release" : "A concept: not built")));
+    h("div", { class: "cat-pack", tip: technical() ? null : "A release package lists everything the release is made of, with a fingerprint of each, so anyone can check it is unchanged." },
+      icon("package"), it.pack ? (technical() ? [h("span", { class: "mono" }, "v" + it.pack.version),
+        it.pack.valid ? chip("good", "check-circle", "Valid") : chip("warning", "alert", "Not valid")]
+        : h("span", null, "Release " + String(it.pack.version || "").replace(/\.0$/, "") + (it.pack.valid ? " ready to hand over" : ": not complete yet")))
+        : h("span", { class: "muted" }, it.project ? pick("Not released yet", "No pack yet: no release") : pick("An idea: not built", "A concept: not built"))));
+}
+// What a capability is: an adopted system is kept and maintained, not built.
+export function catalogueState(it) {
+  if (it.adopted && it.state === "building") return { tone: "good", icon: "check-circle", word: pick("Adopted: kept running", "Adopted · maintained") };
+  return CATALOGUE_STATE[it.state] || { tone: "neutral", icon: "dashed", word: it.state };
+}
+// A deliverable's name in the reader's words ("ops_agent" is a report agent to a business owner).
+function deliverableWord(dv) {
+  const plain = { ops_agent: "report agent", capability_pack: "reusable AI service", product: "product" };
+  return technical() ? String(dv).replace("_", " ") : plain[dv] || String(dv).replace(/_/g, " ");
 }
 export function catalogueRow(it) {
-  const st = CATALOGUE_STATE[it.state] || { tone: "neutral", icon: "dashed", word: it.state };
+  const st = catalogueState(it);
   const p = profileOf(it.profile);
   return h("li", { class: "cat-row" }, h("span", { class: "cat-ic", tip: p.label }, icon(p.icon || "globe")),
     h("div", { class: "cat-rb" }, h("a", { href: it.project ? "#/p/" + enc(it.project) : "#/square" }, it.title),
-      h("small", null, p.label.split(/[:(]/)[0].trim() + " · " + (it.deliverable || "product").replace("_", " ")
-        + (it.pack ? " · pack v" + it.pack.version + (it.pack.valid ? ", valid" : ", not valid") : ""))),
+      h("small", null, p.label.split(/[:(]/)[0].trim() + " · " + deliverableWord(it.deliverable || "product")
+        + (it.pack ? (technical() ? " · pack v" + it.pack.version + (it.pack.valid ? ", valid" : ", not valid")
+          : " · release " + String(it.pack.version || "").replace(/\.0$/, "") + (it.pack.valid ? " ready to hand over" : ", not complete")) : ""))),
     chip(st.tone, st.icon, st.word));
 }
 DEF.catalogue = {
@@ -335,7 +380,7 @@ DEF.catalogue = {
       return h("div", null, h("ul", { class: "cat-rows" }, items.slice(0, 7).map(catalogueRow)),
         items.length > 7 ? h("a", { class: "more-link", href: "#/catalogue" }, "All " + items.length + " in the catalogue", icon("arrow-right")) : null);
     }
-    return h("div", { class: "cat-grid wide" }, items.slice(0, 8).map(catalogueCard));
+    return h("div", { class: "cat-grid wide" }, items.slice(0, upTo(w, 8)).map(catalogueCard));
   },
   table: (d) => dataTable([{ label: "Capability", key: "title" }, { label: "State", value: (r) => (CATALOGUE_STATE[r.state] || {}).word || r.state },
     { label: "Profile", value: (r) => profileOf(r.profile).label }, { label: "Deliverable", value: (r) => (r.deliverable || "-").replace("_", " ") },
@@ -368,7 +413,8 @@ DEF.live = {
     if (!rows.length) return empty("pulse", "No project yet, so no agent is at work.");
     const order = (r) => { const st = liveState(r); return st.running ? 0 : st.word === "Waiting on a person" ? 1 : st.word === "Apparatus failure" ? 2 : 3; };
     const running = rows.filter((r) => liveState(r).running).length;
-    return h("div", null, h("p", { class: "w-sum" }, h("b", null, String(running)), running === 1 ? " cell running now" : " cells running now",
+    return h("div", null, h("p", { class: "w-sum" }, h("b", null, String(running)),
+      running === 1 ? pick(" AI build team working now", " builder cell running now") : pick(" AI build teams working now", " builder cells running now"),
       h("span", { class: "muted" }, " · " + plural(rows.length, "project"))),
     h("ul", { class: "live-list" }, rows.slice().sort((a, b) => order(a) - order(b)).map((r) => {
       const lv = r.live || {};
@@ -379,7 +425,7 @@ DEF.live = {
           h("div", { class: "live-m" }, st.running
             ? [h("span", { class: "mono" }, lv.task), h("span", null, (lv.role || "cell").replace(/_/g, " ")), lv.model ? h("span", { class: "mono" }, lv.model) : null,
               h("span", null, plural(lv.steps || 0, "tool step")), lv.last ? h("span", { class: "mono" }, lv.last.tool + " " + (lv.last.target || "").slice(0, 40)) : null]
-            : h("span", null, st.line || (r.now || {}).line || "idle"))),
+            : h("span", null, st.line || nowSaid((r.now || {}).line) || "idle"))),
         chip(st.tone, st.icon, st.word));
     })));
   },
@@ -410,9 +456,9 @@ DEF.timeline = {
     const { tl } = timelineFor(d, w);
     const rows = [];
     ((tl || {}).tasks || []).forEach((t) => t.rounds.forEach((r) => rows.push({ task: t.task, title: t.title, ...r })));
-    return dataTable([{ label: "Task", value: (r) => r.task + " " + (r.title || "") }, { label: "Round", key: "round", num: true },
+    return dataTable([{ label: "Task", value: (r) => r.task + " " + (r.title || "") }, { label: tw("round", 1, { cap: true }), key: "round", num: true },
       { label: "Start", value: (r) => fmtAt(r.start) || null }, { label: "End", value: (r) => fmtAt(r.end) || null },
-      { label: "Verdict", value: (r) => r.verdict || "in its gate" }, { label: "Model", value: (r) => r.model || "-" }], rows, "Task rounds");
+      { label: pick("Result", "Verdict"), value: (r) => r.verdict || pick("being checked", "in its gate") }, { label: "Model", value: (r) => r.model || "-" }], rows, "Task rounds");
   },
 };
 
@@ -422,10 +468,10 @@ DEF.gate_trend = {
   views: ["chart", "table"],
   render: (d, w) => {
     const g = d.gate_trend || {};
-    if (!g.rounds) return notMeasured("No gate has judged a round yet: the trend starts with the first build.");
+    if (!g.rounds) return notMeasured(pick("Nothing has been checked yet: the trend starts with the first build.", "No gate has judged a round yet: the trend starts with the first build."));
     const series = hourly(g.series || [], (at) => ({ at, passed: 0, not_passed: 0 })).slice(-24);
     return h("div", null, h("div", { class: "w-headline" }, h("span", { class: "big" }, pct(g.pass_rate)),
-      h("span", null, "of " + plural(g.rounds, "round") + " passed the gate", h("small", { class: "prov derived" }, "derived"))),
+      h("span", null, "of " + plural(g.rounds, tw("round"), tw("round", 2)) + pick(" passed the quality check", " passed the gate"), technical() ? h("small", { class: "prov derived" }, "derived") : null)),
     columns({ series: GATE_SERIES, height: w.size === "XL" ? 240 : 150, rows: series.map((s) => ({
       label: String(s.at).slice(5, 16).replace("T", " "), short: String(s.at).slice(11, 16),
       tipTitle: String(s.at).replace("T", " ").replace("Z", " UTC") + " (hour)", values: s })) }));
@@ -443,10 +489,10 @@ DEF.coverage = {
   views: ["chart", "table"],
   render: (d) => {
     const c = d.coverage || {};
-    if (!(c.projects || []).length) return notMeasured("No contract is compiled yet, so no criterion has evidence.");
+    if (!(c.projects || []).length) return notMeasured(pick("No work is planned yet, so there is nothing to prove.", "No contract is compiled yet, so no criterion has evidence."));
     const total = Object.values(c.total || {}).reduce((a, b) => a + b, 0);
     return h("div", null, h("div", { class: "w-headline" }, h("span", { class: "big" }, pct(c.proven_share)),
-      h("span", null, "of " + plural(total, "criterion", "criteria") + " proven rather than claimed", h("small", { class: "prov derived" }, "derived"))),
+      h("span", null, "of " + plural(total, tw("criterion"), tw("criterion", 2)) + pick(" shown to work", " proven rather than claimed"), technical() ? h("small", { class: "prov derived" }, "derived") : null)),
     stack100({ series: COVER_SERIES, rows: c.projects.map((p) => ({ label: p.title, href: "#/p/" + enc(p.project) + "/spec",
       values: { proven: p.verified + p.held_out, claimed: p.claimed, failing: p.failing, not_measured: p.not_measured } })),
     summary: (r, t) => (r.values.proven) + " of " + t + " proven" }));
@@ -464,8 +510,9 @@ function activityItem(e) {
   const a = e.actor || {};
   const person = a.type === "person";
   return h("li", { class: "act-row" }, avatar(a.name, person ? null : (a.name === "kernel" ? "kernel" : "agent")),
-    h("div", { class: "act-b" }, h("p", null, h("b", null, person ? (a.name || "someone") : a.name), " ", e.summary),
-      h("div", { class: "act-m" }, h("a", { href: "#/p/" + enc(e.project) }, projectTitle(e.project)), person && a.persona ? h("span", null, personaLabel(a.persona)) : null,
+    h("div", { class: "act-b" }, h("p", null, h("b", null, person ? (a.name || "someone") : a.name === "kernel" ? cap1(kernelWord()) : a.name),
+      technical() ? ": " : " ", datum(activityLine(e.summary))),
+      h("div", { class: "act-m" }, h("a", { href: "#/p/" + enc(e.project) }, projectTitle(e.project)), person && a.persona ? h("span", null, personaLabel(a.persona) + (a.outside ? ", from outside" : "")) : null,
         !person && a.model ? h("span", { class: "mono" }, a.model) : null, h("span", { tip: fmtAt(e.at) }, ago(e.at)))));
 }
 DEF.activity = {
@@ -480,7 +527,7 @@ DEF.activity = {
         rows: hourly(Object.keys(by).sort().map((k) => ({ at: k + ":00:00Z", ...by[k] })), (at) => ({ at, person: 0, agent: 0 }))
           .slice(-24).map((r) => ({ label: String(r.at).slice(0, 13).replace("T", " ") + ":00", short: String(r.at).slice(11, 13) + ":00", values: r })), height: 140 });
     }
-    return h("ul", { class: "act-list" }, ev.slice(0, w.size === "S" ? 5 : 9).map(activityItem));
+    return h("ul", { class: "act-list" }, ev.slice(0, upTo(w, w.size === "S" ? 5 : 9)).map(activityItem));
   },
   table: (d) => dataTable([{ label: "When", value: (r) => fmtAt(r.at) }, { label: "Who", value: (r) => (r.actor || {}).name || "-" },
     { label: "Kind", value: (r) => ((r.actor || {}).type === "person" ? "person" : "agent") }, { label: "What", key: "summary" }, { label: "Project", key: "project" }],
@@ -492,12 +539,14 @@ DEF.models = {
   render: (d) => {
     const m = Object.entries(d.models || {});
     if (!m.length) return notMeasured("No builder cell has run yet, so no model has a record.");
-    return h("div", null, bars({ max: 1, unit: "first-round warranted", rows: m.map(([name, r]) => ({ label: name, sub: plural(r.cells, "cell") + " · " + r.escalated + " escalated",
+    return h("div", null, bars({ max: 1, unit: pick("passed the quality check first time", "first-round gate pass"), rows: m.map(([name, r]) => ({ label: name,
+      sub: plural(r.cells, pick("attempt", "cell round")) + " · " + r.escalated + pick(" sent to a person", " escalated to a person"),
       value: r.first_round_warranted_rate, display: pct(r.first_round_warranted_rate), why: "no first round was gated for this model" })) }),
-    h("p", { class: "viz-note" }, "First-round warranted rate per builder model; n is the cells each ran."));
+    h("p", { class: "viz-note" }, pick("Share of tasks each AI builder got through the quality check at the first try.",
+      "First-round gate pass rate per builder model (the gate's verdict 'warranted'); n is the cell rounds each ran.")));
   },
   table: (d) => dataTable([{ label: "Model", value: (r) => r[0] }, { label: "Cells", value: (r) => r[1].cells, num: true },
-    { label: "First round warranted", value: (r) => pct(r[1].first_round_warranted_rate), num: true }, { label: "Escalated", value: (r) => r[1].escalated, num: true },
+    { label: "First-round gate pass", value: (r) => pct(r[1].first_round_warranted_rate), num: true }, { label: "Escalated to a person", value: (r) => r[1].escalated, num: true },
     { label: "Mean rounds to pass", value: (r) => (r[1].mean_rounds_to_pass === null ? null : Math.round(r[1].mean_rounds_to_pass * 100) / 100), num: true }],
   Object.entries(d.models || {}), "Builder models"),
 };
@@ -518,15 +567,18 @@ DEF.health = {
         { label: "Off track", value: by.off_track, color: STATUS_MARK.critical, icon: "stop" },
         { label: "Health not read", value: by.unread, hatch: true, icon: "dashed", ink: "ink-text" }] });
     }
+    // one verdict per project on the page: the track's answer (Staying on track says the same), else the health's
+    const tracks = {};
+    ((d.track || {}).projects || []).forEach((t) => { tracks[t.project] = t; });
     return h("ul", { class: "health-list" }, rows.map((r) => {
       const f = (r.health || {}).forecast || {};
       const known = (x) => x !== null && x !== undefined;
-      return h("li", { class: "health-row" }, healthChip(r.health),
-        h("div", { class: "hr-b" }, h("a", { href: "#/p/" + enc(r.project) }, r.title), h("p", { class: "muted small" }, (r.now || {}).line || "")),
+      const said = r.health ? etaSaid(f, waitingCount((r.now || {}).line)) : "";
+      return h("li", { class: "health-row" }, tracks[r.project] ? trackState(tracks[r.project]) : healthChip(r.health),
+        h("div", { class: "hr-b" }, h("a", { href: "#/p/" + enc(r.project) }, r.title), h("p", { class: "muted small", "data-ud": "" }, nowSaid((r.now || {}).line))),
         !r.health ? h("span", { class: "hr-f" }, h("span", { class: "nm-text" }, "Forecast not read"))
-          : h("span", { class: "hr-f", tip: f.basis || "" }, known(f.eta_minutes)
-            ? "ETA " + fmtMinutes(f.eta_minutes) : h("span", { class: "nm-text" }, "ETA not measured"),
-          h("small", null, known(f.tasks_left) ? plural(f.tasks_left, "task") + " left" : "tasks left not measured")));
+          : h("span", { class: "hr-f", tip: f.basis || "" }, said || h("span", { class: "nm-text" }, pick("Time left not known yet", "ETA not measured")),
+            known(f.tasks_left) && f.tasks_left ? h("small", null, plural(f.tasks_left, "task") + " left to build") : null));
     }));
   },
   table: (d) => {
@@ -560,7 +612,7 @@ DEF.updates = {
   render: (d, w) => {
     const ups = d.updates || [];
     if (!ups.length) return empty("bell", "No update from outside yet: a new model, a CVE or drifting evals appear here.");
-    return h("ul", { class: "upd-list" }, ups.slice(0, w.size === "S" ? 2 : 5).map((u) => h("li", { class: "upd" + (u.state === "open" ? " open" : "") },
+    return h("ul", { class: "upd-list" }, ups.slice(0, upTo(w, w.size === "S" ? 2 : 5)).map((u) => h("li", { class: "upd" + (u.state === "open" ? " open" : "") },
       h("div", { class: "upd-h" }, icon("bell"), h("b", null, u.label || u.trigger), u.project_title ? h("span", { class: "muted" }, u.project_title) : null,
         u.state === "open" ? chip("warning", "clock", "Open") : u.decision ? chip("good", "check", VERDICT_LABEL[u.decision.verdict] || u.decision.verdict)
           : chip("neutral", "info", "For information")),
@@ -578,7 +630,7 @@ export function autonomyBlock(a, opts) {
   if (!a) return notMeasured("The autonomy policy could not be read.");
   const levels = (a.factory || {}).levels || [];
   const cap = (a.factory || {}).cap;
-  const may = (a.setters || []).includes(S.persona);
+  const may = mayAct(a.setters || []);
   const ladder = h("ol", { class: "ladder" }, levels.map((l) => h("li", { class: "rung" + (l.allowed ? " on" : "") + (l.level === cap ? " cap" : "") },
     h("span", { class: "rung-n" }, String(l.level)), h("div", null, h("b", null, l.name), h("p", null, l.meaning)),
     l.level === cap ? chip("accent", "gauge", "Cap") : null)));
@@ -627,7 +679,7 @@ export function exportButton(pid, label) {
       say("Evidence pack " + name + " exported and downloaded, signed by " + S.person.trim() + ". The link worked once.", "good");
     });
   });
-  if (!((S.meta && S.meta.evidence_exporters) || []).includes(S.persona)) {
+  if (!mayAct((S.meta && S.meta.evidence_exporters) || [])) {
     b.disabled = true;
     attachTip(b, "A " + ((S.meta && S.meta.evidence_exporters) || []).map(personaLabel).join(", ") + " persona exports evidence");
   }
@@ -643,10 +695,11 @@ DEF.evidence_packs = {
       return h("li", { class: "ev-row" },
         h("div", { class: "ev-b" }, h("a", { href: "#/p/" + enc(x.project) + "/evidence" }, x.title),
           h("div", { class: "ev-m" }, chip(st.tone, st.icon, st.word, { tip: x.meaning }),
-            x.pack ? h("span", null, icon("package"), x.pack.version ? "pack v" + x.pack.version : "pack not built", x.pack.valid ? " · valid" : " · not valid")
-              : h("span", { class: "muted" }, icon("package"), "no release"),
-            h("span", null, plural(x.decisions, "decision")), h("span", null, plural(x.gates, "gate verdict")),
-            h("span", null, x.ledger && x.ledger.intact ? "ledger intact" : "ledger broken"))),
+            x.pack ? h("span", null, icon("package"), technical() ? [x.pack.version ? "pack v" + x.pack.version : "pack not built", x.pack.valid ? " · valid" : " · not valid"]
+              : (x.pack.version ? "release " + String(x.pack.version).replace(/\.0$/, "") : "release not built") + (x.pack.valid ? " ready to hand over" : ", not complete"))
+              : h("span", { class: "muted" }, icon("package"), pick("not released yet", "no release")),
+            h("span", null, plural(x.decisions, "decision")), h("span", null, plural(x.gates, pick("quality check result", "gate verdict"))),
+            h("span", null, tw("ledger") + (x.ledger && x.ledger.intact ? " intact" : pick(" damaged", " broken"))))),
         exportButton(x.project));
     }));
   },
@@ -656,7 +709,7 @@ DEF.evidence_packs = {
     { label: "Exports", key: "exports", num: true }], d.evidence_packs || [], "Evidence packs"),
 };
 
-// Spend over the Gnomon runs. With no run there is nothing to price or count: both figures are "not
+// Spend over the agent runs Agent operations reads. With no run there is nothing to price or count: both figures are "not
 // measured", never 0.0000 USD and 0 tokens. A cloud sum with an unpriced run in it is not measured either.
 function spendOf(d) {
   const s = d.spend || {};
@@ -668,16 +721,21 @@ DEF.spend = {
   views: ["chart", "table"],
   render: (d) => {
     const { s, noRun, cloudNm, localNm } = spendOf(d);
-    const why = noRun ? "No Gnomon run yet, so nothing is priced." : plural(s.unmeasured_runs || 0, "run") + " without a price"
-      + (s.cloud_measured_part ? "; the priced part is " + fmtMoney(s.cloud_measured_part, s.currency) : "") + ". Prices come from kernel/prices.json.";
+    // the runs and prices Agent operations reads (kernel/agentops_prices.py spend, FR-AOP3): one count, one table
+    const blind = s.untokened ? "; " + plural(s.untokened, "run") + " recorded no token counts, so no price measures " + (s.untokened > 1 ? "them" : "it") : "";
+    const why = technical() ? (noRun ? "No agent run yet, so nothing is priced." : plural(s.unmeasured_runs || 0, "run") + " without a cost" + blind
+      + (s.cloud_measured_part ? "; the priced part is " + fmtMoney(s.cloud_measured_part, s.currency) : "") + ". Models are priced on Agent operations.")
+      : noRun ? "AI cost: not known yet. No priced AI work was recorded." : "AI cost: not known yet. Some AI work has no price or recorded no use (priced on Agent operations).";
+    const over = (s.window_words ? " over " + s.window_words : "");
     return h("div", { class: "kpi-strip two" },
-      h("div", { class: "kpi" + (cloudNm ? " nm" : "") }, h("div", { class: "kpi-h" }, icon("coins"), h("span", null, "Cloud spend")),
-        cloudNm ? h("div", { class: "kpi-v nm-text" }, "— Not measured") : h("div", { class: "kpi-v" }, fmtMoney(s.cloud, s.currency)),
-        h("p", { class: "kpi-sub" }, cloudNm ? why : "Every run is priced."),
-        foot(d, "derived", noRun ? "no run yet" : runsKnown(s) ? "over " + plural(s.runs, "run") : null)),
-      h("div", { class: "kpi" + (localNm ? " nm" : "") }, h("div", { class: "kpi-h" }, icon("cpu"), h("span", null, "Local tokens")),
-        localNm ? h("div", { class: "kpi-v nm-text" }, "— Not measured") : h("div", { class: "kpi-v" }, num(s.local_tokens)),
-        h("p", { class: "kpi-sub" }, noRun ? "No Gnomon run yet, so no token is counted." : "Local models cost no API money."),
+      h("div", { class: "kpi" + (cloudNm ? " nm" : "") }, h("div", { class: "kpi-h" }, icon("coins"), h("span", null, pick("AI cost", "Cloud spend"))),
+        cloudNm ? h("div", { class: "kpi-v nm-text" }, pick("— Not known yet", "— Not measured")) : h("div", { class: "kpi-v" }, fmtMoney(s.cloud, s.currency)),
+        h("p", { class: "kpi-sub" }, cloudNm ? why : pick("All AI work is priced.", "Every run is priced.")),
+        foot(d, "derived", noRun ? pick("no priced AI work yet", "no run yet") + over : runsKnown(s) ? "over " + plural(s.runs, "run") + (s.window_words ? ", " + s.window_words : "") : null)),
+      h("div", { class: "kpi" + (localNm ? " nm" : "") }, h("div", { class: "kpi-h" }, icon("cpu"), h("span", null, pick("AI on this computer", "Local tokens"))),
+        localNm ? h("div", { class: "kpi-v nm-text" }, pick("— Not known yet", "— Not measured")) : h("div", { class: "kpi-v" }, num(s.local_tokens)),
+        h("p", { class: "kpi-sub" }, noRun ? pick("No AI work on this computer was recorded.", "No agent run yet, so no token is counted.")
+          : pick("AI on this computer costs nothing per use.", "Local models cost no API money.")),
         foot(d, "observed", "tokens on local models")));
   },
   table: (d) => {
@@ -733,13 +791,13 @@ DEF.track = {
         + TRACK[s].word.toLowerCase()).join(" · ") + (t.autopilots ? " · " + plural(t.autopilots, "autopilot") + " holding" : "")),
       h("ul", { class: "health-list" }, rows.map((r) => h("li", { class: "health-row" }, trackState(r),
         h("div", { class: "hr-b" }, h("a", { href: link(r.project, "track") }, r.title || r.project),
-          h("p", { class: "muted small" }, reasonLine(r))),
+          h("p", { class: "muted small", "data-ud": "" }, trackSaid(r))),
         h("span", { class: "hr-f" }, (r.due || []).length ? chip("warning", "eye", "Checkpoint due") : null,
           (r.autopilot || {}).holding ? chip("info", "bot", "Autopilot " + r.autopilot.state) : null)))));
   },
   table: (d) => dataTable([{ label: "Project", value: (r) => r.title || r.project },
     { label: "Track", value: (r) => (TRACK[r.state] || TRACK.not_measured).word },
-    { label: "Why", value: (r) => reasonLine(r) },
+    { label: "Why", value: (r) => trackSaid(r) },
     { label: "Tasks done", value: (r) => (r.tasks.total === null || r.tasks.total === undefined ? null : r.tasks.done + " of " + r.tasks.total) },
     { label: "Checkpoints due", value: (r) => (r.due || []).join(", ") || "-" },
     { label: "Autopilot", value: (r) => ((r.autopilot || {}).holding ? r.autopilot.id + ", " + r.autopilot.state : "-") }],
@@ -769,7 +827,7 @@ export const SOURCES = {
   updates: "kernel.observations: one observation rendered for the lens you are in.",
   autonomy: "kernel.autonomy: the ladder, capped by a person with a reason.",
   evidence_packs: "kernel.evidence_pack.attestation, computed read-only; Export writes the bundle.",
-  spend: "kernel.projections.floor spend: priced runs only; an unpriced run is never counted as zero.",
+  spend: "kernel.agentops_prices.spend: the runs and price table of Agent operations, over 30 days; an unpriced run is never counted as zero.",
   feed_health: "An integration's freshness probe.",
   eval_trend: "A model or agent release's evals, re-measured over time.",
   try_it: "kernel.status.try_it: where the latest release was deployed, and its checks. Whether it still runs is not checked.",

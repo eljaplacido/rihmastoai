@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from kernel.filelock import locked
+from kernel.journal import before_append
 from kernel.ledger import VerifyResult, canonical_json, event_hash, verify
 
 
@@ -63,6 +64,7 @@ class LedgerStore:
         event = json.loads(canonical_json(event))  # store exactly what is hashed
         with self._locked():
             recs = self.records()
+            before_append(self.path)    # a change that fails later cuts this record back out (kernel/journal.py)
             seq = len(recs)
             prev = recs[-1].get("hash") if recs and isinstance(recs[-1], dict) else None
             record: dict[str, Any] = {"seq": seq, "event": event, "prev": prev,

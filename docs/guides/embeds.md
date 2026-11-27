@@ -20,7 +20,7 @@ The embed server is separate from the cockpit. It answers two things only: the w
 (`GET /e/<id>/widget.js`) and one chat turn (`POST /e/<id>/messages`).
 
 ```bash
-rihma-embed --home var --port 8790        # or: python -m embed.server --home var --port 8790
+rihmasto-embed --home var --port 8790        # or: python -m embed.server --home var --port 8790
 ```
 
 It listens on 127.0.0.1 by default. To serve websites, put it behind IT's TLS reverse proxy:
@@ -28,7 +28,7 @@ It listens on 127.0.0.1 by default. To serve websites, put it behind IT's TLS re
 - **The proxy on the same host:** keep the default. The proxy terminates TLS for
   `https://feedback.example` and forwards to `http://127.0.0.1:8790`.
 - **The proxy on another host:** bind to the address the proxy reaches, and say that TLS is in
-  front: `rihma-embed --home var --host 192.0.2.10 --behind-proxy`. Without `--behind-proxy`, a
+  front: `rihmasto-embed --home var --host 192.0.2.10 --behind-proxy`. Without `--behind-proxy`, a
   non-loopback address is refused.
 
 Never expose the embed server without TLS. Without `--model`, every message is filed as it is.
@@ -40,9 +40,9 @@ With `--model gnomon`, the chat may ask one clarifying question first (see
 Each snippet names the embed server's public address. Give it to the cockpit once:
 
 ```bash
-rihma-cockpit --home var --embed-base https://feedback.example
+rihmasto-cockpit --home var --embed-base https://feedback.example
 # or set it for the cockpit's environment:
-RIHMA_EMBED_BASE=https://feedback.example rihma-cockpit --home var
+RIHMA_EMBED_BASE=https://feedback.example rihmasto-cockpit --home var
 ```
 
 - The address is `https://host[:port][/path]`. Plain `http` is accepted only for `localhost` and
@@ -66,13 +66,13 @@ key and the snippet are shown once ([cockpit.md](../cockpit.md)). For a need cha
 **From the command line:**
 
 ```bash
-rihma embed create --kind feedback --project <project id> --origin https://intranet.example \
+rihmasto embed create --kind feedback --project <project id> --origin https://intranet.example \
     --label "Loans page" --brief "Equipment loans: lend and return the team's tools." \
     --endpoint https://feedback.example --person "<your name>" --persona product_owner
 ```
 
 It prints the embed with its `key` and, with `--endpoint`, the `snippet` for the website.
-`rihma embed list` shows every embed and its state, never a key.
+`rihmasto embed list` shows every embed and its state, never a key.
 
 **From Python**, at the repository root:
 
@@ -108,7 +108,7 @@ the visitor reads:
 
 - **`data-kind="need"`** gives a need chat its own words: "Share a need", "Tell us what you need".
   Without it the widget uses the feedback words ("Give feedback", "Tell us what you saw"). The
-  snippet the cockpit and `rihma embed create` print does not carry it yet, so add it to a need
+  snippet the cockpit and `rihmasto embed create` print does not carry it yet, so add it to a need
   chat's tag yourself.
 - **`data-lang`** is `en` or `fi` and defaults to the browser's language. It sets all the widget's
   own words, the fixed thank-you included. With `--model gnomon`, the model is asked to answer in
@@ -158,7 +158,7 @@ would not carry.
 | No records | The chat answers from the public brief only. It never reads the canon, the ledger, holdouts or another project, and the widget never shows the visitor a card's or signal's number. The embed server's answer to the browser still names that number, so a visitor who opens the browser's developer tools can read it. |
 | Errors | A website sees a refusal, a turn it sent wrong, or a fixed line ("the chat is busy", "the chat is not available just now"). An internal error's text, such as a path or a project id, goes to the server's log only. |
 | Headers | `nosniff` and `no-referrer` on every answer; `no-store` on every answer but the widget script, which browsers may cache for five minutes. |
-| Revocation | **Revoke** in the cockpit's Settings, or one command: `rihma embed revoke E-001 --person "<your name>" --persona product_owner`. A message the chat was still answering when the embed was revoked is not filed. A page that still carries the snippet keeps showing the chat's button: what a visitor sends there is refused and stays in the box, and the chat says it may be closed. Take the snippet off the website as well. |
+| Revocation | **Revoke** in the cockpit's Settings, or one command: `rihmasto embed revoke E-001 --person "<your name>" --persona product_owner`. A message the chat was still answering when the embed was revoked is not filed. A page that still carries the snippet keeps showing the chat's button: what a visitor sends there is refused and stays in the box, and the chat says it may be closed. Take the snippet off the website as well. |
 | Parallel messages | Messages the embed server receives at the same moment are filed one at a time: each gets its own card or signal, and none undoes a revoke. |
 
 Each filed change card says it came from the embed, and keeps the conversation. It is triaged by

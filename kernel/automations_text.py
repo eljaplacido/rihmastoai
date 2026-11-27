@@ -76,6 +76,27 @@ def scope(s: dict[str, Any]) -> str:
     return SCOPE_WORDS[s["kind"]].format(**s)
 
 
+def _eval_words(a: dict[str, Any]) -> str:
+    from kernel.gnomon_evals import BY_ID
+
+    ev = BY_ID.get(str(a.get("eval") or "security"))
+    return f"run Gnomon's {ev.label if ev else a.get('eval')} (Audits & evals)"
+
+
+def _check_words(a: dict[str, Any]) -> str:
+    from kernel.checks import catalogue
+
+    key = str(a.get("check") or "")
+    check = catalogue().get(key.split(":")[0])
+    return f"run the {check.label if check else key} check (Health)" + (f", {key}" if ":" in key else "")
+
+
+# The actions whose sentence names what they run: which audit or eval, which check.
+NAMED = {"run_eval": _eval_words, "run_check": _check_words,
+         "rescan": lambda a: f"re-scan {a['folder']} and add what is new as material",
+         "output": lambda a: "rebuild " + (", ".join(a["targets"]) if a.get("targets") else "the chosen outputs")}
+
+
 def action(a: dict[str, Any], project: str | None = None) -> str:
     kind = a["kind"]
     if kind == "notify":
@@ -87,14 +108,12 @@ def action(a: dict[str, Any], project: str | None = None) -> str:
         return f"log a signal: “{a['text'][:80]}”"
     if kind == "ask":
         return f"ask a model “{a['text'][:80]}” and post the answer as a comment"
-    if kind == "rescan":
-        return f"re-scan {a['folder']} and add what is new as material"
-    if kind == "output":
-        return "rebuild " + (", ".join(a["targets"]) if a.get("targets") else "the chosen outputs")
     if kind == "probe":
         where = a.get("environment") or "the environment the event names (else production)"
         return f"run the probe check on {where}" + (f", and keep probing production every {a['every']}"
                                                     if a.get("every") else "")
+    if kind in NAMED:
+        return NAMED[kind](a)
     if kind == "gate" and not a.get("verifier", True):
         return "run the gate on the attached repository, without its verifier"
     return str(au.ACTIONS[kind]["label"])
@@ -193,3 +212,13 @@ TEMPLATES: list[dict[str, Any]] = [
                                                     "and decide what to change"},
                "scope": {"kind": "project", "projects": []}}},
 ]
+# The checks', alignment's and the Review's templates (kernel/automations_more.py), whichever module loads first.
+from kernel.automations_more import templates as _more  # noqa: E402
+
+TEMPLATES += [t for t in _more() if t["id"] not in {x["id"] for x in TEMPLATES}]
+try:   # agent observability's snapshot action and its templates (kernel/agentobs/automation_hook.py, FR-OBS1)
+    from kernel.agentobs.automation_hook import register as _agentobs_register
+
+    _agentobs_register(au.ACTIONS, TEMPLATES)
+except ImportError:   # pragma: no cover - a build without it
+    pass

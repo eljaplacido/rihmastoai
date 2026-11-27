@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from kernel.filelock import locked
+from kernel.journal import before_write
 from kernel.ledgerstore import LedgerStore
 from kernel.people import signed_identity
 
@@ -41,6 +42,8 @@ RIHMA_HOME_ENV = "RIHMA_HOME"
 HOME_ENV = "GNOMONFACTORY_HOME"
 HOME_ENVS = (RIHMASTO_HOME_ENV, RIHMA_HOME_ENV, HOME_ENV)
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# The records an archived project still takes: its archiving and its restoring (kernel/project_archive.py).
+ARCHIVE_KINDS = ("project_archived", "project_restored")
 # The payload fields that name the person who made a write (a ledger record's signer).
 SIGNED_KEYS = ("person", "by", "chosen_by", "requested_by", "stopped_by", "accepted_as_is_by")
 
@@ -116,6 +119,7 @@ def write_text(path: Path, text: str) -> None:
     """Write text atomically with LF line endings."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    before_write(path)      # a change that fails later puts this file back (kernel/journal.py)
     fd, tmp = tempfile.mkstemp(prefix=".tmp-", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
@@ -131,9 +135,30 @@ def write_json(path: Path, obj: object) -> None:
     write_text(path, json.dumps(obj, indent=2, ensure_ascii=False) + "\n")
 
 
+class RecordUnreadable(json.JSONDecodeError):
+    """A record file that is not valid JSON (damaged, truncated or hand-edited). Its message names the file and
+    the line, and says what to do, never only the parser's words; it is still a JSONDecodeError (a ValueError)."""
+
+    def __init__(self, path: Path, err: json.JSONDecodeError):
+        super().__init__(err.msg, err.doc, err.pos)
+        self.path = Path(path)
+        self.plain = (f"{self.path.name} cannot be read (line {err.lineno}): it is not valid JSON. Restore it from a "
+                      "backup or an export, or ask IT to; nothing else was changed")
+        self.args = (self.plain,)
+
+    def __str__(self) -> str:
+        return self.plain
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return ValueError, (self.plain,)
+
+
 def _load(path: Path) -> Any:
     with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+        try:
+            return json.load(fh)
+        except json.JSONDecodeError as exc:
+            raise RecordUnreadable(path, exc) from None
 
 
 def read_json(path: Path, default: Any = None) -> Any:
@@ -182,6 +207,33 @@ def slugify(text: str, limit: int = 32) -> str:
     return (slug[:limit].rstrip("-")) or "project"
 
 
+class ProjectUnreadable(ValueError):
+    """A project whose project.json cannot be read: it is kept out of every list (the others keep working) and
+    named, with how to restore it, wherever it is asked for (FR-NVL3)."""
+
+    def __init__(self, pid: str, title: str, cause: str):
+        self.pid, self.title, self.cause = pid, title, cause
+        super().__init__(f"{title} cannot be read (project.json is not valid: {cause}). Its other records are kept: "
+                         f"restore project.json from a backup or an export of {pid}, or ask IT to; the other "
+                         "projects keep working")
+
+
+def _first_title(ledger: Path) -> str | None:
+    """The title a project was created with, from its ledger's first record (when project.json cannot say)."""
+    try:
+        with open(ledger, encoding="utf-8") as fh:
+            first = json.loads(fh.readline() or "{}")
+    except (OSError, ValueError):
+        return None
+    event = first.get("event") if isinstance(first, dict) else None
+    title = ((event or {}).get("payload") or {}).get("title") if isinstance(event, dict) else None
+    return title if isinstance(title, str) and title else None
+
+
+class ProjectArchived(ValueError):
+    """A write to an archived project: it is read-only until a person restores it (kernel/project_archive.py)."""
+
+
 class Project:
     """One product the factory works on: a folder holding its canon, spec, contract and ledger."""
 
@@ -201,8 +253,25 @@ class Project:
 
     @property
     def meta(self) -> dict[str, Any]:
-        meta: dict[str, Any] = self.read("project.json", {})
+        try:
+            meta: dict[str, Any] = self.read("project.json", {})
+        except RecordUnreadable as exc:
+            raise ProjectUnreadable(self.pid, self.title_anyway(), f"line {exc.lineno}") from None
+        if not isinstance(meta, dict):
+            raise ProjectUnreadable(self.pid, self.title_anyway(), "it holds no project")
         return meta
+
+    def title_anyway(self) -> str:
+        """The project's title even when project.json cannot be read: its ledger's first record, else its id."""
+        return _first_title(self.path("ledger.jsonl")) or self.pid
+
+    def unreadable(self) -> ProjectUnreadable | None:
+        """Why project.json cannot be read, or None when it can."""
+        try:
+            _ = self.meta
+        except ProjectUnreadable as exc:
+            return exc
+        return None
 
     def update_meta(self, **changes: Any) -> dict[str, Any]:
         """Change some of project.json's fields, under its lock: a change made at the same time
@@ -224,7 +293,10 @@ class Project:
     def log(self, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Record a transition in the project's ledger (FR-L2: state changes are appended). While a
         verified identity signs the write (enforced access, D-0016), a record that names its person
-        also names that identity."""
+        also names that identity. An archived project is read-only: only its restoring is recorded."""
+        if kind not in ARCHIVE_KINDS and self.meta.get("archived"):
+            raise ProjectArchived(f"{self.pid} is archived: it is read-only until a person restores it "
+                                  f"(rihmasto project restore {self.pid})")
         if "identity" not in payload:
             for key in SIGNED_KEYS:
                 stamp = signed_identity(payload.get(key))
@@ -241,7 +313,9 @@ class Factory:
     """The factory home: projects, holdouts, paved roads and the factory-level ledger."""
 
     def __init__(self, home: str | Path | None = None, clock: Clock | None = None):
-        self.home = Path(home) if home else default_home()
+        # Absolute from the start: a relative --home (README: `--home var/demo`) would otherwise be read against
+        # whichever folder a git clone or a job runs in (the console's working copy is cloned in the lanes).
+        self.home = Path(os.path.abspath(Path(home).expanduser() if home else default_home()))
         self.clock = clock or Clock()
         self.projects_dir = self.home / "projects"
         self.holdouts_dir = self.home / "holdouts"
@@ -290,11 +364,31 @@ class Factory:
             raise KeyError(f"no project {pid!r} in {self.projects_dir}")
         return project
 
-    def projects(self) -> list[Project]:
+    def projects(self, *, archived: bool = False) -> list[Project]:
+        """Every project, but not an archived one unless asked (kernel/project_archive.py): an archived project is
+        hidden from every list, and still opened by its id."""
         if not self.projects_dir.exists():
             return []
-        return [Project(self, p.name) for p in sorted(self.projects_dir.iterdir())
-                if (p / "project.json").exists()]
+        found = [p for p in self._folders() if p.unreadable() is None]
+        return found if archived else [p for p in found if not p.meta.get("archived")]
+
+    def _folders(self) -> list[Project]:
+        return [Project(self, p.name) for p in sorted(self.projects_dir.iterdir()) if (p / "project.json").exists()]
+
+    def unreadable_projects(self) -> list[dict[str, Any]]:
+        """The projects whose project.json cannot be read, each named with what to do (FR-NVL3): kept out of
+        projects() so one damaged file never takes the others down."""
+        if not self.projects_dir.exists():
+            return []
+        out = []
+        for project in self._folders():
+            bad = project.unreadable()
+            if bad is not None:
+                out.append({"id": project.pid, "title": bad.title, "file": "project.json",
+                            "said": f"{bad.title} cannot be read (project.json is not valid: {bad.cause})",
+                            "how": f"Restore projects/{project.pid}/project.json from a backup or an export, or ask "
+                                   "IT to. Its ledger and other records are kept; the other projects keep working."})
+        return out
 
 
 def _open_canon() -> Callable[[Project], Canon]:

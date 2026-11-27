@@ -1,0 +1,33 @@
+/* Share (share.js, observe_follow.js, FR-SHR1): observer links, following, guests' comments and suggestions. */
+
+.sh-body { display: grid; gap: var(--s4); min-width: 0; }
+.sh-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: var(--s3); }
+.sh-field { display: grid; gap: var(--s1); min-width: 0; }
+.sh-lbl { font-size: var(--fs-sm); color: var(--text-2); }
+.sh-field input, .sh-field select { width: 100%; min-width: 0; }
+.sh-check { display: flex; gap: var(--s2); align-items: flex-start; margin-top: var(--s2); font-size: var(--fs-md); }
+.sh-scope-note { margin: var(--s2) 0 0; }
+.sh-once { display: grid; gap: var(--s2); margin-top: var(--s3); padding: var(--s3); border: 1px solid var(--accent);
+  border-radius: var(--r-md); background: var(--surface-2, var(--surface)); min-width: 0; }
+.sh-once p { margin: 0; }
+.sh-url { overflow-wrap: anywhere; user-select: all; }
+.sh-once > .btn { justify-self: start; }
+.sh-list { display: grid; gap: var(--s2); margin: 0; padding: 0; list-style: none; }
+.sh-link, .sh-comment, .sh-sugg { display: grid; gap: var(--s1); padding: var(--s2) 0; border-top: 1px solid var(--border);
+  min-width: 0; overflow-wrap: anywhere; }
+.sh-list > li:first-child { border-top: 0; }
+.sh-link p, .sh-comment p, .sh-sugg p { margin: 0; }
+.sh-link-main { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; min-width: 0; }
+.sh-watch { color: var(--good, var(--text)); }
+/* who is watching: in the top bar, beside the person chip, so it covers nothing (FR-SHR2); narrow, an eye and a count */
+.obs-chip { display: inline-flex; gap: var(--s1); align-items: center; flex: 0 1 auto; min-width: 0; max-width: 260px;
+  height: 32px; padding: 0 var(--s3); border-radius: var(--r-pill); border: 1px solid var(--accent);
+  background: var(--surface); color: var(--text); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; }
+.obs-chip .lbl { overflow: hidden; text-overflow: ellipsis; }
+.obs-chip .obs-n { display: none; font-variant-numeric: tabular-nums; }
+@media (max-width: 1100px) {
+  .obs-chip { padding: 0 var(--s2); }
+  .obs-chip .lbl { display: none; }       /* the chip's aria-label and title still say it all */
+  .obs-chip .obs-n { display: inline; }
+}
+.obs-chip:hover { text-decoration: none; background: var(--hover); }

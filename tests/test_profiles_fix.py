@@ -36,7 +36,9 @@ DOGFOOD = ("Rihma is a governed AI factory. Its product is agentic capability: a
 
 
 def own_readme() -> str:
-    return (ROOT / "README.md").read_text(encoding="utf-8")
+    # The README as it stood when this was decided (main at 26f45c8): many kinds of work in one text. The live
+    # README now leads with one framing, so a frozen copy keeps testing a text whose signals are mixed.
+    return (ROOT / "tests" / "fixtures" / "readme_many_kinds.txt").read_text(encoding="utf-8")
 
 
 class ProfileConfidenceTest(FactoryTestCase):

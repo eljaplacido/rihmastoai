@@ -1,0 +1,52 @@
+/* A project's own sources (sources.js, FR-SRC1). Every colour is a token (tokens.css), so dark and light follow the
+   theme; rows wrap and the trace table scrolls inside its own box on a phone, never the page. */
+
+.src-panel { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+.src-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); min-width: 0; }
+.src-sum { margin: 0; font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.src-bar-r { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: var(--s2); }
+.src-sec { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.src-h { display: flex; align-items: center; gap: var(--s2); margin: var(--s2) 0 0; font-size: var(--fs-md); }
+.src-h .ic { width: 16px; height: 16px; color: var(--text-2); }
+.src-next { padding: var(--s3); border: 1px solid var(--accent-border); border-radius: var(--r-md); background: var(--accent-subtle); min-width: 0; }
+.src-steps { margin: var(--s2) 0 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: var(--s2); }
+.src-steps li { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.src-steps .btn { max-width: 100%; white-space: normal; text-align: left; }
+.src-list, .src-roots, .src-runs, .src-errors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.src-item { display: flex; flex-direction: column; gap: 6px; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--raised, var(--surface)); min-width: 0; }
+.src-item.found { border-style: dashed; }
+.src-item.stale { box-shadow: inset 3px 0 0 var(--warning); }
+.src-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--s2); min-width: 0; }
+.src-top code, .src-roots code, .src-trace code { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+.src-line { margin: 0; font-size: var(--fs-sm); color: var(--text-2); overflow-wrap: anywhere; }
+.src-errors li { display: flex; gap: 6px; font-size: var(--fs-sm); color: var(--warning-text, var(--text-2)); overflow-wrap: anywhere; }
+.src-roots li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; }
+.src-runs li { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.src-change-form, .src-stop-form, .src-import { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.src-change-form input, .src-change-form select, .src-stop-form input, .src-import textarea, .src-import input { max-width: 100%; min-width: 0; }
+.src-fields { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); }
+.src-field { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); min-width: 0; }
+.src-two { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.src-run-ok { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin: 0; min-width: 0; }
+.src-run-ok > span { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.src-table-wrap { overflow-x: auto; max-width: 100%; }
+.src-trace { width: 100%; min-width: 560px; border-collapse: collapse; font-size: var(--fs-sm); }
+.src-trace td:nth-child(2) code { white-space: nowrap; }
+.src-trace th, .src-trace td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.src-trace td:first-child { min-width: 160px; }
+/* On a phone each trace row stacks, its result first, so nothing scrolls sideways (FR-SRC2). */
+@media (max-width: 640px) {
+  .src-trace { min-width: 0; }
+  .src-trace thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .src-trace tr { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .src-trace td { display: block; border-bottom: 0; padding: 0 4px; min-width: 0; overflow-wrap: anywhere; }
+  .src-trace td:first-child { min-width: 0; }
+  .src-trace td.src-res { order: -1; }
+  .src-trace td:nth-child(2) code { white-space: normal; }
+}
+.src-item.stopped { opacity: .85; border-style: dotted; }
+.src-scope { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border); padding-top: var(--s2); }
+.src-scope p { margin: 0; overflow-wrap: anywhere; }
+.understood .src-fold > summary { cursor: pointer; font-weight: 600; padding: var(--s2) 0; }
+.understood .src-own { margin: var(--s2) 0 0; }

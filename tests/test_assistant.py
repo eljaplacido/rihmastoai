@@ -33,7 +33,9 @@ class Seeded(FactoryTestCase):
         self.escalation = next(c for c in Canon(self.p).cards() if c["kind"] == "escalation")
 
     def records(self):
-        return len(self.p.ledger().records())
+        """The project's records, less the usage metadata of the assistant's own model run (model_run, FR-INS1-AC-9):
+        that says a model answered, never what; the assistant itself writes nothing."""
+        return len([r for r in self.p.ledger().records() if r["event"]["kind"] != "model_run"])
 
 
 class LensTest(Seeded):
@@ -88,7 +90,8 @@ class AssistantTest(Seeded):
         out = ask(self.factory, "where do I see the token cost of each run?", persona="developer",
                   project_id=self.p.pid)
         self.assertEqual(out["by"], "map")
-        self.assertIn(out["navigate"]["route"], (f"#/p/{self.p.pid}/cell", "#/floor"))
+        self.assertIn(out["navigate"]["route"], (f"#/p/{self.p.pid}/cell", "#/floor",   # Gnomon's runs
+                                                 f"#/p/{self.p.pid}/agentops"))   # Agent operations (FR-AOP1)
         out = ask(self.factory, "how do I pause this?", persona="developer", project_id=self.p.pid)
         self.assertEqual(out["navigate"]["control"], "pause")
         routes = {v["route"].split("/")[-1] for v in ui_map()["views"]}

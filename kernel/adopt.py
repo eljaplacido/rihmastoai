@@ -115,7 +115,7 @@ LANGUAGES = {
     ".lua": "Lua", ".pl": "Perl", ".ex": "Elixir", ".exs": "Elixir", ".erl": "Erlang", ".hs": "Haskell",
     ".clj": "Clojure", ".sh": "Shell", ".bash": "Shell", ".ps1": "PowerShell", ".sql": "SQL",
     ".html": "HTML", ".htm": "HTML", ".css": "CSS", ".scss": "CSS", ".vue": "Vue", ".svelte": "Svelte",
-    ".tf": "HCL",
+    ".tf": "HCL", ".gd": "GDScript", ".gdshader": "Godot shader", ".hlsl": "HLSL", ".glsl": "GLSL",
 }
 
 # Windows: CREATE_SUSPENDED, and PROCESS_TERMINATE | PROCESS_SET_QUOTA | PROCESS_SUSPEND_RESUME.
@@ -260,15 +260,42 @@ def _net(cwd: Path, *args: str, timeout: int = 300) -> str:
     it started."""
     what = next((a for a in args if not a.startswith("-")), "")
     try:
-        code, out, err = _run(["git", *NO_CREDENTIALS, *NET_LIMITS, *args], cwd=cwd, env=_git_env(),
-                              timeout=timeout)
+        code, out, err = _run(["git", *NO_CREDENTIALS, *_github_sign_in(cwd, args), *NET_LIMITS, *args], cwd=cwd,
+                              env=_git_env(), timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"git {what} did not finish in {timeout}s") from exc
     except OSError as exc:
         raise RuntimeError(f"git {what} could not start: {exc}") from exc
     if code != 0:
-        raise RuntimeError(f"git {what} failed: {err.strip()[-300:]}")
+        raise RuntimeError(f"git {what} failed: {err.strip()[-300:]}" + _sign_in_hint(err))
     return out.strip()
+
+
+GITHUB = "https://github.com/"
+
+
+def _github_sign_in(cwd: Path, args: tuple[str, ...]) -> list[str]:
+    """For a private repository on github.com: the person's signed-in GitHub CLI answers git for that host only
+    (``gh auth git-credential``), for this one call. Every other host still gets no credential helper."""
+    url = next((a for a in args if a.startswith(GITHUB)), "")
+    if not url and "upstream" in args:
+        try:
+            code, out, _ = _run(["git", "config", "--get", "remote.upstream.url"], cwd=cwd, env=_git_env(),
+                                timeout=30)
+            url = out.strip() if code == 0 else ""
+        except (OSError, subprocess.TimeoutExpired):
+            url = ""
+    if not url.startswith(GITHUB) or not shutil.which("gh"):
+        return []
+    return ["-c", "credential.https://github.com.helper=!gh auth git-credential"]
+
+
+def _sign_in_hint(err: str) -> str:
+    """What to do when the upstream asked who is fetching."""
+    if "could not read Username" in err or "Authentication failed" in err or "Repository not found" in err:
+        return (". The repository is private or not found: sign in to GitHub on this machine (gh auth login, "
+                "with access to it), or give the address of a clone on this machine instead")
+    return ""
 
 
 def _git_read(cwd: Path, *args: str) -> str:
@@ -440,7 +467,23 @@ def languages(files) -> list:
 
 
 _PY_TEST = re.compile(r"(^|/)(test_[^/]*|[^/]*_test)\.py$")
+GENERATED_DIRS = ("output", "out", "build", "dist", "generated", "tmp")
 _NPM_DEFAULT = "no test specified"
+
+
+def _unittest_roots(root: Path, files: list, py_tests: list) -> list:
+    """unittest, run once in each package's own test root (and the repository's root for the rest)."""
+    from kernel.assess_measure import python_roots
+
+    out = []
+    for at in python_roots(files, lambda rel: _read(root, rel)):
+        mine = [f[len(at) + 1:] if at else f for f in py_tests if not at or f.startswith(at + "/")]
+        start = ["-s", "tests"] if any(f.startswith("tests/") for f in mine) else []
+        out.append({"ecosystem": "python", "runner": "unittest", "tool": "python",
+                    "command": ["python", "-m", "unittest", "discover", *start, "-v"],
+                    "basis": f"{len(mine)} test file(s) named test_*.py or *_test.py, no pytest marker"
+                             + (f"; its own test root {at}" if at else "")} | ({"cwd": at} if at else {}))
+    return out
 
 
 def detect_tests(root: Path, files) -> list:
@@ -462,14 +505,23 @@ def detect_tests(root: Path, files) -> list:
                                 for f in py_tests[:200]):
         pytest_basis.append("a test file imports pytest")
     if pytest_basis:
-        found.append({"ecosystem": "python", "runner": "pytest", "tool": "python",
-                      "command": ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"],
-                      "basis": "; ".join(pytest_basis)})
+        # Generated output folders hold scratch tests nobody runs: never collected unless the project says where
+        # its tests are (testpaths).
+        stated_paths = any("testpaths" in _read(root, cfg) for cfg in ("pytest.ini", "pyproject.toml", "setup.cfg",
+                                                                        "tox.ini") if cfg in names)
+        skip = [] if stated_paths else [f"--ignore={d}" for d in GENERATED_DIRS
+                                        if any(f.startswith(d + "/") for f in py_tests)]
+        from kernel.assess_measure import python_roots  # each package's own test root (FR-ASP1)
+
+        roots = python_roots(files, lambda rel: _read(root, rel))
+        for at in roots:
+            others = [f"--ignore={r}" for r in roots if r and not at]     # the root run leaves the packages to theirs
+            found.append({"ecosystem": "python", "runner": "pytest", "tool": "python",
+                          "command": ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider", *skip, *others],
+                          "basis": "; ".join(pytest_basis) + (f"; its own test root {at}" if at else "")}
+                         | ({"cwd": at} if at else {}))
     elif py_tests:
-        start = ["-s", "tests"] if any(f.startswith("tests/") for f in py_tests) else []
-        found.append({"ecosystem": "python", "runner": "unittest", "tool": "python",
-                      "command": ["python", "-m", "unittest", "discover", *start, "-v"],
-                      "basis": f"{len(py_tests)} test file(s) named test_*.py or *_test.py, no pytest marker"})
+        found += _unittest_roots(root, files, py_tests)      # each package's own test root, as pytest (FR-ASP2)
     if "package.json" in names:
         try:
             script = ((json.loads(_read(root, "package.json")) or {}).get("scripts") or {}).get("test")
@@ -710,6 +762,15 @@ def _count_line(counts: dict) -> str:
                      if counts.get(k) is not None)
 
 
+def _failed_said(counts: dict) -> str:
+    """A failing baseline in words. Errors and nothing else: the suite stopped while collecting (its own code
+    failed to import), so no test ran; the existing behaviour all the same."""
+    if not (counts.get("passed") or counts.get("failed")):
+        return (f"the suite could not run ({_count_line(counts)}: errors while collecting the tests, so no test "
+                "ran): that is the existing behaviour, recorded, not judged")
+    return "some existing tests fail at the baseline: that is the existing behaviour, recorded, not judged"
+
+
 def _baseline_verdict(runner: str, code: int, counts: dict | None, out: str, root: Path) -> tuple[str, str]:
     """The verdict of one characterisation run. Passed only when it exits 0 and at least one test
     passed: zero tests, every test skipped or a summary the kernel cannot read are not measured,
@@ -728,8 +789,7 @@ def _baseline_verdict(runner: str, code: int, counts: dict | None, out: str, roo
         return "not measured", ("not measured: a dependency the kernel does not install is missing ("
                                 + ", ".join(missing[:5]) + "); the existing tests did not run")
     if counts and ((counts.get("failed") or 0) + (counts.get("errors") or 0)) > 0:
-        return "failed", ("some existing tests fail at the baseline: that is the existing behaviour, recorded, "
-                          "not judged")
+        return "failed", _failed_said(counts)
     return "not measured", (f"not measured: the command exited {code} with no test summary the kernel can read "
                             "(dependencies may be missing: the kernel runs offline and installs nothing)")
 
@@ -760,7 +820,12 @@ def run_baseline(root: Path, test: dict, *, timeout: int,
     in which no test passed, is not measured, never passed. Stdin is closed, and the timeout, like
     the end of the run, stops every process the suite started."""
     base = {"ecosystem": test["ecosystem"], "runner": test["runner"], "command": list(test["command"]),
-            "meaning": CHARACTERISATION}
+            "meaning": CHARACTERISATION} | ({"cwd": test["cwd"]} if test.get("cwd") else {})
+    if test.get("cwd"):                     # a package's own test root: started there, never outside the checkout
+        inner = (root / test["cwd"]).resolve()
+        if not inner.is_dir() or not inner.is_relative_to(root.resolve()):
+            return base | {"verdict": "not measured", "reason": f"not measured: no test root {test['cwd']}"}
+        root = inner
     argv = _command(test, which)
     if isinstance(argv, str):
         return base | {"verdict": "not measured", "reason": argv}
@@ -863,12 +928,24 @@ def _profile_line(profile: dict[str, Any]) -> str:
     return line(profile)
 
 
+_TOOK = {"commit": "its last commit (what is not committed is not included)",
+         "working copy": "its working copy as it was, uncommitted changes included, as a snapshot (the folder is "
+                         "never changed)",
+         "snapshot": "a snapshot of the folder (the folder is never changed)",
+         "documents": "a snapshot of its documents, to track and evaluate the work (nothing is built from them)"}
+
+
 def _brief(title: str, *, intent: str, source_label: str, branch: str, baseline_rev: str, inv: dict,
-           character: dict, base_url: str | None, person: str, persona: str, profile: dict[str, Any]) -> str:
+           character: dict, base_url: str | None, person: str, persona: str, profile: dict[str, Any],
+           took: str = "commit", left_out: dict[str, int] | None = None) -> str:
     tc = inv["test_command"]
     langs = ", ".join(f"{lang['language']} ({lang['files']})" for lang in inv["languages"][:6]) or "none identified"
+    what = "A body of work (its documents)" if took == "documents" else "An existing solution"
+    left = (f" {left_out['uncommitted']} uncommitted change(s) and {left_out['untracked']} untracked file(s) were "
+            "left out." if left_out and (left_out.get("uncommitted") or left_out.get("untracked")) else "")
     lines = [f"# Brief: {title}", "",
-             f"An existing solution adopted to **{intent}** it, by {person} ({persona}).", "",
+             f"{what} adopted to **{intent}** it, by {person} ({persona}).", "",
+             f"- Taken: {_TOOK.get(took, took)}.{left}",
              f"- Source: {source_label}, branch `{branch}`, baseline `{baseline_rev[:12]}`. The upstream is never "
              "pushed to.",
              f"- Languages: {langs}.",
@@ -901,6 +978,7 @@ class _Request:
     persona: str
     maturity: str
     confidential: bool = False
+    took: str = "commit"          # the last commit, a snapshot, the working copy as it is, or documents to track
 
 
 def _label(kind: str, location: str) -> str:
@@ -925,23 +1003,29 @@ def _check_request(person: str, persona: str, intent: str, profile: str | None, 
 
 def _take(bare: Path, location: str, *, base_url: str | None, timeout: int,
           which: Callable[[str], str | None], suite_timeout: int = 0, exclude: tuple[str, ...] = (),
-          confidential: bool = False) -> dict[str, Any]:
+          confidential: bool = False, progress: Callable[[str], None] = lambda step: None) -> dict[str, Any]:
     """Everything adoption reads from the upstream, before the project exists: the mirror, a
     checkout of the baseline with its inventory, characterisation and documents (scanned as context,
     kernel/material.py), and the kernel's surface on main. The checkout goes through the
     credential-free path too, so an LFS filter never reaches the owner's credential helper or a prompt."""
     from kernel.agent_context_use import apply_stated
     from kernel.material_adopt import context
+    from kernel.profiles_shapes import file_hints
 
+    progress("fetching the code")
     branch, baseline = _mirror(bare, location, timeout=timeout)
     with tempfile.TemporaryDirectory(prefix="gf-adopt-", ignore_cleanup_errors=True) as tmp:
         scratch = Path(tmp)
         _net(scratch, "clone", "-q", "-c", "core.autocrlf=false", str(bare), "w", timeout=timeout)
         work = scratch / "w"
         files = [f for f in _git_read(work, "ls-files", "-z").split("\0") if f]
+        progress("reading the code and the documents")
         inv = inventory(work, files, base_url=base_url) | {"revision": baseline}
         documents = context(work, exclude)
+        archived = [r["path"] for r in documents[0]["files"] if r.get("archive")]
+        inv["file_hints"] = file_hints(files + archived)      # its files' word on its kind of work (FR-RPJ1)
         apply_stated(inv, documents[0].get("agent_context"))   # the team's own test command first (FR-AGC1)
+        progress("running its own tests once for a baseline")
         character = characterise(work, inv["tests"], timeout=suite_timeout or SUITE_TIMEOUT, which=which)
         surface = _own_surface(bare, scratch, baseline, timeout=timeout, confidential=confidential)
     return {"branch": branch, "baseline": baseline, "inventory": inv, "character": character, "surface": surface,
@@ -953,15 +1037,22 @@ def _propose(project: Any, title: str, inv: dict[str, Any]) -> dict[str, Any]:
     the title and the README, and from its files: HTTP routes in the code count as an API. An uncertain
     proposal is kept as uncertain, with its candidates, and a person is asked (kernel/adopt_kind.py)."""
     from kernel.profiles import propose_profile
+    from kernel.profiles_shapes import hint_text
 
     if project.meta.get("profile"):
         return {"profile": project.meta["profile"], "by": "person at creation"}
     routes = int(inv.get("http_routes") or 0)
-    proposal = propose_profile(f"{title}\n{inv['readme'].get('first_paragraph') or ''}" + ("\napi" if routes else ""))
+    hints = inv.get("file_hints") or []
+    proposal = propose_profile(f"{title}\n{inv['readme'].get('first_paragraph') or ''}" + ("\napi" if routes else "")
+                               + ("\n" + hint_text(hints) if hints else ""))
     out = {"profile": proposal["profile"], "by": "rule",
-           "from": "the README and the title" + (f", and {routes} HTTP route(s) in its code" if routes else ""),
+           "from": "the README and the title" + (f", and {routes} HTTP route(s) in its code" if routes else "")
+           + "".join(f", and {h['why']}" for h in hints[:3]),
            "keywords": proposal["basis"], "confidence": proposal["confidence"]}
-    if proposal["confidence"] != "clear":
+    strong = {h["profile"] for h in hints if len(h["words"]) >= 3}     # a game engine's file, training runs
+    if proposal["confidence"] != "clear" and proposal["profile"] in strong:
+        out["confidence"] = "clear"                                        # its files settle what its words leave open
+    elif proposal["confidence"] != "clear":
         out |= {"candidates": proposal["candidates"], "why": proposal["uncertain_because"]}
     return out
 
@@ -973,9 +1064,11 @@ def _record_source(project: Any, taken: dict[str, Any], req: _Request, profile: 
         "baseline": baseline, "main": surface["revision"], "base_url": req.base_url,
         "adopted_by": {"person": req.person, "persona": req.persona}, "at": project.factory.clock.stamp(),
         "upstream_push": "disabled: remote.upstream.pushurl is not a transport", "profile": profile,
-        "last_upstream": baseline, "last_sync": None,
+        "last_upstream": baseline, "last_sync": None, "took": req.took, "origin": taken.get("origin"),
+        **({"left_out": taken["left_out"]} if taken.get("left_out") else {}),
         **({"snapshot": taken["snapshot"]} if taken.get("snapshot") else {})})
-    project.update_meta(intent=req.intent, upstream=req.label, baseline=baseline)
+    # Who asked for the adoption is who requested the project: the overview says it instead of "(not recorded)".
+    project.update_meta(intent=req.intent, upstream=req.label, baseline=baseline, requested_by=req.person)
     project.log("adopted", {"source": req.label, "source_kind": req.kind, "intent": req.intent, "branch": branch,
                             "baseline": baseline, "base_url": req.base_url, "person": req.person,
                             "persona": req.persona, "upstream_push": "disabled"})
@@ -1078,7 +1171,8 @@ def _hold(project: Any, taken: dict[str, Any], req: _Request) -> None:
     Canon(project).write_brief(_brief(req.title, intent=req.intent, source_label=req.label, branch=taken["branch"],
                                       baseline_rev=taken["baseline"], inv=taken["inventory"],
                                       character=taken["character"], base_url=req.base_url, person=req.person,
-                                      persona=req.persona, profile=profile))
+                                      persona=req.persona, profile=profile, took=req.took,
+                                      left_out=taken.get("left_out")))
     spec = _write_as_is(project, taken, req)
     _stage(project, spec, req)
 
@@ -1093,11 +1187,26 @@ def _roll_back(project: Any) -> None:
             project.update_meta(adoption="failed", stage=1)
 
 
+def _taking(kind: str, location: str, *, working_copy: bool, documents: bool) -> tuple[str, dict[str, Any]]:
+    """What is taken (the last commit, the working copy, a snapshot, documents), where it came from (its origin,
+    credentials out) and what the last commit leaves out (FR-RPJ1)."""
+    from kernel import material_git as mg
+
+    took = "documents" if documents else "working copy" if working_copy and kind == "path" else \
+        "snapshot" if kind == "folder" else "commit"
+    seen: dict[str, Any] = {"origin": location if kind == "url" else mg.origin(Path(location)) if kind == "path"
+                            else None}
+    if took == "commit" and kind == "path":       # what the last commit leaves out, said in the brief
+        seen["left_out"] = mg.working_changes(Path(location))
+    return took, seen
+
+
 def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, persona: str,
           base_url: str | None = None, profile: str | None = None, maturity: str = "production",
           mode: str = "mixed", timeout: int = 600, which: Callable[[str], str | None] = shutil.which,
           suite_timeout: int = SUITE_TIMEOUT, exclude: tuple[str, ...] = (), confidential: bool = False,
-          posture: dict[str, Any] | None = None) -> Any:
+          posture: dict[str, Any] | None = None, progress: Callable[[str], None] = lambda step: None,
+          working_copy: bool = False, documents: bool = False) -> Any:
     """Adopt an existing solution as a project. Returns the project.
 
     Everything that reads the upstream runs before the project exists, so an unreachable or
@@ -1105,24 +1214,32 @@ def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, pe
     ``timeout`` bounds each git call; ``suite_timeout`` bounds each detected test suite's run.
     A folder that is not a git repository is snapshotted first (kernel/material_adopt.py); ``exclude``
     drops files from the snapshot and the scanned documents; ``confidential`` keeps it on local models;
-    ``posture`` (kernel/posture.py) is recorded with who chose it, at the maturity and mode given."""
+    ``posture`` (kernel/posture.py) is recorded with who chose it, at the maturity and mode given. ``progress``
+    hears each step as it starts, in plain words (the cockpit's adoption job prints them).
+    A git repository's last commit is adopted, and what is not committed is counted and left out; with
+    ``working_copy`` its working tree as it is now is snapshotted instead. ``documents`` adopts a folder of
+    documents only, to track and evaluate the work (FR-RPJ1), where it is otherwise refused."""
     from kernel.material_adopt import NoCode, snapshot
 
     _check_request(person, persona, intent, profile, maturity, mode)
     kind, location = check_source(source)
+    took, seen = _taking(kind, location, working_copy=working_copy, documents=documents)
     req = _Request(title=title, kind=kind, label=_label(kind, location), intent=intent, base_url=_base_url(base_url),
-                   person=person, persona=persona, maturity=maturity, confidential=confidential)
+                   person=person, persona=persona, maturity=maturity, confidential=confidential, took=took)
     factory.home.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".adopting-", dir=factory.home))
     snap: dict[str, Any] | None = None
     try:
-        if kind == "folder":      # the person's folder is never changed: its snapshot is the upstream
-            try:
-                location, snap = snapshot(factory.home, location, exclude)
+        if kind == "folder" or (took in ("working copy", "documents") and kind != "url"):
+            progress("copying the folder into a baseline repository")
+            try:      # the person's folder is never changed: its snapshot is the upstream
+                location, snap = snapshot(factory.home, location, exclude, documents=documents)
             except NoCode as exc:
                 raise AdoptionRefused(str(exc)) from None
         taken = _take(staging / "repo.git", location, base_url=req.base_url, timeout=timeout, which=which,
-                      suite_timeout=suite_timeout, exclude=exclude, confidential=confidential) | {"snapshot": snap}
+                      suite_timeout=suite_timeout, exclude=exclude, confidential=confidential,
+                      progress=progress) | {"snapshot": snap, **seen}
+        progress("recording the baseline, the as-is spec and the contract")
         project = factory.new_project(title, maturity=maturity, mode=mode, source_kind="adopted", profile=profile,
                                       posture=posture)
         try:
@@ -1139,6 +1256,9 @@ def adopt(factory: Any, title: str, *, source: Any, intent: str, person: str, pe
         shutil.rmtree(staging, ignore_errors=True)
     if intent == "monitor" and req.base_url:
         probe(project)
+    from kernel.areas import record as record_areas
+
+    record_areas(project)        # its inventory and activity by area (FR-RPJ1); never fails the adoption
     return project
 
 

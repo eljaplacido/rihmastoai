@@ -216,13 +216,20 @@ class Standins:
     def __init__(self) -> None:
         self.env: dict[str, str] = {}
         self.items: dict[str, Any] = {}
-        self.servers: list[_Server] = []
+        self.servers: list[ThreadingHTTPServer] = []
 
     def add(self, decl: dict[str, Any], repo_dir: Path, folder: Path) -> None:
         s = settings(decl)
         if decl["via"] == "sql":
             item: Any = SqliteStandin(decl, repo_dir, folder)
             url = item.url()
+        elif decl["kind"] == "gdrive":       # Drive v3, and the metadata server's token (FR-GDR1)
+            from kernel import gdrive_standin
+
+            item = gdrive_standin.DriveStandin(_fixture(repo_dir, decl["name"]).get("files"))
+            server, url = gdrive_standin.start(item)
+            self.servers.append(server)
+            self.env["GCE_METADATA_HOST"] = url.removeprefix("http://")
         else:
             item = HttpStandin(decl, _fixture(repo_dir, decl["name"]))
             server = _Server(item)

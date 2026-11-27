@@ -11,7 +11,9 @@ This page says what is **built** and what is **planned**, then walks through eac
 ## The modules
 
 **Core** is always on: projects, the Inbox where people decide, the ledger, personas and access, the
-autonomy cap, the knowledge graph, settings, jobs, and attaching a repository of your own.
+autonomy cap, the knowledge graph (its page and each project's Graph tab), the data and context of every
+agent (the Data and context page and each project's Context tab), settings, jobs, and attaching a repository of
+your own.
 
 | Module | Adds | Needs |
 |---|---|---|
@@ -28,6 +30,7 @@ autonomy cap, the knowledge graph, settings, jobs, and attaching a repository of
 | Assessment | adopting an existing system: tests characterised, an inventory, its upstream watched | |
 | Integrations | website chats, events and notices out, verified webhooks in, connectors | |
 | Assistant | Ask Rihma answering from a model through Gnomon; without it the assistant points the way from the cockpit's map | |
+| Agent observability (opt-in) | an Agent sessions view per project for developers and IT, read from your own agent observability hub ([guide](agent-observability.md)); off until a person turns it on, in no preset | |
 
 `rihmasto modules show` prints the same table for your factory, with what is on.
 

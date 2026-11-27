@@ -537,7 +537,9 @@ class ViewsAndJobsTest(CockpitTestCase):
         deadline = time.monotonic() + 30
         while runner.status(job)["state"] == "running" and time.monotonic() < deadline:
             time.sleep(0.05)
-        self.assertEqual(runner.status(job), {"state": "done", "code": 0})
+        status = runner.status(job)
+        self.assertEqual({k: status[k] for k in ("state", "code")}, {"state": "done", "code": 0})
+        self.assertRegex(status["ended"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")   # its log's last write (FR-LND2)
         self.assertIn(f"home={self.factory.home}", log.read_text(encoding="utf-8"))
         self.assertEqual(runner.status("J-nope")["state"], "unknown")
 
@@ -792,7 +794,7 @@ class EvidenceNowAndHealthTest(CockpitTestCase):
             self.assertEqual(self.call("GET", f"/api/projects/{p.pid}/health")[:2], (200, view["health"]))
             self.assertEqual(set(view["health"]), {"status", "reasons", "forecast"})
             self.assertEqual(set(view["health"]["forecast"]),
-                             {"tasks_left", "median_task_minutes", "eta_minutes", "basis"})
+                             {"tasks_left", "tasks_total", "median_task_minutes", "eta_minutes", "basis"})
         self.assertEqual((before[0], before[1]), (self.snapshot(waiting), self.snapshot(built)))   # reads only
         # with no merged task the forecast says "not measured", never a number
         h = self.call("GET", f"/api/projects/{waiting.pid}")[1]["health"]
@@ -843,11 +845,11 @@ class FactoryInboxTest(CockpitTestCase):
                                        "then": "400, not 500", "projects": ["a", "b"]})
         projects = self.call("GET", "/api/projects")[1]
         self.assertEqual([(r["id"], r["title"], r["factory"]) for r in projects],
-                         [(FACTORY_PID, "Rihma itself", True), (p.pid, "Equipment loans", False)])
+                         [(FACTORY_PID, "Rihmasto itself", True), (p.pid, "Equipment loans", False)])
         self.assertEqual(projects[0]["open_by_kind"], {"approval": 1})
         status, view, _ = self.call("GET", f"/api/projects/{FACTORY_PID}")
         self.assertEqual(status, 200, view)
-        self.assertEqual((view["meta"]["title"], view["meta"]["factory"]), ("Rihma itself", True))
+        self.assertEqual((view["meta"]["title"], view["meta"]["factory"]), ("Rihmasto itself", True))
         inbox = self.call("GET", f"/api/projects/{FACTORY_PID}/inbox?persona=product_owner")[1]
         self.assertEqual([c["id"] for c in inbox["cards"]], [card["id"]])
         self.assertEqual(self.call("GET", f"/api/projects/{FACTORY_PID}/inbox?persona=end_user")[1]["cards"], [])
@@ -1120,8 +1122,10 @@ class RedesignTestCase(CockpitTestCase):
     """Helpers for the redesigned cockpit's routes (FR-T1-AC-11 to AC-15, FR-V1-AC-5)."""
 
     def ledgers(self):
-        """Every project's ledger length, the factory's own canon included."""
-        return {p.pid: len(p.ledger().records()) for p in self.factory.projects()}
+        """Every project's ledger length, the factory's own canon included, less the usage metadata of a model's
+        run (model_run, FR-INS1-AC-9): that says a model answered, never what; it is no write of the route's."""
+        return {p.pid: len([r for r in p.ledger().records() if r["event"]["kind"] != "model_run"])
+                for p in self.factory.projects()}
 
     def assert_no_ledger_writes(self, before):
         """No ledger that existed got a record; one created meanwhile (the factory's own canon, made on
@@ -1152,7 +1156,8 @@ WIDGET_MODEL = {"kpi_strip": "kpis", "square": "square", "pipeline": "pipeline",
                 "catalogue": "catalogue", "live": "projects", "timeline": "timelines", "gate_trend": "gate_trend",
                 "coverage": "coverage", "activity": "activity", "models": "models", "health": "projects",
                 "updates": "updates", "autonomy": "autonomy", "evidence_packs": "evidence_packs", "spend": "spend",
-                "feed_health": "feed_health", "eval_trend": "eval_trend", "try_it": "try_it", "track": "track"}
+                "feed_health": "feed_health", "eval_trend": "eval_trend", "try_it": "try_it", "track": "track",
+                "insight": "insights", "graph": "graph"}
 
 
 class DashboardLayoutTest(RedesignTestCase):
@@ -1231,6 +1236,42 @@ class DashboardLayoutTest(RedesignTestCase):
         self.assertEqual(self.call("GET", q)[1]["layout"], layout)                # nothing refused was kept
         self.assert_no_ledger_writes(before)                                  # never in a project ledger
         self.assertEqual(self.call("DELETE", q)[0], 405)
+
+    def test_FR_UXO1_AC_11_view_layouts_are_kept_per_person_on_the_server_within_bounds(self):
+        before = self.ledgers()
+        q = "/api/view-layouts"
+        status, out, _ = self.call("GET", q + "?person=Dev")
+        self.assertEqual((status, out["saved"], out["views"], out["tabs"]), (200, False, {}, {"hidden": [], "pinned": []}))
+        lay = {"order": ["brief", "health"], "hidden": ["brief", "brief"], "size": {"health": "wide", "brief": "normal"}}
+        status, out, _ = self.put(q, {"person": "Dev", "persona": "developer", "views": {"p:overview": lay, "g:projects": {"hidden": ["x"]}},
+                                      "tabs": {"hidden": ["review"], "pinned": ["questions"]}})
+        self.assertEqual(status, 200, out)
+        self.assertEqual(out["views"]["p:overview"], {"order": ["brief", "health"], "hidden": ["brief"], "size": {"health": "wide"}})
+        # another view's save merges; null removes one view; the tabs stay unless sent
+        self.put(q, {"person": "Dev", "persona": "developer", "views": {"p:tasks": {"size": {"board": "compact"}}, "g:projects": None}})
+        status, out, _ = self.call("GET", q + "?person=Dev")
+        self.assertTrue(out["saved"])
+        self.assertEqual(sorted(out["views"]), ["p:overview", "p:tasks"])
+        self.assertEqual(out["tabs"], {"hidden": ["review"], "pinned": ["questions"]})
+        self.assertEqual(self.call("GET", q + "?person=Olli")[1]["views"], {})          # per person
+        # refused: a bad view key, a size outside its set, too many sections, a bad tab id, a non-person
+        bad = [{"views": {"overview": lay}}, {"views": {"p:../x": lay}}, {"views": {"p:overview": {"size": {"a": "huge"}}}},
+               {"views": {"p:overview": {"hidden": [f"s{i}" for i in range(81)]}}}, {"tabs": {"hidden": ["Review!"]}},
+               {"views": {"p:overview": {"hidden": ["\x00"]}}}, {"views": ["p:overview"]}]
+        for b in bad:
+            status, err, _ = self.put(q, dict(b, person="Dev", persona="developer"))
+            self.assertEqual(status, 400, (b, err))
+        for who in ("assistant", "", "factory"):
+            self.assertEqual(self.put(q, {"person": who, "persona": "developer", "views": {"p:overview": lay}})[0], 403, who)
+        self.assertEqual(self.put(q, {"person": "Dev", "persona": "developer"}, origin="http://evil.example")[0], 403)
+        self.assertEqual(self.put(q, {"person": "Dev", "persona": "developer"}, token=None)[0], 401)
+        # reset: every view and the tabs
+        status, out, _ = self.put(q, {"person": "Dev", "persona": "developer", "reset": "*"})
+        self.assertEqual((out["views"], out["tabs"]), ({}, {"hidden": [], "pinned": []}))
+        files = list((self.factory.home / "_cockpit" / "view-layouts").glob("*.json"))
+        self.assertEqual(len(files), 1)
+        self.assertEqual(json.loads(files[0].read_text(encoding="utf-8"))["person"], "Dev")
+        self.assert_no_ledger_writes(before)                                  # never in a project ledger
 
 
 class ContextTest(RedesignTestCase):
@@ -1578,7 +1619,7 @@ class ScreensTest(RedesignTestCase):
         body = {"kind": "feedback", "origins": ["http://localhost:5501"], "person": "Ilkka", "persona": "it"}
         status, out, _ = self.call("POST", "/api/embeds", dict(body, project=FACTORY_PID))
         self.assertEqual(status, 400, out)
-        self.assertIn("Rihma itself", out["error"])
+        self.assertIn("Rihmasto itself", out["error"])
         self.assertEqual(self.call("GET", "/api/embeds")[1]["embeds"], [])
         eid = self.call("POST", "/api/embeds", dict(body, project=p.pid))[1]["embed"]["id"]
         revoke = f"/api/embeds/{eid}/revoke"

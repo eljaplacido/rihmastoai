@@ -64,7 +64,8 @@ class DistributionTest(unittest.TestCase):
     def test_the_python_packages_keep_their_names(self):
         packages = PYPROJECT["tool"]["setuptools"]["packages"]
         self.assertEqual([p for p in packages if "." not in p], ["kernel", "adapters", "cockpit", "embed", "mcp"])
-        self.assertEqual([p for p in packages if "." in p], ["kernel.runners"])   # the cell runners (D-0019)
+        self.assertEqual([p for p in packages if "." in p],    # kernel's own subpackages (tests/test_wiring.py)
+                         ["kernel.checks", "kernel.insights", "kernel.redteam", "kernel.runners", "kernel.agentobs"])
         self.assertTrue(all((REPO_ROOT / p.replace(".", "/") / "__init__.py").is_file() for p in packages))
 
 
@@ -92,22 +93,22 @@ class ParserTest(unittest.TestCase):
 class HomeOrderTest(unittest.TestCase):
     def test_RIHMASTO_HOME_wins_then_RIHMA_HOME_then_GNOMONFACTORY_HOME_then_var(self):
         with environment(RIHMASTO_HOME="a", RIHMA_HOME="b", GNOMONFACTORY_HOME="c"):
-            self.assertEqual(Factory().home, Path("a"))
+            self.assertEqual(Factory().home, Path(os.path.abspath("a")))
         with environment(RIHMA_HOME="b", GNOMONFACTORY_HOME="c"):
-            self.assertEqual(Factory().home, Path("b"))
+            self.assertEqual(Factory().home, Path(os.path.abspath("b")))
         with environment(GNOMONFACTORY_HOME="c"):
-            self.assertEqual(Factory().home, Path("c"))
+            self.assertEqual(Factory().home, Path(os.path.abspath("c")))
         with environment():
             self.assertEqual(Factory().home, REPO_ROOT / "var")
 
     def test_a_variable_set_but_empty_counts_as_unset(self):
         with environment(RIHMASTO_HOME="", RIHMA_HOME="", GNOMONFACTORY_HOME="c"):
-            self.assertEqual(Factory().home, Path("c"))
+            self.assertEqual(Factory().home, Path(os.path.abspath("c")))
         self.assertIsNone(store.home_from_env({"RIHMASTO_HOME": "", "RIHMA_HOME": ""}))
 
     def test_home_wins_over_every_variable(self):
         with environment(RIHMASTO_HOME="a", RIHMA_HOME="b", GNOMONFACTORY_HOME="c"):
-            self.assertEqual(Factory("x").home, Path("x"))
+            self.assertEqual(Factory("x").home, Path(os.path.abspath("x")))
 
     def test_the_order_is_read_from_a_given_mapping_too(self):
         self.assertEqual(store.HOME_ENVS, HOME_VARS)

@@ -128,7 +128,9 @@ class ProjectChangeUiTest(unittest.TestCase):
         b.wait("document.querySelector('#modal').open && !!document.querySelector('#ps-kind')", "the settings dialog")
         self.assertEqual(b.eval("document.querySelector('#ps-kind').value"), "web_service")
         self.assertTrue(b.eval("document.querySelector('[data-slot=\"posture\"]') !== null"))   # the posture's place
-        self.assertTrue(b.eval("document.querySelector('[data-key=\"ps-save\"]').disabled"))     # preview first
+        self.assertFalse(b.eval("document.querySelector('[data-key=\"ps-save\"]').disabled"))    # one press: it previews
+        b.click('[data-key="ps-save"]', what="Save with nothing changed")
+        b.wait("(document.querySelector('#status') || {}).textContent.includes('Nothing changed')", "nothing to save, said")
         self.choose("#ps-kind", "integration")
         b.type("#ps-reason", "it connects two systems, not a web app")
         b.click('[data-key="ps-preview"]', what="Preview the impact")

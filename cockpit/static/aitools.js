@@ -6,7 +6,9 @@
    change comes back, and the section to paste into their own AGENTS.md or CLAUDE.md: Rihmasto never writes
    into the person's folder. Both read GET /api/projects/<pid>/ai-tools, which records nothing. */
 
-import { S, h, fill, icon, chip, api, enc, card, button, say, plural, AuthError } from "./core.js";
+import { S, h, fill, icon, chip, api, enc, card, button, say, plural, withName, AuthError } from "./core.js";
+import { pick, technical, emptyState } from "./words.js";
+import { obsToolsGroup } from "./agentobs.js";
 
 const GROUPS = [
   ["instructions", "Project instructions", "file-check"],
@@ -54,7 +56,7 @@ function line(e) {
   return h("li", { class: "ait-row" }, bits);
 }
 
-function toolsCard(ctx) {
+function toolsCard(ctx, extra) {
   const groups = GROUPS.map(([key, label, ic]) => {
     const rows = ctx[key] || [];
     if (!rows.length) return null;
@@ -68,10 +70,11 @@ function toolsCard(ctx) {
     + ctx.not_read.map((x) => x.path + " (" + x.not_read + ")").join("; ")) : null;
   const body = ctx.found ? [groups, stated, notRead,
     (ctx.skills || []).length || (ctx.mcp || []).length ? h("p", { class: "note ait-note" }, icon("info"), h("span", null, ctx.catalogue_note)) : null]
-    : [h("p", { class: "muted" }, "No AI tool configuration was found in the repository: no CLAUDE.md, AGENTS.md, Cursor rules, skills or MCP servers.")];
+    : [emptyState("aitools", null, { what: pick("The team has not set up instructions for AI coding tools in this code.",
+      "No AI tool configuration was found in the repository: no CLAUDE.md, AGENTS.md, Cursor rules, skills or MCP servers.") })];
   return card({ title: "AI tools in this project", icon: "bot", id: "ait", cls: "ait-card", dataId: "ai_tools",
     info: "How the team's AI coding tools are set up, read by rule from the committed repository. Rihmasto's panels and builders follow the same conventions; nothing found is ever run." },
-  h("div", { "data-control": "ai_tools" }, body, h("p", { class: "small muted" }, "Read from " + (ctx.read_from || "the repository") + ".")));
+  h("div", { "data-control": "ai_tools" }, body, extra || null, h("p", { class: "small muted" }, "Read from ", h("span", { "data-ud": "" }, ctx.read_from || "the code"), ".")));
 }
 
 function snippet(label, text, key) {
@@ -93,20 +96,23 @@ function ideCard(out) {
   ].map(([key, label, body], i) => h("details", { class: "ait-ide", open: i === 0 || null, "data-key": "ide:" + key },
     h("summary", null, label), body));
   const section = out.section;
-  return card({ title: "Work on it from your IDE", icon: "code", id: "ide", cls: "ait-card", dataId: "ide_setup",
+  // A developer's setup: in plain sight for a technical reader, folded for a business reader (words.js).
+  const fold = (body) => (technical() ? body : h("details", { class: "ait-ide" }, h("summary", null,
+    "For developers: connect their AI coding tools to this project"), body));
+  return card({ title: technical() ? "Work on it from your IDE" : "Work on it from a developer's own tools", icon: "code", id: "ide", cls: "ait-card", dataId: "ide_setup",
     info: "The IDE and the terminal are the inner loop; Rihmasto is the outer loop. They meet in the repository, over Rihmasto's MCP server and in your conventions file." },
-  h("div", { "data-control": "ide_setup" },
+  fold(h("div", { "data-control": "ide_setup" },
     h("p", { class: "small" }, "Point your IDE's agent at Rihmasto's MCP server: it sees the contract and what waits on a decision, and can file a change. It decides nothing."),
     who, tools, h("p", { class: "small muted" }, ide.note),
     h("h4", { class: "ait-sub" }, "How your change comes back"),
-    h("ul", { class: "ait-back" }, out.comes_back.map((x) => h("li", null, md(x)))),
+    h("ul", { class: "ait-back" }, out.comes_back.map((x) => h("li", null, md(withName(x))))),
     h("h4", { class: "ait-sub" }, out.section_title),
     h("p", { class: "small" }, "Paste it into your project's AGENTS.md or CLAUDE.md yourself: Rihmasto never writes into your folder or repository."),
     h("div", { class: "chips", "data-control": "ide_section" },
       button("Copy the section", { icon: "copy", kind: "small", key: "ide-section:copy", onclick: () => copyText(section, "The section") }),
       button("Download it", { icon: "download", kind: "small quiet", key: "ide-section:download", onclick: () => saveText(section, out.section_file) })),
     h("details", { class: "ait-ide" }, h("summary", null, "Show the section"),
-      h("pre", { class: "code snippet", tabindex: "0", "aria-label": out.section_title }, section))));
+      h("pre", { class: "code snippet", tabindex: "0", "aria-label": out.section_title }, section)))));
 }
 
 // The two cards, filled in once the project's repository is read; null for a project Rihmasto builds itself.
@@ -118,7 +124,7 @@ export function aiTools(p) {
   api("GET", "/api/projects/" + enc(p.meta.id) + "/ai-tools" + q).then((out) => {
     holder.removeAttribute("aria-busy");
     if (!out.applies) { fill(holder); holder.hidden = true; return; }
-    fill(holder, toolsCard(out.context), ideCard(out));
+    fill(holder, toolsCard(out.context, obsToolsGroup(p.meta.id, out.agent_observability)), ideCard(out));   // FR-OBS1
   }).catch((e) => {
     if (e instanceof AuthError) return;
     holder.removeAttribute("aria-busy");

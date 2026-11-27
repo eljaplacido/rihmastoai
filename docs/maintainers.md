@@ -72,11 +72,28 @@ The owner sets these once on GitHub. The sync and the checks rely on them.
 - **Discussions** on (Settings, General, Features), for questions.
 - **Private vulnerability reporting** on (in the repository's security settings), so reports reach
   <https://github.com/eljaplacido/rihmastoai/security/advisories/new> as [SECURITY.md](../SECURITY.md) says.
+- **Secret scanning and push protection** on, and **Dependabot alerts** and **Dependabot security
+  updates** on (Settings, Advanced Security). [.github/dependabot.yml](../.github/dependabot.yml) asks
+  only for version updates; the alerts and the security updates are switched on here, not in that file.
 - **Actions** (Settings, Actions, General): workflows on pull requests from forks wait for a
   maintainer's approval, at the strictest level GitHub offers, and the workflow permissions are
   read-only.
 - **Labels:** `good first issue`, for the issues [CONTRIBUTING.md](../CONTRIBUTING.md) points
   newcomers to.
+
+**Check that GitHub holds them.** GitHub's settings can drift from this page (a ruleset made with a
+bypass of "always", no approval asked for, Dependabot alerts left off), and nothing else would say so.
+[tools/repo_settings.py](../tools/repo_settings.py) reads them with `gh api` (GET only) and lists every
+one that differs, with the command that sets it:
+
+```bash
+python tools/repo_settings.py check --write-fix rs.json
+```
+
+It exits 0 when everything matches and 1 when something differs. It changes nothing on GitHub: you run
+the commands it prints. For the ruleset it writes the corrected body to `rs.json` and prints
+`gh api -X PUT repos/eljaplacido/rihmastoai/rulesets/<id> --input rs.json`; read the file before you send it.
+Run the check after you change a setting, and before every release.
 
 ## Once: record the earlier snapshots
 
@@ -166,6 +183,15 @@ When the deletions are meant (files removed here since the last snapshot), expor
    git -C ../rihmasto-public pull --ff-only
    git -C ../rihmasto-public tag -s v1.2.0 -m "Rihmasto 1.2.0"     # -a if you do not sign tags
    git -C ../rihmasto-public push origin v1.2.0
+   ```
+
+   When the release workflow has finished, check what it published:
+
+   ```bash
+   gh release view v1.2.0 -R eljaplacido/rihmastoai
+   gh release download v1.2.0 -R eljaplacido/rihmastoai -p "*.tar.gz" -p SHA256SUMS
+   sha256sum --check --ignore-missing SHA256SUMS
+   gh attestation verify rihmasto-1.2.0.tar.gz -R eljaplacido/rihmastoai
    ```
 
    The tag starts [.github/workflows/release.yml](../.github/workflows/release.yml). It runs the

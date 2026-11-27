@@ -1,0 +1,134 @@
+/* Live progress for long jobs (cockpit/static/progress.js, FR-PRG1).
+   One hue carries progress (the first categorical slot): a light track of it, a full fill once a step is done;
+   a failed step wears the critical status mark, a skipped one the hatch. State is said by a glyph and words on
+   every tile, so nothing rests on colour alone; the running tile moves only when the person allows motion. */
+
+.prg {
+  --prg-fill: var(--series-1);
+  --prg-track: color-mix(in srgb, var(--series-1) 14%, var(--surface));
+  --prg-fail: var(--critical-mark);
+  display: flex; flex-direction: column; gap: var(--s3);
+}
+.prg .prg-head { margin-bottom: 0; }
+.prg-title { white-space: normal; }
+.prg-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; font-size: var(--fs-md); color: var(--text-2);
+  font-variant-numeric: tabular-nums; }
+.prg-count { color: var(--text); font-weight: 600; font-size: var(--fs-lg); }
+.prg-est { color: var(--text-2); }
+
+/* the whole job: one thin segment per step, a 2px surface gap between them */
+.prg-meter { display: flex; gap: 2px; height: 6px; min-width: 0; }
+.prg-seg { flex: 1 1 0; min-width: 2px; background: var(--prg-track); }
+.prg-seg:first-child { border-radius: var(--r-pill) 0 0 var(--r-pill); }
+.prg-seg:last-child { border-radius: 0 var(--r-pill) var(--r-pill) 0; }
+.prg-seg[data-state="done"] { background: var(--prg-fill); }
+.prg-seg[data-state="running"] { background: color-mix(in srgb, var(--series-1) 55%, var(--surface)); }
+.prg-seg[data-state="failed"] { background: var(--prg-fail); }
+.prg-seg[data-state="skipped"] { background: repeating-linear-gradient(135deg, var(--hatch) 0 2px, transparent 2px 5px); }
+
+.prg-now { display: flex; align-items: center; gap: 10px; margin: 0; min-height: 22px; font-size: var(--fs-base); color: var(--text);
+  overflow-wrap: anywhere; }
+.prg-pulse { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--prg-fill);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--series-1) 22%, transparent); }
+.prg:not([data-state="running"]) .prg-pulse { background: var(--text-3); box-shadow: none; }
+.prg[data-state="failed"] .prg-pulse { background: var(--prg-fail); }
+
+/* groups of tiles */
+.prg-groups { display: flex; flex-direction: column; gap: var(--s4); }
+.prg-group { min-width: 0; }
+.prg-gh { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: var(--fs-sm); color: var(--text-2); }
+.prg-gl { font-weight: 600; color: var(--text); font-size: var(--fs-md); }
+.prg-gc { margin-left: auto; font-variant-numeric: tabular-nums; }
+.prg-par { padding: 0 6px; border: 1px solid var(--border); border-radius: var(--r-pill); font-size: var(--fs-xs); }
+.prg-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; }
+.prg-tiles > li { min-width: 0; display: flex; }
+
+.prg-tile { position: relative; display: flex; flex-direction: column; gap: 2px; width: 100%; min-width: 0; min-height: 92px;
+  padding: 10px 12px 14px; text-align: left; font: inherit; color: var(--text); cursor: pointer;
+  background: var(--raised); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden;
+  transition: border-color var(--t-med) var(--ease-out), background-color var(--t-med) var(--ease-out); }
+.prg-tile:hover { border-color: var(--border-strong); }
+.prg-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.prg-tile[aria-pressed="true"] { border-color: var(--text-2); box-shadow: inset 0 0 0 1px var(--text-2); }
+.prg-tile[data-state="waiting"] { background: transparent; border-style: dashed; color: var(--text-2); }
+.prg-tile[data-state="running"] { border-color: color-mix(in srgb, var(--series-1) 55%, var(--border)); }
+.prg-tile[data-state="failed"] { border-color: var(--critical-border); }
+.prg-tile[data-state="skipped"] { background: transparent; color: var(--text-3); }
+.prg-tile:disabled { cursor: default; }
+.prg-tt { display: flex; align-items: flex-start; gap: 6px; min-width: 0; font-size: var(--fs-md); font-weight: 600; line-height: 1.3; }
+.prg-tl { min-width: 0; overflow-wrap: anywhere; }
+.prg-glyph { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; color: var(--text-2); }
+.prg-glyph .ic { width: 16px; height: 16px; }
+.prg-tile[data-state="done"] .prg-glyph { color: var(--text); }
+.prg-tile[data-state="failed"] .prg-glyph { color: var(--critical); }
+.prg-tn { display: flex; align-items: baseline; gap: 5px; min-height: 26px; font-variant-numeric: tabular-nums; }
+.prg-num { font-size: var(--fs-xl); font-weight: 600; line-height: 1.2; }
+.prg-num:empty { display: none; }
+.prg-nw { font-size: var(--fs-sm); color: var(--text-2); }
+.prg-tc { font-size: var(--fs-sm); color: var(--text-2); line-height: 1.35; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.prg-tb { font-size: var(--fs-xs); color: var(--text-3); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prg-tb:empty { display: none; }
+
+/* each tile's own fill, along its foot: track, then the progress hue */
+.prg-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--prg-track); }
+.prg-tile[data-state="waiting"] .prg-bar, .prg-tile[data-state="skipped"] .prg-bar { background: transparent; }
+.prg-tile[data-state="skipped"] .prg-bar { background: repeating-linear-gradient(135deg, var(--hatch) 0 2px, transparent 2px 5px); }
+.prg-fill { display: block; height: 100%; width: 0; background: var(--prg-fill); border-radius: 0 var(--r-pill) var(--r-pill) 0;
+  transition: width 600ms var(--ease-out); }
+.prg-tile[data-state="done"] .prg-fill, .prg-tile[data-state="failed"] .prg-fill { border-radius: 0; }
+.prg-tile[data-state="failed"] .prg-fill { background: var(--prg-fail); }
+/* a running step never timed before: a short band that travels along its foot */
+.prg-tile.open .prg-fill { width: 34% !important; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .prg-tile[data-state="running"] .prg-glyph .ic { animation: prg-turn 1.6s linear infinite; }
+  .prg-tile.open .prg-fill { animation: prg-travel 1.8s var(--ease-out) infinite; }
+  .prg[data-state="running"] .prg-pulse { animation: prg-breathe 1.8s ease-in-out infinite; }
+  .prg-tile.found .prg-num { animation: prg-land 420ms var(--ease-out); }
+  .prg-fi { animation: prg-in 260ms var(--ease-out); }
+  .prg-arrive { animation: prg-in 420ms var(--ease-out); }
+}
+@keyframes prg-turn { to { transform: rotate(360deg); } }
+@keyframes prg-travel { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+@keyframes prg-breathe { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--series-1) 8%, transparent); } }
+@keyframes prg-land { from { transform: translateY(4px); opacity: 0; } }
+@keyframes prg-in { from { transform: translateY(6px); opacity: 0; } }
+
+/* the findings so far */
+.prg-found { border-top: 1px solid var(--border); padding-top: var(--s3); min-width: 0; }
+.prg-fhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.prg-fh { margin: 0; font-size: var(--fs-md); font-weight: 600; }
+.prg-all { margin-left: auto; }
+.prg-fl { display: flex; flex-direction: column; gap: 6px; }
+.prg-fi { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: var(--fs-md); min-width: 0; }
+.prg-ft { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.prg-fa { font-size: var(--fs-sm); }
+.prg-sev { flex: none; }
+.prg-ended .prg-cancel { display: none; }
+
+/* small and still: in a chat bubble, on the Overview, in a guided journey */
+.prg-compact { gap: var(--s2); padding: 12px; }
+.prg-compact .prg-tiles { grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); gap: 6px; }
+.prg-compact .prg-tile { min-height: 64px; padding: 6px 8px 10px; }
+.prg-compact .prg-tc { display: none; }
+.prg-compact .prg-tile[data-state="failed"] .prg-tc { display: -webkit-box; -webkit-line-clamp: 1; }
+.as-live:empty { display: none; }
+.prg-compact .prg-tb { display: none; }
+.prg-compact .prg-num { font-size: var(--fs-lg); }
+.prg-compact .prg-groups { gap: var(--s2); }
+.prg-compact .prg-count { font-size: var(--fs-base); }
+.prg-link { margin: 0; font-size: var(--fs-md); }
+.prg-link a { display: inline-flex; align-items: center; gap: 6px; }
+.bub .prg { margin: 8px 0 4px; background: var(--surface); }
+
+@media (max-width: 600px) {
+  .prg-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .prg-compact .prg-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .prg-tile { min-height: 84px; }
+  .prg-meta { gap: 2px 12px; }
+}
+@media (forced-colors: active) {
+  .prg-seg, .prg-bar, .prg-fill { forced-color-adjust: none; }
+  .prg-tile { border: 1px solid CanvasText; }
+}

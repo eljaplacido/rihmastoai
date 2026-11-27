@@ -27,6 +27,7 @@ from kernel.canon import Canon
 from kernel.store import Factory, Project, read_json, records_lock, write_json
 
 FACTORY_PID = "_factory"
+FACTORY_TITLE = "Rihmasto itself"   # the factory's own project, one name on every face
 _WORDS = re.compile(r"[a-z0-9]+")
 _STOP = {"the", "a", "an", "with", "and", "or", "of", "to", "is", "it", "in", "on", "for", "not", "be", "when",
          "then", "given", "returns", "return", "should", "must", "that", "this", "an", "as", "by", "at"}
@@ -55,7 +56,7 @@ def factory_project(factory: Factory, create: bool = True) -> Project | None:
         if not p.path("project.json").exists():
             now = factory.clock.stamp()
             canon.init(goal="Make the factory stronger from what happens to its products.")
-            p.write("project.json", {"id": FACTORY_PID, "title": "The factory itself", "maturity": "production",
+            p.write("project.json", {"id": FACTORY_PID, "title": FACTORY_TITLE, "maturity": "production",
                                      "mode": "mixed", "source_kind": "factory", "stage": 7, "created": now,
                                      "updated": now})
     return p

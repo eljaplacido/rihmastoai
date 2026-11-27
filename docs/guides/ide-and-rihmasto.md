@@ -121,6 +121,11 @@ rihmasto ide <pid> --section > rihmasto-section.md  # the section, to paste into
 - **A new requirement** is a decision: file it with `rihma_report_change` from your IDE, or in the
   cockpit, before you build it.
 
+To hand a goal to your coding agent with a brief, let it post progress and proposals back over MCP,
+and follow it in the project's agent channel, see [Agentic help](agentic-help.md) (`rihmasto goal`,
+`rihmasto handoff`, `rihmasto channel`). When the repository was aligned, the section above also carries
+the requirements accepted from it and the open gaps.
+
 ## Tutorial: an attached repository, from Cursor (10 minutes)
 
 1. `rihmasto repo attach "Loan desk" --repo ~/work/loan-desk --person "Aino Virtanen" --persona developer`.
@@ -141,3 +146,11 @@ rihmasto ide <pid> --section > rihmasto-section.md  # the section, to paste into
 - The builder's envelope carries the instructions of an adopted project only: an attached repository
   has no builder cells.
 - Personal settings that were committed by mistake are listed and still never read.
+
+## What the IDE agents did
+
+Your team's own agent observability hub records the metadata of each Claude Code, Cursor and OpenCode
+session. Turned on for a project, **Agent sessions** shows it there for developers and IT: sessions by
+harness, rework hotspots, failures and whether they were recovered, contract read before edit and the
+hub's chain check. The AI tools card says whether the repository carries the hub's hooks. See
+[Agent observability](agent-observability.md).

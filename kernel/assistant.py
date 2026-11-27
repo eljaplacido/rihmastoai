@@ -1,5 +1,4 @@
-"""The cockpit assistant: ask where something is, what it means, how a run is going. It can propose
-actions, but never takes one.
+"""The cockpit assistant: where something is, what it means, how a run goes. It proposes actions, never takes one.
 
 - **Navigation** comes from `cockpit/ui_map.json`, the cockpit's own map of views and controls, with
   the page each control is on. A "where is…" question is answered from the map even without a model,
@@ -21,13 +20,18 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from collections.abc import Collection
-from contextlib import ExitStack
-from pathlib import Path
 from typing import Any
 
+from kernel import agent_skills, journey_chat, model_usage, rule_propose
+from kernel import agentops_chat as agentops_q
+from kernel import assistant_chain as chain_q  # the by-rule answerers tried first
+from kernel import assistant_help as help_q
 from kernel import assistant_status as status_q
+from kernel import assistant_work as work_q
+from kernel import enforcement_chat as enforcement_q
+from kernel.agentobs import ask as agentobs_q
+from kernel.assistant_lane import LANE_WAIT, AssistantModel, _own_lane, assistant_model, lane_busy
 from kernel.assistant_rules import (
     ACTIONS,
     CONTROL_PAGES,
@@ -39,9 +43,11 @@ from kernel.assistant_rules import (
     THEME,
     VIEWS,
     asks_for_action,
+    catalogue_lists,
     check_layout_ops,
     check_proposal,
     check_theme,
+    hint,
     honest,
     normalize,
     route_ok,
@@ -58,16 +64,15 @@ from kernel.assistant_snapshot import (
     relevant_first,
     snapshot,
 )
+from kernel.confidential import assistant_kept_local, require_local
 from kernel.confidential import confidential as is_confidential
-from kernel.confidential import refusal, require_local
 from kernel.filelock import LockHeld
-from kernel.model import Model, ModelError, extract_json, run_gnomon_task
+from kernel.model import Model, ModelError, extract_json
 
 __all__ = ["ACTIONS", "CONTROL_PAGES", "FONT_SCALE", "LAYOUT_BUDGET", "LAYOUT_OPS", "SIZES", "SNAPSHOT_BUDGET",
            "THEME", "VIEWS", "AssistantModel", "ask", "assistant_model", "asks_for_action", "check_layout_ops",
            "check_proposal", "check_theme", "find_in_map", "fit_snapshot", "from_map", "normalize", "prompt",
            "snapshot", "ui_map"]
-LANE_WAIT, MODEL_TIMEOUT, DEADLINE_GRACE = 10.0, 60, 15   # as the website chat's (embed/server.py ChatModel)
 
 
 # -- the map -------------------------------------------------------------------------------------
@@ -102,11 +107,7 @@ def _catalogue(hidden: Collection[str] = ()) -> str:
     controls and actions, and the answer's shape. It never changes between calls for one set of modules,
     so an endpoint that caches prompt prefixes reads it once (FR-Z1-AC-4); what a module that is not
     enabled shows is left out (``hidden``, FR-MOD2)."""
-    m = ui_map()
-    views = "\n".join(f"- {v['id']} ({v['route']}): {v['purpose']}" for v in m["views"] if v["id"] not in hidden)
-    controls = "\n".join(f"- {c['id']}: {c['label']}, {c['where']}; {c['does']}" for c in m["controls"]
-                         if c["id"] not in hidden)
-    actions = "\n".join(f"- {a}({', '.join(args)})" for a, args in ACTIONS.items())
+    views, controls, actions = catalogue_lists(hidden)     # long purposes cut, controls by label (FR-CTX1)
     return f"""You are Rihma's cockpit assistant. You help a person use the cockpit and understand their projects.
 
 Rules:
@@ -129,10 +130,11 @@ Rules:
 - "sources": only ids as the snapshot writes them (a project id, C-0001, Q-001, T-001, R-1, R-1-AC-1) or
   a snapshot path such as factory.gates.first_round_rate.
 
-The cockpit's views:
+The cockpit's views (a long purpose is cut short here, and given whole for the ones that match the question;
+"(p)" marks a project's view, at #/p/<project id>/<its id>):
 {views}
 
-Its controls:
+Its controls (where each is and what it does is given for the ones that match the question):
 {controls}
 
 Actions you may propose, with their args:
@@ -174,12 +176,15 @@ def _layout_line(ui: dict | None) -> str:
 
 
 def prompt(question: str, snap: dict, *, persona: str, view: str | None, hints: list, ui: dict | None = None,
-           hidden: Collection[str] = ()) -> str:
-    """The static catalogue first, then who is asking and what, and the snapshot last."""
-    return (_catalogue(hidden) + _ui_rules(ui)
+           hidden: Collection[str] = (), factory: Any = None) -> str:
+    """The static catalogue first and the rules people approved (kernel/prompt_rules.py), then who is asking and
+    what, and the snapshot last."""
+    from kernel.prompt_rules import block
+
+    return (_catalogue(hidden) + _ui_rules(ui) + block(factory)
             + f"\nThe person is the {persona} persona, looking at the {view or 'projects'} view.\n"
             + _layout_line(ui)
-            + f"Map entries that match the question: {json.dumps([h['id'] for h in hints])}\n\n"
+            + f"Map entries that match the question: {json.dumps([hint(h) for h in hints], ensure_ascii=False)}\n\n"
             + f"The question:\n<<<\n{question}\n>>>\n\n"
             + "Snapshot (JSON):\n"
             + json.dumps(fit_snapshot(relevant_first(snap, question)), ensure_ascii=False, default=str) + "\n")
@@ -194,13 +199,15 @@ def _target(item: dict, project: Any, views: dict) -> tuple[str | None, str]:
     else:
         pv, top = item.get("view"), item.get("page")
     if project is not None and project.pid == FACTORY_PID and item.get("id") in ("pause", "resume", "autonomy"):
-        return None, f" Rihma itself has no {item['label']}: it runs no pipeline of its own."
+        return None, f" Rihmasto itself has no {item['label']}: it runs no pipeline of its own."
+    if (built := agent_skills.built_target(item, project, views)) is not None:   # a built project's AI tools tab
+        return built
     if pv and project is not None and (project.pid != FACTORY_PID or pv in FACTORY_VIEWS):
         return views[pv]["route"].replace("{pid}", project.pid), ""
     if top:
         return views[top]["route"], ""
     if pv and project is not None:
-        return None, f" Rihma itself has no {views[pv]['label']} view."
+        return None, f" Rihmasto itself has no {views[pv]['label']} view."
     if pv:
         return "#/projects", f" Open a project first: it is in each project's {views[pv]['label']} view."
     return None, ""
@@ -296,99 +303,51 @@ def _not_enabled(item: dict) -> dict:
             "not_enabled": mod["id"]}
 
 
-def _map_hits(question: str, act: bool, controls: dict, hidden: Collection[str]) -> tuple[list, dict | None]:
-    """The map's best matches that are on, or none and the best match when that one is off."""
+def _map_hits(question: str, act: bool, controls: dict, hidden: Collection[str],
+              later: Collection[str] = ()) -> tuple[list, dict | None]:
+    """The map's best matches that are on, or none and the best match when that one is off; ``later``: views
+    of another persona, put after the asker's own matches."""
     hits = (_reshape(question, controls) if act else None) or find_in_map(question)
+    hits = [h for h in hits if h["id"] not in later] + [h for h in hits if h["id"] in later]
     if hits and hits[0]["id"] in hidden:
         return [], hits[0]
     return [h for h in hits if h["id"] not in hidden], None
 
 
-def from_map(question: str, project: Any, *, hidden: Collection[str] = ()) -> dict:
+def from_map(question: str, project: Any, *, hidden: Collection[str] = (), later: Collection[str] = (),
+             factory: Any = None, persona: str | None = None) -> dict:
     """An answer from the cockpit's map alone: where a view or a control is, and Take me there. A request
-    to act or to reshape the cockpit is told plainly that the map cannot, and where to do it oneself. What
-    a module that is not enabled shows (``hidden``) is never pointed to; asked for, it is named."""
+    to act that names a control plainly is proposed by rule (kernel/rule_propose.py), to confirm; any other is told
+    plainly that the map cannot, and where to do it oneself. What a module that is not enabled shows (``hidden``)
+    is never pointed to; asked for, it is named."""
     act = asks_for_action(question)
-    if project is not None and not act and status_q.asks_status(question):   # how this project is doing
-        return status_q.status_answer(project)
+    early = work_q.before_map(question, project, act, hidden)
+    if early is not None:
+        return early
     views, controls = _by_id()
-    hits, off = _map_hits(question, act, controls, hidden)
+    hits, off = _map_hits(question, act, controls, hidden, later)
     if off is not None:
         return _not_enabled(off)
-    nav = None
+    nav, proposed = None, list[dict]()
     if hits:
         top = hits[0]
         route, note = _target(top, project, views)
-        answer = (f"{top['label']} shows {top['purpose']}." if top["kind"] == "view" else _control_answer(top)) + note
+        answer = status_q.with_pid((f"{top['label']} shows {top['purpose']}." if top["kind"] == "view"
+                                    else _control_answer(top)) + note, project, FACTORY_PID)
         control = top["id"] if top["kind"] == "control" and not note else None   # not on the page it opens
         nav = {"route": route, "control": control} if route or control else None
-        if act:
-            answer = "I can only point the way here: no model is set up to propose actions. " + answer
+        if act:      # a plain request is proposed by rule, to confirm; any other only points the way
+            proposed, why = rule_propose.offered(factory, project, persona, question, hits)
+            answer = rule_propose.lead(proposed, why) + answer
     elif project is not None:
         answer = _status_line(project)
     else:
         answer = "I could not match that to a view or a control. Try the palette (Ctrl+K) or name the view."
-    return {"answer": answer, "navigate": nav, "propose": [], "dropped": [], "sources": [], "by": "map",
-            "matches": [h["id"] for h in hits]}
+    return {"answer": work_q.for_project(answer, project), "navigate": nav, "propose": proposed, "dropped": [],
+            "sources": [], "by": "map", "matches": [h["id"] for h in hits]}
 
 
 # -- the model ---------------------------------------------------------------------------------------
-
-class AssistantModel(Model):
-    """Gnomon's `assistant` role in a lane of its own (`<lanes root>/assistant/analyst`), never the factory's
-    analyst lane, where intake, spec and holdout authoring run for many minutes. A question waits at most
-    ``lane_wait`` seconds for the lane (LockHeld after that), and Gnomon gets at most ``timeout`` seconds."""
-
-    def __init__(self, lane_dir: str | Path, *, timeout: int = MODEL_TIMEOUT, lane_wait: float = LANE_WAIT) -> None:
-        self.lane_dir, self.timeout, self.lane_wait = Path(lane_dir), timeout, lane_wait
-
-    def ask(self, prompt: str, *, role: str) -> str:
-        from kernel.lanes import lane_lock
-
-        give_up = time.monotonic() + self.lane_wait
-        with ExitStack() as held:
-            while True:
-                try:
-                    held.enter_context(lane_lock(self.lane_dir, blocking=False))
-                    break
-                except LockHeld:
-                    if time.monotonic() >= give_up:
-                        raise
-                    time.sleep(0.2)
-            record = run_gnomon_task(self.lane_dir, prompt, role=role, timeout=self.timeout,
-                                     deadline=max(1, self.timeout - DEADLINE_GRACE))
-        self.last_record, output = record, record.get("output")
-        if record.get("bucket") == "apparatus_failure" or not isinstance(output, str) or not output.strip():
-            raise ModelError(f"gnomon task --role {role} gave no answer (stop: {record.get('stop_reason')})")
-        return output
-
-
-def assistant_model(root: str | Path | None = None, *, local: bool = False) -> AssistantModel:
-    """The assistant's model, in ``<lanes root>/assistant/analyst``: a toolless analyst lane of its own. With
-    ``local`` (a confidential project), in ``assistant-local``, compiled without a hosted fallback."""
-    from kernel.confidential import without_hosted_fallbacks
-    from kernel.lanes import ensure_analyst_lane, lanes_root, load_routing
-
-    routing = without_hosted_fallbacks(load_routing()) if local else load_routing()
-    where = Path(root or lanes_root()) / ("assistant-local" if local else "assistant")
-    return AssistantModel(ensure_analyst_lane(routing, root=where))
-
-
-_OWN_LANES: dict[str, Model] = {}
-
-
-def _own_lane(model: Model, local: bool = False) -> Model:
-    """A GnomonModel for the factory's analyst lane is asked through the assistant's own lane beside it (never
-    waiting on that lane's lock behind a long run); a confidential project's through one with no hosted fallback."""
-    from kernel.model import GnomonModel
-
-    if not isinstance(model, GnomonModel):
-        return model
-    key = f"{model.lane_dir}|{'local' if local else 'any'}"
-    if key not in _OWN_LANES:
-        _OWN_LANES[key] = assistant_model(Path(model.lane_dir).parent, local=local)
-    return _OWN_LANES[key]
-
 
 # -- answering -----------------------------------------------------------------------------------------
 
@@ -416,7 +375,7 @@ def _module_off(target: Any, p: dict, hidden: Collection[str]) -> str | None:
         found = _widgets_off(target, args.get("ops") or [])
     else:
         name = _route_view(str(args.get("route") or "")) if p["action"] == "open" else _ACTION_CONTROL.get(p["action"])
-        found = [(modules.offering(name) or {}).get("id")] if name in hidden else []
+        found = [(modules.offering(name) or {}).get("id")] if name is not None and name in hidden else []
     off = next((m for m in found if m), None)
     return f"{modules.MODULES[off]['label']} is not enabled here: Settings, Modules turns it on" if off else None
 
@@ -442,53 +401,95 @@ def _offered(factory: Any, project: Any, persona: str, question: str, raw: Any, 
     return proposals, dropped, unasked
 
 
-def _local_only(project: Any, model: Model | None) -> tuple[Model | None, dict]:
-    """No model, and a note, for a confidential project whose assistant model is hosted (kernel/confidential.py):
-    it is answered from the cockpit map, and nothing about it is sent."""
-    if model is None or project is None or not is_confidential(project) or not refusal(["assistant"]):
-        return model, {}
-    return None, {"note": "this project is confidential and the assistant's model is hosted: answered from the map"}
-
-
 def _fallback(question: str, project: Any, exc: Exception, hidden: Collection[str] = ()) -> dict:
     out = from_map(question, project, hidden=hidden)
+    if not out.get("matches") and not out.get("navigate"):   # nothing on the map matched: no unrelated view (FR-NVL3)
+        out["answer"] = ("I could not answer that just now: the model gave nothing I could use. Ask again in a moment, "
+                         "or check Models setup.")
+    out["navigate"] = out.get("navigate") or {"route": "#/models", "control": "models_open"}   # never a dead end
     out["note"] = (f"the assistant's model was busy for {LANE_WAIT:.0f} seconds with another question; this answer "
                    "comes from the cockpit map. Ask again in a moment" if isinstance(exc, LockHeld) else
                    f"the assistant model gave no usable answer ({exc}); this answer comes from the cockpit map")
     return out
 
 
+# A question about where something is: the map answers it at once, never behind a slow model (FR-NVL3)
+WHERE = re.compile(r"^\s*(?:where(?:'s| is| are| do i find| can i find)\b|how do i (?:find|get to|open)\b)", re.I)
+# IT's own views: another persona is taken to its own view first when one matches (FR-ITD1, FR-DS1)
+IT_VIEWS = {"itdata": ("it", "operations", "ai_architect"), "connections": ("it", "operations", "ai_architect")}
+
+
+def _map_first(question: str, project: Any, hidden: Collection[str], persona: str, model: Any,
+               factory: Any = None) -> dict | None:
+    """The map's answer without a model, or for a where-is question it can place while the model's lane is busy:
+    never behind a slow model (FR-NVL3)."""
+    busy = model is not None and WHERE.match(question) is not None and lane_busy(_own_lane(model))
+    mapped = _from_map_for(question, project, hidden, persona, factory) if model is None or busy else None
+    return mapped if mapped is not None and (model is None or mapped.get("navigate")) else None
+
+
+def _from_map_for(question: str, project: Any, hidden: Collection[str], persona: str, factory: Any = None) -> dict:
+    """The map's answer, the asking persona's views first; IT's views still answer when nothing else does."""
+    return from_map(question, project, hidden=hidden, later={v for v, who in IT_VIEWS.items() if persona not in who},
+                    factory=factory, persona=persona)
+
+
 def ask(factory: Any, question: str, *, persona: str, project_id: str | None = None, view: str | None = None,
-        ui: dict | None = None, model: Model | None = None) -> dict:
+        ui: dict | None = None, model: Model | None = None, person: str | None = None,
+        holding: tuple[str, ...] | None = None) -> dict:
     """The assistant's answer: from the map without a model; with one, from the snapshot, with its
-    proposals checked, its sources checked against the records, and its wording kept to proposing."""
+    proposals checked, its sources checked against the records, and its wording kept to proposing.
+    ``holding``: the personas a person viewing "everything" holds (FR-PPL1), so a view meant for one of
+    them is answered as it, not refused for the persona the page last named."""
     if not question.strip():
         raise ValueError("the question is empty")
     from kernel.modules import hidden_ids
 
     project, about = status_q.resolve(factory, question, project_id)   # a pasted link names the project
+    about = about or chain_q.first(factory, question, project, persona, view, holding)   # kernel/assistant_chain.py
+    hidden = hidden_ids(project if project is not None else factory)   # the map of what is enabled there
+    about = about or chain_q.by_area(factory, project, question, view, persona, person)
+    about = work_q.by_rule(factory, project, question, about, person=person, hidden=hidden)   # model or not
+    about = help_q.routed(question, project, about)   # about Rihmasto itself: version, docs, verify (FR-PUB2)
+    about = about or enforcement_q.answer(factory, question, project, persona, holding=holding)  # before a goal plan
+    about = about or chain_q.agentops_first(factory, question, project, persona, holding)   # before a goal plan
+    about = journey_chat.routed(factory, project, question, about, persona=persona, model=model, person=person)
+    about = about or agentobs_q.answer(factory, question, project, persona,    # IDE agents (kernel/agentobs/ask.py)
+                                       holding=holding)
+    about = about or agentops_q.answer(factory, question, project, persona,    # agent operations (FR-AOP1)
+                                       holding=holding)
     if about is not None:
         return about
-    hidden = hidden_ids(project if project is not None else factory)   # the map of what is enabled there
-    model, kept_local = _local_only(project, model)
-    if model is None:
-        return from_map(question, project, hidden=hidden) | kept_local
+    model, kept_local = assistant_kept_local(project, model)
+    mapped = _map_first(question, project, hidden, persona, model, factory)
+    if mapped is not None:
+        return mapped | kept_local
     secret = project is not None and is_confidential(project)
     if secret:      # a local assistant whose fallback is hosted: the fallback is skipped, and the skip recorded
         require_local(project, ("assistant",), where="assistant")
     snap = snapshot(factory, project=project, persona=persona)
     try:
-        raw = extract_json(_own_lane(model, secret).ask(prompt(question, snap, persona=persona, view=view, ui=ui,
-                                                       hints=find_in_map(question, hidden=hidden), hidden=hidden),
-                                                role="assistant"))
+        with model_usage.for_project(project, task="assistant", factory=factory):   # its run, as model_run
+            raw = extract_json(_own_lane(model, secret).ask(prompt(question, snap, persona=persona, view=view, ui=ui,
+                                                           hints=find_in_map(question, hidden=hidden), hidden=hidden,
+                                                           factory=factory), role="assistant"))
         if not isinstance(raw, dict):
             raise ModelError("the answer is not a JSON object")
     except (ModelError, OSError, RuntimeError, ValueError) as exc:   # LockHeld is a RuntimeError
         return _fallback(question, project, exc, hidden)
+    return _answered(factory, project, persona, question, raw, snap, ui, hidden)
+
+
+def _answered(factory: Any, project: Any, persona: str, question: str, raw: dict, snap: dict, ui: dict | None,
+              hidden: Collection[str]) -> dict:
+    """The model's answer as the person sees it: proposals checked, Take me there checked, wording kept to
+    proposing, and each source checked against the records."""
     proposals, dropped, unasked = _offered(factory, project, persona, question, raw.get("propose"), ui, hidden)
     views, controls = _by_id()
     nav, dropped = take_me_there(raw.get("navigate"), dropped, {**views, **controls})
     answer, note = honest(str(raw.get("answer") or "").strip(), proposals, dropped)
+    if not answer and not proposals:          # nothing usable once checked: the map's answer, with the way on (FR-NVL3)
+        return _fallback(question, project, ModelError("its answer said nothing usable once checked"), hidden)
     sources = [str(s) for s in raw.get("sources") or [] if isinstance(s, (str, int)) and str(s).strip()]
     held = known(factory, project, snap) | set(views) | set(controls)   # a view or control of the map is a source too
     out = {"answer": answer, "navigate": _checked_nav(nav, factory, project, hidden), "propose": proposals,

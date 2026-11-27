@@ -106,6 +106,8 @@ def unusable(access: Access, what: str) -> str | None:
     if access.error is not None:
         return f"access is enforced, but {access.error}: {what} does not run until IT fixes it"
     r = access.isolation
+    if r is None and access.source == "team":    # team mode with no runner named: as in solo (kernel/team.py)
+        return None
     if r is None:
         return (f"access is enforced and the access file names no isolation runner, so {what} does not run: "
                 "code a model or a developer wrote never runs as the account that runs Rihmasto. IT names a "
@@ -149,6 +151,8 @@ def describe(access: Access) -> str:
     if not access.enforced:
         return "single operator: untrusted code runs as the operator's account, as before"
     r = access.isolation
+    if r is None and access.source == "team":
+        return "team mode: untrusted code runs as the operator's account, as in solo (IT's access file isolates it)"
     if r is None:
         return ("no isolation runner: the gate's test runs, local products and Gnomon cells are refused, and "
                 "adoption's baseline is not run")

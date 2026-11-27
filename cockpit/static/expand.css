@@ -1,0 +1,54 @@
+/* Compact boxes open for review (expand.js, FR-CMP1): Expand and Collapse, in place and in the side panel. */
+
+.xp-head { cursor: pointer; }
+.xp-btn { flex: none; }
+/* a small widget keeps its title: Expand there is its icon, named by its label for a screen reader */
+.widget.size-S .card-tools .xp-btn { padding: 0 6px; }
+.widget.size-S .card-tools .xp-btn .lbl { display: none; }
+
+/* a view's compact section: Expand is first in the tab order and drawn as the cut line, the section's whole width at
+   its foot, so it covers none of the section's controls (what it hides is what compact cuts; the fade sits above it).
+   Expanded, the section shows all of it and Collapse sits at its end, in room of its own (FR-CMP2) */
+.cz-compact { --xp-bar: 2.25rem; }
+.cz-compact > .xp-btn { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; width: 100%; min-height: var(--xp-bar);
+  justify-content: flex-start; gap: 6px; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: var(--bg); }
+.cz-compact.xp-cut:not(.xp-open)::after { bottom: var(--xp-bar); }
+.cz-compact.xp-open { max-height: none; overflow: visible; }
+.cz-compact.xp-open.xp-cut { padding-bottom: var(--xp-bar); }
+.cz-compact.xp-open::after { display: none; }
+
+/* the last-action box and the Agents strip: the folded rows show only when expanded */
+.xp-box:not(.xp-open) .xp-more { display: none; }
+.live-lastbox { display: grid; gap: 6px; }
+.live-lastbox > .xp-btn { justify-self: start; }
+.live-recent { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: var(--fs-sm); }
+.live-recent li { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; overflow-wrap: anywhere; }
+.live-recent code { overflow-wrap: anywhere; white-space: normal; }
+.agents-strip .as-body > .xp-btn { margin-top: var(--s2); }
+
+/* the agent channel beside the view: wider when expanded, the whole screen on a phone */
+.agent-aside .aa-head { gap: var(--s2); }
+.agent-aside .aa-tools { display: flex; gap: 4px; align-items: center; }
+.agent-aside.xp-open { width: min(960px, calc(100vw - 24px)); }
+@media (max-width: 760px) {
+  .agent-aside.xp-open { inset: 0; width: auto; border-radius: 0; }
+}
+
+/* the side panel: from the right on a wide screen, a sheet from the bottom on a phone */
+.xp-sheet { margin: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(760px, 100vw); max-width: 100vw; padding: 0;
+  border: 0; border-left: 1px solid var(--border-strong); background: var(--overlay); box-shadow: var(--e3); }
+.xp-sheet[open] { display: flex; }
+.xp-sheet-in { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s4); width: 100%; min-width: 0; overflow: auto; }
+.xp-sheet-head { display: flex; align-items: center; gap: var(--s2); }
+.xp-sheet-head h2 { flex: 1 1 auto; min-width: 0; margin: 0; font-size: var(--fs-lg); overflow-wrap: anywhere; }
+.xp-sheet-note { margin: 0; }
+.xp-sheet-body { min-width: 0; }
+.xp-sheet-body > .widget { grid-column: auto; }
+/* the page's toasts, lifted into the open panel (expandkeep.js): at its foot, over the panel, not the page (FR-CMP2) */
+.xp-sheet > .toasts { top: auto; bottom: var(--s4); left: auto; right: var(--s4); transform: none; width: min(560px, calc(100vw - 2 * var(--s4))); }
+@media (max-width: 760px) {
+  .xp-sheet { margin: auto 0 0; width: 100vw; height: auto; max-height: 88dvh; border-left: 0; border-top: 1px solid var(--border-strong);
+    border-radius: var(--r-xl) var(--r-xl) 0 0; }
+  .xp-sheet > .toasts { top: var(--s2); bottom: auto; left: 50%; right: auto; transform: translateX(-50%); width: calc(100vw - 32px); }
+  .xp-sheet-in { padding: var(--s3); }
+}

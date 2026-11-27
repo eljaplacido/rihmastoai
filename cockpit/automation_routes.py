@@ -22,6 +22,8 @@ from kernel import automations_cli as kau_cli
 from kernel import automations_events as kau_events
 from kernel import automations_run as kau_run
 from kernel import automations_text as kau_words
+from kernel import checks as kchecks
+from kernel import gnomon_evals as kge
 from kernel import hooks as khooks
 from kernel import relay as krelay
 from kernel.learn import FACTORY_PID
@@ -142,15 +144,32 @@ class AutomationRoutes:
         except KeyError:
             raise _error(404, f"no project {project}") from None
         sched = getattr(self.server, "automation_scheduler", None)
+        removed = [{"id": a["id"], "name": a.get("name"), "by": a.get("removed_by"), "at": a.get("removed_at")}
+                   for a in kau.automations(self.factory, removed=True) if a.get("state") == "removed"][-10:]
         return 200, {"automations": [r | {"history": kau_run.history(self.factory, r["id"], limit=10)} for r in rows],
+                     "removed": removed[::-1],      # who removed which, kept in sight (FR-NVL3)
                      **self._offers(), "scheduler": {"running": bool(sched and sched.running()),
                                                      "last": sched.last if sched else None}}
 
+    def _templates(self) -> list[dict[str, Any]]:
+        """Each template with what it waits for before it can be set up (a relay subscription IT adds) and who may
+        set it up, so one that cannot work yet is marked before it is opened (FR-NVL3)."""
+        subs = krelay.subscriptions(self.factory)
+        out = []
+        for t in kau_words.TEMPLATES:
+            kind = ((t.get("draft") or {}).get("action") or {}).get("kind")
+            waits = ["needs IT: a relay subscription"] if "subscription" in (t.get("needs") or []) and not subs else []
+            out.append(t | {"waits": waits, "personas": list((kau.ACTIONS.get(kind) or {}).get("personas") or [])})
+        return out
+
     def _offers(self) -> dict[str, Any]:
-        return {"templates": kau_words.TEMPLATES, "events": list(kau_events.COMMON_EVENTS), "triggers": list(kau.TRIGGERS),
+        return {"templates": self._templates(), "events": list(kau_events.COMMON_EVENTS), "triggers": list(kau.TRIGGERS),
                 "guards": list(kau.GUARDS), "scopes": list(kau.SCOPES),
                 "actions": [{"id": k, "label": v["label"], "personas": list(v["personas"]),
                              "per_project": v["per_project"]} for k, v in kau.ACTIONS.items()],
+                # what run_eval and run_check name: the builder chooses one, its sentence says which
+                "evals": [{"id": e.id, "label": e.label} for e in kge.CATALOGUE],
+                "checks": [{"id": c["kind"], "label": c["label"]} for c in kchecks.public()],
                 "subscriptions": [{"id": s["id"], "sink": s["sink"], "projects": s.get("projects") or []}
                                   for s in krelay.subscriptions(self.factory)],
                 "sources": [{"id": s["id"], "scheme": s["scheme"], "projects": s.get("projects") or []}
@@ -210,8 +229,14 @@ class AutomationRoutes:
 
     def post_automation_run(self, aid: str, body: dict[str, Any], **_: object) -> Reply:
         """Run now: recorded at once, carried out by the scheduler's next tick, which this wakes."""
-        person, persona = self._auto_signer(body, self._auto(aid))
+        auto = self._auto(aid)
+        person, persona = self._auto_signer(body, auto)
         project = _server()._text(body, "project", limit=100) or None
+        per_project = (kau.ACTIONS.get(auto["action"]["kind"]) or {}).get("per_project")
+        if per_project and project is None and not kau.projects_in(self.factory, auto["scope"]):
+            return 200, {"requested": None, "ran": False, "projects_now": [],      # never "runs now" for nothing
+                         "why": f"No project matches {aid}'s scope now, so nothing ran: Edit its scope, or tag a "
+                                "project so it matches."}
         req = kau_run.request_run(self.factory, aid, person=person, persona=persona, project=project)
         sched = getattr(self.server, "automation_scheduler", None)
         if sched is not None:

@@ -43,6 +43,10 @@ import { renderShare } from "./share.js";   // observer links (FR-SHR1)
 import { followRoute } from "./observe_follow.js";   // following, while sharing (FR-SHR1)
 import { renderRunLog } from "./runlog.js";   // a run's whole log at #/jobs/<id> (FR-LND1)
 
+// The page's code loaded: the boot guard (boot.js) stands down, and a later failure retries once again.
+window.__rihmaBooted = true;
+try { sessionStorage.removeItem("gf.bootRetry"); } catch (e) { /* no storage */ }
+
 applyTheme(Object.assign({}, THEME_DEFAULT, localJSON("gf.theme", {})));
 
 // -- sign-in ----------------------------------------------------------------------------------------

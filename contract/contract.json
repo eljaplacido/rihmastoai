@@ -1450,6 +1450,13 @@
             "kind": "test"
           },
           "then": "a person drives the cockpit over a demo home in headless Chrome: signs in, switches the lens, validates a concept on the square as a business owner, decides a card in a project, resizes a widget in Customize and saves it, asks the assistant a where-is question and is taken there, and opens Settings, with no console error, failed request or CSP violation at any step; skipped when Chrome is not installed"
+        },
+        {
+          "id": "FR-T1-AC-18",
+          "check": {
+            "kind": "test"
+          },
+          "then": "when the page's code cannot load (a module refused or dropped on a busy machine), the cockpit never sits on a blank page: it reloads once by itself, then says it didn't finish loading with a Reload button; once the server answers again, Reload signs in with the same unused one-use link; the server queues enough connections for the page's modules"
         }
       ]
     },
@@ -13255,7 +13262,8 @@
       "criteria": [
         "FR-I1-AC-4",
         "FR-T1-AC-16",
-        "FR-T1-AC-17"
+        "FR-T1-AC-17",
+        "FR-T1-AC-18"
       ],
       "scope": {
         "write": [
@@ -13266,7 +13274,9 @@
           "tests/test_embed_server.py",
           "tests/test_ui_drive.py",
           "docs/cockpit.md",
-          "docs/guides/embeds.md"
+          "docs/guides/embeds.md",
+          "tests/test_ui_boot.py",
+          "tools/ci_run.py"
         ]
       }
     },

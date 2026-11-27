@@ -638,6 +638,9 @@ class SubprocessRunner:
 
 class CockpitServer(ThreadingHTTPServer):
     daemon_threads = True
+    # The page loads some ninety modules at once; the default queue of 5 refuses connections on a busy machine, and a
+    # refused module leaves the page without its code (cockpit/static/boot.js then says so).
+    request_queue_size = 64
     # On Windows SO_REUSEADDR would let another socket take the same port.
     allow_reuse_address = os.name != "nt"
 

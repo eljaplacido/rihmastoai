@@ -170,13 +170,24 @@ class Browser:
 
     def __init__(self, chrome: str, profile: Path, width: int = 1440, height: int = 1000) -> None:
         self.profile = profile
-        self.proc = subprocess.Popen(
-            [chrome, "--headless=new", f"--remote-debugging-port={os.environ.get('RIHMA_DEVTOOLS_PORT', '0')}",
-             f"--user-data-dir={profile}", "--no-first-run",
-             "--no-default-browser-check", "--no-proxy-server", "--disable-extensions", "--hide-scrollbars",
-             "--disable-background-networking", "--disable-component-update", "--mute-audio", "about:blank"],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.port, self.browser_path = self._devtools_port()
+        # A busy CI machine can take long to start Chrome, or start it without its DevTools port: it gets longer
+        # there (SLOW), and one fresh start if the first one never opens the port.
+        for attempt in (1, 2):
+            self.proc = subprocess.Popen(
+                [chrome, "--headless=new", f"--remote-debugging-port={os.environ.get('RIHMA_DEVTOOLS_PORT', '0')}",
+                 f"--user-data-dir={profile}", "--no-first-run",
+                 "--no-default-browser-check", "--no-proxy-server", "--disable-extensions", "--hide-scrollbars",
+                 "--disable-background-networking", "--disable-component-update", "--mute-audio", "about:blank"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                self.port, self.browser_path = self._devtools_port()
+                break
+            except RuntimeError:
+                self.proc.kill()
+                self.proc.wait(10)
+                shutil.rmtree(profile, ignore_errors=True)
+                if attempt == 2:
+                    raise
         page = None
         for _ in range(100):
             try:
@@ -205,7 +216,7 @@ class Browser:
 
     def _devtools_port(self) -> tuple[int, str]:
         marker = self.profile / "DevToolsActivePort"
-        for _ in range(300):
+        for _ in range(int(300 * SLOW)):
             if self.proc.poll() is not None:
                 raise RuntimeError(f"Chrome exited with {self.proc.returncode}")
             try:
@@ -235,6 +246,8 @@ class Browser:
             e = params.get("entry") or {}
             if (e.get("level") == "error" or e.get("source") == "security") and not _transient(e.get("text")):
                 self.problems.append((self.step, f"log:{e.get('source')}:{e.get('level')}", e.get("text")))
+            elif _transient(e.get("text")):
+                self.passing = (getattr(self, "passing", []) + [(self.step, e.get("url") or e.get("text"))])[-8:]
 
     def cmd(self, method: str, params: dict | None = None) -> dict:
         self.n += 1
@@ -254,6 +267,15 @@ class Browser:
             raise RuntimeError(f"the driver's script failed: {(d.get('exception') or {}).get('description') or d}")
         return (out.get("result") or {}).get("value")
 
+    def state(self) -> str:
+        """What the page shows, for a timeout's message: where it is, whether it is signed in, and its first words."""
+        try:
+            return str(self.eval("JSON.stringify({url: location.href.replace(/#k=[^&]*/, '#k=…'), ready: document.readyState,"
+                                 " html: document.documentElement.className, token: !!sessionStorage.getItem('gf.token'),"
+                                 " text: (document.body && document.body.innerText || '').replace(/\\s+/g, ' ').slice(0, 300)})"))
+        except (RuntimeError, OSError) as e:
+            return f"unreadable ({e})"
+
     def wait(self, expression: str, what: str, timeout: float = 20.0):
         end = time.monotonic() + timeout * SLOW
         while True:
@@ -272,7 +294,8 @@ class Browser:
                 if self.shots:
                     self.shots.mkdir(parents=True, exist_ok=True)
                     self.screenshot(self.shots / f"timeout-{self.step.replace(' ', '-')}.png")
-                raise AssertionError(f"[{self.step}] timed out waiting for {what}; problems so far: {self.problems}")
+                raise AssertionError(f"[{self.step}] timed out waiting for {what}; problems so far: {self.problems}; "
+                                     f"the page: {self.state()}; transient network errors: {getattr(self, 'passing', [])}")
             time.sleep(0.1)
 
     def click(self, selector: str, text: str | None = None, what: str | None = None) -> None:

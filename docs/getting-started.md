@@ -1,7 +1,10 @@
 # Getting started
 
-This guide takes you from a fresh machine to a first real project. The demo needs only Python
-and git. Real projects also need Gnomon and models from at least two model families.
+Rihmasto sits as the governed middle layer between **your own development environments** (IDEs,
+repositories, terminals, and coding agents) and **wherever your software and agentic capabilities are
+deployed and monitored** (web, cloud, containers, local hosts, or MCP/HTTP faces). This guide takes you
+from a fresh machine to a first real project. The demo needs only Python and git. Real projects also
+need Gnomon and models from at least two model families.
 
 ## 1. What you need
 

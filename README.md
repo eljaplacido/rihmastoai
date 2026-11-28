@@ -4,15 +4,19 @@
 
 # Rihmasto
 
-Rihmasto is a governed middle layer for agentic software work. It takes an idea or an existing
-repository, turns it into a spec and a tested contract, has coding agents build against it behind a
-gate that runs the tests itself, ships only to targets you configured, and keeps it healthy, with a
-person signing every decision and every step in a hash-chained ledger.
+Rihmasto is a governed middle layer between **your development environments** and **wherever your
+software and agentic capabilities run**. It takes an idea or an existing repository, turns it into a
+spec and a tested contract, verifies work behind a gate that runs the tests itself, ships only to
+targets you configured, and monitors deployed capabilities across web, cloud, container, local, and
+MCP/HTTP environments — with a person signing every decision and every step in a hash-chained ledger.
 
-You keep your own IDE and coding agents (Claude Code, Cursor, Codex, OpenCode). Rihmasto holds what
-they should not have to: the intent, the contract, the decisions, the verification and the record.
-[Gnomon](https://github.com/eljaplacido/gnomonharness), an open agent harness, is the glue: any
-harness and any model work under one structure of specs, contracts, tests and verification.
+You keep your own development environments, IDEs, repositories, and coding agents (Claude Code,
+Cursor, Codex, OpenCode, or any MCP client) on whichever machines they run on. Rihmasto holds what
+they should not have to: the intent, the contract, the decisions, live work-in-progress and
+cross-machine agent asks, verification, Gnomon safety posture, and ongoing monitoring of where those
+capabilities are deployed. [Gnomon](https://github.com/eljaplacido/gnomonharness), an open agent
+harness, is the glue: any harness and any model work under one structure of specs, contracts, tests
+and verification.
 
 > Models propose. The kernel (plain code, with no model in it) decides. People own intent and policy.
 
@@ -38,12 +42,15 @@ happened yet. [Status](#status) has the whole list.
 
 ## What it is, and what it is not
 
-**It is** the platform around your IDE for a capability's whole life
-([D-0023](decisions/D-0023-what-rihmasto-is-and-is-not.md)): it takes in what development produced,
-holds the intent, the contract and the decisions, verifies and packages the result, sends it to the
-targets IT configured with people deciding, watches it, and brings feedback back to development. It
-never strands you: every refusal says why and what to do, and every empty view offers **Ask Rihma**
-why it is empty and how to fill it.
+**It is** the governed middle layer connecting your development environments to your running
+deployments for a capability's whole life
+([D-0023](decisions/D-0023-what-rihmasto-is-and-is-not.md)): developers keep using their own IDEs,
+terminals, repositories, and coding agents, while Rihmasto holds the intent, the contract and the
+decisions, verifies and packages the result, ships it to the targets IT configured with people
+deciding, **monitors wherever those software and agentic capabilities are deployed** (web, cloud,
+containers, local hosts, or MCP/HTTP faces), and brings health signals, incidents, and user feedback
+straight back to development. It never strands you: every refusal says why and what to do, and every
+empty view offers **Ask Rihma** why it is empty and how to fill it.
 
 **Solo by default.** On a new home you are the one person and hold every persona (business owner, product
 owner, concept evaluator, end-user tester, developer, IT, operations, stakeholder, compliance and AI architect);
@@ -72,12 +79,12 @@ Each capability works in the cockpit and through Ask Rihma, and most from the co
 | Area | What you can do | Guides |
 |---|---|---|
 | **Intake and shaping** | Shape a need in chat or from a spec, plan or folder; a panel asks only the questions that change what gets built; 13 kinds of work (3 ready, 10 *preview*) and four postures; change any of it later. | [shape it in chat](docs/guides/shape-in-chat.md), [inputs](docs/guides/inputs.md), [postures](docs/guides/postures.md), [change anything](docs/guides/change-anything.md) |
-| **Existing projects** | Adopt or attach a repository, capture its own structure (specs, ADRs, API contracts, tests, AI-tool setup), assess it with live progress, align its specs and tests with a contract, watch upstream drift. | [existing project](docs/scenarios/existing-project.md), [alignment](docs/guides/alignment.md), [assessment](docs/guides/assessment.md) |
+| **Existing projects** | Adopt or attach a repository from your own development environment, capture its structure (specs, ADRs, API contracts, tests, AI-tool setup), track live Work in progress (branch, uncommitted changes), assess it with live progress, align its specs and tests with a contract, and watch upstream drift. | [existing project](docs/scenarios/existing-project.md), [alignment](docs/guides/alignment.md), [assessment](docs/guides/assessment.md) |
 | **Build and verify** | A contract pinned by its hash; builder cells in Gnomon; a gate that runs the tests itself, checks fail-first, asks a verifier from another model family and runs holdouts the builder never saw; a security gate. | [how it works](docs/how-it-works.md), [harnesses](docs/guides/harnesses.md), [security](docs/guides/security.md) |
 | **Run and deliver** | The local preview road (real); docker and Google Cloud Run *(stand-ins)*; Azure Container Apps *(preview)*; outputs per audience; small capabilities over MCP, an OpenAI-compatible endpoint, a website chat or HTTP. | [deploying](docs/guides/deploying.md), [destinations](docs/guides/destinations.md), [small capabilities](docs/guides/small-capabilities.md) |
-| **Keep it healthy** | Scheduled checks, probes that open incidents, automations with guards and a circuit breaker, self-healing with remedies and Investigate with Rihma, a recorded console, Review each morning. | [improve and maintain](docs/scenarios/improve-and-maintain.md), [automations](docs/guides/automations.md), [self-healing](docs/guides/self-healing.md) |
-| **Agents** | Ask Rihma in every view; walkthroughs; goals; hand-offs to your coding agent; the agent channel; an MCP server for your IDE agent; your coding agent as Rihmasto's model; the development board and trace; **Agent operations**, the AI architect's view of what each agent costs, how fast it answers and what it is given, with the Optimise audit and agent skills platform-wide and per project. | [configure with your agents](docs/guides/configure-your-agents.md), [agentic help](docs/guides/agentic-help.md), [MCP](docs/mcp.md), [agent operations](docs/guides/agent-operations.md), [development board](docs/guides/development-board.md) |
-| **See and govern** | Insights, the Knowledge graph view, the Context and data view, Gnomon's audits and evals, capability and evidence packs, solo or team access, the autonomy cap; **enforcement levels** per environment (off, advise, require review or enforce in development, testing and production, for all projects or one); **people in the loop**, with reviewers outside the system answering through a one-use link; IT's **Integrations and data** view; never lost: why it is empty, who acted, what blocks work. | [insights](docs/guides/insights.md), [knowledge graph](docs/guides/knowledge-graph.md), [packs](docs/guides/packs-and-evidence.md), [access](docs/guides/access.md), [enforcement levels](docs/guides/enforcement-levels.md), [people in the loop](docs/guides/people-in-the-loop.md), [integrations and data](docs/guides/integrations-and-data.md), [never lost](docs/guides/never-lost.md) |
+| **Monitor and keep healthy** | Monitor deployed software and agentic capabilities wherever they run (web, cloud, containers, local hosts, MCP/HTTP faces) with scheduled checks, live probes (HTTP, DNS, database, agent runs) that open incidents, automations with guards and a circuit breaker, self-healing with remedies and Investigate with Rihma, a recorded console, and Review each morning. | [improve and maintain](docs/scenarios/improve-and-maintain.md), [console and checks](docs/guides/console-and-checks.md), [automations](docs/guides/automations.md), [self-healing](docs/guides/self-healing.md) |
+| **Agents and machines** | Ask Rihma in every view; walkthroughs; goals; hand-offs to your coding agent; the agent channel; an MCP server for your IDE agent; **Machines, cross-machine agent asks & Test connection**; **Gnomon safety posture**; your coding agent as Rihmasto's model; the development board and trace; **Agent operations**, the AI architect's view of what each agent costs, how fast it answers and what it is given, with the Optimise audit and agent skills platform-wide and per project. | [configure with your agents](docs/guides/configure-your-agents.md), [agentic help](docs/guides/agentic-help.md), [machines and asks](docs/guides/machines-and-asks.md), [Gnomon posture](docs/guides/gnomon-posture.md), [MCP](docs/mcp.md), [agent operations](docs/guides/agent-operations.md), [development board](docs/guides/development-board.md) |
+| **See and govern** | Insights, the Knowledge graph view, the Context and data view, Gnomon's audits and evals, capability and evidence packs, solo or team access, **Teams, layered vocabulary & scope**, the autonomy cap; **enforcement levels** per environment (off, advise, require review or enforce in development, testing and production, for all projects or one); **people in the loop**, with reviewers outside the system answering through a one-use link; IT's **Integrations and data** view; never lost: why it is empty, who acted, what blocks work. | [insights](docs/guides/insights.md), [knowledge graph](docs/guides/knowledge-graph.md), [packs](docs/guides/packs-and-evidence.md), [access](docs/guides/access.md), [teams and words](docs/guides/teams-and-words.md), [enforcement levels](docs/guides/enforcement-levels.md), [people in the loop](docs/guides/people-in-the-loop.md), [integrations and data](docs/guides/integrations-and-data.md), [never lost](docs/guides/never-lost.md) |
 | **Integrations** | Website chats, signed events out and verified webhooks in; Teams, Slack and email notices, data bindings and a Google Drive connector *(stand-ins)*. | [embeds](docs/guides/embeds.md), [events](docs/guides/integrations.md), [data](docs/guides/data-integrations.md) |
 
 Use as little as you need: spec only, gate my code, assess, security or evidence only, a capability,
@@ -266,11 +273,12 @@ the cockpit's API may still change before 1.0.0. [SECURITY.md](SECURITY.md) has 
 **Built and covered by the offline test suite** (scripted models, no network): the chain from intake
 to delivery on the local preview road; the command line, the demo, the cockpit and the MCP server;
 Shape it in chat, walkthroughs, goals, hand-offs, the agent channel and Ask Rihma; adopting, attaching,
-assessing and aligning existing repositories; checks, automations, probes, incidents and self-healing;
-Review, Insights, the Knowledge graph and Context and data views; packs, the autonomy ladder,
-delegation and the autopilot; solo and team access; Rihmasto's own static scan, dynamic probes and
-agentic red team. The live end-to-end acceptance run with real models has not happened yet
-([acceptance](docs/acceptance.md)).
+assessing and aligning existing repositories; live Work in progress, Gnomon safety posture, Teams and
+layered vocabulary, Machines, cross-machine agent asks and the reachability doctor; checks, automations,
+probes, incidents and self-healing; Review, Insights, the Knowledge graph and Context and data views;
+packs, the autonomy ladder, delegation and the autopilot; solo and team access; Rihmasto's own static
+scan, dynamic probes and agentic red team. The live end-to-end acceptance run with real models has not
+happened yet ([acceptance](docs/acceptance.md)).
 
 **Built, tested only against stand-ins:** the docker road (a fake docker CLI); the Google Cloud Run
 road and the Google Drive connector (a fake gcloud and a Drive stand-in); proxy sign-in (tokens signed

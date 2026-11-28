@@ -1,9 +1,12 @@
 # Architecture: how the parts relate
 
-The picture in [assets/architecture.svg](assets/architecture.svg) and the Mermaid diagram below show
-the same thing: who reaches Rihmasto, what decides, where things are kept, what reads them, which
-agents and models do the work, and where the result goes. This page then walks through each layer and
-names the code behind it.
+Rihmasto is the middle layer between **your development environments and IDE coding agents** on one side
+and **wherever your software and agentic capabilities are deployed and monitored** (web, cloud,
+containers, local hosts, or MCP/HTTP faces) on the other. The picture in
+[assets/architecture.svg](assets/architecture.svg) and the Mermaid diagram below show the same thing:
+who reaches Rihmasto, what decides, where things are kept, what reads them, which agents and models do
+the work, and where deployed capabilities run and report back. This page then walks through each layer
+and names the code behind it.
 
 ![Rihmasto's layers: where people and agents meet it, the kernel, the knowledge and data layers, the agent layer and the destinations](assets/architecture.svg)
 

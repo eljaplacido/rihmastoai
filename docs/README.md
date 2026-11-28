@@ -1,8 +1,11 @@
 # Rihmasto documentation
 
-Every guide and reference page that ships with Rihmasto, grouped by capability area, with the
-paths for each scenario first. A page can sit in more than one group. Pages marked *design*
-describe something planned; they say inside what is built and what is not.
+Rihmasto is the governed middle layer connecting **your own development environments and coding agents**
+to **wherever your software and agentic capabilities are deployed and monitored** (web, cloud,
+containers, local hosts, or MCP/HTTP faces). Every guide and reference page that ships with Rihmasto is
+listed below, grouped by capability area, with the paths for each scenario first. A page can sit in more
+than one group. Pages marked *design* describe something planned; they say inside what is built and what
+is not.
 
 ## Start here
 
@@ -67,12 +70,15 @@ road delivers an adopted repository yet.
 ([postures](guides/postures.md)); [signals and concepts](guides/signals-and-concepts.md) for validating
 a concept on the delivery square; [change anything](guides/change-anything.md) to firm it up later.
 
-**Keep something running.** [Checks](guides/console-and-checks.md), probes and incidents in
-[how it works](how-it-works.md#8-operation), [automations](guides/automations.md),
+**Monitor deployed capabilities and keep them running.** Wherever your software or agentic capabilities
+are deployed (web, cloud, containers, local hosts, or MCP/HTTP faces), monitor them with
+[checks and probes](guides/console-and-checks.md), incidents in [how it works](how-it-works.md#8-operation),
+[Gnomon safety posture](guides/gnomon-posture.md), [automations](guides/automations.md),
 [Review](guides/review.md) each morning, and [Insights](guides/insights.md).
 
-**Work from your IDE or terminal.** [Your IDE and Rihmasto](guides/ide-and-rihmasto.md),
+**Work from your own development environment (IDE or terminal).** [Your IDE and Rihmasto](guides/ide-and-rihmasto.md),
 [MCP](mcp.md), [hand-offs and the agent channel](guides/agentic-help.md),
+[machines and cross-agent asks](guides/machines-and-asks.md),
 [the console and a terminal](guides/console-and-checks.md),
 [your coding agent as the model](guides/harness-models.md).
 

@@ -8,6 +8,7 @@ import {
   S, $, $$, h, icon, fill, api, act, say, needPerson, nav, enc, local, localJSON, button, iconButton, infoButton,
   openMenu, pageHead, empty, skeleton, chip, personaLabel, AuthError, ACCENTS,
 } from "./core.js";
+import { homeAsksCard } from "./asks.js";   // what waits on other agents (FR-XAG1)
 import { WIDGET_DEFS, SOURCES, PROV_NOTE } from "./widgets.js";
 import { widgetOn, offNote } from "./modules.js";
 import { modelSetupCard } from "./models.js";
@@ -232,6 +233,7 @@ export async function renderHome(seq) {
     h("div", { class: "home-setup", id: "home-auto" }),
     h("div", { class: "home-walk", id: "home-walk" }),
     h("div", { class: "home-setup", id: "home-health" }),
+    h("div", { class: "home-setup", id: "home-asks" }),   // what waits on other agents (FR-XAG1)
     h("div", { class: "dash-notes", id: "dash-notes" }),
     h("div", { class: "cz-bar", id: "cz-bar", hidden: true }),
     h("div", { class: "preview-bar", id: "preview-bar", hidden: true }),
@@ -245,6 +247,7 @@ export async function renderHome(seq) {
   pausedCard($("#home-auto"));         // an automation the circuit breaker paused, and why (automations.js)
   if (nav.walk) nav.walk.homeCard($("#home-walk"));   // no project yet: a walkthrough is offered (FR-WLK1)
   healthCard($("#home-health"));       // checks failing or not measured (health.js, FR-CHK1)
+  homeAsksCard($("#home-asks"));       // asks to agents elsewhere, waiting (asks.js, FR-XAG1)
   renderGrid();
   if (S.customizing) startCustomize(resumed);
   if (C.preview) showPreviewBar();

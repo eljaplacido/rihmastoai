@@ -183,6 +183,13 @@ commits once the watch is set up, the project's own sources fed in as material, 
 automations to schedule. Records are quoted whole; when they do not all fit, fewer are quoted and the rest
 are counted by id.
 
+### Asking an agent on another machine
+
+An agent the channel cannot reach (on a laptop, a build server) gets an **ask**: the same question in the channel,
+with its state, delivered over MCP when the agent is here, through a one-use reply link, or copied for you to paste
+there, and answered back into the same thread. Where a machine is not reachable, Test connection says why and drafts
+the ask to its agent. See [Machines, asks between agents, and Test connection](machines-and-asks.md).
+
 ### How the channel holds up
 
 - **Only a request asks an agent.** "Ask Claude Code ...", "Rihma, consult Cursor on ...", "Can you check with

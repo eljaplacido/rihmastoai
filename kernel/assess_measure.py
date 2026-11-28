@@ -1,6 +1,6 @@
 """What an assessment of an adopted project measures against, and what it says first (FR-ASP1).
 
-The owner (2026-11-26): "when I jump into the game project its not clear what should I do". An adopted project's
+The owner (2026-11-26): "when I jump into [an adopted project] its not clear what should I do". An adopted project's
 own sources are often not where the factory first looks: each Python package keeps its own test root, its real
 tests run by a tool of its own on another machine, its plans live in documents nobody has touched for weeks.
 By rule, with no model:

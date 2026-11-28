@@ -1,7 +1,7 @@
 /* What Ask Rihma talks about (FR-UXO1). The owner: "When I talk to the assistant it's not clear whether it comments
    on the entire platform, where I'm right now, or a specific project."
 
-   A scope line at the top of the chat says it ("Talking about: Home and Horizon · Inbox", or "all projects"); it
+   A scope line at the top of the chat says it ("Talking about: Webshop · Inbox", or "all projects"); it
    follows the page and can be switched: this view, this project, or the whole platform. Each answer carries the
    scope it was given in, and says so when the question named another project and Rihma switched to it. The
    conversation is kept per project (and one for the whole platform). A how-to answer's steps are numbered, each

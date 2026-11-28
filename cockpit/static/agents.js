@@ -8,6 +8,7 @@ import {
   S, $, h, fill, icon, chip, button, api, enc, link, say, act, needPerson, signed, empty, fmtAt, pageHead, card,
   personaLabel, nav,
 } from "./core.js";
+import { asksPanel } from "./asks.js";   // asks to agents on this and other machines (FR-XAG1)
 import { emptyState, pick, datum, word } from "./words.js";
 import { inPlace } from "./expand.js";
 import { runsCard } from "./runlog.js";   // the runs to open the whole log of (FR-LND1)
@@ -225,6 +226,7 @@ export function viewAgents(p) {
       h("p", null, word("q.agents")),
       h("ul", { class: "ch-expect small", "aria-label": "What to expect here" },
         ["channel.expect.ask", "channel.expect.agent", "channel.expect.agents"].map((k) => h("li", null, word(k))))),
+    asksPanel(pid),           // asks to agents here or on other machines, answered back here (FR-XAG1)
     channelPanel(pid));
 }
 

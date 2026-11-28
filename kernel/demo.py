@@ -928,6 +928,10 @@ def _existing_repo(path: Path, at: str) -> None:
     by a demo person at the demo clock's time."""
     for rel, text in STOCK_FILES.items():
         _write(path / rel, text)
+    # Example Gnomon config on the adopted service so Gnomon safety posture shows real suggestions in the demo.
+    _write(path / ".gnomon" / "config.toml", '[defaults]\nedit_format = "str_replace"\n\n[audit]\nenabled = true\n')
+    _write(path / ".gnomon" / "policy.toml",
+           '[verify]\ncommand = "python -m unittest"\nafter = "change"\n\n[governance]\nlevel = "observe"\n')
     name, email = DEVELOPER[0], f"{DEVELOPER[0]}@example.invalid"
     env = {**os.environ, "GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_AUTHOR_DATE": at,
            "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email, "GIT_COMMITTER_DATE": at}
@@ -949,8 +953,21 @@ def _adopt(b: _Build) -> Any:
     repo = b.home.joinpath(*STOCK_DIR)
     _existing_repo(repo, b.clock.stamp())
     b.clock.advance(minutes=20)
-    return adopt(b.factory, TITLES[STOCK], source=repo, intent="maintain", person=DEVELOPER[0],
-                 persona=DEVELOPER[1], maturity="production", timeout=120, profile="web_service")
+    stock = adopt(b.factory, TITLES[STOCK], source=repo, intent="maintain", person=DEVELOPER[0],
+                  persona=DEVELOPER[1], maturity="production", timeout=120, profile="web_service")
+    # Leave one untracked draft file in the adopted working copy so Work in progress has a live change,
+    # and seed one hand-reached demo machine + open cross-agent ask on the agent channel.
+    _write(repo / "wip_notes.md", "# Draft\nNext: add low-stock alert threshold.\n")
+    from kernel import asks, machines
+
+    machines.add(b.factory, {"name": "demo-laptop", "reach": "hand", "os": "linux", "agents": ["claude-code"],
+                             "note": "Example workstation for copy-and-paste agent asks"},
+                 person=DEVELOPER[0], persona=DEVELOPER[1])
+    asks.create(stock, to="claude-code", machine="demo-laptop",
+                text="Check whether stock_levels.py handles negative restock deltas cleanly.",
+                why="Demo example of an open ask to an agent on another machine",
+                person=DEVELOPER[0], persona=DEVELOPER[1])
+    return stock
 
 
 def _square(b: _Build, webhook: Any) -> None:

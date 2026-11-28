@@ -132,7 +132,7 @@ The cockpit always says what a page is about: **all projects**, or **one project
   projects, the recent ones first, and "← All projects"; switching keeps the view you are on when
   the other project has it. Inside a project the whole frame takes the project's own accent (a
   coloured top edge, the switcher, the header's edge and the sidebar's project block), so a project
-  page is unmistakable. Every page title states its scope: "Home and Horizon · Inbox" in a project,
+  page is unmistakable. Every page title states its scope: "Webshop · Inbox" in a project,
   "Inbox · all projects" outside one.
 - **Sidebar** (240px, collapsible to a 56px icon rail with tooltips, dimmer than the content). Outside
   a project: the hypha logo, **New project**, then **Review** (since you last looked), Home,
@@ -309,14 +309,14 @@ a thinking state, and suggested questions for the lens and view ("Where do I app
 compact teal theme", "Make a feedback chat for our website").
 
 **What it talks about** (`assistant_scope`): a line at the top of the chat says "Talking about:
-Home and Horizon · Inbox" (or "all projects") and follows the page; its choice switches between
+Webshop · Inbox" (or "all projects") and follows the page; its choice switches between
 **This view**, **This project** and **Whole platform**. Each answer begins with what it was about.
 A question that names another project by its title ("How is Equipment loans doing?") is answered
 about that project, and Rihma says it switched. A proposal names its target (the project, or your
 layout). The conversation is kept per project, and one for the whole platform, in the tab.
 
 **How-to answers are practical** (`kernel/assistant_howto.py`): "How do I export the evidence?"
-answers with numbered steps for this project: the path to click ("Open Home and Horizon › Govern ›
+answers with numbered steps for this project: the path to click ("Open Webshop › Govern ›
 Evidence", with **Take me there**), what to press there, and the command with the project's id, your
 name and persona filled in, each with **Copy**. A command whose value is not known is left out
 rather than shown with a placeholder ("<pid>" never appears), a missing name is asked for, and "the
@@ -519,7 +519,7 @@ ledger's state, the now line (with the real state: a running
 cell, apparatus failure, ready), a compact stepper of the seven stages with their icons and counts,
 and **Project settings**, **Pause** or **Resume** and **Advance**. Below it are the five capsules (Now,
 Build, Run, Govern, Agents; see [Capsules](#capsules-a-projects-views-by-purpose)), each with its own
-short row of views; each view's heading names the project ("Home and Horizon · Overview"). The
+short row of views; each view's heading names the project ("Webshop · Overview"). The
 Overview has the alignment panel and the stage counts beside it.
 
 **Words per persona** (`cockpit/static/words.js`, D-0024 point 5): where wording differs, a business
@@ -902,7 +902,15 @@ the console and a real terminal: [the console and checks](guides/console-and-che
 | `POST /api/automations` · `PUT /api/automations/<AU-n>` · `POST /api/automations/<AU-n>/pause` · `/resume` · `/remove` · `/run` | `{automation, person, persona}` signed where it acts, the kernel checking every scoped project · pause by anyone, the rest by its owner or IT · Run now recorded, carried out by the scheduler's next tick |
 | `POST /api/automations/preview` · `POST /api/automations/<AU-n>/dry-run` | a draft's summary and the projects it reaches · what the next tick would do; both signed, both record nothing |
 | `GET /api/agent-observability[?check=1]` · `PUT /api/agent-observability` | the agent observability hub's address and whether the module is on anywhere; `check=1` asks the hub whether it answers · `{url, token_env?, private?, hosted?, reason?, person, persona}` by IT, a hosted address only with `hosted` ([agent observability](guides/agent-observability.md)) |
+| `GET /api/projects/<pid>/gnomon-posture?persona=` · `POST /api/projects/<pid>/gnomon-posture/propose` | the project's Gnomon posture, computed now from its own `.gnomon/config.toml` and `policy.toml` (reading writes nothing) · `{suggestion, person, persona}` files one suggestion as a change card, by a developer or IT ([Gnomon posture](guides/gnomon-posture.md)) |
+| `GET /api/projects/<pid>/wip` | live Work in progress for a project with a local git working copy: branch, uncommitted changes, age and nudge state; reads only |
 | `GET /api/projects/<pid>/agent-sessions?persona=` · `POST /api/projects/<pid>/agent-sessions/map` · `/snapshot` | the Agent sessions view, read from the hub (developers and IT only; reading writes nothing) · `{hub_project, how?, person, persona}` · `{person, persona}`: records what the hub shows; both refused while the module is off there |
+| `GET /api/machines` · `POST /api/machines` · `POST /api/machines/remove` | the platform-wide Machines list (how each machine is reached, its OS and agents; addresses stay out of ledgers) · add/update or remove a machine, signed ([Machines and asks](guides/machines-and-asks.md)) |
+| `POST /api/reach` | `{target}`: runs the reachability doctor against a machine, a visible project, an `https://` address or `github`; returns the verdict, OS-specific fix steps and a drafted ask; records nothing |
+| `GET /api/asks` · `GET /api/projects/<pid>/asks` · `POST /api/projects/<pid>/asks` · `/copy` · `/answer` · `/withdraw` · `/link` | open asks waiting on other agents across projects or on one project · create, copy, file an answer, withdraw or issue a one-use reply link (`/x/api/ask`, `/x/api/answer`) |
+| `GET /api/teams` · `POST /api/teams` · `PUT /api/teams/<tid>` · `POST /api/teams/undo` · `PUT /api/projects/<pid>/team` | teams, members and projects · IT creates/edits/undoes teams; a project owner moves a project between teams ([Teams and words](guides/teams-and-words.md)) |
+| `GET /api/vocabulary[?project=<pid>\|team=<tid>]` · `POST /api/vocabulary/preview` · `PUT /api/vocabulary` · `POST /api/vocabulary/undo` | layered vocabulary (shipped → team → project) · preview, save or undo term overrides |
+| `GET /r/...` · `POST /r/api/...` · `GET /o/...` · `POST /x/api/ask` · `POST /x/api/answer` | standalone token-gated pages outside the cockpit session: outside HITL reviewer links (`/r/`), read-only guest observer links (`/o/`) and one-use agent reply links (`/x/api/`); `cockpit/static/boot.js` guards the cockpit shell if its ES modules fail to load |
 
 Every GET is a read: none of them records a decision, marks an approval stale, appends
 to a ledger or creates Rihma's own canon on a home without one. `<pid>` may also be `_factory`,

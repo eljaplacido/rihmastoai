@@ -93,8 +93,12 @@ registerView({ id: "trace", capsule: "agents", order: 15, personas: ["developer"
 registerView({ id: "itdata", capsule: "run", order: 7, personas: ["it"], module: "itdata.js", label: "Integrations and data", icon: "plug" });
 // What IT checks here and why, by solution type, eval sets and any assessment (itops.js, FR-ITO1)
 registerView({ id: "itops", capsule: "run", order: 8, personas: ["it", "operations"], module: "itops.js", label: "IT checks", icon: "pulse" });
+// How well Gnomon governs the project and what to tighten first, from its own Gnomon files (gnomon_posture.js, FR-GNP1)
+registerView({ id: "gnomon_posture", capsule: "govern", order: 20, personas: ["developer", "it"], module: "gnomon_posture.js", label: "Gnomon safety", icon: "shield" });
 // How strict each stage is: levels per environment, the pipeline beside them (enforcement.js, FR-ENF1)
 registerView({ id: "enforcement", capsule: "govern", order: 15, label: "Enforcement", icon: "shield", personas: ["compliance", "it"], module: "enforcement.js" });
+// Rihmasto's own words by team and by project, the project's team, and what applies where (vocab.js, FR-TM2)
+registerView({ id: "vocabulary", capsule: "govern", order: 18, label: "Vocabulary", icon: "book", personas: ["it"], module: "vocab.js" });
 // People in the loop: who still has to answer, people outside, advise or require (hitl.js, FR-HITL1)
 registerView({ id: "loop", capsule: "govern", order: 17, label: "People in the loop", icon: "users",
   personas: ["compliance", "business_owner", "product_owner"], module: "hitl.js",

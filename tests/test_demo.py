@@ -276,6 +276,13 @@ class DemoTest(unittest.TestCase):
         self.assertEqual({t["status"] for t in stock.read("tasks.json").values()}, {"merged"})
         self.assertEqual(Canon(stock).cards(), [])                          # nothing to build until a change
         self.assertEqual((stock.meta["maturity"], stock.meta["stage"]), ("production", 5))
+        from kernel import asks, machines, wip
+        from kernel.gnomon_posture import view as gnomon_posture
+
+        self.assertTrue(gnomon_posture.build(self.factory, stock)["measured"])
+        self.assertGreaterEqual(wip.read(stock, fresh=True)["changed"]["total"], 1)
+        self.assertTrue(any(m["name"] == "demo-laptop" for m in machines.listed(self.factory)))
+        self.assertEqual(len(asks.listed(stock)), 1)
 
     def test_FR_N4_AC_1_every_decision_in_the_demo_is_made_by_a_demo_persona(self):
         decisions = []

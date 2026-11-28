@@ -113,11 +113,22 @@ class GraphRoutes:
         return {"project": "/api/projects/<pid>/graph", "factory": "/api/graph", "page": "#/graph"}
 
     def get_project_graph(self, pid: str, query: dict[str, Any], **_: Any) -> Reply:
-        project = self._graph_project(pid)
-        return 200, kview.project_view(project, kview.parse_filters(query))
+        from kernel import graph_hide, vocab, vocab_graph
+
+        project = self._graph_project(pid)       # read through the team's and the project's words (FR-TM2)
+        eff = vocab.effective(self.factory, project)
+        view = kview.project_view(project, kview.parse_filters(query), hidden=graph_hide.hidden_kinds(eff))
+        return 200, vocab_graph.relabel(view, eff)
 
     def get_graph(self, query: dict[str, Any], **_: Any) -> Reply:
-        return 200, kview.factory_view(self.factory, kview.parse_filters(query), visible=self._graph_visible())
+        from kernel import graph_hide, vocab, vocab_graph
+
+        every = kview.parse_filters(query)
+        shown = kview.shown_projects(self.factory, every, self._graph_visible())
+        eff = vocab.context(self.factory, None, shown)
+        view = kview.factory_view(self.factory, every, visible=self._graph_visible(),
+                                  hidden=graph_hide.hidden_kinds(eff))
+        return 200, vocab_graph.relabel(view, eff, factory=self.factory, projects=shown)
 
     # -- saved views: per person, in the cockpit's own folder ------------------------------------------------
 

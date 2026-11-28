@@ -21,6 +21,7 @@ from urllib.parse import unquote
 
 from kernel import adopt_stated, feedback, heal_fix, immune, native_sources, role_evals
 from kernel import agentobs as kobs
+from kernel import gnomon_posture as kgp
 from kernel import automations as kau
 from kernel import autonomy as kautonomy
 from kernel import console as kconsole
@@ -28,6 +29,8 @@ from kernel import embeds as kembeds
 from kernel import harness_enforcement as kenf
 from kernel import enforcement as kenforcement
 from kernel import structure_policy as kstructure
+from kernel import teams as kteams
+from kernel import vocab_edit as kvocab_edit
 from kernel import evidence_pack as kevidence
 from kernel import gnomon_evals as ge
 from kernel import gnomon_evals_run as gr
@@ -192,6 +195,8 @@ NEEDS: dict[str, Needs] = {
     # agent observability (FR-OBS1)
     "put_agent_observability": _fixed(kobs.SETTERS), "post_agent_sessions_map": _fixed(kobs.MAPPERS),
     "post_agent_sessions_snapshot": _fixed(kobs.MAPPERS),
+    # each project's Gnomon posture (kernel/gnomon_posture, FR-GNP1): a developer or IT files a suggestion
+    "post_gnomon_posture_propose": _fixed(kgp.FILERS),
     # self-healing (FR-HEAL1): approvals by those who may approve, or the solo person
     "post_fix_pr": _pull_request, "post_remedy_approve": _fixed(immune.APPROVERS),
     "post_remedy_retire": _fixed(immune.APPROVERS), "post_feedback_settle": _fixed(feedback.APPROVERS),
@@ -251,6 +256,21 @@ NEEDS.update({name: _fixed(kenforcement.SETTERS) for name in (
 # Rihmasto's structure per project (cockpit/structure_routes.py, FR-STR1): those who may set a convention's level.
 NEEDS.update({name: _fixed(kstructure.SETTERS) for name in (
     "put_structure", "put_project_structure", "post_structure_preview")})
+
+
+# Teams and their words (cockpit/team_routes.py, FR-TM1, FR-TM2): IT defines a team and a team's words; IT or a
+# project's owner moves a project and sets a project's own words. Working alone the person holds every role.
+def _vocab_who(factory: Any, groups: dict[str, str], body: dict[str, Any]) -> tuple[str, ...]:
+    """A vocabulary write by the scope it names: a project's own words, or a team's."""
+    return tuple(kvocab_edit.SETTERS["project" if body.get("project") else "team"])
+
+
+NEEDS.update({"post_team": _fixed(kteams.ADMINS), "put_team": _fixed(kteams.ADMINS),
+              "post_project_team": _fixed(kteams.MOVERS), "put_team_vocabulary": _fixed(kvocab_edit.SETTERS["team"]),
+              "put_project_vocabulary": _fixed(kvocab_edit.SETTERS["project"]),
+              "post_team_undo": lambda f, g, body: tuple(kteams.MOVERS if body.get("project") else kteams.ADMINS),
+              "post_teams_preview": lambda f, g, body: tuple(kteams.MOVERS if body.get("project") else kteams.ADMINS),
+              "post_vocabulary_undo": _vocab_who, "post_vocabulary_preview": _vocab_who})   # a preview asks for its change's role
 
 
 def _hitl_answer(factory: Any, groups: dict[str, str], body: dict[str, Any]) -> tuple[str, ...]:
@@ -338,3 +358,11 @@ def inbox(api: Any, pid: str | None = None) -> dict[str, Any]:
                         decide_as=persona)
             cards.append(view)
     return {"persona": ksolo.EVERY, "cards": cards, "count": len(cards)}
+
+
+# Machines are kept by the developer working alone, or IT in a team (kernel/machines.py); an ask, its copy, its
+# answer pasted back, its withdrawal and its reply link keep the persona sent (FR-XAG1).
+NEEDS.update({"post_machine": _fixed(("developer", "it")), "post_machine_remove": _fixed(("developer", "it"))})
+NEEDS["post_reach"] = HELD   # Test connection records nothing; any persona may test (FR-RCH1)
+NEEDS.update({name: HELD for name in ("post_ask", "post_ask_copy", "post_ask_answer", "post_ask_withdraw",
+                                      "post_ask_link")})

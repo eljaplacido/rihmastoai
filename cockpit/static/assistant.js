@@ -523,7 +523,7 @@ function bubble(item, idx, key) {
   return h("div", { class: "msg bot" }, av(),
     h("div", { class: "bub" },
       answerScope(out, item.asked),
-      h("p", { class: "ans" }, withName(out.answer) || "I have no answer to that yet: ask what to do next, or check Models setup."),   // its lines and lists kept (FR-SRC2)
+      h("p", { class: "ans", "data-said": "" }, withName(out.answer) || "I have no answer to that yet: ask what to do next, or check Models setup."),   // its lines and lists kept (FR-SRC2)
       out.note ? h("p", { class: "muted small" }, out.note) : null,
       out.plan ? planBlock(out, item) : null,
       out.progress ? strip(out.progress, { title: out.progress.title || "Progress" }) : null,   // a long job, as it stood (FR-PRG1)

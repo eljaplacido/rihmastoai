@@ -32,8 +32,10 @@ STATES = ("set_up", "offered", "not_applicable")
 Item = dict[str, Any]
 # Parts other streams add: the first module of each tuple this build has turns its item on.
 OPTIONAL = {"destinations": ("kernel.destinations", "kernel.destination"),
-            "agent_observability": ("kernel.agent_observability", "kernel.agent_observe", "kernel.agent_trace"),
-            "gnomon_audits": ("kernel.gnomon_audit", "kernel.gnomon_audits", "kernel.audits")}
+            "agent_observability": ("kernel.agentobs", "kernel.agent_observability", "kernel.agent_observe"),
+            "gnomon_audits": ("kernel.gnomon_evals", "kernel.gnomon_posture", "kernel.gnomon_audit")}
+OPTIONAL_VIEW = {"destinations": "destinations", "agent_observability": "agent_sessions",
+                 "gnomon_audits": "gnomon_posture"}
 
 
 def _item(iid: str, label: str, state: str, why: str, action: dict[str, Any] | None = None) -> Item:
@@ -153,7 +155,7 @@ def _optional(iid: str, label: str) -> Item:
     if found is None:
         return _item(iid, label, "not_applicable", "this build does not have it yet")
     return _item(iid, label, "offered", f"this build has it ({found}): open the project to set it up",
-                 _open(f"Open {label}", "overview", None))
+                 _open(f"Open {label}", OPTIONAL_VIEW.get(iid, "overview"), None))
 
 
 def checklist(factory: Factory, pid: str) -> dict[str, Any]:

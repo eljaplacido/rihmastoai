@@ -182,6 +182,9 @@ class SetupTest(Shapes):
         r = {i["id"]: i for i in setup.checklist(self.factory, repo.pid)["items"]}
         self.assertEqual((r["checks"]["state"], r["alignment"]["state"], r["ai_tools"]["state"]),
                          ("offered", "offered", "offered"))
+        self.assertEqual((r["agent_observability"]["state"], r["gnomon_audits"]["state"]),
+                         ("offered", "offered"))
+        self.assertEqual(r["gnomon_audits"]["action"]["view"], "gnomon_posture")
         self.assertEqual(r["checks"]["action"]["kind"], "do")
         self.assertEqual(r["posture"]["action"], {"kind": "open", "label": "Choose a posture", "view": "overview",
                                                   "page": None, "control": "posture"})

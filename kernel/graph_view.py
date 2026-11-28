@@ -21,12 +21,13 @@ that cannot be measured now (kernel/graph.py: its records disagree with the ledg
 from __future__ import annotations
 
 from collections import Counter, deque
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
+from kernel import graph_hide
 from kernel.graph import Graph, build
 from kernel.graph_view_nodes import FAMILIES, ISSUES, KIND_ORDER, collect
 from kernel.ontology import load
@@ -276,16 +277,33 @@ def _gathered(project: Any, f: Filters, graph: Graph | None, prefix: bool) -> tu
     return collect(seen, project.pid, str(project.meta.get("title") or project.pid), _times(project), prefix=prefix), []
 
 
-def project_view(project: Any, f: Filters, *, graph: Graph | None = None) -> dict[str, Any]:
-    """One project's knowledge graph, filtered: answered, or not_measured with the causes and no nodes."""
+def collected(project: Any) -> dict[str, Any] | None:
+    """One project's collected nodes (with their issues), or None when its graph cannot be measured now."""
+    found, _ = _gathered(project, parse_filters({}), None, prefix=False)
+    return found
+
+
+def project_view(project: Any, f: Filters, *, graph: Graph | None = None,
+                 hidden: Collection[str] = ()) -> dict[str, Any]:
+    """One project's knowledge graph, filtered: answered, or not_measured with the causes and no nodes. ``hidden``
+    names the kinds a team or a project hides: they leave before anything is counted (kernel/graph_hide.py)."""
     out = _shell("project", f) | {"project": project.pid, "title": project.meta.get("title") or project.pid}
     found, causes = _gathered(project, f, graph, prefix=False)
     if found is None:
         return out | {"outcome": "not_measured", "causes": causes, "nodes": [], "edges": [], "more": None}
-    return out | select(found, f, now=_now(project.factory)) | {"outcome": "answered", "causes": []}
+    found, held = graph_hide.apply(found, set(hidden), f.focus)
+    return out | select(found, f, now=_now(project.factory)) | {"outcome": "answered", "causes": [], "hidden": held}
 
 
-def factory_view(factory: Any, f: Filters, *, visible: Callable[[str], bool] | None = None) -> dict[str, Any]:
+def shown_projects(factory: Any, f: Filters, visible: Callable[[str], bool] | None = None) -> list[Any]:
+    """The projects the page across projects shows: those ``f`` names (or all) that ``visible`` lets the person see."""
+    both = [p for p in factory.projects() if (not f.projects or p.pid in f.projects)
+            and (visible is None or visible(p.pid))]
+    return both[:MAX_PROJECTS]
+
+
+def factory_view(factory: Any, f: Filters, *, visible: Callable[[str], bool] | None = None,
+                 hidden: Collection[str] = ()) -> dict[str, Any]:
     """Every project's knowledge graph in one view (ids are <pid>/<id>), only the projects ``visible`` lets the
     person see (access enforced: those they hold a persona on), and only ``f.projects`` when it names some."""
     merged: dict[str, Any] = {"nodes": {}, "edges": [], "aliases": {}}
@@ -303,9 +321,10 @@ def factory_view(factory: Any, f: Filters, *, visible: Callable[[str], bool] | N
         merged["nodes"].update(found["nodes"])
         merged["edges"] += found["edges"]
         merged["aliases"].update(found["aliases"])
+    merged, held = graph_hide.apply(merged, set(hidden), f.focus)
     body = select(merged, f, now=_now(factory))
     return _shell("factory", f) | body | {"outcome": "answered", "causes": [], "projects": projects[:MAX_PROJECTS],
-                                          "unmeasured": unmeasured}
+                                          "unmeasured": unmeasured, "hidden": held}
 
 
 def with_focus(f: Filters, node: str, hops: int = 1) -> Filters:

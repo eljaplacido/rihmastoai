@@ -122,6 +122,13 @@ a concept on the delivery square; [change anything](guides/change-anything.md) t
   enforce per environment (development, testing, production) and check family, for all projects in Settings and
   per project in its Enforcement view, the project's own GitHub pipeline read beside them, a preview before a
   change, and the same by chat ([D-0026](../decisions/D-0026-enforcement-levels.md)).
+- [Machines, asks between agents, and Test connection](guides/machines-and-asks.md): the computers your agents and
+  working copies are on, a question put to the agent on another machine and its answer back in the agent channel
+  (over MCP, a one-use reply link, or copy and paste), and why something is not reachable with the fix for its system.
+- [Teams, Rihmasto's words and what applies where](guides/teams-and-words.md): a project in one team (a team of one
+  made for a person working alone), the words a team or a project gives Rihmasto's own terms, read at read time and
+  never rewriting a record, each change previewed, signed and undone, and every setting's scope and value source
+  ([D-0027](../decisions/D-0027-teams-and-semantics.md)).
 - [People in the loop, and reviewers outside the system](guides/people-in-the-loop.md): questions, decisions and
   feedback put to a persona or a named person, each check family advised or required before delivery, a one-use
   link for a reviewer outside Rihmasto, sending by Teams, Slack, email or WhatsApp, and nudges that escalate.
@@ -175,6 +182,8 @@ a concept on the delivery square; [change anything](guides/change-anything.md) t
 - [Agent observability](guides/agent-observability.md): an opt-in module and a per-project Agent
   sessions view for developers and IT: what the IDE agents (Claude Code, Cursor, OpenCode) did in the
   repository, read from your own agent observability hub; metadata only.
+- [Gnomon posture](guides/gnomon-posture.md): how well Gnomon governs each project and what to tighten first,
+  computed from its own Gnomon files; its suggestions become change cards you decide, never changes.
 - [Agent operations](guides/agent-operations.md): the AI architect's view across projects and per
   project: what each agent role costs, how fast it answers and what it is given, the Optimise audit, and agent
   skills platform-wide and per project.

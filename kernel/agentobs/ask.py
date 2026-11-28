@@ -25,7 +25,7 @@ from kernel.agentobs.view import build
 
 PHRASES = ("agent session", "ide agent", "coding agent", "agent observability", "agentobs", "rework hotspot",
            "agent failure", "unrecovered agent", "contract read before edit", "claude code session",
-           "cursor session", "opencode session", "observability hub", "agent trajector", "ai architect cockpit",
+           "cursor session", "opencode session", "observability hub", "agent trajector",
            "agenttien istun")
 _WORD = re.compile(r"\s+")
 

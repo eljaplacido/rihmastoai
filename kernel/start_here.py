@@ -1,13 +1,14 @@
 """Start here (FR-LND1): what Rihmasto understood a project to be, the one to three things to do there now, and what
 Rihmasto does on its own meanwhile, by rule from the project's records.
 
-The owner (2026-11-26), after adopting a project of their own: "when I jump into the game project its not clear what
+The owner (2026-11-26), after adopting a project of their own: "when I jump into [an adopted project] its not clear what
 should I do". Every project's first view opens on this panel. It says, in one line, what Rihmasto took the project to
 be and where that came from (with Correct it), then at most three steps read from the real state, each with the place
 that does it (``route``) and the control of the cockpit's map that does it there (``control``):
 
 - an adopted or attached project: confirm its kind of work when Rihmasto only guessed it; review an upstream change
-  that waits for a decision; read its repository with Alignment when nothing of it was aligned yet, saying what
+  that waits for a decision; commit work in progress left large or old in its working copy (FR-WIP1,
+  kernel/wip.py); read its repository with Alignment when nothing of it was aligned yet, saying what
   Alignment reads and what it cannot (kernel/source_reach.py), or review what that left open and name the sources
   it left unread (FR-LND2); look at the top findings of
   its latest assessment (or assess it); connect a coding agent when none has worked on it yet;
@@ -267,6 +268,13 @@ def _agent_step(project: Any) -> dict[str, Any] | None:
                  "and Rihma's tools, so what it does comes back here", _route(project.pid, "overview"), "handoff")
 
 
+def _wip_step(project: Any) -> dict[str, Any] | None:
+    """Work in progress left uncommitted, large or old: a nudge to commit it so Rihmasto reads it (FR-WIP1)."""
+    from kernel import wip
+
+    return wip.step(project)
+
+
 def _route_of(project: Any, a: dict[str, Any]) -> str:
     pid = project.pid
     if a.get("card"):
@@ -296,8 +304,8 @@ def _waits(project: Any) -> tuple[list[dict[str, Any]], str | None]:
 def steps(project: Any) -> tuple[list[dict[str, Any]], str | None]:
     """At most three things to do now, the most pressing first, and what the project waits for."""
     canon = _canon(project)
-    own = [s for s in (_kind_step(project, canon), _upstream_step(project, canon), _sources_step(project),
-                       _findings_step(project), _agent_step(project)) if s is not None]
+    own = [s for s in (_kind_step(project, canon), _upstream_step(project, canon), _wip_step(project),
+                       _sources_step(project), _findings_step(project), _agent_step(project)) if s is not None]
     waits, waits_for = _waits(project)
     adopted = project.meta.get("source_kind") in ("adopted", "attached")
     picked: list[dict[str, Any]] = []

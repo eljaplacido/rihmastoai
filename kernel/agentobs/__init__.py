@@ -3,7 +3,7 @@
 The owner (2026-11-24): "this should be a per-project view for the developer and maybe the IT persona; maybe not
 on by default but a module to plug in, but still something embedded inside the platform."
 
-The hub is an agent observability stack the team runs itself (the "AI Architect Cockpit"): its hooks in
+The hub is an agent observability stack the team runs itself: its hooks in
 Claude Code, Cursor and OpenCode record the metadata of each coding-agent session (what ran, where, how long, what
 failed and what it touched; never a prompt, a response or a line of source) in a hash-chained ledger, and its
 HTTP API answers read questions about it. Rihmasto reads that API and shows it inside the platform, per project:

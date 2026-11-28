@@ -1,0 +1,24 @@
+/* Teams, the words a team or a project gives Rihmasto's terms, and what applies where (teams.js, vocab.js, applieswhere.js;
+   FR-TM1, FR-TM2, FR-TM3). Colours come from tokens.css, so dark and light both follow the theme. */
+
+.tm-holder, .vc-holder, .sc-box, .sc-holder, .vc-view { min-width: 0; overflow-wrap: anywhere; }
+.tm-team { padding: var(--s2) 0; border-top: 1px solid var(--border); min-width: 0; }
+.tm-team:first-of-type { border-top: 0; }
+.tm-team h4 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 var(--s1); }
+.tm-members { display: inline-flex; flex-wrap: wrap; gap: 4px; vertical-align: middle; }
+.tm-projects, .vc-rows, .sc-rows, .tm-lines { list-style: none; margin: 0; padding: 0; min-width: 0; }
+.tm-proj, .vc-row, .sc-row { padding: var(--s2) 0; border-top: 1px solid var(--border); min-width: 0; }
+.vc-row.changed { border-left: 3px solid var(--accent); padding-left: var(--s2); }
+.tm-lines li { margin: 2px 0; }
+.tm-out { min-width: 0; }
+.tm-field select, .tm-edit select, .vc-edit input, .tm-edit input, .tm-make input { max-width: 100%; min-width: 0; }
+.vc-edit input:not([type="checkbox"]), .tm-edit input, .tm-make input, .vc-custom input { flex: 1 1 200px; width: auto; }
+.tm-edit .btn, .tm-make .btn, .vc-edit .btn, .tm-field .btn { flex: 0 0 auto; }
+.vc-edit { padding: var(--s2) 0 0; }
+.vc-part > summary, .sc-part > summary { cursor: pointer; font-weight: 600; padding: var(--s1) 0; }
+.vc-lists { margin: var(--s2) 0; }
+.sc-row .btn { text-decoration: none; }
+@media (max-width: 640px) {
+  .tm-field select, .tm-edit select, .tm-proj select { flex: 1 1 100%; }
+  .vc-edit label.vh { display: none; }
+}

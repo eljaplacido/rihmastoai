@@ -20,6 +20,7 @@ in the background. ``test_token`` shows what a token from the provider would sig
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
@@ -41,7 +42,7 @@ IDP_KEYS = ("preset", "issuer", "origin", "audience", "token_header", "algorithm
 _JWKS_URL = re.compile(r"(?:https://[^\s#]{1,400}|http://(?:127\.0\.0\.1|localhost):\d{1,5}/[^\s#]{0,400})\Z")
 MAX_KEYS_BYTES = 256 * 1024
 FETCH_TIMEOUT = 10
-_BUILT: dict[tuple[str, tuple[str, ...]], Access] = {}
+_BUILT: dict[tuple[str, str, tuple[str, ...]], Access] = {}
 
 
 # -- the team file as access rules ---------------------------------------------------------------------------
@@ -108,7 +109,12 @@ def access_of(factory: Factory) -> Access | None:
     sha = hashlib.sha256(raw).hexdigest()
     if doc["mode"] != team.TEAM:
         return Access(SINGLE, sha256=sha, source="team")
-    key = (sha, tuple(sorted(p.name for p in factory.projects_dir.iterdir())) if factory.projects_dir.exists() else ())
+    keys_sha = ""
+    if keys_path(factory).is_file():
+        with contextlib.suppress(OSError):
+            keys_sha = hashlib.sha256(keys_path(factory).read_bytes()).hexdigest()
+    key = (sha, keys_sha,
+           tuple(sorted(p.name for p in factory.projects_dir.iterdir())) if factory.projects_dir.exists() else ())
     if key not in _BUILT:
         try:
             built = build(factory, doc)
@@ -160,15 +166,22 @@ def put_keys(factory: Factory, raw: bytes, *, person: str, persona: str, source:
 Opener = Callable[..., Any]
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args: Any, **kwargs: Any) -> Any:
+        return None  # JWKS fetch never follows redirects to another host or scheme
+
+
 def fetch_keys(factory: Factory, *, person: str, persona: str, opener: Opener | None = None) -> dict:
     """Fetch the provider's JWKS once, from the address the provider settings name, on a person's word."""
+    team._admin(factory, person, persona)
     idp = team.read(factory).get("idp") or {}
     url = idp.get("jwks_url")
     if not url:
         raise ValueError("the provider settings name no JWKS address: name it, or paste the keys")
     req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "rihmasto"})
+    open_fn = opener or urllib.request.build_opener(_NoRedirect()).open
     try:
-        with (opener or urllib.request.urlopen)(req, timeout=FETCH_TIMEOUT) as res:
+        with open_fn(req, timeout=FETCH_TIMEOUT) as res:
             raw = res.read(MAX_KEYS_BYTES + 1)
     except OSError as exc:
         raise ValueError(f"the JWKS address did not answer ({type(exc).__name__})") from None

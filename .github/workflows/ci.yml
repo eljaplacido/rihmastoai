@@ -48,10 +48,13 @@ jobs:
 
       - name: Test suite (parallel processes)
         if: runner.os == 'Windows'
-        run: python tools/ci_run.py --shards 2
+        run: python tools/ci_run.py --shards 3
 
       - name: Contract check
         run: python tools/contract_check.py contract/contract.json
 
       - name: Contract trace
         run: python tools/contract_trace.py contract/contract.json
+
+      - name: Quality gate
+        run: python tools/quality.py --gate

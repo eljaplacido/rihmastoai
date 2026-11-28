@@ -231,7 +231,7 @@ class PackagesTest(unittest.TestCase):
     def test_FR_REL1_AC_5_the_distribution_lists_every_package_directory(self):
         listed = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["setuptools"]["packages"]
         found = sorted(".".join(init.parent.relative_to(REPO).parts)
-                       for top in ("kernel", "adapters", "cockpit", "embed", "mcp")
+                       for top in ("kernel", "adapters", "cockpit", "embed", "gateway", "mcp")
                        for init in (REPO / top).rglob("__init__.py") if "__pycache__" not in init.parts)
         self.assertEqual(sorted(listed), found)
         for name in ("kernel.checks", "kernel.redteam", "kernel.insights", "kernel.runners"):

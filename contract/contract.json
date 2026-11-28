@@ -1450,6 +1450,13 @@
             "kind": "test"
           },
           "then": "a person drives the cockpit over a demo home in headless Chrome: signs in, switches the lens, validates a concept on the square as a business owner, decides a card in a project, resizes a widget in Customize and saves it, asks the assistant a where-is question and is taken there, and opens Settings, with no console error, failed request or CSP violation at any step; skipped when Chrome is not installed"
+        },
+        {
+          "id": "FR-T1-AC-18",
+          "check": {
+            "kind": "test"
+          },
+          "then": "when the page's code cannot load (a module refused or dropped on a busy machine), the cockpit never sits on a blank page: it reloads once by itself, then says it didn't finish loading with a Reload button; once the server answers again, Reload signs in with the same unused one-use link; the server queues enough connections for the page's modules"
         }
       ]
     },
@@ -7917,7 +7924,7 @@
       "decided_by": "owner",
       "decided_on": "2026-11-24",
       "statement": "Agent observability is an opt-in module, off by default and in no preset, that a person turns on for a project or the factory; on a project where it is on, developers and IT see an Agent sessions view read from the team's own agent observability hub over its read-only HTTP API: sessions by harness over time, rework hotspots, failures and whether they were recovered, sessions that read the contract before editing, session trajectories and the hub's hash-chain verdict with what it attests, each linked into the hub and each not measured, with why and how, when the hub has nothing. IT sets the hub's address (a hosted one only with explicit consent, a token only by name); a developer or IT maps the project to the hub's project, recorded; adopting or attaching notes the hub's hooks by file name; a snapshot records counts and ids; Insights, Review, the agent channel, the copilot's catalogue, the checks and the automations read it through hooks; Ask Rihma explains, opens and proposes. Rihmasto installs nothing and writes nothing into the repository.",
-      "notes": "The owner (2026-11-24): \"this should be a per-project view for the developer and maybe the IT persona; maybe not on by default but a module to plug in, but still something embedded inside the platform.\" The hub is the owner's own agent observability stack (the AI Architect Cockpit): its `/v1` read routes (`/health`, `/v1/projects`, `/v1/projects/{id}`, `/sessions`, `/metrics`, `/intelligence`, `/insight`, `/chain`) are the contract; no code of it is copied. Rihmasto is the system of record for decisions and evidence, not telemetry (D-0017, D-0023): it reads when asked and keeps nothing unless a person or an automation records a snapshot. Kernel: kernel/agentobs/ (settings, client, mapping, derive, view, snapshot, feeds, automation_hook, ask, cli), kernel/modules.py (optin), kernel/assistant.py, kernel/assistant_rules.py, kernel/automations_text.py, kernel/automations_actions.py, kernel/ide.py, kernel/cli.py; cockpit/agentobs_routes.py, cockpit/agent_routes.py, cockpit/static/agentobs.js, cockpit/static/agentobs.css. Docs: docs/guides/agent-observability.md. Not built: the Insights, Review, agent channel, copilot and checks wiring calls the hooks in kernel/agentobs/feeds.py once those streams are merged; until then their tests check the hooks' shapes.",
+      "notes": "The owner (2026-11-24): \"this should be a per-project view for the developer and maybe the IT persona; maybe not on by default but a module to plug in, but still something embedded inside the platform.\" The hub is an agent observability stack the team runs itself: its `/v1` read routes (`/health`, `/v1/projects`, `/v1/projects/{id}`, `/sessions`, `/metrics`, `/intelligence`, `/insight`, `/chain`) are the contract; no code of it is copied. Rihmasto is the system of record for decisions and evidence, not telemetry (D-0017, D-0023): it reads when asked and keeps nothing unless a person or an automation records a snapshot. Kernel: kernel/agentobs/ (settings, client, mapping, derive, view, snapshot, feeds, automation_hook, ask, cli), kernel/modules.py (optin), kernel/assistant.py, kernel/assistant_rules.py, kernel/automations_text.py, kernel/automations_actions.py, kernel/ide.py, kernel/cli.py; cockpit/agentobs_routes.py, cockpit/agent_routes.py, cockpit/static/agentobs.js, cockpit/static/agentobs.css. Docs: docs/guides/agent-observability.md. Not built: the Insights, Review, agent channel, copilot and checks wiring calls the hooks in kernel/agentobs/feeds.py once those streams are merged; until then their tests check the hooks' shapes.",
       "acceptance": [
         {
           "id": "FR-OBS1-AC-1",
@@ -8012,13 +8019,73 @@
       ]
     },
     {
+      "id": "FR-GNP1",
+      "group": "M. Cockpit and observation",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-27",
+      "statement": "Each project shows its Gnomon governance posture, computed by Rihmasto itself from the project's own Gnomon files in its local working copy: six dimensions scored from Gnomon's documented settings with the weakest first, where it read, and for each setting that does not hold the exact change in the project's own file, which a developer or IT may file as a change card that a person decides. Ask Rihma and `rihmasto gnomon-posture` answer the same. Rihmasto reads only those files, depends on no outside service, applies nothing and grants Gnomon no trust.",
+      "notes": "The owner (2026-11-27): \"are you able to hook into ... gnomon insights per project and its suggestions?\", then \"parallel\", then: \"we don't want dependencies from these projects to this ... I am giving this as an inspiration for Rihmasto's capabilities\". So the posture is Rihmasto's own, from the project's own files and Gnomon's documented settings (verify, sandbox, governance, approval, audit, defaults, context, resilience); no outside tool is read. Trusting or approving Gnomon stays the owner's act: a suggestion becomes a change card at most.",
+      "acceptance": [
+        {
+          "id": "FR-GNP1-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "Rihmasto computes each project's Gnomon posture itself, read-only, from nothing but the project's own .gnomon/config.toml and .gnomon/policy.toml (and the names of the folders beside them) in its local working copy, else on the main branch of Rihmasto's copy of its repository; no other file is opened, nothing is run in the repository and nothing is written"
+        },
+        {
+          "id": "FR-GNP1-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the posture scores six dimensions out of 100 from Gnomon's documented settings (verification and change, containment and sandbox, governance and guards, audit and provenance, loop/edit/context, freshness), each with the checks behind it, the weakest first, and says where it read and which files it could not read as TOML"
+        },
+        {
+          "id": "FR-GNP1-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a project without a working copy or repository says not measured with why; one without a .gnomon folder says Gnomon is not set up yet, with gnomon init as the first step; never a score of zero for what was not read"
+        },
+        {
+          "id": "FR-GNP1-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "for each check that does not hold the posture suggests the exact setting in the project's own file (its full path in the working copy), with a severity and why, high first, with a stable id; a setting that holds in part (governance at observe or advise) is said as such"
+        },
+        {
+          "id": "FR-GNP1-AC-5",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a developer or IT files one suggestion as a change card in the project's Inbox, signed, once per suggestion; nothing is applied, no .gnomon file is written and Gnomon is granted no trust or approval; any other persona or a non-person is refused"
+        },
+        {
+          "id": "FR-GNP1-AC-6",
+          "check": {
+            "kind": "test"
+          },
+          "then": "Ask Rihma answers by rule how well Gnomon governs the project and what to tighten first, from its own Gnomon files read now, with Take me there to the Gnomon posture view; `rihmasto gnomon-posture show|propose` does the same on the command line"
+        },
+        {
+          "id": "FR-GNP1-AC-7",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a person drives the Gnomon posture view in Chrome, dark at 1440 px and light at 390 px: the score, the weakest dimensions and the suggestions with their settings, one filed as a change card, with no console error, failed request or CSP violation; skipped when Chrome is not installed"
+        }
+      ]
+    },
+    {
       "id": "FR-RPJ1",
       "group": "B. Brownfield adoption",
       "provenance": "customer-confirmed",
       "decided_by": "owner",
       "decided_on": "2026-11-24",
       "statement": "Real projects of every shape feed in as a person would feed them through New project: housekeeping and archives are read by rule, uncommitted work, workspaces, copies and projects adopted already are said with their choices, long scans show progress and refusals what to do, a confidential adoption is said plainly with a one-click fix, and an adopted project is held as what it is: its kind of work, its real state, its health, its areas and its watch.",
-      "notes": "The owner (2026-11-24): \"I will give you examples to scan and hook into Rihmasto (do it like you would in the UI to understand how feeding in projects works). Here are very different ones: a machine learning / fine-tuning experiment, a transcript agent to be productionised, another software factory product for a customer to monitor, govern and develop further, my local devbrain project as a second brain of my dev and agentic work, and my massive game dev project, to monitor further development, get ideas to optimise or improve it, and monitor how developing assets, the game world, lore etc. goes.\" Kernel: kernel/material.py, kernel/material_kinds.py, kernel/material_zip.py, kernel/material_git.py, kernel/source_guard.py, kernel/profiles_shapes.py, kernel/adopt.py, kernel/adopt_seen.py, kernel/adopt_stated.py, kernel/adopt_watch.py, kernel/adopted_state.py, kernel/areas.py, kernel/confidential_local.py, kernel/status.py, kernel/track.py, kernel/assistant_status.py; cockpit/source_routes.py, cockpit/adopted_routes.py, cockpit/static/scan.js, cockpit/static/feedin.js, cockpit/static/adopted.js, cockpit/static/folders.js. Docs: docs/guides/inputs.md, docs/brownfield.md, docs/guides/profiles.md.",
+      "notes": "The owner (2026-11-24): \"I will give you examples to scan and hook into Rihmasto (do it like you would in the UI to understand how feeding in projects works). Here are very different ones: [an ML experiment, an agent to be productionised, a product to monitor and develop further, a personal knowledge project, and a large game project], to monitor further development, get ideas to optimise or improve it, and monitor how developing assets, the game world, lore etc. goes.\" Kernel: kernel/material.py, kernel/material_kinds.py, kernel/material_zip.py, kernel/material_git.py, kernel/source_guard.py, kernel/profiles_shapes.py, kernel/adopt.py, kernel/adopt_seen.py, kernel/adopt_stated.py, kernel/adopt_watch.py, kernel/adopted_state.py, kernel/areas.py, kernel/confidential_local.py, kernel/status.py, kernel/track.py, kernel/assistant_status.py; cockpit/source_routes.py, cockpit/adopted_routes.py, cockpit/static/scan.js, cockpit/static/feedin.js, cockpit/static/adopted.js, cockpit/static/folders.js. Docs: docs/guides/inputs.md, docs/brownfield.md, docs/guides/profiles.md.",
       "acceptance": [
         {
           "id": "FR-RPJ1-AC-1",
@@ -10758,7 +10825,7 @@
       "decided_by": "owner",
       "decided_on": "2026-11-26",
       "statement": "Entering any project shows what to do there: a Start here panel at the top of its first view says in one line what Rihmasto understood the project to be (with Correct it), the one to three things to do now from its real state, each a button that opens the place (for an adopted project: confirm its kind of work, review a waiting upstream change, map its own sources, look at the top findings, connect a coding agent), and what Rihmasto does on its own meanwhile; a person may hide it, and it comes back when a new step appears; Ask Rihma's \"what should I do here?\" answers the same by rule. Every task opens a panel (#/p/<pid>/tasks/<id>) with its criteria, the tests that check it and their last results, the commits and agent sessions that touched it, its status history and Hand it to a coding agent, Start it, Mark it done with evidence and Ask Rihma; the list filters by status and source and updates while work runs. The small last-action and job boxes open the whole log (#/jobs/<id>, #/jobs/cell:<pid>), followed live, copied, opened from Agent activity, and a finished job lists what it changed. The same from the command line and Ask Rihma.",
-      "notes": "The owner (2026-11-26), after adopting a project of their own: \"Im still not happy with clarity, when I jump into the game project its not clear what should I do and claude code in IDE didnt find most of insights relevant\"; on the agent channel: \"not sure yet what should I expect from this chat. Tasks view is maybe too static? Last action is also small terminal view, shouldnt I be able to open the tasks somehow\". Built for any adopted or built project, never for one: the steps come from the project's records by rule (kernel/start_here.py over kernel/next_step.py, kernel/understanding.py, the alignment scan, the latest assessment, the agent channel and coding-agent sessions). A person's done never claims the gate's merge. kernel/start_here.py, kernel/start_here_chat.py, kernel/task_detail.py, kernel/run_log.py, kernel/task_cli.py, cockpit/landing_routes.py, cockpit/static/starthere.js, cockpit/static/tasklive.js, cockpit/static/runlog.js, cockpit/static/landing.css.",
+      "notes": "The owner (2026-11-26), after adopting a project of their own: \"Im still not happy with clarity, when I jump into [an adopted project] its not clear what should I do and claude code in IDE didnt find most of insights relevant\"; on the agent channel: \"not sure yet what should I expect from this chat. Tasks view is maybe too static? Last action is also small terminal view, shouldnt I be able to open the tasks somehow\". Built for any adopted or built project, never for one: the steps come from the project's records by rule (kernel/start_here.py over kernel/next_step.py, kernel/understanding.py, the alignment scan, the latest assessment, the agent channel and coding-agent sessions). A person's done never claims the gate's merge. kernel/start_here.py, kernel/start_here_chat.py, kernel/task_detail.py, kernel/run_log.py, kernel/task_cli.py, cockpit/landing_routes.py, cockpit/static/starthere.js, cockpit/static/tasklive.js, cockpit/static/runlog.js, cockpit/static/landing.css.",
       "acceptance": [
         {
           "id": "FR-LND1-AC-1",
@@ -10850,7 +10917,7 @@
       "decided_by": "owner",
       "decided_on": "2026-11-26",
       "statement": "The clear landing tells the truth and gives one next step: Start here's step to read an adopted project's repository says what Alignment reads and what it cannot read, and after a scan names the sources it left unread (rule and data files, issue logs, task rows in a README) so an old document is not taken for the current plan; Correct it and every step that points at an Overview control take the person to Overview from whichever view the project opened on; the Board's next development step and Ask Rihma's \"where do I start?\" and \"what now?\" agree with Start here, and a question about syncing a coding agent gets a sync plan; the task filters are kept per project and never hide tasks silently; a task waits for the tasks it depends on and for the decision it is escalated to, and a person's done has its own lane and moves the board; the cell's whole log stays once it stops, with what its round changed; a job's changes end when it ended and an adoption's are those of the project it made; at 390 px Start here's first step is on the first screen and nothing breaks out of its lane or into narrow columns.",
-      "notes": "The owner (2026-11-26), after adopting a project of their own: \"Im still not happy with clarity, when I jump into the game project its not clear what should I do and claude code in IDE didnt find most of insights relevant\"; on the agent channel: \"not sure yet what should I expect from this chat. Tasks view is maybe too static? Last action is also small terminal view, shouldnt I be able to open the tasks somehow\"; and asked to \"consult Claude Code on how to sync with Rihmasto and what to monitor\". An independent check of FR-LND1 on an invented repository found the first step promised more than Alignment reads, Correct it did nothing on the Board, one filter hid another project's tasks, the Board and Ask Rihma gave other next steps, a finished cell's log was gone, a job's changes had no end, a task could start before what it waits for, and the phone layout hid the first step. kernel/source_reach.py, kernel/start_here_lead.py, kernel/agent_sync_chat.py, kernel/task_rules.py, kernel/run_log.py, kernel/start_here.py, kernel/start_here_chat.py, kernel/task_detail.py, kernel/devbrief.py, kernel/repo_structure.py, cockpit/server.py, cockpit/landing_routes.py, cockpit/static/assistant.js, starthere.js, tasklive.js, project.js, runlog.js, devboard.js, words.js, landing.css.",
+      "notes": "The owner (2026-11-26), after adopting a project of their own: \"Im still not happy with clarity, when I jump into [an adopted project] its not clear what should I do and claude code in IDE didnt find most of insights relevant\"; on the agent channel: \"not sure yet what should I expect from this chat. Tasks view is maybe too static? Last action is also small terminal view, shouldnt I be able to open the tasks somehow\"; and asked to \"consult Claude Code on how to sync with Rihmasto and what to monitor\". An independent check of FR-LND1 on an invented repository found the first step promised more than Alignment reads, Correct it did nothing on the Board, one filter hid another project's tasks, the Board and Ask Rihma gave other next steps, a finished cell's log was gone, a job's changes had no end, a task could start before what it waits for, and the phone layout hid the first step. kernel/source_reach.py, kernel/start_here_lead.py, kernel/agent_sync_chat.py, kernel/task_rules.py, kernel/run_log.py, kernel/start_here.py, kernel/start_here_chat.py, kernel/task_detail.py, kernel/devbrief.py, kernel/repo_structure.py, cockpit/server.py, cockpit/landing_routes.py, cockpit/static/assistant.js, starthere.js, tasklive.js, project.js, runlog.js, devboard.js, words.js, landing.css.",
       "acceptance": [
         {
           "id": "FR-LND2-AC-1",
@@ -11126,7 +11193,7 @@
       "decided_by": "owner",
       "decided_on": "2026-11-26",
       "statement": "An adopted project's assessment says precisely what is worth acting on and what is probably noise, for any adopted project: a secret in a test fixture with an obviously fake value or in a long URL path is likely not a secret, with the reason, and a person confirms it real or marks it a fixture for its file; tests are run per test root and a project whose tests another tool runs reads 'not measured by Rihmasto yet: map its runner', never 0 % or could not run, until its runner and results file are mapped; any finding can be marked not relevant with a reason, remembered, out of the priorities, with findings like it proposed for the same; requirements and tasks imported from documents carry the document's path and last commit date and an old one is flagged before acceptance; and the Assessment view opens on two lines, what to act on now and what is probably noise, with why and next steps, in the cockpit and in Ask Rihma alike.",
-      "notes": "The owner (2026-11-26), after adopting their own project: \"Im still not happy with clarity, when I jump into the game project its not clear what should I do and claude code in IDE didnt find most of insights relevant\", and \"not sure yet what should I expect from this chat. Tasks view is maybe too static? Last action is also small terminal view, shouldnt I be able to open the tasks somehow\". Their coding agent's review: findings from old planning documents, a test suite run from the wrong root, test fixtures and URL paths reported as critical secrets, and \"What would make it a realistic picture: feeding Rihmasto from this project's own sources\". Built as the general capability for any adopted project. kernel/assess_precise.py, kernel/assess_measure.py, kernel/assess_headline.py, cockpit/assess_precise_routes.py, cockpit/static/assessment_precise.js.",
+      "notes": "The owner (2026-11-26), after adopting their own project: \"Im still not happy with clarity, when I jump into [an adopted project] its not clear what should I do and claude code in IDE didnt find most of insights relevant\", and \"not sure yet what should I expect from this chat. Tasks view is maybe too static? Last action is also small terminal view, shouldnt I be able to open the tasks somehow\". Their coding agent's review: findings from old planning documents, a test suite run from the wrong root, test fixtures and URL paths reported as critical secrets, and \"What would make it a realistic picture: feeding Rihmasto from this project's own sources\". Built as the general capability for any adopted project. kernel/assess_precise.py, kernel/assess_measure.py, kernel/assess_headline.py, cockpit/assess_precise_routes.py, cockpit/static/assessment_precise.js.",
       "acceptance": [
         {
           "id": "FR-ASP1-AC-1",
@@ -11200,7 +11267,7 @@
       "decided_by": "owner",
       "decided_on": "2026-11-26",
       "statement": "An adopted project's assessment stays precise when checked again: a real credential is never hidden as a URL path or by a word in its value, a secret is judged only by those who judge secrets however it is marked, a mapped runner's results are read where the team keeps them and the headline follows what the person did, only test roots that ran are said to run, a local project's deploy and publish findings wait for later out of 'worth acting on now', findings of the same kind are proposed together for every rule, gaps to close are told apart from noise, every next step is a button in the view and in Ask Rihma alike, the landing leads to the assessment, and requirements, tasks and issues the team keeps in tables, JSON rule files and an issue log are read.",
-      "notes": "The owner (2026-11-26): \"when I jump into the game project its not clear what should I do and claude code in IDE didnt find most of insights relevant\". An independent check of FR-ASP1 found a Slack webhook, a GitHub token or a value beside a link called likely not a secret, an end user marking a high secret not relevant, a mapped runner never measured since main is never moved by a sync, the headline still saying the runner was not mapped, roots said to run that did not, generic findings for a local project, no finding ever proposed as similar but secrets, a gates command not seen as the tests, fake words outside test files, a fixture mark covering later values, gaps listed as noise, next steps as text in Ask Rihma, and the team's own tables, rule files and issue log unread. kernel/assess_secret_context.py, kernel/assess_context.py, kernel/assess_sources.py, kernel/repo_tables.py.",
+      "notes": "The owner (2026-11-26): \"when I jump into [an adopted project] its not clear what should I do and claude code in IDE didnt find most of insights relevant\". An independent check of FR-ASP1 found a Slack webhook, a GitHub token or a value beside a link called likely not a secret, an end user marking a high secret not relevant, a mapped runner never measured since main is never moved by a sync, the headline still saying the runner was not mapped, roots said to run that did not, generic findings for a local project, no finding ever proposed as similar but secrets, a gates command not seen as the tests, fake words outside test files, a fixture mark covering later values, gaps listed as noise, next steps as text in Ask Rihma, and the team's own tables, rule files and issue log unread. kernel/assess_secret_context.py, kernel/assess_context.py, kernel/assess_sources.py, kernel/repo_tables.py.",
       "acceptance": [
         {
           "id": "FR-ASP2-AC-1",
@@ -11283,7 +11350,7 @@
       "decided_by": "owner",
       "decided_on": "2026-11-26",
       "statement": "An adopted or attached project says where it keeps its own requirements, acceptance criteria, tests, test results, findings and tasks, and Rihmasto detects and proposes them by rule and then reads them as the truth instead of guessing from documents: a glob of JSON or YAML records through a field mapping (id, title, statement, criteria, the test that checks it), JSONL findings, markdown tables and checklists as tasks with their status, and test results as JUnit XML, TAP or JSON; each package's own test root found and any mapped command run there after a person's yes, and results produced on another machine imported with their time; a planning document much older than the code's recent activity marked as possibly an old plan and left out unless a person says to use it; a Project's own sources panel in Project settings and in What Rihmasto understood shows what was detected, what is mapped, when it was last read, the next steps as buttons and the trace, with Map, Change, Stop, Read again, Use it anyway, Import results and Run its tests, each signed; the contract, tasks, findings and traceability then come from the mapped sources, marked with path and line, read again on a schedule or a new commit; Ask Rihma answers where the project keeps them and maps one from the words by rule, with a proposal to confirm.",
-      "notes": "The owner (2026-11-26): \"Im still not happy with clarity, when I jump into the game project its not clear what should I do and claude code in IDE didnt find most of insights relevant\". A coding agent's review of what Rihmasto showed for an adopted repository, generalised: requirements and tasks came from planning documents untouched for weeks while the real plan lived elsewhere; the real requirements were rule files each with a mutant test, the real tests hundreds of gates run by the project's own command on another machine; pytest from the repository's root failed because each package has its own test root, so \"0 tests trace\", \"coverage 0 %\" and \"the suite could not run\" misled; its findings file was not read. Built for any adopted project, not one: detection by rule, no model; nothing is written to the repository; running the project's own code keeps adoption's rules (offline, a temporary checkout, a time limit, IT's isolation runner when access is enforced, a yes first, no shell syntax). The old-plan rule (14 days older than the code's newest commit, 8 commits since) and the adapters are the platform's; which files are a project's own sources is the project's. kernel/native_readers.py, kernel/native_detect.py, kernel/native_sources.py, kernel/native_tests.py, kernel/native_apply.py, kernel/native_chat.py, kernel/native_cli.py, cockpit/native_routes.py, cockpit/static/sources.js, docs/guides/own-sources.md.",
+      "notes": "The owner (2026-11-26): \"Im still not happy with clarity, when I jump into [an adopted project] its not clear what should I do and claude code in IDE didnt find most of insights relevant\". A coding agent's review of what Rihmasto showed for an adopted repository, generalised: requirements and tasks came from planning documents untouched for weeks while the real plan lived elsewhere; the real requirements were rule files each with a mutant test, the real tests hundreds of gates run by the project's own command on another machine; pytest from the repository's root failed because each package has its own test root, so \"0 tests trace\", \"coverage 0 %\" and \"the suite could not run\" misled; its findings file was not read. Built for any adopted project, not one: detection by rule, no model; nothing is written to the repository; running the project's own code keeps adoption's rules (offline, a temporary checkout, a time limit, IT's isolation runner when access is enforced, a yes first, no shell syntax). The old-plan rule (14 days older than the code's newest commit, 8 commits since) and the adapters are the platform's; which files are a project's own sources is the project's. kernel/native_readers.py, kernel/native_detect.py, kernel/native_sources.py, kernel/native_tests.py, kernel/native_apply.py, kernel/native_chat.py, kernel/native_cli.py, cockpit/native_routes.py, cockpit/static/sources.js, docs/guides/own-sources.md.",
       "acceptance": [
         {
           "id": "FR-SRC1-AC-1",
@@ -11366,7 +11433,7 @@
       "decided_by": "owner",
       "decided_on": "2026-11-26",
       "statement": "A project's own sources are said truly: an old plan is found by the real commits to the code since it changed, root-level handoff notes and gates' run reports are found; a requirement's test takes only its own verdict and every mapped root must pass before the root-level baseline stops counting; Read again fetches the latest revision first and a commit-read source says when it is not watched; mapped requirements and tasks lead to their review in Alignment and the project's own findings show in Health; the panel stays open while next steps remain; stopped sources are listed with Resume; its own tests replace the root's baseline wherever its state is said; and Ask Rihma reads results words, says what is mapped already, what is not an old plan, resumes a source and draws its answer line by line.",
-      "notes": "The owner (2026-11-26): \"Im still not happy with clarity, when I jump into the game project its not clear what should I do and claude code in IDE didnt find most of insights relevant\". An independent check of FR-SRC1 on an adopted project found where it still misled: an old task list offered first because the code changed in few files, a requirement taking a near-named test's verdict, a baseline cleared with a root never run, Read again reading a stale upstream under 'read again on every new commit', mapped sources never reaching the Board or Health, the fold closing after the first Map, 'test results' read as test roots, the root's 'not measured' baseline still in the header and the suggested automation, root-level handoff notes and gates/ reports not found, issue_id and sev not guessed, unreadable JSONL lines dropped silently, stopped sources gone with no Resume, a run-on chat answer, a relative home breaking runs and a trace off-screen on a phone. Built for any adopted or attached project. kernel/native_history.py, kernel/native_guide.py, and small edits to the FR-SRC1 modules, kernel/adopted_state.py, kernel/automation_suggest.py, kernel/automations_actions.py, cockpit/eval_routes.py, cockpit/static/sources.js, project.js, evals.js, adopted.js and assistant.js.",
+      "notes": "The owner (2026-11-26): \"Im still not happy with clarity, when I jump into [an adopted project] its not clear what should I do and claude code in IDE didnt find most of insights relevant\". An independent check of FR-SRC1 on an adopted project found where it still misled: an old task list offered first because the code changed in few files, a requirement taking a near-named test's verdict, a baseline cleared with a root never run, Read again reading a stale upstream under 'read again on every new commit', mapped sources never reaching the Board or Health, the fold closing after the first Map, 'test results' read as test roots, the root's 'not measured' baseline still in the header and the suggested automation, root-level handoff notes and gates/ reports not found, issue_id and sev not guessed, unreadable JSONL lines dropped silently, stopped sources gone with no Resume, a run-on chat answer, a relative home breaking runs and a trace off-screen on a phone. Built for any adopted or attached project. kernel/native_history.py, kernel/native_guide.py, and small edits to the FR-SRC1 modules, kernel/adopted_state.py, kernel/automation_suggest.py, kernel/automations_actions.py, cockpit/eval_routes.py, cockpit/static/sources.js, project.js, evals.js, adopted.js and assistant.js.",
       "acceptance": [
         {
           "id": "FR-SRC2-AC-1",
@@ -12212,6 +12279,831 @@
           "given": "the IT checks view in a browser",
           "when": "IT runs an assessment of a family, then one with no name, then one the kernel refuses; then switches to the business owner persona",
           "then": "each refusal replaces the last result instead of standing beside it; the business owner sees Turn on and Run the IT checks disabled with whose they are; at 1440 and 390 px, dark and light, with no console error and nothing scrolling sideways",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-WIP1",
+      "group": "B. Brownfield adoption",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-27",
+      "statement": "An adopted or attached project shows its work in progress: what its own working copy on this machine holds that is not committed yet, by area, with the oldest change and the branch against its remote, read as metadata only and never written; Rihmasto reads committed work only, so a large or old pile is a nudge in Start here to commit what is ready, an area of untracked files that looks generated is advice to add it to .gitignore, and the Overview card, the command line and Ask Rihma say the same.",
+      "notes": "The owner (2026-11-27), after seeing that a game project had 1,356 uncommitted files Rihmasto could not see: \"the fact that rihmasto cannot actually trace project beyond latest commit sounds not robust\". Agreed plan: wire the agent observability hub for agent sessions, and build this reading of uncommitted work, which neither tool did (\"Sounds good\").",
+      "acceptance": [
+        {
+          "id": "FR-WIP1-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "an adopted project whose upstream is a folder here, or an attached repository, has its work in progress read from that working copy with git and file times only: the branch, how far it is ahead of or behind its remote branch, when the last commit was made, the files modified, added, deleted, renamed, conflicted and untracked (what .gitignore hides left out) grouped by top-level area, and the oldest of those changes; no file's contents are read, git runs without optional locks, hooks or fsmonitor, and the repository and the project's ledger are byte for byte the same afterwards"
+        },
+        {
+          "id": "FR-WIP1-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a project adopted from a remote address, one whose folder is gone or is not a git working copy, and a project made here are \"not measured\" with why, never a zero; git that takes longer than its limit says so instead of hanging the page"
+        },
+        {
+          "id": "FR-WIP1-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "an area that is almost all untracked files (a pile, such as build output or generated assets) is said to look generated, with the advice to add it to .gitignore, and is not counted as work to commit"
+        },
+        {
+          "id": "FR-WIP1-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "Start here nudges, never blocks: when the work to commit is large (50 files or more) or its oldest change is older than two days, a step says how many files across which areas and from when, that Rihmasto reads committed work only, and opens the Overview's Work in progress card; small and recent work adds no step"
+        },
+        {
+          "id": "FR-WIP1-AC-5",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the Overview's Work in progress card, `rihmasto wip <pid>` and Ask Rihma's answer by rule to \"what am I in the middle of?\" or \"what's uncommitted?\" say the same, and Ask Rihma takes the person there"
+        },
+        {
+          "id": "FR-WIP1-AC-6",
+          "check": {
+            "kind": "test"
+          },
+          "then": "in Chrome, the Work in progress card on an adopted project's Overview shows the work by area, a generated pile and the nudge, and its Refresh reads the working copy again, dark at 1440 px and light at 390 px, with no console error, failed request or CSP violation and nothing wider than the screen"
+        }
+      ]
+    },
+    {
+      "id": "FR-XAG1",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-27",
+      "statement": "A person keeps a list of the machines their agents and working copies are on, and puts asks to a named agent on this or another machine about a project: each ask is a question in the project's agent channel with its state (waiting, delivered, answered, expired, withdrawn), reaching the agent over MCP on this machine, through a one-use reply link elsewhere, or by copy and paste, and its answer comes back into the same thread; Rihma drafts the ask when something it needs is on another machine, and the person confirms every one.",
+      "notes": "The owner (2026-11-27), after relaying setup steps, a public key, error output and answers between agents on two computers by copy and paste: \"this back and forth that I'm now doing and copy pasting from a place to another will be helped by Rihmasto\"; \"when these situations occur in the future, whether it's in terminal or chat or moving back and forth, this should happen in Rihmasto, not going elsewhere.\" Rihmasto is the glue between where development happens and where it runs; this carries the back-and-forth, with no dependency on any other tool.",
+      "acceptance": [
+        {
+          "id": "FR-XAG1-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a machine is added, changed and removed by a named person (the developer working alone, IT in a team), with its name, how it is reached (an ssh alias or user@host, an https address, or by hand), its system and its agents; the list is platform-wide, said with its scope, and each change is in Rihmasto's own ledger with the machine's name and what changed, never its address; anything malformed is refused with why"
+        },
+        {
+          "id": "FR-XAG1-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "an ask to a named agent (optionally on a named machine) about a project is posted in that project's agent channel addressed to the agent, signed, with its why and expected answer kept beside it; an agent on this machine sees it among the questions put to agents over MCP, its reply with reply_to answers it, and its state reads open, then answered, from the channel itself; the ledger records ids, whom and how, never the words"
+        },
+        {
+          "id": "FR-XAG1-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "copying an ask gives one self-contained message for an agent nothing connects to (what to do, why, the expected answer, how to answer, the ask's id) and counts it as delivered; pasting the answer back files it as that agent's reply in the channel, vouched for by the person; withdrawing closes it; an answered, expired or withdrawn ask takes nothing more"
+        },
+        {
+          "id": "FR-XAG1-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a reply link is shown once and kept only as its sha256, expires, and takes one answer: an agent posts JSON to /x/api/ask to read the ask (it counts as delivered) and to /x/api/answer to answer it into the channel; a wrong, used or expired token, a request without a JSON body or from another site's origin is refused, refused tries are slowed per address, and without the cockpit's trusted https front the link says it reaches this computer only"
+        },
+        {
+          "id": "FR-XAG1-AC-5",
+          "check": {
+            "kind": "test"
+          },
+          "then": "Ask Rihma answers by rule what waits on other agents, which machines there are, and proposes (never sends) an ask to the agent on a named machine, filing a pasted answer, withdrawing an ask, and adding or removing a machine; the person confirms each, signed; a plain request to consult a coding agent still goes to the channel's consult"
+        },
+        {
+          "id": "FR-XAG1-AC-6",
+          "check": {
+            "kind": "test"
+          },
+          "then": "in a real browser, dark wide and light narrow: Settings shows the machines with their scope, adding one and testing it; a project's agent channel shows its asks with their state, putting one, copying it and pasting the answer back; Home shows what waits on other agents; with no console error, failed request or CSP violation and nothing wider than the screen"
+        }
+      ]
+    },
+    {
+      "id": "FR-RCH1",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-27",
+      "statement": "Wherever something Rihmasto needs is not reachable (a machine, a project's working copy, an https address, GitHub), Test connection says why in plain words, gives the fix as steps for that system, and drafts the ask to the agent on that machine; a test only reads and records nothing.",
+      "notes": "The owner (2026-11-27), after relaying setup steps, a public key, error output and answers between agents on two computers by copy and paste: \"this back and forth that I'm now doing and copy pasting from a place to another will be helped by Rihmasto\"; \"when these situations occur in the future, whether it's in terminal or chat or moving back and forth, this should happen in Rihmasto, not going elsewhere.\" Rihmasto is the glue between where development happens and where it runs; this carries the back-and-forth, with no dependency on any other tool. That afternoon's failures, in order: the SSH server not running, the key refused for a directory account, then a session reset after the key was accepted.",
+      "acceptance": [
+        {
+          "id": "FR-RCH1-AC-1",
+          "check": {
+            "kind": "test"
+          },
+          "then": "an ssh test's output is classified: success, the name not resolving, no route, refused, timed out, an unknown host key, the key refused, the session dropped after the key was accepted, or unrecognised; the test runs ssh in batch mode with a timeout, never accepts a host key, never asks for a password and runs nothing on the other side"
+        },
+        {
+          "id": "FR-RCH1-AC-2",
+          "check": {
+            "kind": "test"
+          },
+          "then": "each verdict has fix steps for the target's system (Windows, Linux, macOS): installing and starting the SSH server, the authorised-keys file and its permissions with this machine's public key (never a private key), a local account where a directory account gets no session, accepting a host key only after checking its fingerprint by hand"
+        },
+        {
+          "id": "FR-RCH1-AC-3",
+          "check": {
+            "kind": "test"
+          },
+          "then": "a machine that is not reachable gets a drafted ask to its agent with the same steps, offered to send to a project the person picks; a project whose working copy is not on this machine gets a drafted ask for where it is; an https address and GitHub are tested too, and nothing is written by any test"
+        },
+        {
+          "id": "FR-RCH1-AC-4",
+          "check": {
+            "kind": "test"
+          },
+          "then": "the command line (rihmasto reach), the cockpit's Test connection (Settings' machines, a project's work in progress when its working copy cannot be read) and Ask Rihma (\"is the laptop reachable?\") give the same verdict, fix and draft"
+        }
+      ]
+    },
+    {
+      "id": "FR-TM1",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-27",
+      "statement": "The unit is the team, tied to projects: a team has a name, members (people as kernel/people.py names them) and an optional empty unit field that is never shown; every project belongs to exactly one team and a team has many projects; a person working alone is a team of one made automatically, named after them, with nothing to configure, and when a second person is added the same team simply gets members without a migration; existing projects and new ones are in the automatic team until moved; only IT defines a team, and IT or the project's owner moves a project, with a preview first, signed and recorded in the ledger, and an Undo that puts the earlier record back exactly; Settings has a Teams page and each project's settings a Team field; the command line and Ask Rihma do the same by rule; there is no enterprise or business-unit level.",
+      "notes": "The owner (2026-11-27), after a long discussion of \"two-level semantics where the platform's own semantics are user-redefinable, and the full platform vs unit scope\": \"I believe not all but defined it/tech admins (note; not over complicating things for a single developer) and I believe old records included? ... Maybe at this point we just talk about teams and them being tied to projects\". Decision D-0027 (decisions/D-0027-teams-and-semantics.md). kernel/teams.py, kernel/teams_chat.py, kernel/teams_cli.py, cockpit/team_routes.py, cockpit/static/teams.js, teams.css.",
+      "acceptance": [
+        {
+          "id": "FR-TM1-AC-1",
+          "given": "a home with one person named in solo mode",
+          "when": "Teams are read",
+          "then": "one team exists, automatic, named after the person, with the person as its only member, no team file is written by reading, and the unit field is not shown",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM1-AC-2",
+          "given": "a project made before teams existed",
+          "when": "teams are read and its team is asked",
+          "then": "it is in the automatic team and its project.json is byte for byte as it was",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM1-AC-3",
+          "given": "a solo home and a second person added in team mode",
+          "when": "teams are read",
+          "then": "the same automatic team now has both people as members, there is still one team, and no project moved",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM1-AC-4",
+          "given": "IT makes a team and moves a project into it",
+          "when": "the move is previewed, made and undone",
+          "then": "the preview writes nothing, the move is signed by the person in the project's ledger and the factory's, the team's project list follows, and the undo puts the project back in the automatic team with both changes in the record",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM1-AC-5",
+          "given": "a team renamed with a member added",
+          "when": "the change is undone",
+          "then": "the earlier record is back exactly, and undoing the creation takes the team away",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM1-AC-6",
+          "given": "a developer, a product owner and a non-person",
+          "when": "each tries to define a team or move a project",
+          "then": "only IT defines a team, IT or a product or business owner moves a project, and a factory actor is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM1-AC-7",
+          "given": "a team record",
+          "when": "it is read",
+          "then": "it carries only an empty unit field and no enterprise or business-unit level is named",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM1-AC-8",
+          "given": "teams named Platform and the automatic one",
+          "when": "a team is found by the words \"the platform team\"",
+          "then": "it is found by its name and a name nobody made finds none",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM1-AC-9",
+          "given": "a solo person in Chrome",
+          "when": "they open Settings, make a second team, move a project and open its settings",
+          "then": "Settings says the team was made for them, the move shows its preview before it is made, the project is in the new team with its ledger record, and the project's settings carry the Team field",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM1-AC-10",
+          "given": "Ask Rihma without a model",
+          "when": "asked which team a project is in, who is in my team, to create a team and to move the project",
+          "then": "each is answered by rule, a creation and a move are proposed and write nothing until confirmed signed, a team nobody made and a persona who may not move it get no proposal",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM1-AC-11",
+          "given": "the command line",
+          "when": "teams are listed, made, changed, moved and undone, signed",
+          "then": "each write is signed by a named person with a persona that may, a refusal is one line and exit 2",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-TM2",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-27",
+      "statement": "Rihmasto's own words resolve shipped default, then the team's terms, then a per-project override: a team or a project can rename or describe a kind, relation or attribute, add synonyms that feed Ask Rihma's map search, hide a term and add a custom term that means an existing record kind; the Knowledge graph's labels and legend, the glossary words, Ask Rihma's answers and the epic and requirement wording read in the word in force; a redefinition changes how records are read and labelled, never the stored records, and old records read through it; the ledger keeps each definition with who, why and since when and the term shows \"as defined on <date>\"; a preview says how many records, nodes and views read differently; an Undo restores the previous reading exactly; a team's terms are changed by IT, a project's own by IT or its owner, and a solo person by themselves with no approval step; a Vocabulary page in the team's Settings and in a project lists each term with the shipped, the team's and the project's meaning, which is in force and its scope as a chip.",
+      "notes": "The owner (2026-11-27), after a long discussion of \"two-level semantics where the platform's own semantics are user-redefinable, and the full platform vs unit scope\": \"I believe not all but defined it/tech admins (note; not over complicating things for a single developer) and I believe old records included? ... Maybe at this point we just talk about teams and them being tied to projects\". Decision D-0027. kernel/vocab.py, kernel/vocab_edit.py, cockpit/team_routes.py, cockpit/graph_routes.py, cockpit/static/vocab.js, words.js, epics.js, graph_panel.js.",
+      "acceptance": [
+        {
+          "id": "FR-TM2-AC-1",
+          "given": "a team and a project of it",
+          "when": "a term is redefined by the team and then by the project",
+          "then": "it reads shipped, then the team's, then the project's, each layer kept beside the word in force",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM2-AC-2",
+          "given": "a team's vocabulary",
+          "when": "a term is renamed, described, given synonyms, hidden, and a custom term that means a record kind is added",
+          "then": "each reads in force, another word for a kind is its synonym, and a custom term that does not mean a record kind is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM2-AC-3",
+          "given": "a project with every kind of record and a team redefinition",
+          "when": "the Knowledge graph is read, then the redefinition undone",
+          "then": "the legend, relation labels and counts read in the team's words, a hidden kind leaves the legend and its nodes, no stored record or file changed, and the undo restores the shipped words",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM2-AC-4",
+          "given": "a redefinition not yet saved",
+          "when": "it is previewed",
+          "then": "the preview says how many records, nodes and views would read differently, the old records included, and records nothing",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM2-AC-5",
+          "given": "two definitions of one term and two undos",
+          "when": "each is made and undone",
+          "then": "each is kept with who, why and since when, newest first, an undo restores the earlier entry exactly, the undone definition stays in the record, and nothing left to undo is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM2-AC-6",
+          "given": "a developer, a product owner and IT",
+          "when": "each changes a team's or a project's words",
+          "then": "only IT changes a team's, IT or the project's owner a project's",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM2-AC-7",
+          "given": "the cockpit's routes",
+          "when": "a change is previewed, saved and undone by a signed person",
+          "then": "each is a signed route, a persona who may not is refused with 403, and a solo person's change applies at once",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM2-AC-8",
+          "given": "a redefinition",
+          "when": "it is saved",
+          "then": "kernel/ontology.json is untouched and the overlay is a file of the team or the project",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM2-AC-9",
+          "given": "a person in Chrome",
+          "when": "they call a requirement a story on a project's Vocabulary, open the Knowledge graph and undo",
+          "then": "the preview shows before the save, the row says it is the project's with \"defined on\", the graph's kinds read Story, and after the undo they read Requirement again",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM2-AC-10",
+          "given": "Ask Rihma without a model",
+          "when": "asked to call a requirement a story, where the stories are, what we call a requirement, to hide a term, add a synonym, add a custom term and undo",
+          "then": "each is answered by rule, a change is proposed and written only when confirmed signed, a word the team gave is found on the map by its shipped word, and a persona who may not change it gets no proposal",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM2-AC-11",
+          "given": "the command line",
+          "when": "words are shown, previewed, set and undone",
+          "then": "a preview records nothing, each write is signed, and a persona who may not is refused in one line with exit 2",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-TM3",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-27",
+      "statement": "One table (kernel/scope_table.py) says for every setting or configuration surface whether it is set per project, per team or is the shipped default, and a What applies where view in Settings and in a project renders it with each setting's value source (this project overrides the team, from the team, shipped default) and a link to change it; a completeness test iterates the map's controls on Settings and fails for one with no scope entry; the scope wording of the views follows the table; Ask Rihma answers where a setting is set by rule; there is no enterprise or business-unit level in the interface, the routes or the chat.",
+      "notes": "The owner (2026-11-27), after a long discussion of \"two-level semantics where the platform's own semantics are user-redefinable, and the full platform vs unit scope\": \"I believe not all but defined it/tech admins (note; not over complicating things for a single developer) and I believe old records included? ... Maybe at this point we just talk about teams and them being tied to projects\". Decision D-0027. kernel/scope_table.py, cockpit/team_routes.py, cockpit/static/applieswhere.js, words.js, structure.js, enforcement.js.",
+      "acceptance": [
+        {
+          "id": "FR-TM3-AC-1",
+          "given": "the map's controls on Settings",
+          "when": "each is looked up in the scope table",
+          "then": "every one is covered by a surface, a control no surface covers is found, and the table names only controls of the map",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM3-AC-2",
+          "given": "a project with the structure policy and the vocabulary set at the team and then at the project",
+          "when": "the table is read for the project",
+          "then": "each row says shipped default, from the team or this project overrides the team, and a project moved to another team says so",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM3-AC-3",
+          "given": "the views' scope words",
+          "when": "words.js and the structure and enforcement views are read",
+          "then": "they say this project, this team and the shipped default as the table does, and the old platform scope reads as the team",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM3-AC-4",
+          "given": "Ask Rihma without a model",
+          "when": "asked where the enforcement level is set and what applies where",
+          "then": "it answers by rule with the scopes, where the value comes from and a link to change it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM3-AC-5",
+          "given": "the code, the routes and the chat",
+          "when": "they are read for a level above the team",
+          "then": "none exists: the only trace is the empty optional unit field",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM3-AC-6",
+          "given": "the command line",
+          "when": "the scope is shown for a project and for the team",
+          "then": "every surface is listed with its value source",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM3-AC-7",
+          "given": "the cockpit's scope route",
+          "when": "it is read for a project, for the team and for an unknown project",
+          "then": "it answers the table for the first two and refuses the third",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM3-AC-8",
+          "given": "a person in Chrome in both themes at both widths",
+          "when": "Settings and a project's Vocabulary are opened",
+          "then": "Teams, Vocabulary and What applies where show, nothing scrolls sideways, and a business owner meets none of the words kept from them",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-TM4",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-27",
+      "statement": "Each surface of the scope table reads its value source from the store the setting is kept in (cell runners from the runner choices, paved roads from the project's road and the roads configured for the home, Gnomon's enforcement, embeds, observer links, automations and evals from what was made for the project, models from the machine's routing, people from the access mode, folders and the observability hub from their settings) and says nothing set here yet where nothing was made; a setting kept once per home (the structure policy, the enforcement levels, the modules, the IT-check defaults, runners, roads) is called the home's (all teams, and for one person all projects), never a team's, so a second team is never told a shared setting is its own; the home's view of a surface made on each project says so; a project in a team is told which team; one person's home says your words and all projects and has no team row.",
+      "notes": "The owner (2026-11-27): \"Maybe at this point we just talk about teams and them being tied to projects\". An independent check of the teams and semantics build (FR-TM1..FR-TM3) found where the scope table did not tell the truth, where a team could be broken or recaptured, and where a word in force was only partly used. Decision D-0028. kernel/scope_sources.py, kernel/scope_table.py, cockpit/static/applieswhere.js, words.js.",
+      "acceptance": [
+        {
+          "id": "FR-TM4-AC-1",
+          "given": "no runner chosen, then one for a project, then one for the home",
+          "when": "the table is read for each project and for the home",
+          "then": "cell runners say shipped default, this project's own, or set for all teams as the real choice does",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM4-AC-2",
+          "given": "a project with no embed, observer link, automation or eval, and then one of each",
+          "when": "the table is read for that project, another project and the home with no project",
+          "then": "each says nothing set here yet, then this project's own, and the home's view says made on each project",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM4-AC-3",
+          "given": "a home-wide need embed, a link for every project and an automation for every project",
+          "when": "the table is read for a project that has none of its own",
+          "then": "each says set for all teams",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM4-AC-4",
+          "given": "a project's paved road, Gnomon's enforcement off for the platform and on for a project, a models overlay, team mode",
+          "when": "the table is read",
+          "then": "roads, harness, models and people each read the store they are kept in",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM4-AC-5",
+          "given": "two teams and the structure policy set once",
+          "when": "the table is read for a project in each team",
+          "then": "it says set for all teams, no home-wide surface offers a team scope, and the words are a team's",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM4-AC-6",
+          "given": "a home of one person",
+          "when": "the table is described",
+          "then": "it says all projects, set for all your projects and your words, not team",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM4-AC-7",
+          "given": "a project moved to a team",
+          "when": "the table is read for it",
+          "then": "the teams row says which team it is in and no row says it overrides the team",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM4-AC-8",
+          "given": "two teams in a real browser, dark and light at 1440 and 390 pixels",
+          "when": "Settings shows What applies where, then a project of the second team is chosen",
+          "then": "a once-per-home setting reads set for all teams, an embed made on each project or nothing set here yet, and the view fits with nothing scrolling sideways",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-TM5",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-27",
+      "statement": "A team that holds projects or words is not undone out from under them (the undo names the projects or the words and says what to do first), and a new team never takes over an old team's words or projects; team names are unique whatever the case or spacing, hold a letter or a digit and are not another team's id, and a name with no plain letters gets a distinct id; members are a list of names (a number is refused, not a crash) and a team does not take a person out of the home; after the switch to team mode the automatic team is not named after one person; Rihmasto's own records are in no team, for a read and a move; a preview asks for the same role as the change it previews, and a refusal says in plain words which role may; a move says which words would read differently and how many records; Ask Rihma answers for the team the question names.",
+      "notes": "The owner (2026-11-27): \"Maybe at this point we just talk about teams and them being tied to projects\". An independent check of the teams and semantics build (FR-TM1..FR-TM3) found where the scope table did not tell the truth, where a team could be broken or recaptured, and where a word in force was only partly used. Decision D-0028. kernel/teams_guard.py, kernel/teams_move.py, kernel/teams.py, cockpit/team_routes.py, kernel/teams_chat.py.",
+      "acceptance": [
+        {
+          "id": "FR-TM5-AC-1",
+          "given": "a team that holds a project",
+          "when": "its creation is undone",
+          "then": "it is refused naming the project and saying to move it first, and nothing is taken away",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-2",
+          "given": "a team with words of its own",
+          "when": "its creation is undone",
+          "then": "it is refused until the words are given back, then the team and its words file are gone",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-3",
+          "given": "words and a project's team that an older team left behind",
+          "when": "a team with that name is made",
+          "then": "it gets another id and none of the old words or projects",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-4",
+          "given": "a team named Zed",
+          "when": "another is made or renamed to zed in any case or spacing",
+          "then": "it is refused as already existing, and a team may change the case of its own name",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-5",
+          "given": "names with no letter or digit, or that are another team's id",
+          "when": "a team is made",
+          "then": "each is refused",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-6",
+          "given": "names with accents, other scripts or no plain letters",
+          "when": "teams are made",
+          "then": "ids are distinct and never team-project, accents fold, other scripts get a short code",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-7",
+          "given": "members given as a number, a dictionary, a float or a boolean",
+          "when": "a team is made or changed",
+          "then": "each is refused with a reason",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-8",
+          "given": "a person of the home",
+          "when": "a team is asked to remove them",
+          "then": "it is refused saying to deactivate them in People, and removing a non-member says nothing changes",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-9",
+          "given": "a home that switched from solo to team mode",
+          "when": "the automatic team is read, moved to and renamed",
+          "then": "it reads Our team until a person renames it, and a person's own name sticks",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-10",
+          "given": "an end user, and no persona",
+          "when": "a team or its words are changed",
+          "then": "the refusal says an end_user may not, only IT may, or asks which role is acted as",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-11",
+          "given": "a project and a team with other words",
+          "when": "the move is previewed",
+          "then": "the lines name each word that would read differently and how many records and nodes, and say so when none does",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-12",
+          "given": "Rihmasto's own records",
+          "when": "its team is read and a move is asked",
+          "then": "it belongs to no team and the move is a 400",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-13",
+          "given": "members that are a number",
+          "when": "a team is made or changed through the route",
+          "then": "it is a 400, not a 500",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-14",
+          "given": "an end user, no role, a product owner and IT",
+          "when": "each previews a team change, a move and a change of words",
+          "then": "only the role that may make the change may preview it",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM5-AC-15",
+          "given": "teams with members and projects",
+          "when": "Ask Rihma is asked who is in a named team",
+          "then": "it answers for that team, or says there is none and names the teams",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-TM6",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-27",
+      "statement": "The word a team or a project gave a kind of record is used wherever the kind is named: in the text the kernel writes about it (graph issues, Ask Rihma's answers from the map), and in the browser over what a view draws (a capsule, a spec page, the board), leaving what people wrote and the Vocabulary views as they are; a kind a team or a project hides leaves the Knowledge graph before anything is counted, so the counts, the issues and a focus agree with what is drawn, the warnings that still hold on the hidden records are said and counted rather than lost, the preview of hiding says so, and a focus on a hidden record says it is hidden; the graph across projects says which words it reads in and which projects say some differently. Ask Rihma says which terms are hidden and which words the graph reads in, by rule, from the same state (kernel/graph_words_chat.py).",
+      "notes": "The owner (2026-11-27): \"Maybe at this point we just talk about teams and them being tied to projects\". An independent check of the teams and semantics build (FR-TM1..FR-TM3) found where the scope table did not tell the truth, where a team could be broken or recaptured, and where a word in force was only partly used. Decision D-0028. kernel/vocab_say.py, kernel/graph_hide.py, kernel/vocab_graph.py, cockpit/static/wordsapply.js, words.js.",
+      "acceptance": [
+        {
+          "id": "FR-TM6-AC-1",
+          "given": "a requirement called a story and a test called a check",
+          "when": "a text that names them is said",
+          "then": "each is swapped, singular, plural and capital kept, a file name left, an unchanged home unchanged",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM6-AC-2",
+          "given": "a hidden kind and a custom term",
+          "when": "a text is said",
+          "then": "neither is swapped in",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM6-AC-3",
+          "given": "two kinds renamed across each other",
+          "when": "a text is said",
+          "then": "each name is read once, never twice",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM6-AC-4",
+          "given": "a project that hides the requirement kind",
+          "when": "its graph is read",
+          "then": "no requirement is in it and the counts, the legend and the links agree with what is drawn",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM6-AC-5",
+          "given": "warnings on the hidden records and a focus on one",
+          "when": "the graph is read",
+          "then": "the warnings are counted and said, the focus says it is hidden, and a focus on a shown record says it is not",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM6-AC-6",
+          "given": "a kind that raises warnings",
+          "when": "hiding it is previewed",
+          "then": "the preview says how many warnings still hold",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM6-AC-7",
+          "given": "words in force for two kinds",
+          "when": "the graph's issue text is read",
+          "then": "it uses the words in force",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM6-AC-8",
+          "given": "projects that say words differently, in one team and in none",
+          "when": "the graph across projects is read",
+          "then": "it says which words it reads in and which projects say some differently, ignoring Rihmasto's own records",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM6-AC-9",
+          "given": "words in force for a project",
+          "when": "Ask Rihma is asked what a view is from the map",
+          "then": "the answer uses them, another project's does not, and a term's own line is not swapped twice",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM6-AC-10",
+          "given": "the browser's script",
+          "when": "it is read",
+          "then": "it says the same words over what is drawn, leaves people's text and fields, and is wired into the page",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM6-AC-11",
+          "given": "a project with words in force in a real browser, dark and light at 1440 and 390 pixels",
+          "when": "the spec page, the graph, the board and a hidden kind are opened",
+          "then": "no view says the shipped word, the hidden kind's note and counts agree, and the page across projects names its reading",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM6-AC-12",
+          "given": "a project that hides a kind, another that does not, and projects that say words differently",
+          "when": "Ask Rihma is asked which terms are hidden, why a kind is missing from the graph and which words the graph reads in",
+          "then": "it answers by rule from the real state: each hidden term and where it was hidden, that its records are left out before anything is counted, how many warnings still hold on them, and across projects which words the graph reads in and which projects differ, with the way on to the graph",
+          "check": {
+            "kind": "test"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FR-TM7",
+      "group": "T. Cockpit for every party",
+      "provenance": "customer-confirmed",
+      "decided_by": "owner",
+      "decided_on": "2026-11-27",
+      "statement": "A person working alone meets no word about teams on Settings or in their project: the Words card is theirs with its long list closed, What applies where is a closed list in plain words with no team row, Rihmasto's own records are not offered to read it for, and a project's settings carry no Team line; with more than one person or team the same views show teams, and the teams card says which settings are shared by every team.",
+      "notes": "The owner (2026-11-27): \"Maybe at this point we just talk about teams and them being tied to projects\". An independent check of the teams and semantics build (FR-TM1..FR-TM3) found where the scope table did not tell the truth, where a team could be broken or recaptured, and where a word in force was only partly used. Decision D-0028. cockpit/static/vocab.js, applieswhere.js, teams.js, words.js.",
+      "acceptance": [
+        {
+          "id": "FR-TM7-AC-1",
+          "given": "a home of one person in a real browser, dark and light at 1440 and 390 pixels",
+          "when": "Settings and the project's settings are opened",
+          "then": "no word about a team is shown, the lists are closed, Rihmasto itself is not offered, and the Team line is gone",
+          "check": {
+            "kind": "test"
+          }
+        },
+        {
+          "id": "FR-TM7-AC-2",
+          "given": "a home of one person",
+          "when": "the scope table is described",
+          "then": "the team scope reads your words and the vocabulary source from your words",
           "check": {
             "kind": "test"
           }
@@ -13255,7 +14147,8 @@
       "criteria": [
         "FR-I1-AC-4",
         "FR-T1-AC-16",
-        "FR-T1-AC-17"
+        "FR-T1-AC-17",
+        "FR-T1-AC-18"
       ],
       "scope": {
         "write": [
@@ -13266,7 +14159,9 @@
           "tests/test_embed_server.py",
           "tests/test_ui_drive.py",
           "docs/cockpit.md",
-          "docs/guides/embeds.md"
+          "docs/guides/embeds.md",
+          "tests/test_ui_boot.py",
+          "tools/ci_run.py"
         ]
       }
     },
@@ -16558,6 +17453,52 @@
       }
     },
     {
+      "id": "GNP-01",
+      "title": "Each project's Gnomon posture, computed from its own Gnomon files: six dimensions, the settings to tighten, filed as change cards",
+      "depends_on": [],
+      "criteria": [
+        "FR-GNP1-AC-1",
+        "FR-GNP1-AC-2",
+        "FR-GNP1-AC-3",
+        "FR-GNP1-AC-4",
+        "FR-GNP1-AC-5",
+        "FR-GNP1-AC-6",
+        "FR-GNP1-AC-7"
+      ],
+      "scope": {
+        "write": [
+          "kernel/gnomon_posture/__init__.py",
+          "kernel/gnomon_posture/read.py",
+          "kernel/gnomon_posture/score.py",
+          "kernel/gnomon_posture/view.py",
+          "kernel/gnomon_posture/ask.py",
+          "kernel/gnomon_posture/cli.py",
+          "kernel/assistant_chain.py",
+          "kernel/assistant_rules.py",
+          "kernel/cli.py",
+          "kernel/parity.py",
+          "kernel/control_pages.py",
+          "cockpit/gnomon_posture_routes.py",
+          "cockpit/server.py",
+          "cockpit/solo_routes.py",
+          "cockpit/ui_map.json",
+          "cockpit/static/gnomon_posture.js",
+          "cockpit/static/capsules.js",
+          "cockpit/static/core.js",
+          "tests/gnomon_posture_fakes.py",
+          "tests/test_gnomon_posture.py",
+          "tests/test_ui_gnomon_posture.py",
+          "tests/test_brief_ln.py",
+          "tests/test_access.py",
+          "docs/guides/gnomon-posture.md",
+          "docs/guides/access.md",
+          "docs/cockpit.md",
+          "docs/README.md",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
       "id": "PPL-01",
       "title": "Simple for one, governed for many: solo mode, personas given to agents, team mode with users and identity-provider groups (D-0024 item 4)",
       "criteria": [
@@ -18235,6 +19176,350 @@
           "cockpit/static/dev.css",
           "tests/test_epics.py",
           "tests/test_ui_acc_developer.py"
+        ]
+      }
+    },
+    {
+      "id": "WIP-01",
+      "title": "Work in progress: what a project's working copy holds uncommitted, read as metadata, nudged in Start here, shown and asked about",
+      "criteria": [
+        "FR-WIP1-AC-1",
+        "FR-WIP1-AC-2",
+        "FR-WIP1-AC-3",
+        "FR-WIP1-AC-4",
+        "FR-WIP1-AC-5",
+        "FR-WIP1-AC-6"
+      ],
+      "depends_on": [],
+      "scope": {
+        "write": [
+          "kernel/wip.py",
+          "kernel/wip_chat.py",
+          "kernel/wip_cli.py",
+          "kernel/start_here.py",
+          "kernel/assistant_chain.py",
+          "kernel/cli.py",
+          "kernel/parity.py",
+          "kernel/control_pages.py",
+          "cockpit/landing_routes.py",
+          "cockpit/ui_map.json",
+          "cockpit/static/wip.js",
+          "cockpit/static/project.js",
+          "cockpit/static/landing.css",
+          "docs/guides/start-here.md",
+          "docs/guides/access.md",
+          "tests/test_wip.py",
+          "tests/test_ui_wip.py",
+          "CHANGELOG.md"
+        ]
+      }
+    },
+    {
+      "id": "XAG-01",
+      "title": "Asks between agents and machines: the machines, an ask carried over MCP, a reply link or copy and paste, answered back into the channel, proposed by Rihma",
+      "criteria": [
+        "FR-XAG1-AC-1",
+        "FR-XAG1-AC-2",
+        "FR-XAG1-AC-3",
+        "FR-XAG1-AC-4",
+        "FR-XAG1-AC-5",
+        "FR-XAG1-AC-6"
+      ],
+      "depends_on": [
+        "WIP-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/machines.py",
+          "kernel/asks.py",
+          "kernel/ask_page.py",
+          "kernel/asks_chat.py",
+          "kernel/asks_cli.py",
+          "kernel/reach.py",
+          "kernel/assistant_chain.py",
+          "kernel/cli.py",
+          "kernel/parity.py",
+          "kernel/control_pages.py",
+          "cockpit/ask_routes.py",
+          "cockpit/server.py",
+          "cockpit/solo_routes.py",
+          "cockpit/ui_map.json",
+          "cockpit/static/asks.js",
+          "cockpit/static/asks.css",
+          "cockpit/static/agents.js",
+          "cockpit/static/dashboard.js",
+          "cockpit/static/screens.js",
+          "cockpit/static/wip.js",
+          "cockpit/static/index.html",
+          "docs/guides/machines-and-asks.md",
+          "docs/guides/agentic-help.md",
+          "docs/guides/access.md",
+          "docs/README.md",
+          "tests/test_asks.py",
+          "tests/test_reach.py",
+          "tests/test_ui_asks.py",
+          "CHANGELOG.md",
+          "kernel/assistant_rules.py",
+          "tests/test_access.py",
+          "tests/test_brief_ln.py",
+          "tests/ask_fakes.py"
+        ]
+      }
+    },
+    {
+      "id": "RCH-01",
+      "title": "The reachability doctor: Test connection's verdict, fix and drafted ask, wherever something is not reachable",
+      "criteria": [
+        "FR-RCH1-AC-1",
+        "FR-RCH1-AC-2",
+        "FR-RCH1-AC-3",
+        "FR-RCH1-AC-4"
+      ],
+      "depends_on": [
+        "XAG-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/machines.py",
+          "kernel/asks.py",
+          "kernel/ask_page.py",
+          "kernel/asks_chat.py",
+          "kernel/asks_cli.py",
+          "kernel/reach.py",
+          "kernel/assistant_chain.py",
+          "kernel/cli.py",
+          "kernel/parity.py",
+          "kernel/control_pages.py",
+          "cockpit/ask_routes.py",
+          "cockpit/server.py",
+          "cockpit/solo_routes.py",
+          "cockpit/ui_map.json",
+          "cockpit/static/asks.js",
+          "cockpit/static/asks.css",
+          "cockpit/static/agents.js",
+          "cockpit/static/dashboard.js",
+          "cockpit/static/screens.js",
+          "cockpit/static/wip.js",
+          "cockpit/static/index.html",
+          "docs/guides/machines-and-asks.md",
+          "docs/guides/agentic-help.md",
+          "docs/guides/access.md",
+          "docs/README.md",
+          "tests/test_asks.py",
+          "tests/test_reach.py",
+          "tests/test_ui_asks.py",
+          "CHANGELOG.md",
+          "kernel/assistant_rules.py",
+          "tests/test_access.py",
+          "tests/test_brief_ln.py",
+          "tests/ask_fakes.py"
+        ]
+      }
+    },
+    {
+      "id": "TEAM-01",
+      "title": "Teams tied to projects: the automatic team of one, signed changes, moves and Undo, in Settings, project settings, Ask Rihma and the command line",
+      "criteria": [
+        "FR-TM1-AC-1",
+        "FR-TM1-AC-2",
+        "FR-TM1-AC-3",
+        "FR-TM1-AC-4",
+        "FR-TM1-AC-5",
+        "FR-TM1-AC-6",
+        "FR-TM1-AC-7",
+        "FR-TM1-AC-8",
+        "FR-TM1-AC-9",
+        "FR-TM1-AC-10",
+        "FR-TM1-AC-11"
+      ],
+      "depends_on": [],
+      "scope": {
+        "write": [
+          "kernel/teams.py",
+          "kernel/teams_chat.py",
+          "kernel/teams_cli.py",
+          "cockpit/team_routes.py",
+          "cockpit/static/teams.js",
+          "cockpit/static/teams.css",
+          "tests/test_teams.py",
+          "tests/test_teams_chat.py",
+          "tests/test_teams_cli.py",
+          "tests/team_fakes.py",
+          "tests/test_ui_teams.py"
+        ]
+      }
+    },
+    {
+      "id": "TEAM-02",
+      "title": "Rihmasto's own words by team and by project: an overlay read at read time, previewed, signed, in the ledger and undone",
+      "criteria": [
+        "FR-TM2-AC-1",
+        "FR-TM2-AC-2",
+        "FR-TM2-AC-3",
+        "FR-TM2-AC-4",
+        "FR-TM2-AC-5",
+        "FR-TM2-AC-6",
+        "FR-TM2-AC-7",
+        "FR-TM2-AC-8",
+        "FR-TM2-AC-9",
+        "FR-TM2-AC-10",
+        "FR-TM2-AC-11"
+      ],
+      "depends_on": [
+        "TEAM-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/vocab.py",
+          "kernel/vocab_edit.py",
+          "cockpit/graph_routes.py",
+          "cockpit/static/vocab.js",
+          "cockpit/static/words.js",
+          "cockpit/static/epics.js",
+          "cockpit/static/graph_panel.js",
+          "tests/test_vocab.py"
+        ]
+      }
+    },
+    {
+      "id": "TEAM-03",
+      "title": "What applies where: one scope table, its view, its routes, its command and Ask Rihma's answer",
+      "criteria": [
+        "FR-TM3-AC-1",
+        "FR-TM3-AC-2",
+        "FR-TM3-AC-3",
+        "FR-TM3-AC-4",
+        "FR-TM3-AC-5",
+        "FR-TM3-AC-6",
+        "FR-TM3-AC-7",
+        "FR-TM3-AC-8"
+      ],
+      "depends_on": [
+        "TEAM-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/scope_table.py",
+          "cockpit/static/applieswhere.js",
+          "cockpit/static/structure.js",
+          "cockpit/static/enforcement.js",
+          "tests/test_scope_table.py"
+        ]
+      }
+    },
+    {
+      "id": "TEAM-04",
+      "title": "What applies where tells the truth: real value sources and the home's scope",
+      "criteria": [
+        "FR-TM4-AC-1",
+        "FR-TM4-AC-2",
+        "FR-TM4-AC-3",
+        "FR-TM4-AC-4",
+        "FR-TM4-AC-5",
+        "FR-TM4-AC-6",
+        "FR-TM4-AC-7",
+        "FR-TM4-AC-8"
+      ],
+      "depends_on": [
+        "TEAM-03"
+      ],
+      "scope": {
+        "write": [
+          "kernel/scope_sources.py",
+          "kernel/scope_table.py",
+          "cockpit/static/applieswhere.js",
+          "cockpit/static/words.js",
+          "tests/test_scope_truth.py",
+          "tests/test_ui_teamfix.py"
+        ]
+      }
+    },
+    {
+      "id": "TEAM-05",
+      "title": "Teams stay whole: undo, names, members, Rihmasto's own records, previews, moves and Ask Rihma",
+      "criteria": [
+        "FR-TM5-AC-1",
+        "FR-TM5-AC-2",
+        "FR-TM5-AC-3",
+        "FR-TM5-AC-4",
+        "FR-TM5-AC-5",
+        "FR-TM5-AC-6",
+        "FR-TM5-AC-7",
+        "FR-TM5-AC-8",
+        "FR-TM5-AC-9",
+        "FR-TM5-AC-10",
+        "FR-TM5-AC-11",
+        "FR-TM5-AC-12",
+        "FR-TM5-AC-13",
+        "FR-TM5-AC-14",
+        "FR-TM5-AC-15"
+      ],
+      "depends_on": [
+        "TEAM-01"
+      ],
+      "scope": {
+        "write": [
+          "kernel/teams_guard.py",
+          "kernel/teams_move.py",
+          "kernel/teams.py",
+          "kernel/teams_chat.py",
+          "cockpit/team_routes.py",
+          "tests/test_teams_whole.py"
+        ]
+      }
+    },
+    {
+      "id": "TEAM-06",
+      "title": "The word in force wherever a kind is named, and a hidden kind that leaves the graph whole",
+      "criteria": [
+        "FR-TM6-AC-1",
+        "FR-TM6-AC-2",
+        "FR-TM6-AC-3",
+        "FR-TM6-AC-4",
+        "FR-TM6-AC-5",
+        "FR-TM6-AC-6",
+        "FR-TM6-AC-7",
+        "FR-TM6-AC-8",
+        "FR-TM6-AC-9",
+        "FR-TM6-AC-10",
+        "FR-TM6-AC-11",
+        "FR-TM6-AC-12"
+      ],
+      "depends_on": [
+        "TEAM-02"
+      ],
+      "scope": {
+        "write": [
+          "kernel/vocab_say.py",
+          "kernel/graph_hide.py",
+          "kernel/vocab_graph.py",
+          "kernel/graph_view.py",
+          "cockpit/graph_routes.py",
+          "cockpit/static/wordsapply.js",
+          "cockpit/static/graph.js",
+          "cockpit/static/graph_panel.js",
+          "tests/test_words_applied.py",
+          "kernel/graph_words_chat.py"
+        ]
+      }
+    },
+    {
+      "id": "TEAM-07",
+      "title": "A person working alone meets no word about teams",
+      "criteria": [
+        "FR-TM7-AC-1",
+        "FR-TM7-AC-2"
+      ],
+      "depends_on": [
+        "TEAM-03"
+      ],
+      "scope": {
+        "write": [
+          "cockpit/static/vocab.js",
+          "cockpit/static/applieswhere.js",
+          "cockpit/static/teams.js",
+          "tests/test_ui_teamfix.py",
+          "tests/test_scope_truth.py"
         ]
       }
     }

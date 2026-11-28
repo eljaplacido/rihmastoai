@@ -6,6 +6,7 @@ the product's repository. Every process is stopped in cleanup.
 
 import json
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -37,6 +38,14 @@ class OperateTestCase(DeliveryTestCase):
 
     def traffic_log(self) -> str:
         return self.project.path("envs", "production", "traffic.jsonl").read_text(encoding="utf-8")
+
+    def traffic_lines(self, want: int, limit: float = 10.0) -> int:
+        """How many requests the production log holds, waiting up to ``limit`` seconds for ``want``: the product
+        records a request just after it answers it, so on a loaded machine the last line can land a moment late."""
+        end = time.monotonic() + limit
+        while (n := len(self.traffic_log().splitlines())) < want and time.monotonic() < end:
+            time.sleep(0.05)
+        return n
 
     def crash(self, env):
         """The product process dies under the factory's feet; its slot still says it runs."""
@@ -100,7 +109,7 @@ class ShadowTest(OperateTestCase):
         self.assertEqual([(d["method"], d["differences"]) for d in report["differences"]], [("GET", ["body $[0].name"])])
         self.assertEqual(self.send("production", "GET", "/items")["json"], [{"id": "1", "name": "drill"}])
         # A live current records the reads replayed to it, so the next shadow replays them too.
-        self.assertEqual(len(self.traffic_log().splitlines()), 5)
+        self.assertEqual(self.traffic_lines(5), 5)
         roads["roads"]["local"]["shadow_safe"] = ["production"]      # IT says production may take replays
         report = operate.shadow(self.project, roads=roads)
         self.assertTrue(report["safe"])

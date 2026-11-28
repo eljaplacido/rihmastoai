@@ -414,11 +414,10 @@ def mcp(msg):
 
 def mcp_batch(msg):
     if isinstance(msg, list):
+        if len(msg) > 32:
+            return rpc_error(None, -32600, "batch too large: at most 32 requests")
         return [a for a in (mcp(m) for m in msg) if a is not None] or None
     return mcp(msg)
-
-
-# -- serving -----------------------------------------------------------------------------------------
 
 def serve_stdio(stdin=None, stdout=None):
     """MCP over stdio: one JSON-RPC message per line; stdout carries protocol messages only."""
@@ -476,6 +475,7 @@ def main(argv=None):
     ap.add_argument("--stdio", action="store_true", help="MCP over stdio")
     ap.add_argument("--port", type=int, help="serve HTTP on this port (0: a free one)")
     ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--behind-proxy", action="store_true", help="allow non-loopback host behind a proxy")
     ap.add_argument("--run", metavar="TRIGGER", help="run once with this JSON trigger (- reads it from stdin)")
     ap.add_argument("--schedule", action="store_true", help="also run on the declared schedule")
     args = ap.parse_args(argv)
@@ -492,6 +492,9 @@ def main(argv=None):
         return serve_stdio()
     if args.port is None:
         ap.error("the %s face is served over HTTP: give --port" % args.face)
+    if args.host not in ("127.0.0.1", "::1", "localhost") and not (
+            args.behind_proxy or os.environ.get("RIHMA_FACES_TOKEN")):
+        ap.error("non-loopback --host requires RIHMA_FACES_TOKEN or --behind-proxy")
     serve_http(args.host, args.port)
     return 0
 '''

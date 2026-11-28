@@ -13,6 +13,8 @@ their own, and the small "last action" and job boxes open the whole log.
   that opens the place that does it. For an adopted or attached project:
   - **Confirm what kind of work it is** when Rihmasto only guessed it;
   - **Review the upstream change** when its repository moved on and a change card waits for a decision;
+  - **Commit your work in progress** when its working copy holds a lot uncommitted (50 files or more) or a change
+    older than two days (see [Work in progress](#work-in-progress) below);
   - **Read its repository's spec and tests** when nothing of its repository was aligned yet (Alignment's Read the
     repository). The step says what Alignment reads (requirement lines in specs and requirement documents, JSON rule
     files, task lists, a README's status table, ADRs, API contracts and test names) and what it does not read yet
@@ -27,6 +29,26 @@ their own, and the small "last action" and job boxes open the whole log.
 - **Meanwhile**: the cell building a task now, a job running in the background (each with its log), the upstream
   watch, the automations that reach the project and its scheduled health checks; or that nothing runs on its own
   yet, with the step that would.
+
+## Work in progress
+
+Rihmasto reads a project's commits. An adopted project whose upstream is a folder on this machine, or an attached
+repository, also shows its **work in progress** on its Overview: what the working copy holds that is not committed
+yet. The **Work in progress** card says how many files are modified, added, deleted, renamed, conflicted or untracked
+(what `.gitignore` hides is left out), grouped by top-level folder, when the oldest of those changes was made, which
+branch you are on and how far it is ahead of or behind its remote branch, and when the last commit was made.
+
+- It reads file names and times with git, never a file's contents, and writes nothing to the repository or the
+  project's records. **Refresh** reads it again; otherwise a reading is reused for a minute.
+- A folder that is almost all untracked files (build output, generated assets, caches) **looks generated**: it is
+  not counted as work, and the card suggests adding it to `.gitignore`.
+- When the work to commit is large or old, Start here nudges you to commit what is ready, so Rihmasto reads it. It
+  never blocks anything.
+- A project adopted from a remote address, or whose folder is gone or is not a git working copy, says "not
+  measured" and why.
+
+Ask Rihma **"what am I in the middle of?"** or **"what's uncommitted?"** for the same reading, with Take me there.
+From a terminal: `rihmasto wip <project>` (`--json` for the reading as data).
 
 **Hide** hides the panel for you only, recorded with the steps it showed. It comes back by itself when a step it
 did not show appears, marked "new since you hid it"; **Show Start here** brings it back at any time.

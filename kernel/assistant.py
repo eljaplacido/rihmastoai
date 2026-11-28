@@ -23,7 +23,7 @@ import re
 from collections.abc import Collection
 from typing import Any
 
-from kernel import agent_skills, journey_chat, model_usage, rule_propose
+from kernel import agent_skills, journey_chat, model_usage, rule_propose, vocab_say
 from kernel import agentops_chat as agentops_q
 from kernel import assistant_chain as chain_q  # the by-rule answerers tried first
 from kernel import assistant_help as help_q
@@ -434,6 +434,7 @@ def _from_map_for(question: str, project: Any, hidden: Collection[str], persona:
                     factory=factory, persona=persona)
 
 
+@vocab_say.in_words_of      # an answer from the map names a kind of record in the project's words (FR-TM6)
 def ask(factory: Any, question: str, *, persona: str, project_id: str | None = None, view: str | None = None,
         ui: dict | None = None, model: Model | None = None, person: str | None = None,
         holding: tuple[str, ...] | None = None) -> dict:

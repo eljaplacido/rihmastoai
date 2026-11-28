@@ -5,7 +5,7 @@
 
 ## Executive Summary
 
-Gnomon Factory is an antifragile solution factory designed to transform approved requirements into verified production software while growing stronger from every failure it understands. It operates as an independent system with Gnomon (version 0.6.5) as its sole runtime dependency, ensuring no code or runtime dependency on earlier projects like factoryctl or softwarefactory. The system takes approved requirements in, develops solutions through testing and production, and loops back when end-user feedback arrives. It is built on a constitution of deterministic governance, evidence over claims, and artifact-based coordination, where models decide how work is done but deterministic code decides whether a result takes effect.
+Gnomon Factory is an antifragile solution factory designed to transform approved requirements into verified production software while growing stronger from every failure it understands. It operates as an independent system with Gnomon (version 0.6.5) as its sole runtime dependency, ensuring no code or runtime dependency on earlier factory projects. The system takes approved requirements in, develops solutions through testing and production, and loops back when end-user feedback arrives. It is built on a constitution of deterministic governance, evidence over claims, and artifact-based coordination, where models decide how work is done but deterministic code decides whether a result takes effect.
 
 ## Functional Requirements
 

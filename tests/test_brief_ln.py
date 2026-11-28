@@ -25,9 +25,12 @@ import heal_fakes  # noqa: E402  (incidents, remedies, fixes and feedback, FR-HE
 import neverlost_fakes  # noqa: E402  (decision triage and Gnomon's enforcement, FR-NVL1)
 import structure_fakes  # noqa: E402  (Rihmasto's structure per project, FR-STR1)
 import hitl_fakes  # noqa: E402  (people in the loop, FR-HITL1)
+import gnomon_posture_fakes  # noqa: E402  (each project's Gnomon posture, FR-GNP1)
 import itops_fixture  # noqa: E402  (what IT checks, FR-ITO1)
 import observe_fakes  # noqa: E402  (observer links, FR-SHR1)
 import landing_fakes  # noqa: E402  (Start here and the tasks you open, FR-LND1)
+import team_fakes  # noqa: E402  (teams and their words, FR-TM1, FR-TM2)
+import ask_fakes  # noqa: E402  (machines and asks between agents, FR-XAG1)
 import walkthrough_fakes  # noqa: E402  (walkthroughs, FR-WLK1)
 from console_fakes import write_routes as console_writes  # noqa: E402  (FR-CON1, FR-CHK1)
 from context_fakes import write_routes as context_writes  # noqa: E402  (FR-CTX1)
@@ -293,7 +296,9 @@ RECORD_NOTHING = {"post_link", "post_assistant", "post_profile_propose", "post_s
 RECORD_NOTHING |= {"post_automation_compose"}   # Describe it: a draft, its summary and a dry run (FR-SET1)
 RECORD_NOTHING |= {"post_enforcement_preview"}   # what a change of enforcement levels would do (FR-ENF1)
 RECORD_NOTHING |= {"post_structure_preview"}   # what a change of Rihmasto's structure would do (FR-STR1)
+RECORD_NOTHING |= {"post_teams_preview", "post_vocabulary_preview"}   # what a team or a words change would do (FR-TM1)
 RECORD_NOTHING |= {"post_observe_presence"}   # where the sharer is, for guests following: in memory (FR-SHR1)
+RECORD_NOTHING |= ask_fakes.RECORD_NOTHING   # Test connection: one read-only test, nothing kept (FR-RCH1)
 # An automation the write routes set (kernel/automations.py): a change proposal when a release is done.
 AUTOMATION = {"name": "When a release is done", "trigger": {"kind": "event", "types": ["release_done"]},
               "action": {"kind": "change", "text": "{project} released: check the docs"}}
@@ -581,9 +586,12 @@ class FactoryApiTest(CockpitTestCase):
             *enforcement_fakes.write_rows(self, w),   # enforcement levels (tests/enforcement_fakes.py, FR-ENF1)
             *hitl_fakes.write_routes(self, w),   # people in the loop (tests/hitl_fakes.py, FR-HITL1)
             *itops_fixture.write_routes(self, w),   # what IT checks (tests/itops_fixture.py, FR-ITO1)
+            *gnomon_posture_fakes.write_routes(self, w),   # a Gnomon posture suggestion filed (FR-GNP1)
             *structure_fakes.write_rows(self, w),   # Rihmasto's structure (tests/structure_fakes.py, FR-STR1)
             *observe_fakes.write_routes(self, w),   # observer links (tests/observe_fakes.py, FR-SHR1)
             *landing_fakes.write_routes(self, w),   # Start here and the tasks you open (tests/landing_fakes.py, FR-LND1)
+            *team_fakes.write_rows(self, w),   # teams and their words (tests/team_fakes.py, FR-TM1, FR-TM2)
+            *ask_fakes.write_rows(self, w),   # machines and asks between agents (tests/ask_fakes.py, FR-XAG1)
         ]
 
     @staticmethod

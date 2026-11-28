@@ -75,5 +75,7 @@ export function legend(m) {
     h("ul", { class: "legend" }, h("li", null, h("span", { class: "gv-ring-sw warning", "aria-hidden": "true" }), icon("alert"), h("span", null, "Ring: needs a look (no test, a test without a requirement)")),
       h("li", null, h("span", { class: "gv-ring-sw critical", "aria-hidden": "true" }), icon("x-circle"), h("span", null, "Ring: a contradiction (overturned, refuted, broken)")),
       h("li", null, h("span", { class: "gv-dash-sw", "aria-hidden": "true" }), h("span", null, "Dashed link: a model's proposal no person decided"))),
+    m.vocabulary && m.vocabulary.changed ? h("p", { class: "small muted", "data-key": "gv-words" }, chip("info", "book", m.vocabulary.project ? "This project's words" : "This team's words"),
+      " " + m.vocabulary.changed + " term" + (m.vocabulary.changed === 1 ? "" : "s") + " read in your words, not Rihmasto's; no record is changed (Vocabulary).") : null,
     h("figcaption", { class: "muted small" }, "Drag to pan; Ctrl and the wheel, or the buttons, zoom; the arrow keys move between nodes and Enter opens one."));
 }

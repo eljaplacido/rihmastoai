@@ -1,7 +1,7 @@
 """A precise assessment of an adopted project: what is worth acting on, and what is probably noise (FR-ASP1).
 
 The owner (2026-11-26), after adopting a project of their own: "Im still not happy with clarity, when I jump into
-the game project its not clear what should I do and claude code in IDE didnt find most of insights relevant".
+[an adopted project] its not clear what should I do and claude code in IDE didnt find most of insights relevant".
 Their coding agent's review found test fixtures reported as critical secrets, long URL paths read as tokens, and
 findings that did not apply to the project with no way to say so. This module keeps the rules' findings honest
 for any adopted project, by rule and with no model:

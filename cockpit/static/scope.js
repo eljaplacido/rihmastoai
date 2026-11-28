@@ -4,7 +4,7 @@
    The scope bar at the top of the main area says it: "All projects", or "Project: <title> ▾" with a switcher that
    lists the projects (the recent ones first) and "← All projects". Inside a project the whole frame takes the
    project's accent (a coloured top edge, the project's name in the bar), so a project page is unmistakable, and
-   every page title states its scope ("Home and Horizon · Inbox", "Inbox · all projects"). */
+   every page title states its scope ("Webshop · Inbox", "Inbox · all projects"). */
 
 import { S, $, h, fill, icon, enc, local, openMenu, PAGES, VIEWS, FACTORY_PID, ALL_SCOPE_PAGES, plural } from "./core.js";
 import { CAPSULES, capsuleOf, labelOf } from "./capsules.js";

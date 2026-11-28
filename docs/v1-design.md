@@ -9,7 +9,7 @@ FR-A6 to FR-A8 and FR-H7.
 v1 is finished when the following holds for **three different inputs**:
 - a vague idea in two sentences;
 - an existing written spec (markdown);
-- a factoryctl demo.
+- an existing demo product.
 
 Each input passes through all of these steps:
 1. **Intake.** In Socratic mode a perspectives panel asks questions, and a person answers each
@@ -54,7 +54,7 @@ factory never guesses.
 ## Intake (FR-A2, A3, A5, A6, A7)
 
 - **Inputs:** free text (an idea), a markdown spec, a Solution Factory output folder, or a
-  factoryctl demo folder.
+  existing demo product's folder.
 - **Modes (FR-A6):**
   - `socratic`: the panel's questions go to the Inbox, and the person answers.
   - `assume`: the factory answers each question itself, as an assumption with a due date.

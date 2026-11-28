@@ -64,10 +64,37 @@ def _json(handler: Any, status: int, obj: dict[str, Any]) -> None:
     _send(handler, status, json.dumps(obj, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
 
 
+def _allowed_origins(handler: Any) -> list[str]:
+    """The configured origins this server answers (cockpit's own, public front, proxy); empty on embed.server."""
+    server = getattr(handler, "server", None)
+    origin = getattr(server, "origin", None)
+    if not origin:
+        return []
+    out = [origin]
+    public = getattr(server, "public_origin", None)
+    if public:
+        out.append(public)
+    factory = getattr(server, "factory", None)
+    if factory is not None:
+        from kernel import access as kaccess
+
+        acc = kaccess.load(factory)
+        if acc.enforced and acc.proxy is not None:
+            out.append(acc.proxy.origin)
+    return out
+
+
 def _same_origin(handler: Any) -> bool:
-    origin = urlsplit(handler.headers.get("Origin") or "").netloc
-    hosts = {handler.headers.get("Host") or "", handler.headers.get("X-Forwarded-Host") or ""} - {""}
-    return bool(origin) and origin in hosts
+    import hmac
+
+    origin = str(handler.headers.get("Origin") or "")
+    if not origin:
+        return False
+    allowed = _allowed_origins(handler)
+    if allowed:
+        return any(hmac.compare_digest(origin, a) for a in allowed)
+    host = str(handler.headers.get("Host") or "")
+    return bool(host) and urlsplit(origin).netloc == host
 
 
 def _body(handler: Any, raw: bytes | None) -> dict[str, Any] | None:
@@ -97,10 +124,18 @@ def _too_many(addr: str) -> bool:
 
 
 def _failed(addr: str) -> None:
+    now = time.monotonic()
     with _FAILS_LOCK:
-        _FAILS.setdefault(addr, []).append(time.monotonic())
+        _FAILS.setdefault(addr, []).append(now)
         if len(_FAILS) > 10000:
-            _FAILS.clear()
+            # Prune expired windows first so spoofed X-Forwarded-For floods cannot wipe active throttles.
+            stale = [k for k, times in _FAILS.items() if not any(now - t < 60 for t in times)]
+            for k in stale:
+                _FAILS.pop(k, None)
+            if len(_FAILS) > 10000:
+                oldest = sorted(_FAILS, key=lambda k: max(_FAILS[k]) if _FAILS[k] else 0.0)[:len(_FAILS) - 5000]
+                for k in oldest:
+                    _FAILS.pop(k, None)
 
 
 def _open(factory: Factory, body: dict[str, Any], addr: str) -> tuple[int, dict[str, Any]]:

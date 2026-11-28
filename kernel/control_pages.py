@@ -149,6 +149,8 @@ CONTROL_PAGES.update({
     'agent_observability_settings': (None, 'settings'),
     'agent_sessions_enable': ('overview', None),
     'agent_observability_hooks': ('overview', None),
+    # each project's Gnomon posture (cockpit/static/gnomon_posture.js, FR-GNP1)
+    'gnomon_posture_card': ('gnomon_posture', None), 'gnomon_posture_propose': ('gnomon_posture', None),
     'people_access': (None, 'settings'),
     'people_mode': (None, 'settings'),
     'people_name': (None, 'settings'),
@@ -229,7 +231,22 @@ CONTROL_PAGES.update({c: ("assessment", None) for c in (
     "assessment_not_relevant", "assessment_secret_mark", "assessment_runner_map")})
 # A clear landing and live tasks (cockpit/static/starthere.js, tasklive.js, runlog.js; FR-LND1).
 CONTROL_PAGES.update({
+    "wip_card": ("overview", None),   # work in progress (FR-WIP1)
     "start_here": ("overview", None), "start_here_hide": ("overview", None), "task_open": ("tasks", None),
     "task_filters": ("tasks", None), "task_start": ("tasks", None), "task_done": ("tasks", None),
     "task_handoff": ("tasks", None), "task_ask": ("tasks", None), "run_log_open": ("tasks", "jobs"),
     "run_log_copy": (None, "jobs")})
+# Teams, the words a team or a project gives Rihmasto's terms, and what applies where (cockpit/static/teams.js,
+# vocab.js, applieswhere.js; FR-TM1, FR-TM2, FR-TM3): Settings, a project's settings and a project's Vocabulary.
+CONTROL_PAGES.update({
+    "teams_page": (None, "settings"), "teams_set": (None, "settings"), "teams_preview": ("overview", "settings"),
+    "teams_undo": (None, "settings"), "teams_move": ("overview", "settings"), "vocab_team": (None, "settings"),
+    "vocab_project": ("vocabulary", None), "vocab_preview": ("vocabulary", "settings"),
+    "vocab_undo": ("vocabulary", "settings"), "scope_view": (None, "settings")})
+# Machines, asks between agents and machines, Test connection (cockpit/static/asks.js; FR-XAG1, FR-RCH1): Settings'
+# Machines, a project's Agent channel, Home's waiting card, and Test connection wherever something is not reachable.
+CONTROL_PAGES.update({
+    "machines_page": (None, "settings"), "machine_add": (None, "settings"), "machine_remove": (None, "settings"),
+    "reach_test": ("overview", "settings"), "asks_list": ("agents", None), "ask_put": ("agents", "settings"),
+    "ask_copy": ("agents", None), "ask_answer": ("agents", None), "ask_withdraw": ("agents", None),
+    "ask_link": ("agents", None), "asks_waiting": (None, "home")})

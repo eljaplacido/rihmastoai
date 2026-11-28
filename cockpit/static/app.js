@@ -32,6 +32,7 @@ import { renderAgentActivity } from "./agents.js";
 import { drawScope, projectSidebar, scopedLabel, ALL_SCOPE } from "./scope.js";
 import { toggleViewCustomize, endViewCustomize, applyPageLayout } from "./viewcustom.js";
 import { pick } from "./words.js";
+import { wireWords } from "./wordsapply.js";   // the word a team or a project gave a kind, wherever it is named (FR-TM6)
 import { ensureViewLayouts } from "./layoutstore.js";
 import { renderData } from "./context.js";
 import { renderAgentOps } from "./agentops.js";   // Agent operations, the AI architect's (FR-AOP1)
@@ -42,6 +43,11 @@ import { renderDecide } from "./triage.js";   // decision triage across projects
 import { renderShare } from "./share.js";   // observer links (FR-SHR1)
 import { followRoute } from "./observe_follow.js";   // following, while sharing (FR-SHR1)
 import { renderRunLog } from "./runlog.js";   // a run's whole log at #/jobs/<id> (FR-LND1)
+import { syncVocabulary } from "./vocab.js";   // the words in force for the page (FR-TM2)
+
+// The page's code loaded: the boot guard (boot.js) stands down, and a later failure retries once again.
+window.__rihmaBooted = true;
+try { sessionStorage.removeItem("gf.bootRetry"); } catch (e) { /* no storage */ }
 
 applyTheme(Object.assign({}, THEME_DEFAULT, localJSON("gf.theme", {})));
 
@@ -617,6 +623,7 @@ async function route(keep) {
   const main = $("#main");
   try {
     await ensureViewLayouts();             // the person's own layouts, from the server (layoutstore.js); never throws
+    await syncVocabulary(r.name === "project" ? r.pid : null);   // the team's and the project's words (vocab.js, FR-TM2)
     if (seq !== S.seq) return;
     if (r.name === "project") {
       const shown = await renderProject(r, keep || same, seq);
@@ -778,6 +785,7 @@ async function boot() {
   wireShell();
   wirePalette();
   wireAssistant();
+  wireWords(document.body);                // the word in force over what is drawn (wordsapply.js, FR-TM6)
   wireKeys();
   wireErrors();                            // an error nobody caught is reported, with the way on (heal.js, FR-HEAL1)
   nav.actionError = actionError;

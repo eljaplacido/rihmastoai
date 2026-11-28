@@ -1,5 +1,5 @@
 /* A precise assessment (FR-ASP1; kernel/assess_precise.py, kernel/assess_measure.py, kernel/assess_headline.py).
-   The owner: "when I jump into the game project its not clear what should I do". So the Assessment view opens on two
+   The owner: "when I jump into [an adopted project] its not clear what should I do". So the Assessment view opens on two
    lines, what is worth acting on now and what is probably noise, each with why, and the next steps as buttons. Each
    finding can be marked not relevant to this project (with a reason; findings like it are offered the same), a secret
    confirmed real or marked a fixture (for its file), and the project's own test runner mapped. Every write is signed

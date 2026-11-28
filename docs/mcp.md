@@ -145,11 +145,11 @@ project with. [guides/agentic-help.md](guides/agentic-help.md) is the guide.
 | `rihma_handoff` | `pid`, `change` (optional), `to` (optional) | The hand-off brief (`kernel.agent_bridge`) as JSON and Markdown, and how the agent named in `to` takes it. |
 | `rihma_feedback` | `pid`, `since` (optional) | Review feedback, failed gates and checks, change cards, settled proposals and people's messages in the channel since a time. |
 | `rihma_insights`, `rihma_alignment`, `rihma_health` | `pid` | Key figures, alignment gaps and checks, when this installation has them; otherwise `available: false` and why. |
-| `rihma_channel_read` | `pid`, `since`, `thread` (optional) | The project's agent channel, oldest first; posts a person's pause holds are not shown. |
+| `rihma_channel_read` | `pid`, `since`, `thread` (optional) | The project's agent channel, oldest first, plus open `asked_agents` waiting for an answer; posts a person's pause holds are not shown. |
 | `rihma_progress` | `pid`, `text`, `files`, `criteria`, `commit`, `agent`, `harness`, `thread` | Posts the agent's progress to the timeline and the channel. |
 | `rihma_propose_answer` | `pid`, `question`, `text`, `agent` | Suggests an answer to an open question: a proposal a person confirms or rejects in the cockpit, never an answer by itself. |
 | `rihma_request_gate` | `pid`, `head` or `check`, `agent` | Asks the gate to check a commit of an attached repository (or an enabled check to run); the result posts itself into the channel. |
-| `rihma_channel_post` | `pid`, `text`, `kind`, `criteria`, `commit`, `agent`, `thread` | A message in the channel; a question naming `@analyst` or `@verifier` is answered by a Rihma agent. |
+| `rihma_channel_post` | `pid`, `text`, `kind`, `criteria`, `commit`, `agent`, `thread`, `reply_to` | A message in the channel; `reply_to` answers an open ask (`AK-…`) and marks it settled; a question naming `@analyst` or `@verifier` is answered by a Rihma agent. |
 | `rihma_ask_rihma` | `pid`, `question`, `commit`, `agent`, `thread` | Asks a Rihma agent: answered from the records by rule with its sources, or through a model when `RIHMA_AGENT_MODEL=gnomon` (a confidential project only on a local or private one), within per-thread limits. |
 
 Each of these writes is signed as the agent (`agent`, default `agent`) for the server's person, its

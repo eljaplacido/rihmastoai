@@ -5,7 +5,7 @@
    questions to it; everyone else reads it. Ask Rihma's "show the epics" answers the same tree (kernel/epic_chat.py). */
 
 import { S, h, icon, chip, api, enc, button, say, act, needPerson, signed, openModal, closeModal, mayAct, plural, orList } from "./core.js";
-import { datum } from "./words.js";
+import { datum, vw } from "./words.js";   // vw: a kind's word in force for the team and the project (FR-TM2)
 
 const LANE_TONE = { planned: "neutral", in_progress: "accent", review: "warning", blocked: "critical", done: "good" };
 const LANE = { planned: "Planned", in_progress: "In progress", review: "In review", blocked: "Blocked", done: "Done" };
@@ -35,8 +35,8 @@ function epicEl(pid, e, tree, again) {
     h("p", { class: "small muted" }, "Owner: " + (e.owner || "not named") + (e.criterion ? " · Done when: " : ""), e.criterion ? datum(e.criterion) : null),
     (e.questions || []).length ? h("p", { class: "small muted" }, "Questions linked: " + e.questions.join(", ")) : null,
     e.requirements.length ? h("ul", { class: "plain ep-reqs" }, e.requirements.map(reqRow))
-      : h("p", { class: "muted small" }, "No requirement under it yet."),
-    mayAct(tree.deciders) ? button("Link requirements", { icon: "edit", kind: "small", key: "ep-link:" + e.id, "data-control": "epic_link",
+      : h("p", { class: "muted small" }, "No " + vw("kind:requirement") + " under it yet."),
+    mayAct(tree.deciders) ? button("Link " + vw("kind:requirement", 2), { icon: "edit", kind: "small", key: "ep-link:" + e.id, "data-control": "epic_link",
       onclick: () => openEpicForm(pid, tree, again, e) }) : null);
 }
 
@@ -55,7 +55,7 @@ function openEpicForm(pid, tree, again, e) {
     h("input", { type: "checkbox", value: rid, "data-key": "ep-req:" + rid, checked: held.has(rid) || null }), " " + rid));
   const save = button(e ? "Save" : "Create the epic", { icon: "check", kind: "primary human", key: "ep-save", "data-control": e ? "epic_link" : "epic_new" });
   const box = h("div", { class: "ep-form" }, titleF, ownerF, critF,
-    h("fieldset", null, h("legend", null, "Requirements under it (its stories and features)"), boxes.length ? boxes : h("p", { class: "muted small" }, "The spec has no requirements yet.")),
+    h("fieldset", null, h("legend", null, vw("kind:requirement", 2, { cap: true }) + " under it (its stories and features)"), boxes.length ? boxes : h("p", { class: "muted small" }, "The spec has no " + vw("kind:requirement", 2) + " yet.")),
     qsF, h("div", { class: "btns" }, save));
   save.addEventListener("click", () => act(box, async () => {
     if (!needPerson()) return;
@@ -79,7 +79,7 @@ export function epicsCard(pid, tree, again) {
       h("span", { class: "card-tools" }, add)),
     tree.epics.length ? h("div", { class: "ep-list" }, tree.epics.map((e) => epicEl(pid, e, tree, again)))
       : h("p", { class: "muted small" }, "No epic yet. An epic is a customer's wish with its owner and what done looks like, in the owner's words; "
-        + (writer ? "create one and put the requirements under it." : orList(tree.deciders) + " creates one.")),
-    loose.length ? h("details", { class: "ep-loose" }, h("summary", null, plural(loose.length, "requirement") + " under no epic"),
+        + (writer ? "create one and put the " + vw("kind:requirement", 2) + " under it." : orList(tree.deciders) + " creates one.")),
+    loose.length ? h("details", { class: "ep-loose" }, h("summary", null, loose.length + " " + vw("kind:requirement", loose.length) + " under no epic"),
       h("ul", { class: "plain ep-reqs" }, loose.map(reqRow))) : null);
 }

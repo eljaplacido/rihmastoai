@@ -73,3 +73,8 @@
 .rl-run { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; min-width: 0; }
 .run-log-open { display: inline-flex; align-items: center; gap: 4px; }
 .live .run-log-open { margin-top: var(--s1); }
+
+/* Work in progress on the Overview (wip.js, FR-WIP1) */
+.wip-said { overflow-wrap: anywhere; }
+.wip-areas { display: grid; gap: var(--s1); margin: var(--s2) 0; }
+.wip-area { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); min-width: 0; overflow-wrap: anywhere; }

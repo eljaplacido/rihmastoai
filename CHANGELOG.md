@@ -20,6 +20,30 @@ from the commit whose `pyproject.toml` declares it ([maintainers](docs/maintaine
 
 ### Added
 
+- **Asks between agents and machines (FR-XAG1) and Test connection (FR-RCH1).** Settings has **Machines**: the
+  computers your agents and working copies are on, how each is reached (ssh, an https front, or by hand), its system
+  and agents. A project's agent channel has **Asks to agents**: a question to a named agent, on this or another
+  machine, with its state (waiting, delivered, answered, expired, withdrawn), delivered over MCP, through a one-use
+  reply link (`/x/api/ask` and `/x/api/answer`, kept only as a hash, reachable from elsewhere only through the
+  cockpit's trusted https front) or by **Copy for the other agent**, and answered back into the same thread (or
+  pasted back). Home lists what waits on other agents. **Test connection** (on machines, and on a project's work in
+  progress when its working copy is not here) says why something is not reachable, gives the fix for that system and
+  drafts the ask to the agent there; a test records nothing. `rihmasto machines`, `rihmasto asks`, `rihmasto reach`
+  and Ask Rihma ("what am I waiting on from other agents?", "is the laptop reachable?") do the same.
+
+- **Work in progress (FR-WIP1).** An adopted project whose upstream is a folder on this machine, or an attached
+  repository, shows on its Overview what its working copy holds that is not committed yet: files by kind and by
+  top-level folder, the oldest change, the branch against its remote and the last commit. File names and times only,
+  never contents, and nothing is written. A folder that is almost all untracked files looks generated (add it to
+  `.gitignore`); large or old work is a nudge in Start here to commit it, never a blocker. `rihmasto wip <project>`
+  and Ask Rihma's "what am I in the middle of?" say the same.
+- **Gnomon posture per project (FR-GNP1).** A project's new Gnomon posture view (the Govern capsule, for developers
+  and IT) scores how well Gnomon governs it, computed by Rihmasto from the project's own `.gnomon/config.toml` and
+  `policy.toml`: six dimensions from Gnomon's documented settings, the weakest first, and for each setting that
+  does not hold the exact change in the project's own file, which can be filed as a change card, signed; nothing
+  is applied and Gnomon is granted no trust. `rihmasto gnomon-posture` and Ask Rihma ("what should I tighten
+  first?") do the same. The view catalogue's purposes are now cut at 100 characters.
+
 - **Enter sends in Shape it in chat.** Starting a new idea and answering Rihma now work like Ask Rihma and the agent
   channel: Enter sends, Shift+Enter inserts a newline, and IME composition is left alone. The send buttons remain.
 

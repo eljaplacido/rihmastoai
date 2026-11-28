@@ -9,7 +9,7 @@
 import { S, h, fill, icon, chip, api, enc, card, button, say, plural, signed, needPerson, act, ago, AuthError, nav,
   mayAct, mayChoose, heldPersonas, personaLabel, PROPOSALS } from "./core.js";
 import { placesCard, protectionLine, placedNote } from "./enforcement_places.js";
-import { pick, datum, emptyState } from "./words.js";
+import { pick, datum, emptyState, scopeWord as baseScopeWord } from "./words.js";
 
 const ENVS = ["dev", "test", "prod"];
 const FAMILIES = ["quality", "security", "legal", "governance"];
@@ -24,8 +24,8 @@ const LEVEL_TONE = { off: "neutral", advise: "info", require_review: "warning", 
 const LEVEL_ICON = { off: "pause", advise: "info", require_review: "eye", enforce: "shield" };
 const OUTCOME = { passed: ["good", "check-circle", "Went on"], cleared: ["good", "check-circle", "Approved, went on"],
   noted: ["info", "info", "Noted"], review: ["warning", "eye", "Review asked"], refused: ["critical", "stop", "Held"] };
-const scopeWord = (s) => pick({ project: "This project", platform: "All projects", default: "Rihmasto's default" }[s],
-  { project: "Project", platform: "Platform", default: "Default" }[s]) || s;
+// The scope wording is the scope table's (words.js scopeWord, kernel/scope_table.py): this project, this team, the shipped default.
+const scopeWord = (s) => baseScopeWord(s);
 
 async function ask(question) {
   const { openAssistant, send } = await import("./assistant.js");

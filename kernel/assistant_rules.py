@@ -53,7 +53,7 @@ THEME = {"accent": ("amber", "teal", "violet", "blue", "green", "rose"), "densit
          "mode": ("dark", "light", "system"), "radius": ("soft", "crisp")}
 FONT_SCALE = (0.9, 1.25)
 FACTORY_PID, FACTORY_VIEWS = "_factory", ("overview", "inbox", "ledger")   # cockpit/static/core.js FACTORY_VIEWS
-CATALOGUE_PURPOSE = 110   # a view's purpose in every catalogue (110 since the finish-line merge); a match is whole
+CATALOGUE_PURPOSE = 96    # view purposes in catalogues: 96 since TM1, WIP1, GNP1, XAG1 (was 110); a match is whole
 # As the cockpit names them (cockpit/server.py PERSONA_INFO), for the reasons a proposal is not offered.
 PERSONA_LABEL = {"business_owner": "Business owner", "product_owner": "Product owner", "it": "IT / partner",
                  "concept_evaluator": "Concept evaluator", "end_user": "End-user tester", "developer": "Developer",

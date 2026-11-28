@@ -2,7 +2,7 @@
 
 Two questions are answered from the graph's read model without a model:
 
-- **"Show me how requirements trace to tests in Home and Horizon"**: the Knowledge graph opened with those
+- **"Show me how requirements trace to tests in Webshop"**: the Knowledge graph opened with those
   filters. The kinds named (a requirement and a test bring the criteria between them), the states (open, closed,
   superseded or overturned), "untested" or "contradictions" (only the nodes with an issue), and the projects
   named by title become the route's query: one project opens its Knowledge graph tab, several open the page
